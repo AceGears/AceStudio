@@ -120,6 +120,8 @@ public:
     Result<int> insertFrame(int at, int durationMs = 100);   // empty cels
     Result<int> duplicateFrame(int frame);
     Status removeFrame(int frame);
+    // Moves a frame (with its cels) to a new position; tag ranges stay put.
+    Status moveFrame(int from, int to);
 
     // ---- Cels ----
     const Cel* cel(LayerId layer, int frame) const noexcept;

@@ -39,6 +39,28 @@ if(NOT EXISTS "${WORKDIR}/f0.png")
     message(FATAL_ERROR "render produced no file")
 endif()
 
+# Exports
+run(0 export "${P}" --format sheet --out "${WORKDIR}/sheet" --layout grid --trim)
+if(NOT EXISTS "${WORKDIR}/sheet.png" OR NOT EXISTS "${WORKDIR}/sheet.json")
+    message(FATAL_ERROR "sheet export did not write PNG + JSON")
+endif()
+file(READ "${WORKDIR}/sheet.json" sheet_json)
+string(JSON sheet_w GET "${sheet_json}" meta size w)
+if(sheet_w LESS 1)
+    message(FATAL_ERROR "sheet json has no size: ${sheet_json}")
+endif()
+run(2 export "${P}" --format sheet --out "${WORKDIR}/sheet")        # refuses to overwrite
+run(0 export "${P}" --format gif  --out "${WORKDIR}/a.gif" --scale 2)
+run(0 export "${P}" --format apng --out "${WORKDIR}/a.png" --loop 3)
+run(0 export "${P}" --format webp --out "${WORKDIR}/a.webp")
+run(0 --json export "${P}" --format png --out "${WORKDIR}/seq")
+string(JSON nfiles LENGTH "${LAST_OUT}" files)
+if(NOT nfiles EQUAL 4)
+    message(FATAL_ERROR "png sequence wrote ${nfiles} files: ${LAST_OUT}")
+endif()
+run(1 export "${P}" --format bmp --out "${WORKDIR}/x.bmp")
+run(2 export "${P}" --format gif --tag nosuchtag --out "${WORKDIR}/t.gif")
+
 # A damaged project must be reported as corrupt (exit 3), not crash.
 file(WRITE "${WORKDIR}/broken.acestudio" "this is not a project")
 run(3 validate "${WORKDIR}/broken.acestudio")

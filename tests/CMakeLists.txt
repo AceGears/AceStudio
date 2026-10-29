@@ -14,6 +14,8 @@ add_executable(acestudio_core_tests
     test_recovery.cpp
     test_transform.cpp
     test_palette_io.cpp
+    test_animation.cpp
+    test_export.cpp
 )
 target_link_libraries(acestudio_core_tests PRIVATE AceStudio::core miniz Catch2::Catch2WithMain)
 acestudio_set_warnings(acestudio_core_tests)

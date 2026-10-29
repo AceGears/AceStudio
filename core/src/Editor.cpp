@@ -502,6 +502,72 @@ Status Editor::transformLayer(LayerId layer, int frame, bool allFrames, const Ma
         bytes));
 }
 
+Status Editor::moveFrame(int from, int to) {
+    if (from < 0 || from >= m_doc.frameCount() || to < 0 || to >= m_doc.frameCount())
+        return Error{ErrorCode::InvalidArgument, "Frame out of range"};
+    if (from == to) return {};
+    return apply(std::make_unique<FnCommand>(
+        "Move Frame", [=](Document& d) { return d.moveFrame(from, to); },
+        [=](Document& d) { (void)d.moveFrame(to, from); }));
+}
+
+Status Editor::setFrameDurations(int first, int last, int durationMs) {
+    if (first < 0 || last >= m_doc.frameCount() || first > last) return Error{ErrorCode::InvalidArgument, "Frame range out of range"};
+    if (durationMs < 1 || durationMs > 65535) return Error{ErrorCode::InvalidArgument, "Frame duration must be 1..65535 ms"};
+    std::vector<int> old;
+    for (int f = first; f <= last; ++f) old.push_back(m_doc.frames()[static_cast<std::size_t>(f)].durationMs);
+    return apply(std::make_unique<FnCommand>(
+        "Frame Durations",
+        [=](Document& d) -> Status {
+            for (int f = first; f <= last; ++f)
+                if (auto st = d.setFrameDuration(f, durationMs); !st) return st;
+            return {};
+        },
+        [=](Document& d) {
+            for (int f = first; f <= last; ++f) (void)d.setFrameDuration(f, old[static_cast<std::size_t>(f - first)]);
+        }));
+}
+
+namespace {
+Status tagsCommand(Editor& e, const std::string& label, std::vector<AnimationTag> after) {
+    auto before = std::make_shared<std::vector<AnimationTag>>(e.document().tags());
+    auto next = std::make_shared<std::vector<AnimationTag>>(std::move(after));
+    return e.apply(std::make_unique<FnCommand>(
+        label, [=](Document& d) { return d.replaceTags(*next); },
+        [=](Document& d) { (void)d.replaceTags(*before); }));
+}
+Status validateTag(const Document& d, const AnimationTag& t) {
+    if (t.name.empty()) return Error{ErrorCode::InvalidArgument, "Tag name is required"};
+    if (t.fromFrame < 0 || t.toFrame >= d.frameCount() || t.fromFrame > t.toFrame)
+        return Error{ErrorCode::InvalidArgument, "Tag frames must be within 1.." + std::to_string(d.frameCount())};
+    if (t.repeat < 0) return Error{ErrorCode::InvalidArgument, "Repeat count must be 0 (forever) or more"};
+    return {};
+}
+} // namespace
+
+Result<std::size_t> Editor::addTag(AnimationTag tag) {
+    if (auto st = validateTag(m_doc, tag); !st) return st.error();
+    auto tags = m_doc.tags();
+    tags.push_back(std::move(tag));
+    if (auto st = tagsCommand(*this, "New Tag", std::move(tags)); !st) return st.error();
+    return m_doc.tags().size() - 1;
+}
+
+Status Editor::updateTag(std::size_t index, AnimationTag tag) {
+    if (index >= m_doc.tags().size()) return Error{ErrorCode::InvalidArgument, "No such tag"};
+    if (auto st = validateTag(m_doc, tag); !st) return st;
+    auto tags = m_doc.tags();
+    tags[index] = std::move(tag);
+    return tagsCommand(*this, "Edit Tag", std::move(tags));
+}
+
+Status Editor::removeTag(std::size_t index) {
+    if (index >= m_doc.tags().size()) return Error{ErrorCode::InvalidArgument, "No such tag"};
+    auto tags = m_doc.tags();
+    tags.erase(tags.begin() + static_cast<std::ptrdiff_t>(index));
+    return tagsCommand(*this, "Delete Tag", std::move(tags));
+}
+
 // ------------------------------------------------------------------ palette
 
 Status Editor::setPaletteColor(std::size_t index, Rgba8 color) {

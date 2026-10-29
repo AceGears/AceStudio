@@ -5,6 +5,7 @@
 //   4 unsupported (newer) version, 5 internal error.
 
 #include "acestudio/core/Document.h"
+#include "acestudio/core/Export.h"
 #include "acestudio/core/FileUtil.h"
 #include "acestudio/core/Log.h"
 #include "acestudio/core/PngCodec.h"
@@ -19,6 +20,7 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -50,6 +52,7 @@ struct Args {
     std::map<std::string, std::string> options;   // --key value
     bool json = false;
     bool force = false;
+    std::set<std::string> flags;   // boolean options such as --trim
 
     std::optional<std::string> opt(const std::string& k) const {
         auto it = options.find(k);
@@ -106,6 +109,13 @@ const char* kUsageText =
     "  validate <file>                 Check a project for corruption (exit 3 if invalid)\n"
     "  render <file> --out <png> [--frame N] [--scale K] [--force]\n"
     "                                  Flatten one frame to PNG (nearest-neighbour scale)\n"
+    "  export <file> --format sheet|gif|apng|webp|png --out <path> [options] [--force]\n"
+    "                                  Export frames. Options: --tag NAME | --from N --to M,\n"
+    "                                  --scale K, --loop N (0 = forever),\n"
+    "                                  sheet: --layout horizontal|vertical|grid|packed --columns N\n"
+    "                                         --padding N --spacing N --trim --merge-duplicates --pot\n"
+    "                                         --data hash|array (writes <out>.json beside the PNG)\n"
+    "                                  png:   --out is a folder; writes <name>_NNN.png per frame\n"
     "\n"
     "Existing files are never overwritten unless --force is given.\n";
 
@@ -115,6 +125,7 @@ std::optional<Args> parseArgs(int argc, char** argv, std::string& err) {
         std::string s = argv[i];
         if (s == "--json") a.json = true;
         else if (s == "--force") a.force = true;
+        else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot") a.flags.insert(s.substr(2));
         else if (s == "-h" || s == "--help") { a.positional = {"help"}; return a; }
         else if (s.rfind("--", 0) == 0) {
             if (i + 1 >= argc) { err = "Missing value for " + s; return std::nullopt; }
@@ -222,6 +233,88 @@ int cmdRender(const Args& a, Output& out) {
                        "Rendered frame " + std::to_string(frame) + " to " + *outPath + "\n");
 }
 
+int cmdExport(const Args& a, Output& out) {
+    if (a.positional.size() != 2) return out.fail(kUsage, "export: expected one project file");
+    const auto format = a.opt("format");
+    const auto outPath = a.opt("out");
+    if (!format || !outPath) return out.fail(kUsage, "export: --format and --out are required");
+    auto doc = loadProject(a.positional[1]);
+    if (!doc) return out.fail(doc.error());
+
+    FrameRange range;
+    range.tag = a.opt("tag").value_or("");
+    range.from = optInt(a, "from").value_or(0);
+    range.to = optInt(a, "to").value_or(-1);
+    const int scale = optInt(a, "scale").value_or(1);
+    const int loop = optInt(a, "loop").value_or(0);
+    std::error_code ec;
+    const fs::path target = *outPath;
+
+    auto writeChecked = [&](const fs::path& p, const std::vector<std::uint8_t>& bytes) -> std::optional<int> {
+        if (fs::exists(p, ec) && !a.force) return out.fail(kIo, p.string() + " already exists (use --force)");
+        if (auto st = writeFileAtomic(p, bytes); !st) return out.fail(st.error());
+        return std::nullopt;
+    };
+
+    if (*format == "sheet") {
+        SheetOptions o;
+        const std::string layout = a.opt("layout").value_or("horizontal");
+        if (layout == "horizontal") o.layout = SheetLayout::Horizontal;
+        else if (layout == "vertical") o.layout = SheetLayout::Vertical;
+        else if (layout == "grid") o.layout = SheetLayout::Grid;
+        else if (layout == "packed") o.layout = SheetLayout::Packed;
+        else return out.fail(kUsage, "export: unknown --layout " + layout);
+        o.columns = optInt(a, "columns").value_or(0);
+        o.innerPadding = optInt(a, "padding").value_or(0);
+        o.spacing = optInt(a, "spacing").value_or(0);
+        o.trim = a.flags.count("trim") > 0;
+        o.mergeDuplicates = a.flags.count("merge-duplicates") > 0;
+        o.powerOfTwo = a.flags.count("pot") > 0;
+        o.scale = scale;
+        const std::string style = a.opt("data").value_or("hash");
+        if (style != "hash" && style != "array") return out.fail(kUsage, "export: --data must be hash or array");
+        auto sheet = buildSpriteSheet(doc.value(), range, o);
+        if (!sheet) return out.fail(sheet.error());
+        fs::path pngPath = target;
+        if (pngPath.extension() != ".png") pngPath += ".png";
+        fs::path jsonPath = pngPath;
+        jsonPath.replace_extension(".json");
+        if (!a.force)
+            for (const auto& p : {pngPath, jsonPath})
+                if (fs::exists(p, ec)) return out.fail(kIo, p.string() + " already exists (use --force)");
+        auto png = encodePng(sheet.value().image);
+        if (!png) return out.fail(png.error());
+        if (auto st = writeFileAtomic(pngPath, png.value()); !st) return out.fail(st.error());
+        const std::string meta = spriteSheetJson(doc.value(), sheet.value(), pngPath.filename().string(),
+                                                 pngPath.stem().string(), style == "hash" ? JsonStyle::Hash : JsonStyle::Array);
+        if (auto st = writeFileAtomic(jsonPath, std::span(reinterpret_cast<const std::uint8_t*>(meta.data()), meta.size())); !st)
+            return out.fail(st.error());
+        return out.success({{"image", pngPath.string()}, {"data", jsonPath.string()}, {"frames", sheet.value().frames.size()},
+                            {"width", sheet.value().image.width()}, {"height", sheet.value().image.height()}},
+                           "Wrote " + pngPath.string() + " and " + jsonPath.string() + " (" +
+                               std::to_string(sheet.value().frames.size()) + " frames)\n");
+    }
+    if (*format == "png") {
+        auto paths = exportPngSequence(doc.value(), range, target, fs::path(a.positional[1]).stem().string(), scale, a.force);
+        if (!paths) return out.fail(paths.error());
+        json list = json::array();
+        for (const auto& p : paths.value()) list.push_back(p.string());
+        return out.success({{"files", list}}, "Wrote " + std::to_string(paths.value().size()) + " PNG files to " + target.string() + "\n");
+    }
+    if (*format == "gif" || *format == "apng" || *format == "webp") {
+        auto frames = renderFrames(doc.value(), range, scale, true);
+        if (!frames) return out.fail(frames.error());
+        auto bytes = *format == "gif" ? encodeGif(frames.value(), loop)
+                   : *format == "apng" ? encodeApng(frames.value(), loop)
+                                       : encodeWebp(frames.value(), loop);
+        if (!bytes) return out.fail(bytes.error());
+        if (auto code = writeChecked(target, bytes.value())) return *code;
+        return out.success({{"path", target.string()}, {"frames", frames.value().size()}, {"bytes", bytes.value().size()}},
+                           "Wrote " + target.string() + " (" + std::to_string(frames.value().size()) + " frames)\n");
+    }
+    return out.fail(kUsage, "export: unknown --format " + *format);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -246,6 +339,7 @@ int main(int argc, char** argv) {
         if (cmd == "info") return cmdInfo(*args, out, false);
         if (cmd == "validate") return cmdInfo(*args, out, true);
         if (cmd == "render") return cmdRender(*args, out);
+        if (cmd == "export") return cmdExport(*args, out);
         return out.fail(kUsage, "Unknown command '" + cmd + "'. Run with --help.");
     } catch (const std::exception& e) {
         return out.fail(kInternal, std::string("Unexpected error: ") + e.what());

@@ -239,6 +239,25 @@ Status Document::removeFrame(int frame) {
     return {};
 }
 
+Status Document::moveFrame(int from, int to) {
+    if (from < 0 || from >= frameCount() || to < 0 || to >= frameCount())
+        return Error{ErrorCode::InvalidArgument, "Frame out of range"};
+    if (from == to) return {};
+    auto remap = [from, to](int f) {
+        if (f == from) return to;
+        if (from < to && f > from && f <= to) return f - 1;
+        if (to < from && f >= to && f < from) return f + 1;
+        return f;
+    };
+    std::map<CelKey, Cel> moved;
+    for (auto& [k, c] : m_cels) moved.emplace(CelKey{k.layer, remap(k.frame)}, std::move(c));
+    m_cels = std::move(moved);
+    const Frame f = m_frames[static_cast<std::size_t>(from)];
+    m_frames.erase(m_frames.begin() + from);
+    m_frames.insert(m_frames.begin() + to, f);
+    return {};
+}
+
 // ---------------------------------------------------------------- cels
 
 const Cel* Document::cel(LayerId l, int frame) const noexcept {

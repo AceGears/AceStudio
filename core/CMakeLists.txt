@@ -1,10 +1,13 @@
 # acestudio_core: platform-neutral engine. Must never depend on Qt so the
 # CLI, MCP server, tests and plugins can all share it.
 add_library(acestudio_core STATIC
+    src/AnimCodec.cpp
+    src/Animation.cpp
     src/BlendMode.cpp
     src/Color.cpp
     src/Document.cpp
     src/Editor.cpp
+    src/Export.cpp
     src/FileUtil.cpp
     src/Image.cpp
     src/Log.cpp
@@ -29,7 +32,7 @@ target_include_directories(acestudio_core
 
 target_link_libraries(acestudio_core
     PUBLIC  nlohmann_json::nlohmann_json
-    PRIVATE miniz acestudio_stb)
+    PRIVATE miniz acestudio_stb webp webpdemux libwebpmux)
 
 if(WIN32)
     target_link_libraries(acestudio_core PRIVATE shell32 ole32)

@@ -55,6 +55,14 @@ public:
     Result<int> duplicateFrame(int frame);
     Status removeFrame(int frame);
     Status setFrameDuration(int frame, int durationMs);
+    Status moveFrame(int from, int to);
+    // Sets the duration of every frame in [first, last].
+    Status setFrameDurations(int first, int last, int durationMs);
+
+    // ---- Animation tags ----
+    Result<std::size_t> addTag(AnimationTag tag);
+    Status updateTag(std::size_t index, AnimationTag tag);
+    Status removeTag(std::size_t index);
 
     // ---- Canvas (whole document) ----
     // New size; existing content is shifted by (offsetX, offsetY).
