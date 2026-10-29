@@ -41,6 +41,15 @@ jobs:
           arch: win64_msvc2022_64
           cache: true
           setup-python: false
+      - name: Diagnose Qt 6.12 availability
+        if: steps.qt612.outcome == 'failure'
+        shell: pwsh
+        run: |
+          python -m pip install -q aqtinstall
+          $v = python -m aqt list-qt windows desktop 2>&1 | Out-String
+          Write-Host "::warning::Available Qt versions (tail): $(($v -split "`n" | Select-Object -Last 3) -join ' | ')"
+          $a = python -m aqt list-qt windows desktop --arch 6.12.0 2>&1 | Out-String
+          Write-Host "::warning::Qt 6.12.0 arches: $($a.Trim())"
       - name: Install Qt 6.8 LTS (fallback if 6.12 is not yet installable)
         if: steps.qt612.outcome == 'failure'
         uses: jurplel/install-qt-action@v4
@@ -60,7 +69,8 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          cmake --build build 2>&1 | Tee-Object -FilePath build.log
+          # -k 0: keep going so every compile error is reported in one run
+          cmake --build build -- -k 0 2>&1 | Tee-Object -FilePath build.log
           $code = $LASTEXITCODE
           # Surface compiler diagnostics as annotations so they are visible
           # without downloading the full log.

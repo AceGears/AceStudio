@@ -45,7 +45,7 @@ public:
         return x >= 0 && y >= 0 && x < m_w && y < m_h && m_bits[idx(x, y)] != 0;
     }
     void set(int x, int y, bool v) noexcept {
-        if (x >= 0 && y >= 0 && x < m_w && y < m_h) m_bits[idx(x, y)] = v ? 1 : 0;
+        if (x >= 0 && y >= 0 && x < m_w && y < m_h) m_bits[idx(x, y)] = static_cast<std::uint8_t>(v);
     }
     void fillRect(const IntRect& r, bool v) noexcept;
     void invert() noexcept;

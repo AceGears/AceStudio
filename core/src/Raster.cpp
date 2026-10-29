@@ -84,17 +84,17 @@ Mask::Mask(int width, int height, bool value) {
     if (width <= 0 || height <= 0) return;
     m_w = width;
     m_h = height;
-    m_bits.assign(static_cast<std::size_t>(width) * static_cast<std::size_t>(height), value ? 1 : 0);
+    m_bits.assign(static_cast<std::size_t>(width) * static_cast<std::size_t>(height), static_cast<std::uint8_t>(value));
 }
 
 void Mask::fillRect(const IntRect& r, bool v) noexcept {
     const IntRect c = r.intersected({0, 0, m_w, m_h});
     for (int y = c.y; y < c.y + c.h; ++y)
-        std::fill_n(m_bits.begin() + static_cast<std::ptrdiff_t>(idx(c.x, y)), c.w, v ? 1 : 0);
+        std::fill_n(m_bits.begin() + static_cast<std::ptrdiff_t>(idx(c.x, y)), c.w, static_cast<std::uint8_t>(v));
 }
 
 void Mask::invert() noexcept {
-    for (auto& b : m_bits) b = b ? 0 : 1;
+    for (auto& b : m_bits) b = static_cast<std::uint8_t>(b == 0);
 }
 
 IntRect Mask::bounds() const noexcept {

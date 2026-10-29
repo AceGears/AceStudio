@@ -15,7 +15,7 @@ struct Rgba8 {
     constexpr bool operator==(const Rgba8&) const = default;
 
     static constexpr Rgba8 transparent() { return {0, 0, 0, 0}; }
-    static constexpr Rgba8 opaque(std::uint8_t r, std::uint8_t g, std::uint8_t b) { return {r, g, b, 255}; }
+    static constexpr Rgba8 opaque(std::uint8_t red, std::uint8_t green, std::uint8_t blue) { return {red, green, blue, 255}; }
 
     // "#RRGGBB" or "#RRGGBBAA" (case-insensitive, leading '#' optional).
     static std::optional<Rgba8> fromHex(std::string_view hex);

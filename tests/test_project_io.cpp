@@ -134,7 +134,7 @@ TEST_CASE("Projects from a newer schema are refused / not misread", "[project]")
     REQUIRE(mz_zip_writer_init_heap(&out, 0, 0));
     const std::string manifest =
         R"({"format":"acestudio.project","schemaVersion":99,"writerVersion":"9.0.0"})";
-    REQUIRE(mz_zip_writer_add_mem(&out, "manifest.json", manifest.data(), manifest.size(), MZ_DEFAULT_COMPRESSION));
+    REQUIRE(mz_zip_writer_add_mem(&out, "manifest.json", manifest.data(), manifest.size(), static_cast<mz_uint>(MZ_DEFAULT_COMPRESSION)));
     for (mz_uint i = 0; i < mz_zip_reader_get_num_files(&in); ++i) {
         char name[256];
         mz_zip_reader_get_filename(&in, i, name, sizeof name);
