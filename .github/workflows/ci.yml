@@ -23,16 +23,37 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   windows:
-    name: Full build (Windows, MSVC, Qt 6.12)
+    name: Full build (Windows, MSVC, Qt)
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
-      - name: Install Qt
+      # aqtinstall (used by install-qt-action) is not yet tested on the
+      # runner's default Python; pin a known-good one.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Qt 6.12 (target LTS)
+        id: qt612
+        continue-on-error: true
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.12.*'
           arch: win64_msvc2022_64
           cache: true
+          setup-python: false
+      - name: Install Qt 6.8 LTS (fallback if 6.12 is not yet installable)
+        if: steps.qt612.outcome == 'failure'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          arch: win64_msvc2022_64
+          cache: true
+          setup-python: false
+      - name: Report Qt version
+        shell: pwsh
+        run: |
+          qmake -query QT_VERSION
+          if ("${{ steps.qt612.outcome }}" -eq "failure") { echo "::warning::Qt 6.12 install failed; built against Qt 6.8 LTS instead" }
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DACESTUDIO_WARNINGS_AS_ERRORS=ON
