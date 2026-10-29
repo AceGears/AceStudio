@@ -4,6 +4,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <cstring>
+#include <memory>
+#include <optional>
 #include <random>
 
 #ifdef _WIN32
@@ -105,7 +108,7 @@ Result<std::vector<std::uint8_t>> readFileBytes(const fs::path& path, std::uintm
 
     std::FILE* f = nullptr;
 #ifdef _WIN32
-    f = _wfopen(path.c_str(), L"rb");
+    if (_wfopen_s(&f, path.c_str(), L"rb") != 0) f = nullptr;
 #else
     f = std::fopen(path.c_str(), "rb");
 #endif
@@ -177,10 +180,29 @@ std::string nowUtcIso8601() {
     return out;
 }
 
+namespace {
+// Reads an environment variable as a path (wide on Windows for Unicode).
+std::optional<fs::path> envPath(const char* name) {
+#ifdef _WIN32
+    std::wstring wname(name, name + std::strlen(name));
+    wchar_t* value = nullptr;
+    std::size_t len = 0;
+    if (_wdupenv_s(&value, &len, wname.c_str()) != 0 || !value) return std::nullopt;
+    std::unique_ptr<wchar_t, decltype(&std::free)> guard(value, &std::free);
+    if (*value == L'\0') return std::nullopt;
+    return fs::path(value);
+#else
+    const char* v = std::getenv(name);
+    if (!v || !*v) return std::nullopt;
+    return fs::path(v);
+#endif
+}
+} // namespace
+
 Result<fs::path> userDataDir() {
     fs::path base;
-    if (const char* over = std::getenv("ACESTUDIO_DATA_DIR"); over && *over) {
-        base = fs::path(over);
+    if (auto over = envPath("ACESTUDIO_DATA_DIR")) {
+        base = *over;
     } else {
 #ifdef _WIN32
         PWSTR appData = nullptr;
@@ -189,10 +211,10 @@ Result<fs::path> userDataDir() {
         base = fs::path(appData) / "AceStudio";
         CoTaskMemFree(appData);
 #else
-        if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && *xdg)
-            base = fs::path(xdg) / "AceStudio";
-        else if (const char* home = std::getenv("HOME"); home && *home)
-            base = fs::path(home) / ".config" / "AceStudio";
+        if (auto xdg = envPath("XDG_CONFIG_HOME"))
+            base = *xdg / "AceStudio";
+        else if (auto home = envPath("HOME"))
+            base = *home / ".config" / "AceStudio";
         else
             return Error{ErrorCode::NotFound, "Cannot determine home directory"};
 #endif
