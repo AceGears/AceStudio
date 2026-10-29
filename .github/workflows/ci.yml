@@ -41,6 +41,7 @@ jobs:
           arch: win64_msvc2022_64
           cache: true
           setup-python: false
+          aqtversion: '>=3.1.0'
       - name: Diagnose Qt 6.12 availability
         if: steps.qt612.outcome == 'failure'
         continue-on-error: true
@@ -51,19 +52,34 @@ jobs:
           Write-Host "::warning::Available Qt versions (tail): $(($v -split "`n" | Select-Object -Last 3) -join ' | ')"
           $a = python -m aqt list-qt windows desktop --arch 6.12.0 2>&1 | Out-String
           Write-Host "::warning::Qt 6.12.0 arches: $($a.Trim())"
+          $b = python -m aqt list-qt windows desktop --arch 6.11.3 2>&1 | Out-String
+          Write-Host "::warning::Qt 6.11.3 arches: $($b.Trim())"
+          Write-Host "::warning::aqtinstall version: $(python -m aqt version 2>&1 | Out-String)"
       - name: Install Qt 6.11 (fallback while 6.12 is not yet in the aqt index)
+        id: qt611
         if: steps.qt612.outcome == 'failure'
+        continue-on-error: true
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.11.*'
           arch: win64_msvc2022_64
           cache: true
           setup-python: false
+          aqtversion: '>=3.1.0'
+      - name: Install Qt 6.8 LTS (last-resort fallback)
+        if: steps.qt612.outcome == 'failure' && steps.qt611.outcome == 'failure'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          arch: win64_msvc2022_64
+          cache: true
+          setup-python: false
+          aqtversion: '>=3.1.0'
       - name: Report Qt version
         shell: pwsh
         run: |
           qmake -query QT_VERSION
-          if ("${{ steps.qt612.outcome }}" -eq "failure") { echo "::warning::Qt 6.12 install failed; built against Qt 6.11 instead" }
+          echo "::notice::Built against Qt $(qmake -query QT_VERSION)"
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DACESTUDIO_WARNINGS_AS_ERRORS=ON
