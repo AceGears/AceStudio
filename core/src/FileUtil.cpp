@@ -184,12 +184,13 @@ namespace {
 // Reads an environment variable as a path (wide on Windows for Unicode).
 std::optional<fs::path> envPath(const char* name) {
 #ifdef _WIN32
-    std::wstring wname(name, name + std::strlen(name));
-    wchar_t* value = nullptr;
-    std::size_t len = 0;
-    if (_wdupenv_s(&value, &len, wname.c_str()) != 0 || !value) return std::nullopt;
-    std::unique_ptr<wchar_t, decltype(&std::free)> guard(value, &std::free);
-    if (*value == L'\0') return std::nullopt;
+    const std::wstring wname(name, name + std::strlen(name));
+    const DWORD needed = GetEnvironmentVariableW(wname.c_str(), nullptr, 0);
+    if (needed <= 1) return std::nullopt;               // unset or empty
+    std::wstring value(needed, L'\0');
+    const DWORD got = GetEnvironmentVariableW(wname.c_str(), value.data(), needed);
+    if (got == 0 || got >= needed) return std::nullopt;
+    value.resize(got);
     return fs::path(value);
 #else
     const char* v = std::getenv(name);
