@@ -1,6 +1,6 @@
 # Known Issues and Limitations
 
-Current as of 0.1.0 (Phase 1).
+Current as of 0.2.0 (Phase 2a).
 
 ## Not yet verified
 - **Not yet run on real Windows or with MSVC.** Core, CLI and tests cross-compile for Windows
@@ -13,17 +13,27 @@ Current as of 0.1.0 (Phase 1).
 - **High-DPI** behaviour has not been checked at 150%/200% Windows scaling.
 
 ## Functional limitations (by design for this phase)
-- No drawing tools, undo/redo, or layer editing UI yet (Phase 2). The only document edit
-  available in the app is toggling layer visibility, which marks the document modified.
-- No autosave or crash-recovery prompt yet (Phase 2). Saving is atomic and keeps a `.bak`.
-- Group layers are composited by multiplying opacity down the hierarchy; group blend modes are
-  not applied in isolation. Proper isolated group compositing is planned for Phase 2.
-- Indexed and grayscale color modes are stored but not enforced during painting (no painting yet).
-- No AI, tileset, MCP, Lua or plugin functionality yet; the corresponding menus contain a single
-  disabled entry naming the planned phase.
-- Workspace presets (Pixel Art, Animation, …) are not implemented; layout persistence and
-  Reset Layout are.
+- Phase 2b tools are not implemented yet: gradient, curve, polygon, lasso, magic wand, clone,
+  dithering/custom brushes, RotSprite, outline, shading, tiled drawing. See ROADMAP.md.
+- Selection is rectangular only and is not part of undo history.
+- Pencil writes colours exactly (no alpha blending). Painting a translucent colour replaces
+  the pixel rather than blending over it.
+- Duplicating group layers is not supported yet (raster layers only).
+- Imported PNGs larger than the canvas are cropped to the canvas.
+- No colour-mode conversion: indexed/grayscale constrain new paint but existing pixels are not
+  converted when the mode changes.
+- A full recomposite of very large documents is CPU-bound (1024×1024 × 20 layers ≈ 109 ms on
+  the 2-vCPU test VM). Strokes stay fast because only the dirty region is recomposited, but
+  undo, frame changes and layer property changes on huge documents will feel slow until GPU
+  compositing lands.
+- Single-key tool shortcuts are fixed; shortcut customisation is Phase 2b.
+- No AI, tileset, MCP, Lua or plugin functionality yet; those menus show one disabled entry
+  naming the planned phase.
+- Workspace presets are not implemented; layout persistence and Reset Layout are.
 
 ## Cosmetic
+- The layer action buttons wrap tightly when the Layers dock is narrow.
+- Clicking the opacity slider track moves it by a page step rather than jumping to the click
+  point (standard Qt behaviour).
 - Long file paths in the Properties panel wrap across several lines.
 - The Log panel requests the Consolas font; other platforms fall back to a default monospace.

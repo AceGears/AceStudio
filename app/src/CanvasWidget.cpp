@@ -15,6 +15,7 @@ CanvasWidget::CanvasWidget(QWidget* parent) : QWidget(parent) {
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_OpaquePaintEvent);
     setMinimumSize(200, 150);
+    setCursor(Qt::CrossCursor);
     rebuildChecker();
 }
 
@@ -24,6 +25,16 @@ void CanvasWidget::setImage(const QImage& image) {
     if (sizeChanged) m_fitPending = true;
     if (m_fitPending && isVisible()) zoomToFit();
     update();
+}
+
+void CanvasWidget::updateImageRegion(const QImage& patch, const QPoint& at) {
+    if (m_image.isNull() || patch.isNull()) return;
+    {
+        QPainter p(&m_image);
+        p.setCompositionMode(QPainter::CompositionMode_Source);
+        p.drawImage(at, patch);
+    }
+    update(imageToWidget(QRect(at, patch.size())).toAlignedRect().adjusted(-2, -2, 2, 2));
 }
 
 void CanvasWidget::setAppearance(const CanvasAppearance& a) {
@@ -88,6 +99,32 @@ void CanvasWidget::setZoomAt(double zoom, QPointF anchor) {
 
 QPointF CanvasWidget::widgetToImage(QPointF p) const { return (p - m_offset) / m_zoom; }
 
+QPoint CanvasWidget::pixelAt(QPointF w) const {
+    const QPointF ip = widgetToImage(w);
+    return {static_cast<int>(std::floor(ip.x())), static_cast<int>(std::floor(ip.y()))};
+}
+
+QRectF CanvasWidget::imageToWidget(const QRect& r) const {
+    return {m_offset.x() + r.x() * m_zoom, m_offset.y() + r.y() * m_zoom, r.width() * m_zoom, r.height() * m_zoom};
+}
+
+void CanvasWidget::setHandMode(bool on) {
+    m_handMode = on;
+    setCursor(on ? Qt::OpenHandCursor : Qt::CrossCursor);
+}
+
+void CanvasWidget::setBrushOutline(const QRect& r) {
+    if (r == m_brushOutline) return;
+    m_brushOutline = r;
+    update();
+}
+
+void CanvasWidget::setSelectionRect(const QRect& r) {
+    if (r == m_selection) return;
+    m_selection = r;
+    update();
+}
+
 void CanvasWidget::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.fillRect(rect(), m_look.background);
@@ -123,6 +160,25 @@ void CanvasWidget::paintEvent(QPaintEvent*) {
 
     p.setPen(QPen(palette().color(QPalette::Mid), 1));
     p.drawRect(target.adjusted(-1, -1, 0, 0));
+
+    // Selection: two-tone dashed outline readable on any colour.
+    if (!m_selection.isEmpty()) {
+        const QRectF r = imageToWidget(m_selection).adjusted(0, 0, -1, -1);
+        p.setPen(QPen(Qt::black, 1));
+        p.drawRect(r);
+        QPen dash(Qt::white, 1, Qt::DashLine);
+        dash.setDashPattern({4, 4});
+        p.setPen(dash);
+        p.drawRect(r);
+    }
+    // Brush footprint preview (hidden while panning).
+    if (!m_brushOutline.isEmpty() && !m_panning && !m_handMode && !m_spaceHeld) {
+        const QRectF r = imageToWidget(m_brushOutline).adjusted(0, 0, -1, -1);
+        p.setPen(QPen(QColor(0, 0, 0, 160), 1));
+        p.drawRect(r.adjusted(-1, -1, 1, 1));
+        p.setPen(QPen(QColor(255, 255, 255, 200), 1));
+        p.drawRect(r);
+    }
 }
 
 void CanvasWidget::resizeEvent(QResizeEvent*) {
@@ -154,11 +210,19 @@ void CanvasWidget::wheelEvent(QWheelEvent* e) {
 }
 
 void CanvasWidget::mousePressEvent(QMouseEvent* e) {
-    if (e->button() == Qt::MiddleButton || (e->button() == Qt::LeftButton && m_spaceHeld)) {
+    const bool panGesture = e->button() == Qt::MiddleButton ||
+                            (e->button() == Qt::LeftButton && (m_spaceHeld || m_handMode));
+    if (panGesture && !m_toolActive) {
         m_panning = true;
         m_autoFit = false;
         m_lastMouse = e->position();
         setCursor(Qt::ClosedHandCursor);
+        e->accept();
+        return;
+    }
+    if ((e->button() == Qt::LeftButton || e->button() == Qt::RightButton) && !m_panning && !m_toolActive) {
+        m_toolActive = true;
+        Q_EMIT toolPressed(pixelAt(e->position()), e->button(), e->modifiers());
         e->accept();
         return;
     }
@@ -171,16 +235,21 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* e) {
         m_lastMouse = e->position();
         update();
     }
-    const QPointF ip = widgetToImage(e->position());
-    const int x = static_cast<int>(std::floor(ip.x()));
-    const int y = static_cast<int>(std::floor(ip.y()));
-    Q_EMIT cursorMoved(x, y, x >= 0 && y >= 0 && x < m_image.width() && y < m_image.height());
+    const QPoint px = pixelAt(e->position());
+    if (m_toolActive) Q_EMIT toolMoved(px, e->buttons(), e->modifiers());
+    Q_EMIT cursorMoved(px.x(), px.y(), px.x() >= 0 && px.y() >= 0 && px.x() < m_image.width() && px.y() < m_image.height());
 }
 
 void CanvasWidget::mouseReleaseEvent(QMouseEvent* e) {
     if (m_panning && (e->button() == Qt::MiddleButton || e->button() == Qt::LeftButton)) {
         m_panning = false;
-        setCursor(m_spaceHeld ? Qt::OpenHandCursor : Qt::ArrowCursor);
+        setCursor(m_spaceHeld || m_handMode ? Qt::OpenHandCursor : Qt::CrossCursor);
+        return;
+    }
+    if (m_toolActive && (e->button() == Qt::LeftButton || e->button() == Qt::RightButton)) {
+        m_toolActive = false;
+        Q_EMIT toolReleased(pixelAt(e->position()), e->button(), e->modifiers());
+        return;
     }
     QWidget::mouseReleaseEvent(e);
 }
@@ -197,12 +266,16 @@ void CanvasWidget::keyPressEvent(QKeyEvent* e) {
 void CanvasWidget::keyReleaseEvent(QKeyEvent* e) {
     if (e->key() == Qt::Key_Space && !e->isAutoRepeat()) {
         m_spaceHeld = false;
-        if (!m_panning) setCursor(Qt::ArrowCursor);
+        if (!m_panning) setCursor(m_handMode ? Qt::OpenHandCursor : Qt::CrossCursor);
         return;
     }
     QWidget::keyReleaseEvent(e);
 }
 
-void CanvasWidget::leaveEvent(QEvent*) { Q_EMIT cursorMoved(-1, -1, false); }
+void CanvasWidget::leaveEvent(QEvent*) {
+    m_brushOutline = {};
+    update();
+    Q_EMIT cursorMoved(-1, -1, false);
+}
 
 } // namespace acestudio::ui

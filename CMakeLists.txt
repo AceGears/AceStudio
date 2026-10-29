@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(AceStudio
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "AI-assisted game asset creation and 2D animation studio"
     LANGUAGES C CXX)
 
@@ -17,6 +17,7 @@ endif()
 option(ACESTUDIO_BUILD_APP   "Build the Qt desktop application" ON)
 option(ACESTUDIO_BUILD_CLI   "Build acestudio-cli"              ON)
 option(ACESTUDIO_BUILD_TESTS "Build unit tests"                 ON)
+option(ACESTUDIO_BUILD_BENCH "Build micro-benchmarks"         ON)
 option(ACESTUDIO_WARNINGS_AS_ERRORS "Treat warnings as errors"  OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -37,6 +38,10 @@ endif()
 
 if(ACESTUDIO_BUILD_APP)
     add_subdirectory(app)
+endif()
+
+if(ACESTUDIO_BUILD_BENCH)
+    add_subdirectory(bench)
 endif()
 
 if(ACESTUDIO_BUILD_TESTS)

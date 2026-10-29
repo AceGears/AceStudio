@@ -35,6 +35,8 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < args.size(); ++i)
         if (!args[i].startsWith(QLatin1Char('-'))) window.openProject(args[i]);
 
+    QTimer::singleShot(0, &window, [&window] { window.offerRecovery(); });
+
     if (!startupWarning.isEmpty())
         QTimer::singleShot(0, &window, [&window, startupWarning] {
             QMessageBox::warning(&window, QObject::tr("AceStudio"), startupWarning);

@@ -127,6 +127,39 @@ Status Document::moveLayer(LayerId id, std::size_t newIndex) {
     return {};
 }
 
+std::optional<std::size_t> Document::layerIndex(LayerId id) const noexcept {
+    for (std::size_t i = 0; i < m_layers.size(); ++i)
+        if (m_layers[i].id == id) return i;
+    return std::nullopt;
+}
+
+std::vector<LayerId> Document::subtree(LayerId id) const {
+    std::set<LayerId> members{id};
+    bool grew = true;
+    while (grew) {
+        grew = false;
+        for (const auto& l : m_layers)
+            if (members.count(l.parent) && members.insert(l.id).second) grew = true;
+    }
+    std::vector<LayerId> out;
+    for (const auto& l : m_layers)
+        if (members.count(l.id)) out.push_back(l.id);
+    return out;
+}
+
+Status Document::insertLayerAt(const Layer& l, std::size_t index) {
+    if (l.id == kNoLayer || layer(l.id)) return Error{ErrorCode::InvalidArgument, "Layer id is invalid or in use"};
+    if (index > m_layers.size()) return Error{ErrorCode::InvalidArgument, "Layer index out of range"};
+    if (m_layers.size() >= static_cast<std::size_t>(kMaxLayers)) return Error{ErrorCode::InvalidArgument, "Layer limit reached"};
+    if (l.parent != kNoLayer) {
+        const Layer* p = layer(l.parent);
+        if (!p || p->kind != LayerKind::Group) return Error{ErrorCode::InvalidArgument, "Parent must be a group"};
+    }
+    m_layers.insert(m_layers.begin() + static_cast<std::ptrdiff_t>(index), l);
+    m_nextLayerId = std::max(m_nextLayerId, l.id + 1);
+    return {};
+}
+
 // ---------------------------------------------------------------- frames
 
 Status Document::setFrameDuration(int frame, int durationMs) {
@@ -225,6 +258,14 @@ Status Document::addTag(AnimationTag tag) {
     return {};
 }
 
+Status Document::replaceTags(std::vector<AnimationTag> tags) {
+    for (const auto& t : tags)
+        if (t.name.empty() || t.fromFrame < 0 || t.toFrame >= frameCount() || t.fromFrame > t.toFrame || t.repeat < 0)
+            return Error{ErrorCode::InvalidArgument, "Invalid tag '" + t.name + "'"};
+    m_tags = std::move(tags);
+    return {};
+}
+
 Status Document::removeTag(std::size_t index) {
     if (index >= m_tags.size()) return Error{ErrorCode::InvalidArgument, "Tag index out of range"};
     m_tags.erase(m_tags.begin() + static_cast<std::ptrdiff_t>(index));
@@ -233,8 +274,8 @@ Status Document::removeTag(std::size_t index) {
 
 // ---------------------------------------------------------------- compositing
 
-bool Document::isEffectivelyVisible(const Layer& l) const noexcept {
-    const Layer* cur = &l;
+bool Document::isLayerEffectivelyVisible(LayerId id) const noexcept {
+    const Layer* cur = layer(id);
     for (int depth = 0; cur && depth <= kMaxLayers; ++depth) {
         if (!cur->visible) return false;
         if (cur->parent == kNoLayer) return true;
@@ -243,33 +284,50 @@ bool Document::isEffectivelyVisible(const Layer& l) const noexcept {
     return false;
 }
 
-std::uint8_t Document::effectiveOpacity(const Layer& l) const noexcept {
-    unsigned op = l.opacity;
-    const Layer* cur = l.parent == kNoLayer ? nullptr : layer(l.parent);
-    for (int depth = 0; cur && depth <= kMaxLayers; ++depth) {
-        op = (op * cur->opacity + 127u) / 255u;
-        cur = cur->parent == kNoLayer ? nullptr : layer(cur->parent);
+bool Document::isLayerEditable(LayerId id) const noexcept {
+    const Layer* l = layer(id);
+    if (!l || l->kind != LayerKind::Raster) return false;
+    for (int depth = 0; l && depth <= kMaxLayers; ++depth) {
+        if (l->locked) return false;
+        if (l->parent == kNoLayer) return true;
+        l = layer(l->parent);
     }
-    return static_cast<std::uint8_t>(op);
+    return false;
+}
+
+
+void Document::compositeChildren(LayerId parent, int frame, Image& out, int ox, int oy, int depth) const {
+    if (depth > kMaxLayers) return;   // defensive; validate() rejects cycles
+    for (const Layer& l : m_layers) {
+        if (l.parent != parent || !l.visible || l.opacity == 0) continue;
+        if (l.kind == LayerKind::Raster) {
+            if (const Cel* c = cel(l.id, frame)) blendImage(out, c->image, c->x - ox, c->y - oy, l.blend, l.opacity);
+        } else {
+            Image group(out.width(), out.height());
+            compositeChildren(l.id, frame, group, ox, oy, depth + 1);
+            blendImage(out, group, 0, 0, l.blend, l.opacity);
+        }
+    }
 }
 
 Image Document::composite(int frame) const {
     Image out(m_width, m_height);
     if (frame < 0 || frame >= frameCount()) return out;
-    for (const Layer& l : m_layers) {
-        if (l.kind != LayerKind::Raster || !isEffectivelyVisible(l)) continue;
-        const Cel* c = cel(l.id, frame);
-        if (!c) continue;
-        const std::uint8_t opacity = effectiveOpacity(l);
-        if (opacity == 0) continue;
-        const IntRect area = IntRect{c->x, c->y, c->image.width(), c->image.height()}.intersected(out.bounds());
-        for (int y = area.y; y < area.y + area.h; ++y)
-            for (int x = area.x; x < area.x + area.w; ++x) {
-                const Rgba8 src = c->image.pixel(x - c->x, y - c->y);
-                if (src.a == 0) continue;
-                out.setPixel(x, y, blendPixel(out.pixel(x, y), src, l.blend, opacity));
-            }
-    }
+    compositeChildren(kNoLayer, frame, out, 0, 0, 0);
+    return out;
+}
+
+void Document::compositeRegion(int frame, const IntRect& region, Image& canvas) const {
+    const IntRect r = region.intersected({0, 0, m_width, m_height}).intersected(canvas.bounds());
+    if (r.empty()) return;
+    Image part(r.w, r.h);
+    if (frame >= 0 && frame < frameCount()) compositeChildren(kNoLayer, frame, part, r.x, r.y, 0);
+    canvas.blit(part, r.x, r.y);
+}
+
+Image Document::renderLayer(LayerId id, int frame) const {
+    Image out(m_width, m_height);
+    if (const Cel* c = cel(id, frame)) out.blit(c->image, c->x, c->y);
     return out;
 }
 

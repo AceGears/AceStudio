@@ -31,8 +31,17 @@ public:
     explicit CanvasWidget(QWidget* parent = nullptr);
 
     void setImage(const QImage& image);
+    // Replaces part of the displayed image without copying the whole frame.
+    void updateImageRegion(const QImage& patch, const QPoint& at);
     void setAppearance(const CanvasAppearance& a);
     double zoom() const { return m_zoom; }
+
+    // When true, a left drag pans instead of reporting tool events.
+    void setHandMode(bool on);
+    // Outline of the brush footprint under the cursor (image coords).
+    void setBrushOutline(const QRect& r);
+    // Marching outline of the active selection (empty = none).
+    void setSelectionRect(const QRect& r);
 
 public Q_SLOTS:
     void zoomIn();
@@ -44,6 +53,10 @@ public Q_SLOTS:
 Q_SIGNALS:
     void cursorMoved(int x, int y, bool inside);
     void zoomChanged(double zoom);
+    // Tool input in image pixel coordinates (may lie outside the canvas).
+    void toolPressed(QPoint pixel, Qt::MouseButton button, Qt::KeyboardModifiers mods);
+    void toolMoved(QPoint pixel, Qt::MouseButtons buttons, Qt::KeyboardModifiers mods);
+    void toolReleased(QPoint pixel, Qt::MouseButton button, Qt::KeyboardModifiers mods);
 
 protected:
     void paintEvent(QPaintEvent*) override;
@@ -60,6 +73,8 @@ protected:
 private:
     void setZoomAt(double zoom, QPointF anchorWidget);
     QPointF widgetToImage(QPointF p) const;
+    QPoint pixelAt(QPointF widgetPos) const;
+    QRectF imageToWidget(const QRect& r) const;
     void rebuildChecker();
 
     QImage m_image;
@@ -71,7 +86,11 @@ private:
     bool m_autoFit = true;         // refit on resize until the user zooms or pans
     bool m_panning = false;
     bool m_spaceHeld = false;
+    bool m_handMode = false;
+    bool m_toolActive = false;
     QPointF m_lastMouse;
+    QRect m_brushOutline;
+    QRect m_selection;
 };
 
 } // namespace acestudio::ui

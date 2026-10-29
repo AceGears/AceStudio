@@ -1,6 +1,7 @@
 #pragma once
 
 #include "acestudio/core/Color.h"
+#include "acestudio/core/Image.h"
 
 #include <optional>
 #include <string_view>
@@ -27,5 +28,8 @@ std::optional<BlendMode> blendModeFromString(std::string_view s) noexcept;
 // Uses the W3C compositing model: B(Cb, Cs) mixed by backdrop alpha,
 // then source-over.
 Rgba8 blendPixel(Rgba8 dst, Rgba8 src, BlendMode mode, std::uint8_t opacity) noexcept;
+
+// Blends `src`, positioned at (ox, oy), onto `dst` (clipped to dst bounds).
+void blendImage(Image& dst, const Image& src, int ox, int oy, BlendMode mode, std::uint8_t opacity) noexcept;
 
 } // namespace acestudio

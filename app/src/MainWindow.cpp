@@ -11,6 +11,9 @@
 #include "panels/PalettePanel.h"
 #include "panels/PropertiesPanel.h"
 #include "panels/TimelinePanel.h"
+#include "panels/ToolsPanel.h"
+#include "ToolState.h"
+#include "acestudio/core/PngCodec.h"
 
 #include "acestudio/core/Log.h"
 #include "acestudio/core/ProjectIO.h"
@@ -25,6 +28,8 @@
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QShortcut>
+#include <QTimer>
 #include <QLabel>
 #include <QListWidget>
 #include <QMenuBar>
@@ -66,6 +71,7 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
     m_stack->addWidget(m_tabs);
     setCentralWidget(m_stack);
 
+    m_tools = new ToolState(this);
     buildDocks();
     buildMenus();
 
@@ -80,6 +86,11 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
     connect(&m_ctx, &AppContext::recentProjectsChanged, this, &MainWindow::rebuildRecentMenus);
     rebuildRecentMenus();
 
+    m_recovery = std::make_unique<RecoveryStore>(m_ctx.dataDir() / "recovery");
+    m_autosaveTimer = new QTimer(this);
+    connect(m_autosaveTimer, &QTimer::timeout, this, &MainWindow::autosaveTick);
+    applyAutosaveInterval();
+
     m_defaultState = saveState();
     restoreWindowState();
     onCurrentTabChanged();
@@ -90,8 +101,9 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
 QWidget* MainWindow::buildWelcome() {
     auto* page = new QWidget(this);
     auto* title = new QLabel(QStringLiteral("<span style='font-size:22pt; font-weight:600'>AceStudio</span>"
-                                            "<br><span style='color:palette(placeholder-text)'>%1 %2</span>")
-                                 .arg(tr("Version"), QString::fromLatin1(kVersionString)), page);
+                                            "<br><span style='color:%3'>%1 %2</span>")
+                                 .arg(tr("Version"), QString::fromLatin1(kVersionString),
+                                      palette().color(QPalette::PlaceholderText).name()), page);
     auto* newBtn = new QPushButton(tr("New Project…"), page);
     auto* openBtn = new QPushButton(tr("Open Project…"), page);
     newBtn->setDefault(true);
@@ -138,10 +150,12 @@ void MainWindow::buildDocks() {
     };
     m_layers = new LayersPanel(this);
     m_props = new PropertiesPanel(this);
-    m_palette = new PalettePanel(this);
+    m_palette = new PalettePanel(m_tools, this);
+    m_toolsPanel = new ToolsPanel(m_tools, this);
     m_timeline = new TimelinePanel(this);
     m_log = new LogPanel(this);
 
+    m_toolsDock = makeDock(tr("Tools"), QStringLiteral("dock.tools"), m_toolsPanel, Qt::LeftDockWidgetArea);
     m_layersDock = makeDock(tr("Layers"), QStringLiteral("dock.layers"), m_layers, Qt::RightDockWidgetArea);
     m_propsDock = makeDock(tr("Properties"), QStringLiteral("dock.properties"), m_props, Qt::RightDockWidgetArea);
     m_paletteDock = makeDock(tr("Palette"), QStringLiteral("dock.palette"), m_palette, Qt::RightDockWidgetArea);
@@ -149,7 +163,7 @@ void MainWindow::buildDocks() {
     m_logDock = makeDock(tr("Log"), QStringLiteral("dock.log"), m_log, Qt::BottomDockWidgetArea);
     tabifyDockWidget(m_timelineDock, m_logDock);
     m_timelineDock->raise();
-    resizeDocks({m_layersDock}, {300}, Qt::Horizontal);
+    resizeDocks({m_layersDock, m_toolsDock}, {300, 170}, Qt::Horizontal);
     resizeDocks({m_timelineDock}, {130}, Qt::Vertical);
 }
 
@@ -177,12 +191,23 @@ void MainWindow::buildMenus() {
     docAction(file, tr("Save &As…"), QKeySequence::SaveAs, [this] { saveAs(currentView()); });
     docAction(file, tr("&Close"), QKeySequence::Close, [this] { closeTab(m_tabs->currentIndex()); });
     file->addSeparator();
+    file->addAction(tr("&Import PNG as New Project…"), this, [this] { importPng(false); });
+    docAction(file, tr("Import PNG as &Layer…"), QKeySequence(), [this] { importPng(true); });
+    docAction(file, tr("&Export Frame as PNG…"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E), [this] { exportPng(); });
+    file->addSeparator();
     QAction* quit = file->addAction(tr("E&xit"), QKeySequence::Quit, this, &QWidget::close);
     quit->setMenuRole(QAction::QuitRole);
 
     // Menus whose functionality lands in later phases are present for
     // orientation but clearly marked unavailable (no fake actions).
-    planned(menuBar()->addMenu(tr("&Edit")), tr("Undo/redo and clipboard — Phase 2"));
+    QMenu* edit = menuBar()->addMenu(tr("&Edit"));
+    m_undoAction = docAction(edit, tr("&Undo"), QKeySequence::Undo, [this] { report(currentView()->editor().undo()); });
+    m_redoAction = docAction(edit, tr("&Redo"), QKeySequence(), [this] { report(currentView()->editor().redo()); });
+    m_redoAction->setShortcuts({QKeySequence(Qt::CTRL | Qt::Key_Y), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z)});
+    edit->addSeparator();
+    docAction(edit, tr("Select &All"), QKeySequence::SelectAll, [this] { currentView()->selectAll(); });
+    docAction(edit, tr("&Deselect"), QKeySequence(Qt::CTRL | Qt::Key_D), [this] { currentView()->deselect(); });
+    docAction(edit, tr("D&elete Selection / Clear Layer"), QKeySequence::Delete, [this] { currentView()->clearSelectionContents(); });
 
     // View
     QMenu* view = menuBar()->addMenu(tr("&View"));
@@ -210,8 +235,30 @@ void MainWindow::buildMenus() {
     connect(m_darkAction, &QAction::triggered, this, [this] { setThemeAndPersist(QStringLiteral("dark")); });
     connect(m_lightAction, &QAction::triggered, this, [this] { setThemeAndPersist(QStringLiteral("light")); });
 
-    planned(menuBar()->addMenu(tr("&Image")), tr("Resize, crop and color modes — Phase 2"));
-    planned(menuBar()->addMenu(tr("&Layer")), tr("Layer editing — Phase 2"));
+    planned(menuBar()->addMenu(tr("&Image")), tr("Resize, crop, rotate and color-mode conversion — planned"));
+    QMenu* layer = menuBar()->addMenu(tr("&Layer"));
+    docAction(layer, tr("&New Layer"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N), [this] {
+        auto* v = currentView();
+        auto r = v->editor().addLayer("", LayerKind::Raster, v->currentLayer());
+        if (r) v->setCurrentLayer(r.value()); else report(r.error());
+    });
+    docAction(layer, tr("New &Group"), QKeySequence(), [this] {
+        auto* v = currentView();
+        auto r = v->editor().addLayer("", LayerKind::Group, v->currentLayer());
+        if (r) v->setCurrentLayer(r.value()); else report(r.error());
+    });
+    docAction(layer, tr("&Duplicate Layer"), QKeySequence(Qt::CTRL | Qt::Key_J), [this] {
+        auto* v = currentView();
+        auto r = v->editor().duplicateLayer(v->currentLayer());
+        if (r) v->setCurrentLayer(r.value()); else report(r.error());
+    });
+    docAction(layer, tr("&Merge Down"), QKeySequence(Qt::CTRL | Qt::Key_E), [this] {
+        report(currentView()->editor().mergeDown(currentView()->currentLayer()));
+    });
+    layer->addSeparator();
+    docAction(layer, tr("De&lete Layer"), QKeySequence(), [this] {
+        report(currentView()->editor().removeLayer(currentView()->currentLayer()));
+    });
 
     // Animation
     QMenu* anim = menuBar()->addMenu(tr("&Animation"));
@@ -219,15 +266,47 @@ void MainWindow::buildMenus() {
     docAction(anim, tr("&Next Frame"), QKeySequence(Qt::Key_Period), [this] { m_timeline->stepFrame(1); });
     docAction(anim, tr("P&revious Frame"), QKeySequence(Qt::Key_Comma), [this] { m_timeline->stepFrame(-1); });
     anim->addSeparator();
-    planned(anim, tr("Frame editing and onion skin — Phase 3"));
+    docAction(anim, tr("New &Frame"), QKeySequence(Qt::ALT | Qt::Key_N), [this] {
+        auto* v = currentView();
+        const int at = v->currentFrame() + 1;
+        auto r = v->editor().insertFrame(at, v->document().frames()[static_cast<std::size_t>(at - 1)].durationMs);
+        if (r) v->setCurrentFrame(at); else report(r.error());
+    });
+    docAction(anim, tr("D&uplicate Frame"), QKeySequence(Qt::ALT | Qt::Key_D), [this] {
+        auto* v = currentView();
+        auto r = v->editor().duplicateFrame(v->currentFrame());
+        if (r) v->setCurrentFrame(r.value()); else report(r.error());
+    });
+    docAction(anim, tr("Delete Fra&me"), QKeySequence(), [this] {
+        report(currentView()->editor().removeFrame(currentView()->currentFrame()));
+    });
+    anim->addSeparator();
+    planned(anim, tr("Onion skin, tags editor and frame reordering — Phase 3"));
 
     planned(menuBar()->addMenu(tr("AI &Studio")), tr("Local AI generation — Phase 4"));
     planned(menuBar()->addMenu(tr("&Tilesets")), tr("Tileset and terrain tools — Phase 6"));
-    planned(menuBar()->addMenu(tr("T&ools")), tr("Drawing tools — Phase 2"));
+    QMenu* toolsMenu = menuBar()->addMenu(tr("T&ools"));
+    auto* toolGroup = new QActionGroup(this);
+    for (Tool t : {Tool::Pencil, Tool::Eraser, Tool::Line, Tool::Rectangle, Tool::Ellipse, Tool::Fill,
+                   Tool::Eyedropper, Tool::Select, Tool::Hand}) {
+        QAction* a = toolsMenu->addAction(toolName(t));
+        a->setShortcut(QKeySequence(toolShortcut(t)));
+        a->setCheckable(true);
+        a->setChecked(m_tools->tool() == t);
+        toolGroup->addAction(a);
+        connect(a, &QAction::triggered, this, [this, t] { m_tools->setTool(t); });
+        connect(m_tools, &ToolState::changed, a, [this, a, t] { a->setChecked(m_tools->tool() == t); });
+    }
+    toolsMenu->addSeparator();
+    toolsMenu->addAction(tr("Swap Colors"), QKeySequence(Qt::Key_X), m_tools, &ToolState::swapColors);
+    toolsMenu->addAction(tr("Smaller Brush"), QKeySequence(Qt::Key_BracketLeft), this,
+                         [this] { m_tools->setBrushSize(m_tools->brush().size - 1); });
+    toolsMenu->addAction(tr("Larger Brush"), QKeySequence(Qt::Key_BracketRight), this,
+                         [this] { m_tools->setBrushSize(m_tools->brush().size + 1); });
 
     // Window
     QMenu* window = menuBar()->addMenu(tr("&Window"));
-    for (QDockWidget* d : {m_layersDock, m_propsDock, m_paletteDock, m_timelineDock, m_logDock})
+    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_propsDock, m_paletteDock, m_timelineDock, m_logDock})
         window->addAction(d->toggleViewAction());
     window->addSeparator();
     window->addAction(tr("&Reset Layout"), this, &MainWindow::resetLayout);
@@ -255,7 +334,7 @@ void MainWindow::saveWindowState() {
 }
 
 void MainWindow::resetLayout() {
-    for (QDockWidget* d : {m_layersDock, m_propsDock, m_paletteDock, m_timelineDock, m_logDock}) {
+    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_propsDock, m_paletteDock, m_timelineDock, m_logDock}) {
         d->setFloating(false);
         d->show();
     }
@@ -280,6 +359,8 @@ void MainWindow::addView(DocumentView* view) {
     view->canvas()->setAppearance(look);
 
     connect(view, &DocumentView::modifiedChanged, this, [this, view] { updateTabTitle(view); });
+    connect(view, &DocumentView::documentChanged, this, [this, view] { if (view == currentView()) updateActions(); });
+    connect(view, &DocumentView::statusMessage, this, [this](const QString& m) { statusBar()->showMessage(m, 4000); });
     connect(view, &DocumentView::cursorMoved, this, [this](int x, int y, bool inside) {
         m_statusCursor->setText(inside ? QStringLiteral("X %1  Y %2").arg(x).arg(y) : QString());
     });
@@ -320,8 +401,16 @@ void MainWindow::onCurrentTabChanged() {
 }
 
 void MainWindow::updateActions() {
-    const bool hasDoc = currentView() != nullptr;
+    DocumentView* v = currentView();
+    const bool hasDoc = v != nullptr;
     for (QAction* a : m_docActions) a->setEnabled(hasDoc);
+    if (m_undoAction && m_redoAction) {
+        const auto& h = hasDoc ? &v->editor().history() : nullptr;
+        m_undoAction->setEnabled(h && h->canUndo());
+        m_redoAction->setEnabled(h && h->canRedo());
+        m_undoAction->setText(h && h->canUndo() ? tr("&Undo %1").arg(qs(h->undoLabel())) : tr("&Undo"));
+        m_redoAction->setText(h && h->canRedo() ? tr("&Redo %1").arg(qs(h->redoLabel())) : tr("&Redo"));
+    }
 }
 
 void MainWindow::newProject() {
@@ -334,9 +423,9 @@ void MainWindow::newProject() {
     }
     (void)doc.value().addLayer("Layer 1");
     for (int i = 1; i < dlg.frameCount(); ++i) (void)doc.value().insertFrame(i);
-    auto* view = new DocumentView(std::move(doc).value(), QString(), ProjectInfo{}, m_tabs);
+    auto* view = new DocumentView(std::move(doc).value(), QString(), ProjectInfo{}, m_tools, m_tabs);
     addView(view);
-    view->notifyDocumentChanged(true);   // new and unsaved
+    view->markNeverSaved();
     ACE_LOG_INFO("ui", "Created new " + std::to_string(dlg.canvasWidth()) + "x" + std::to_string(dlg.canvasHeight()) + " project");
 }
 
@@ -372,7 +461,7 @@ bool MainWindow::openProject(const QString& pathIn) {
         QMessageBox::warning(this, tr("Open Project"), msg);
         return false;
     }
-    addView(new DocumentView(std::move(doc).value(), path, info, m_tabs));
+    addView(new DocumentView(std::move(doc).value(), path, info, m_tools, m_tabs));
     m_ctx.addRecentProject(path);
     return true;
 }
@@ -386,6 +475,7 @@ bool MainWindow::save(DocumentView* view) {
         return false;
     }
     m_ctx.addRecentProject(view->filePath());
+    discardRecovery(view);
     statusBar()->showMessage(tr("Saved %1").arg(view->displayName()), 3000);
     return true;
 }
@@ -415,6 +505,7 @@ bool MainWindow::saveAs(DocumentView* view) {
         return false;
     }
     m_ctx.addRecentProject(path);
+    discardRecovery(view);
     updateTabTitle(view);
     return true;
 }
@@ -433,6 +524,7 @@ bool MainWindow::maybeSave(DocumentView* view) {
 bool MainWindow::closeTab(int index) {
     auto* view = qobject_cast<DocumentView*>(m_tabs->widget(index));
     if (!view || !maybeSave(view)) return false;
+    discardRecovery(view);
     m_tabs->removeTab(m_tabs->indexOf(view));
     view->deleteLater();
     onCurrentTabChanged();
@@ -493,6 +585,146 @@ void MainWindow::showNotices() {
     box.exec();
 }
 
+void MainWindow::report(const Status& st) {
+    if (!st) statusBar()->showMessage(qs(st.error().message), 4000);
+}
+
+void MainWindow::report(const Error& e) { statusBar()->showMessage(qs(e.message), 4000); }
+
+void MainWindow::importPng(bool asLayer) {
+    const QString path = QFileDialog::getOpenFileName(this, asLayer ? tr("Import PNG as Layer") : tr("Import PNG"),
+                                                      QDir::homePath(), tr("PNG Images (*.png)"));
+    if (path.isEmpty()) return;
+    auto img = readPng(toPath(path));
+    if (!img) {
+        QMessageBox::warning(this, tr("Import PNG"), tr("Could not read %1.\n\n%2").arg(QDir::toNativeSeparators(path), qs(img.error().message)));
+        return;
+    }
+    const std::string name = QFileInfo(path).completeBaseName().toStdString();
+    if (!asLayer) {
+        auto doc = Document::create(img.value().width(), img.value().height());
+        if (!doc) { report(doc.error()); return; }
+        const LayerId l = doc.value().addLayer(name).value();
+        (void)doc.value().setCel(l, 0, Cel{std::move(img).value(), 0, 0});
+        auto* view = new DocumentView(std::move(doc).value(), QString(), ProjectInfo{}, m_tools, m_tabs);
+        addView(view);
+        view->markNeverSaved();
+        return;
+    }
+    DocumentView* v = currentView();
+    if (!v) return;
+    // Pasted at the top-left; images larger than the canvas are clipped by
+    // compositing but kept whole in the cel.
+    auto layerId = v->editor().addLayer(name, LayerKind::Raster, v->currentLayer());
+    if (!layerId) { report(layerId.error()); return; }
+    auto session = PaintSession::begin(v->editor(), layerId.value(), v->currentFrame(), "Import PNG");
+    if (!session) { report(session.error()); return; }
+    const Image& src = img.value();
+    for (int y = 0; y < std::min(src.height(), v->document().height()); ++y)
+        for (int x = 0; x < std::min(src.width(), v->document().width()); ++x)
+            if (src.pixel(x, y).a) session.value()->writePixel(x, y, src.pixel(x, y));
+    session.value()->commit();
+    v->setCurrentLayer(layerId.value());
+    if (src.width() > v->document().width() || src.height() > v->document().height())
+        statusBar()->showMessage(tr("Image was larger than the canvas and has been cropped."), 5000);
+}
+
+void MainWindow::exportPng() {
+    DocumentView* v = currentView();
+    if (!v) return;
+    QString base = v->filePath().isEmpty() ? QDir(QDir::homePath()).filePath(QStringLiteral("untitled"))
+                                           : v->filePath().left(v->filePath().lastIndexOf(QLatin1Char('.')));
+    const QString suggested = v->document().frameCount() > 1 ? QStringLiteral("%1_%2.png").arg(base).arg(v->currentFrame() + 1)
+                                                            : base + QStringLiteral(".png");
+    const QString path = QFileDialog::getSaveFileName(this, tr("Export Frame as PNG"), suggested, tr("PNG Images (*.png)"));
+    if (path.isEmpty()) return;
+    if (auto st = writePng(v->document().composite(v->currentFrame()), toPath(path)); !st) {
+        QMessageBox::critical(this, tr("Export PNG"), qs(st.error().message));
+        return;
+    }
+    statusBar()->showMessage(tr("Exported %1").arg(QDir::toNativeSeparators(path)), 4000);
+}
+
+void MainWindow::applyAutosaveInterval() {
+    const int sec = m_ctx.settings().get<int>("general.autosaveIntervalSec");
+    if (sec <= 0) {
+        m_autosaveTimer->stop();
+        ACE_LOG_INFO("autosave", "Autosave disabled");
+        return;
+    }
+    m_autosaveTimer->start(std::max(5, sec) * 1000);
+}
+
+void MainWindow::autosaveTick() {
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        auto* v = static_cast<DocumentView*>(m_tabs->widget(i));
+        if (!v->needsAutosave() || v->isBusy()) continue;
+        const auto st = m_recovery->write(v->recoveryId(), v->document(), v->filePath().toStdString(),
+                                          v->displayName().toStdString());
+        if (st) {
+            v->markAutosaved();
+            ACE_LOG_DEBUG("autosave", "Recovery copy written for " + v->displayName().toStdString());
+        } else {
+            ACE_LOG_ERROR("autosave", "Recovery copy failed: " + st.error().message);
+            if (!m_autosaveErrorShown) {
+                m_autosaveErrorShown = true;
+                statusBar()->showMessage(tr("Autosave failed: %1").arg(qs(st.error().message)), 8000);
+            }
+        }
+    }
+}
+
+void MainWindow::discardRecovery(DocumentView* view) {
+    if (!view || !m_recovery) return;
+    (void)m_recovery->remove(view->recoveryId());
+}
+
+void MainWindow::offerRecovery() {
+    std::vector<std::string> problems;
+    const auto entries = m_recovery->orphaned(&problems);
+    for (const auto& p : problems) ACE_LOG_WARN("recovery", p);
+    if (entries.empty()) return;
+
+    QString list;
+    for (const auto& e : entries) {
+        list += QStringLiteral("• %1  (%2)\n").arg(qs(e.title), qs(e.savedUtc).left(19).replace(QLatin1Char('T'), QLatin1Char(' ')));
+    }
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle(tr("Recover Unsaved Work"));
+    box.setText(tr("AceStudio did not close normally. Unsaved work was found for:"));
+    box.setInformativeText(list + tr("\nTimes are UTC. Recovered documents open as unsaved changes; save them to keep them."));
+    QPushButton* recover = box.addButton(tr("Recover"), QMessageBox::AcceptRole);
+    QPushButton* discard = box.addButton(tr("Discard"), QMessageBox::DestructiveRole);
+    box.addButton(tr("Decide Later"), QMessageBox::RejectRole);
+    box.setDefaultButton(recover);
+    box.exec();
+
+    if (box.clickedButton() == discard) {
+        if (QMessageBox::question(this, tr("Discard Recovered Work"),
+                                  tr("Permanently delete the recovered copies? This cannot be undone.")) != QMessageBox::Yes)
+            return;
+        for (const auto& e : entries) (void)m_recovery->remove(e.id);
+        ACE_LOG_INFO("recovery", "User discarded " + std::to_string(entries.size()) + " recovery file(s)");
+        return;
+    }
+    if (box.clickedButton() != recover) return;
+
+    for (const auto& e : entries) {
+        auto doc = loadProject(e.projectFile);
+        if (!doc) {
+            QMessageBox::warning(this, tr("Recover"), tr("Could not recover %1:\n%2").arg(qs(e.title), qs(doc.error().message)));
+            continue;   // keep the files so nothing is lost
+        }
+        auto* view = new DocumentView(std::move(doc).value(), qs(e.originalPath), ProjectInfo{}, m_tools, m_tabs);
+        view->setRecoveryId(e.id);   // keep protecting it under the same id
+        addView(view);
+        view->markNeverSaved();
+        ACE_LOG_INFO("recovery", "Recovered " + e.title);
+    }
+    autosaveTick();   // re-stamp recovered files with this process id
+}
+
 void MainWindow::closeEvent(QCloseEvent* e) {
     for (int i = 0; i < m_tabs->count(); ++i) {
         if (!maybeSave(static_cast<DocumentView*>(m_tabs->widget(i)))) {
@@ -500,6 +732,7 @@ void MainWindow::closeEvent(QCloseEvent* e) {
             return;
         }
     }
+    for (int i = 0; i < m_tabs->count(); ++i) discardRecovery(static_cast<DocumentView*>(m_tabs->widget(i)));
     saveWindowState();
     m_ctx.saveSettings();
     ACE_LOG_INFO("app", "Shutting down");

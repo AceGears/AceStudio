@@ -99,6 +99,15 @@ public:
     Result<LayerId> addLayer(std::string name, LayerKind kind = LayerKind::Raster, LayerId parent = kNoLayer);
     Status removeLayer(LayerId id);     // removes children of groups and their cels
     Status moveLayer(LayerId id, std::size_t newIndex);
+    std::optional<std::size_t> layerIndex(LayerId id) const noexcept;
+    // Layer plus all nested descendants, in stack order (bottom -> top).
+    std::vector<LayerId> subtree(LayerId id) const;
+    // Re-inserts a fully specified layer (exact id) at a stack index; used by undo.
+    Status insertLayerAt(const Layer& layer, std::size_t index);
+    bool isLayerEffectivelyVisible(LayerId id) const noexcept;
+    // True if `id` is a raster layer whose pixels may be edited (not locked,
+    // no locked ancestor).
+    bool isLayerEditable(LayerId id) const noexcept;
 
     // ---- Frames ----
     int frameCount() const noexcept { return static_cast<int>(m_frames.size()); }
@@ -119,6 +128,7 @@ public:
     const std::vector<AnimationTag>& tags() const noexcept { return m_tags; }
     Status addTag(AnimationTag tag);
     Status removeTag(std::size_t index);
+    Status replaceTags(std::vector<AnimationTag> tags);   // validated as a whole
 
     // Free-form, namespaced extension data preserved on save: AI
     // generation settings, model provenance, export presets, tileset
@@ -127,7 +137,13 @@ public:
     const nlohmann::json& extensions() const noexcept { return m_extensions; }
 
     // Renders all visible layers of a frame into a canvas-sized image.
+    // Groups are composited in isolation and then blended with their own
+    // blend mode and opacity (W3C group semantics).
     Image composite(int frame) const;
+    // Recomposites only `region` of `canvas` (a canvas-sized image).
+    void compositeRegion(int frame, const IntRect& region, Image& canvas) const;
+    // One raster layer's cel placed on a canvas-sized transparent image.
+    Image renderLayer(LayerId id, int frame) const;
 
     // Checks structural invariants; used after loading untrusted files.
     Status validate() const;
@@ -138,8 +154,9 @@ public:
 
 private:
     Document() = default;
-    bool isEffectivelyVisible(const Layer& l) const noexcept;
-    std::uint8_t effectiveOpacity(const Layer& l) const noexcept;
+    // Composites children of `parent` into `out`, which covers canvas area
+    // starting at (originX, originY).
+    void compositeChildren(LayerId parent, int frame, Image& out, int originX, int originY, int depth) const;
 
     int m_width = 0;
     int m_height = 0;

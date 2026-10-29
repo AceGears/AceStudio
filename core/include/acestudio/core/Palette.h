@@ -29,6 +29,7 @@ public:
     Status add(Rgba8 c);
     Status set(std::size_t i, Rgba8 c);
     Status remove(std::size_t i);
+    Status insert(std::size_t i, Rgba8 c);
     void clear() noexcept { m_colors.clear(); }
 
     // Exact match index, if present.

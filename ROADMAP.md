@@ -5,7 +5,7 @@ integration or recorded manual check on Windows). Status is updated as work land
 
 Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 blocked
 
-## Phase 1 — Architecture & Foundation · 🟡 (core done; Windows verification pending)
+## Phase 1 — Architecture & Foundation · 🟡 (done except real-Windows verification)
 
 | Criterion | Status |
 |---|---|
@@ -22,12 +22,31 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | App builds and runs on Windows 10/11 with MSVC and Qt 6.12 | ⬜ needs Windows machine/CI |
 | High-DPI check at 150%/200% scaling on Windows | ⬜ |
 
-## Phase 2 — Core Editor · ⬜
-Acceptance: pencil/eraser/fill/line/rect/ellipse/selection/eyedropper with pixel-perfect mode;
-layer create/rename/reorder/duplicate/merge/opacity/blend UI; undo/redo for every document
-mutation (tested); indexed/grayscale constraints enforced; PNG import/export; autosave every N
-seconds to a recovery file with crash-recovery prompt (tested by killing the process);
-60 FPS canvas interaction measured on a 256×256 document with 20 layers.
+## Phase 2 — Core Editor · 🟡 (2a done; 2b remaining)
+
+### 2a — delivered in 0.2.0
+| Criterion | Status |
+|---|---|
+| Pencil, eraser, line, rectangle, ellipse (outline/filled), paint bucket (contiguous/global, tolerance), eyedropper (merged/layer), rectangle select, hand | ✅ unit-tested and driven in the running app |
+| Pixel-perfect freehand, brush size 1–64, square/circle brush, mirror L↔R / T↕B / both | ✅ |
+| Selection clipping, alpha lock, layer lock, hidden-layer protection | ✅ |
+| Indexed (nearest palette colour) and grayscale constraints while painting | ✅ |
+| Undo/redo for every document mutation, exact round-trip tested; merge of slider drags; memory/step limits; clean-state tracking | ✅ |
+| Layer UI: add, group, rename, reorder, duplicate, merge down, delete, visibility, opacity, blend, locks | ✅ |
+| Frame UI: insert, duplicate, delete, duration | ✅ |
+| Palette: pick primary/secondary, edit, add, remove | ✅ |
+| PNG import (as project or layer) and frame export | ✅ |
+| Autosave to recovery files + recovery prompt after a crash | ✅ tested by `kill -9` of the running app |
+| Isolated group compositing (W3C semantics) | ✅ |
+| Canvas performance: 256×256, 20 layers | ✅ full composite 9.2 ms; stroke updates recomposite only the dirty region (~0.2 ms). Measured on a 2-vCPU Xeon VM, CPU only. Real-display FPS on Windows not yet measured |
+
+### 2b — remaining
+Gradient, curve, polygon, lasso, magic wand, clone, dithering and custom brushes; RotSprite
+rotation and nearest-neighbour scaling; outline generation; shading mode; tiled drawing and
+seamless preview; configurable shortcuts; colour-mode conversion; palette import/export
+(.gpl, .pal, .hex, .ase); canvas resize/crop/flip; layer masks, clipping masks and adjustment
+layers; GPU-accelerated compositing for large HD canvases (1024² × 20 layers currently 109 ms
+for a full recomposite).
 
 ## Phase 3 — Animation · ⬜
 Acceptance: frame insert/delete/duplicate/reorder/drag; per-frame durations; tags with

@@ -1,11 +1,12 @@
 # Testing
 
-## Running the tests
+## Running the tests and benchmarks
 
 ```sh
 cmake --preset core-only && cmake --build --preset core-only && ctest --preset core-only
 ```
 
+Benchmarks: `build/<preset>/bench/acestudio_bench` (build in Release for meaningful numbers).
 On Windows use the `windows-release` preset. Tests never touch real user data: they use unique
 temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and logs.
 
@@ -21,9 +22,45 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 | `test_fileutil` | unit | atomic write create/replace/backup, size limits, timestamps, data-dir override |
 | `test_settings` | unit | defaults, type enforcement, persistence, corrupt-file quarantine, unknown/mistyped values skipped, newer schema not overwritten |
 | `test_log` | unit | level filtering, file sink, listener, rotation |
+| `test_undo` | unit | push/undo/redo, failed commands not recorded, redo-branch discard, clean point, merging, step and memory limits |
+| `test_editor` | unit | every Editor operation (layers, frames, palette) is checked to undo to the exact prior state and redo to the exact post state twice; invalid ops leave no history; slider merging; isolated group compositing |
+| `test_paint` | unit | Bresenham, rect/ellipse symmetry, pixel-perfect, flood fill (incl. 1M-pixel region without stack overflow), live painting + single undo step, cancel/no-op, offset-cel restore, brush size/shape/mirror, selection, alpha lock, lock/hidden/group refusal, indexed/grayscale constraints, shape preview, fill, eyedropper |
+| `test_recovery` | unit | recovery write/load/remove, live-writer exclusion, unsafe ids, bad metadata, process liveness |
 | `cli_smoke` | end-to-end | every CLI command, JSON output, exit codes, overwrite protection, corrupt-file handling |
 
 ## Recorded results
+
+### 2026-10-29 — Phase 2a, version 0.2.0
+
+| Environment | Build | Result |
+|---|---|---|
+| Linux, GCC 13.3, Qt 6.4.2, Release, `-Werror`, clean build | core + CLI + tests + bench + app | ✅ zero warnings; 70/70 CTest (69 test cases + cli_smoke) |
+| Windows target via MinGW-w64, `-Werror`, run under Wine 64 | core + CLI + tests + bench | ✅ zero warnings; 69/69 test cases, 1192 assertions; cli_smoke passed |
+
+Manual desktop checks (Linux, Xvfb, Qt 6.4.2), driven with real mouse/keyboard events:
+
+| Check | Result |
+|---|---|
+| Pick colour from palette, pencil stroke, rectangle, bucket fill inside the outline, ellipse | ✅ screenshot reviewed |
+| Undo removes the last shape; redo restores it; save writes exactly what is on screen (CLI render compared) | ✅ |
+| Tab shows modified dot and Properties shows "Unsaved changes" after edits; "Saved" after save | ✅ |
+| New layer above current, 3px brush stroke on it, opacity change reflected in slider and layer list; two undos revert opacity then stroke | ✅ |
+| Crash recovery: draw → autosave (5 s interval) → `kill -9` → relaunch → prompt → Recover restores the stroke under the original file path as unsaved; recovery file re-stamped with the new process; saving deletes the recovery files | ✅ |
+
+Benchmarks (`acestudio_bench`, Release, 2-vCPU Intel Xeon 2.8 GHz VM, CPU only — not the
+target Windows/GPU machine):
+
+| Benchmark | Before optimisation | After |
+|---|---|---|
+| Full composite 256×256, 20 layers | 17.74 ms | 9.24 ms |
+| Composite 32×32 dirty region of 256×256 | — | 0.16 ms |
+| Stroke 200 px + commit, 256×256 | 0.17 ms | 0.34 ms |
+| Undo + redo of a paint step, 256×256 | 0.01 ms | 0.01 ms |
+| Full composite 1024×1024, 20 layers | 369.48 ms | 108.97 ms |
+| Composite 32×32 dirty region of 1024×1024 | — | 0.10 ms |
+| Stroke 200 px + commit, 1024×1024 | 2.46 ms | 2.41 ms |
+
+Not yet measured: real on-screen frame rate on Windows, high-DPI rendering cost.
 
 ### 2026-10-29 — Phase 1, version 0.1.0
 

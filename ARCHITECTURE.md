@@ -1,6 +1,6 @@
 # AceStudio Architecture
 
-Status: Phase 1 (foundation). This document records the structure that exists today and the
+Status: Phase 2a (core editor). This document records the structure that exists today and the
 decisions (ADRs) that constrain future phases. Planned components are labelled **planned**.
 
 ## 1. Shape of the system
@@ -11,7 +11,8 @@ decisions (ADRs) that constrain future phases. Planned components are labelled *
                     │  Image · Color · BlendMode · Palette       │
                     │  Document (layers, frames, cels, tags)     │
                     │  ProjectIO (.acestudio) · PngCodec         │
-                    │  Settings · Log · FileUtil (atomic I/O)    │
+                    │  Editor · UndoStack · Raster · Paint       │
+                    │  Recovery · Settings · Log · FileUtil      │
                     └───────▲──────────────▲──────────────▲──────┘
                             │              │              │
           ┌─────────────────┴──┐   ┌───────┴───────┐  ┌───┴─────────────────┐
@@ -68,6 +69,29 @@ duplicate implementation of document logic, file formats or export in any front 
 - **Log**: thread-safe, rotating file sink (5 × 5 MB default), optional stderr, listener hook
   used by the in-app Log panel.
 
+## 3a. Editing model (Phase 2)
+
+- **Editor** owns the `Document` and an `UndoStack`. Every user, script or (future) MCP edit
+  goes through an Editor method, which validates, applies and records a `Command`. Commands
+  must restore the exact prior state on undo; `tests/test_editor.cpp` enforces this by
+  comparing full snapshots (metadata JSON + every cel's pixels and position) after undo and redo.
+- Structural commands capture precisely what they need (e.g. delete-layer keeps the whole
+  subtree with stack indices and cels). Property changes on the same layer and field can merge
+  (slider drags) but never across the saved ("clean") point.
+- **PaintSession** edits one cel live so the canvas can show strokes in progress. On start it
+  normalises the cel to canvas size (keeping the exact original for undo); on commit it diffs
+  against the original and records one `PaintCommand` holding only the changed rectangle
+  (before/after patches). Constraints are applied per pixel: selection, alpha lock, colour mode
+  (indexed → nearest opaque palette colour, grayscale → Rec.709 luma) and mirroring.
+- **Raster** contains the pure algorithms (Bresenham, rectangles, ellipse inside-test for exact
+  symmetry, pixel-perfect corner detection, scanline flood fill with an explicit stack, masks).
+- **Compositing**: groups are rendered in isolation then blended with their own mode/opacity.
+  Normal blending uses exact integer arithmetic; other modes use the float W3C formulas.
+  `compositeRegion` lets the canvas recomposite only a stroke's dirty rectangle.
+- **Recovery**: `RecoveryStore` writes `<id>.acestudio` + `<id>.json` (writer pid, original
+  path) into `<data dir>/recovery`. Files whose writer process is no longer running are
+  offered for recovery at startup. Saving or closing a document removes its files.
+
 ## 4. Desktop application
 
 - Qt Widgets with `QDockWidget` docking (dock, float, resize, hide, restore; layout persisted
@@ -77,6 +101,11 @@ duplicate implementation of document logic, file formats or export in any front 
 - `CanvasWidget` displays the flattened frame with nearest-neighbour sampling at all zoom
   levels, integer zoom steps ≥ 100%, checkerboard transparency, and a pixel grid. Zoom anchors
   at the cursor; pan with middle-drag, Space+drag or Shift/Alt+wheel.
+- `ToolState` holds the active tool, colours and brush options shared by all documents.
+  `DocumentView` turns canvas input (`toolPressed/Moved/Released` in pixel coordinates) into
+  `PaintSession` operations and keeps a cached composite updated by dirty region.
+- An autosave timer (default 120 s, `general.autosaveIntervalSec`) writes recovery copies of
+  modified documents that are not mid-stroke.
 - Menus for features in later phases exist only as disabled entries naming the phase
   (execution rule 1: nothing fake, unavailable features clearly marked).
 

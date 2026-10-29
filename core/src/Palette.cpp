@@ -23,6 +23,13 @@ Status Palette::remove(std::size_t i) {
     return {};
 }
 
+Status Palette::insert(std::size_t i, Rgba8 c) {
+    if (m_colors.size() >= kMaxColors) return Error{ErrorCode::InvalidArgument, "Palette is full (256 colors)"};
+    if (i > m_colors.size()) return Error{ErrorCode::InvalidArgument, "Palette index out of range"};
+    m_colors.insert(m_colors.begin() + static_cast<std::ptrdiff_t>(i), c);
+    return {};
+}
+
 std::optional<std::size_t> Palette::find(Rgba8 c) const noexcept {
     for (std::size_t i = 0; i < m_colors.size(); ++i)
         if (m_colors[i] == c) return i;

@@ -70,4 +70,43 @@ Rgba8 blendPixel(Rgba8 dst, Rgba8 src, BlendMode mode, std::uint8_t opacity) noe
     return {out[0], out[1], out[2], toByte(ao)};
 }
 
+namespace {
+// Exact-integer source-over for straight alpha (normal mode), the hot path.
+inline Rgba8 normalOver(Rgba8 d, Rgba8 s, unsigned sa) noexcept {
+    if (sa >= 255) return {s.r, s.g, s.b, 255};
+    const unsigned inv = 255u - sa;
+    const unsigned dw = (d.a * inv + 127u) / 255u;          // backdrop weight
+    const unsigned oa = sa + dw;
+    if (oa == 0) return Rgba8::transparent();
+    auto ch = [&](unsigned cs, unsigned cd) {
+        return static_cast<std::uint8_t>((cs * sa + cd * dw + oa / 2) / oa);
+    };
+    return {ch(s.r, d.r), ch(s.g, d.g), ch(s.b, d.b), static_cast<std::uint8_t>(oa)};
+}
+} // namespace
+
+void blendImage(Image& dst, const Image& src, int ox, int oy, BlendMode mode, std::uint8_t opacity) noexcept {
+    if (opacity == 0) return;
+    const IntRect area = IntRect{ox, oy, src.width(), src.height()}.intersected(dst.bounds());
+    if (area.empty()) return;
+    const auto dpx = dst.pixels();
+    const auto spx = src.pixels();
+    const std::size_t dw = static_cast<std::size_t>(dst.width()), sw = static_cast<std::size_t>(src.width());
+    for (int y = area.y; y < area.y + area.h; ++y) {
+        Rgba8* drow = dpx.data() + static_cast<std::size_t>(y) * dw;
+        const Rgba8* srow = spx.data() + static_cast<std::size_t>(y - oy) * sw;
+        for (int x = area.x; x < area.x + area.w; ++x) {
+            const Rgba8 s = srow[x - ox];
+            if (s.a == 0) continue;
+            Rgba8& d = drow[x];
+            if (mode == BlendMode::Normal) {
+                const unsigned sa = opacity == 255 ? s.a : (s.a * opacity + 127u) / 255u;
+                if (sa) d = normalOver(d, s, sa);
+            } else {
+                d = blendPixel(d, s, mode, opacity);
+            }
+        }
+    }
+}
+
 } // namespace acestudio

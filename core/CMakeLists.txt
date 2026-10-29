@@ -4,14 +4,19 @@ add_library(acestudio_core STATIC
     src/BlendMode.cpp
     src/Color.cpp
     src/Document.cpp
+    src/Editor.cpp
     src/FileUtil.cpp
     src/Image.cpp
     src/Log.cpp
+    src/Paint.cpp
     src/Palette.cpp
     src/PngCodec.cpp
     src/ProjectIO.cpp
+    src/Raster.cpp
+    src/Recovery.cpp
     src/Settings.cpp
     src/StbImageImpl.cpp
+    src/UndoStack.cpp
 )
 add_library(AceStudio::core ALIAS acestudio_core)
 

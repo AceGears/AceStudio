@@ -8,6 +8,10 @@ add_executable(acestudio_core_tests
     test_fileutil.cpp
     test_settings.cpp
     test_log.cpp
+    test_undo.cpp
+    test_editor.cpp
+    test_paint.cpp
+    test_recovery.cpp
 )
 target_link_libraries(acestudio_core_tests PRIVATE AceStudio::core miniz Catch2::Catch2WithMain)
 acestudio_set_warnings(acestudio_core_tests)

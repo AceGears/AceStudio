@@ -1,6 +1,11 @@
 #include "PalettePanel.h"
 #include "DocumentView.h"
 #include "QtBridge.h"
+#include "ToolState.h"
+
+#include <QColorDialog>
+#include <QHBoxLayout>
+#include <QPushButton>
 
 #include <QLabel>
 #include <QMouseEvent>
@@ -27,7 +32,8 @@ public:
     QSize sizeHint() const override { return {8 * kCell, heightForWidth(8 * kCell)}; }
 
 Q_SIGNALS:
-    void selected(int index);
+    void selected(int index, Qt::MouseButton button);
+    void activated(int index);
 
 protected:
     void paintEvent(QPaintEvent*) override {
@@ -47,7 +53,11 @@ protected:
     }
     void mousePressEvent(QMouseEvent* e) override {
         const int i = indexAt(e->position().toPoint());
-        if (i >= 0) { m_sel = i; update(); Q_EMIT selected(i); }
+        if (i >= 0) { m_sel = i; update(); Q_EMIT selected(i, e->button()); }
+    }
+    void mouseDoubleClickEvent(QMouseEvent* e) override {
+        const int i = indexAt(e->position().toPoint());
+        if (i >= 0 && e->button() == Qt::LeftButton) Q_EMIT activated(i);
     }
     bool event(QEvent* e) override {
         if (e->type() == QEvent::ToolTip) {
@@ -72,10 +82,11 @@ private:
     int m_sel = -1;
 };
 
-PalettePanel::PalettePanel(QWidget* parent) : QWidget(parent) {
+PalettePanel::PalettePanel(ToolState* tools, QWidget* parent) : QWidget(parent), m_tools(tools) {
     m_name = new QLabel(this);
     m_grid = new SwatchGrid(this);
-    m_selected = new QLabel(tr("Click a swatch to inspect it."), this);
+    m_selected = new QLabel(tr("Left-click: primary · Right-click: secondary · Double-click: edit"), this);
+    m_selected->setWordWrap(true);
     m_selected->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_selected->setEnabled(false);
 
@@ -84,11 +95,45 @@ PalettePanel::PalettePanel(QWidget* parent) : QWidget(parent) {
     layout->addWidget(m_name);
     layout->addWidget(m_grid);
     layout->addWidget(m_selected);
+    auto* row = new QHBoxLayout;
+    auto* add = new QPushButton(tr("Add Primary"), this);
+    auto* remove = new QPushButton(tr("Remove"), this);
+    row->addWidget(add);
+    row->addWidget(remove);
+    row->addStretch();
+    layout->addLayout(row);
     layout->addStretch();
 
-    connect(m_grid, &SwatchGrid::selected, this, [this](int i) {
+    connect(add, &QPushButton::clicked, this, [this] {
         if (!m_view) return;
+        const QColor c = m_tools->primary();
+        auto st = m_view->editor().addPaletteColor({static_cast<std::uint8_t>(c.red()), static_cast<std::uint8_t>(c.green()),
+                                                     static_cast<std::uint8_t>(c.blue()), static_cast<std::uint8_t>(c.alpha())});
+        if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
+    });
+    connect(remove, &QPushButton::clicked, this, [this] {
+        if (!m_view || m_selectedIndex < 0) return;
+        auto st = m_view->editor().removePaletteColor(static_cast<std::size_t>(m_selectedIndex));
+        if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
+        m_selectedIndex = -1;
+    });
+    connect(m_grid, &SwatchGrid::activated, this, [this](int i) {
+        if (!m_view) return;
+        const Rgba8 old = m_view->document().palette().at(static_cast<std::size_t>(i));
+        const QColor c = QColorDialog::getColor(toQColor(old), this, tr("Edit Palette Color"), QColorDialog::ShowAlphaChannel);
+        if (!c.isValid()) return;
+        auto st = m_view->editor().setPaletteColor(static_cast<std::size_t>(i),
+            {static_cast<std::uint8_t>(c.red()), static_cast<std::uint8_t>(c.green()),
+             static_cast<std::uint8_t>(c.blue()), static_cast<std::uint8_t>(c.alpha())});
+        if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
+    });
+
+    connect(m_grid, &SwatchGrid::selected, this, [this](int i, Qt::MouseButton button) {
+        if (!m_view) return;
+        m_selectedIndex = i;
         const Rgba8 c = m_view->document().palette().at(static_cast<std::size_t>(i));
+        if (button == Qt::RightButton) m_tools->setSecondary(toQColor(c));
+        else m_tools->setPrimary(toQColor(c));
         m_selected->setEnabled(true);
         m_selected->setText(tr("Index %1   %2   RGBA(%3, %4, %5, %6)")
                                 .arg(i).arg(qs(c.toHex(true))).arg(c.r).arg(c.g).arg(c.b).arg(c.a));

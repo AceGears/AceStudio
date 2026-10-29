@@ -2,20 +2,41 @@
 
 AI-assisted game asset creation and 2D animation studio for Windows.
 
-> **Status: Phase 1 (foundation), version 0.1.0.** The core engine, project format, CLI and
-> desktop shell exist and are tested on Linux. Drawing tools, animation editing, AI generation
-> and engine export are planned — see [ROADMAP.md](ROADMAP.md). Nothing in the app pretends to
+> **Status: Phase 2a (core editor), version 0.2.0.** You can draw pixel art with layers and
+> frames, undo anything, and recover work after a crash. Animation tooling, AI generation and
+> engine export are planned — see [ROADMAP.md](ROADMAP.md). Nothing in the app pretends to
 > work when it doesn't; unavailable menus are disabled and name the phase that delivers them.
 
 ## What works today
 
-- **Desktop app:** open, view and save `.acestudio` projects; multi-document tabs; dockable
-  Layers, Properties, Palette, Timeline and Log panels; dark and light themes; pixel-exact
-  canvas (nearest-neighbour, integer zoom, grid, checkerboard); frame playback using each
-  frame's duration; recent projects; layout persistence.
+- **Drawing:** pencil (pixel-perfect), eraser, line, rectangle, ellipse, paint bucket,
+  eyedropper, rectangle select, hand; brush size/shape; mirror painting; alpha lock; indexed
+  and grayscale colour constraints.
+- **Editing:** undo/redo for everything; layers (add, group, rename, reorder, duplicate,
+  merge, delete, opacity, blend, locks); frames (insert, duplicate, delete, duration); palette
+  editing; PNG import/export.
+- **Safety:** atomic saves with `.bak`, autosave to recovery files, crash-recovery prompt.
+- **Desktop app:** multi-document tabs; dockable Tools, Layers, Properties, Palette, Timeline
+  and Log panels; dark and light themes; pixel-exact canvas (nearest-neighbour, integer zoom,
+  grid); frame playback; recent projects; layout persistence.
 - **Project format:** versioned ZIP + JSON + PNG ([spec](docs/project-format.md)); atomic saves
   with a `.bak` of the previous version; corruption and newer-version detection.
 - **CLI:** `acestudio-cli new | info | validate | render | version`, all with `--json`.
+
+### Shortcuts
+
+| Key | Action | Key | Action |
+|---|---|---|---|
+| B | Pencil | E | Eraser |
+| L | Line | U | Rectangle |
+| O | Ellipse | G | Paint bucket |
+| I | Eyedropper (Alt = temporary) | M | Rectangle select |
+| H / Space | Hand / pan | X | Swap colours |
+| [ / ] | Brush size | Shift | Square/circle shapes, line from last point |
+| Ctrl+Z / Ctrl+Y | Undo / redo | Ctrl+A / Ctrl+D | Select all / deselect |
+| Delete | Clear selection or layer | Ctrl+Shift+N | New layer |
+| Ctrl+J / Ctrl+E | Duplicate layer / merge down | Alt+N / Alt+D | New / duplicate frame |
+| Enter | Play / pause | , / . | Previous / next frame |
 
 ## Build
 

@@ -3,6 +3,7 @@
 #include "QtBridge.h"
 
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QLabel>
 #include <QListWidget>
 #include <QPainter>
@@ -78,6 +79,31 @@ TimelinePanel::TimelinePanel(QWidget* parent) : QWidget(parent) {
     controls->addWidget(m_play);
     controls->addWidget(next);
     controls->addSpacing(12);
+    auto frameButton = [this, controls](const QString& text, const QString& tip, auto fn) {
+        auto* b = new QToolButton(this);
+        b->setText(text);
+        b->setToolTip(tip);
+        b->setAutoRaise(true);
+        connect(b, &QToolButton::clicked, this, fn);
+        controls->addWidget(b);
+    };
+    frameButton(tr("+ Frame"), tr("Insert an empty frame after the current one"), [this] {
+        if (!m_view) return;
+        const int at = m_view->currentFrame() + 1;
+        auto r = m_view->editor().insertFrame(at, m_view->document().frames()[static_cast<std::size_t>(at - 1)].durationMs);
+        if (r) m_view->setCurrentFrame(at); else Q_EMIT m_view->statusMessage(qs(r.error().message));
+    });
+    frameButton(tr("Duplicate"), tr("Duplicate the current frame"), [this] {
+        if (!m_view) return;
+        auto r = m_view->editor().duplicateFrame(m_view->currentFrame());
+        if (r) m_view->setCurrentFrame(r.value()); else Q_EMIT m_view->statusMessage(qs(r.error().message));
+    });
+    frameButton(tr("Delete"), tr("Delete the current frame"), [this] {
+        if (!m_view) return;
+        auto st = m_view->editor().removeFrame(m_view->currentFrame());
+        if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
+    });
+    controls->addSpacing(12);
     controls->addWidget(m_info);
     controls->addStretch();
     controls->addWidget(m_tags);
@@ -92,6 +118,17 @@ TimelinePanel::TimelinePanel(QWidget* parent) : QWidget(parent) {
     m_frames->setViewMode(QListView::ListMode);
     m_frames->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
     m_frames->setFixedHeight(64);
+    m_frames->setToolTip(tr("Double-click a frame to change its duration"));
+    connect(m_frames, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem* item) {
+        if (!m_view) return;
+        const int f = m_frames->row(item);
+        bool ok = false;
+        const int ms = QInputDialog::getInt(this, tr("Frame Duration"), tr("Duration of frame %1 (ms):").arg(f + 1),
+                                            m_view->document().frames()[static_cast<std::size_t>(f)].durationMs, 1, 65535, 10, &ok);
+        if (!ok) return;
+        auto st = m_view->editor().setFrameDuration(f, ms);
+        if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
+    });
     connect(m_frames, &QListWidget::currentRowChanged, this, [this](int row) {
         if (!m_syncing && m_view && row >= 0) m_view->setCurrentFrame(row);
     });

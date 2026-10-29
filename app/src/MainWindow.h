@@ -1,6 +1,12 @@
 #pragma once
 
+#include "acestudio/core/Result.h"
+
+#include "acestudio/core/Recovery.h"
+
 #include <QMainWindow>
+
+#include <memory>
 
 class QAction;
 class QDockWidget;
@@ -9,6 +15,7 @@ class QListWidget;
 class QMenu;
 class QStackedWidget;
 class QTabWidget;
+class QTimer;
 
 namespace acestudio::ui {
 
@@ -19,6 +26,8 @@ class LogPanel;
 class PalettePanel;
 class PropertiesPanel;
 class TimelinePanel;
+class ToolState;
+class ToolsPanel;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -27,6 +36,8 @@ public:
 
     // Opens a project; returns false (after informing the user) on failure.
     bool openProject(const QString& path);
+    // Offers to restore documents left behind by a crash.
+    void offerRecovery();
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -57,6 +68,13 @@ private:
     void resetLayout();
     void showAbout();
     void showNotices();
+    void importPng(bool asLayer);
+    void exportPng();
+    void report(const Status& st);
+    void report(const Error& e);
+    void autosaveTick();
+    void discardRecovery(DocumentView* view);
+    void applyAutosaveInterval();
 
     AppContext& m_ctx;
     QStackedWidget* m_stack = nullptr;
@@ -64,6 +82,11 @@ private:
     QListWidget* m_welcomeRecent = nullptr;
     QMenu* m_recentMenu = nullptr;
 
+    ToolState* m_tools = nullptr;
+    ToolsPanel* m_toolsPanel = nullptr;
+    QDockWidget* m_toolsDock = nullptr;
+    QAction* m_undoAction = nullptr;
+    QAction* m_redoAction = nullptr;
     QDockWidget* m_layersDock = nullptr;
     QDockWidget* m_propsDock = nullptr;
     QDockWidget* m_paletteDock = nullptr;
@@ -84,6 +107,9 @@ private:
     QAction* m_darkAction = nullptr;
     QAction* m_lightAction = nullptr;
     QByteArray m_defaultState;
+    std::unique_ptr<RecoveryStore> m_recovery;
+    QTimer* m_autosaveTimer = nullptr;
+    bool m_autosaveErrorShown = false;
 };
 
 } // namespace acestudio::ui
