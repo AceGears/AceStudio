@@ -1,0 +1,35 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "windows-release",
+      "displayName": "Windows (MSVC, Ninja, Release)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/windows-release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "windows-debug",
+      "displayName": "Windows (MSVC, Ninja, Debug)",
+      "inherits": "windows-release",
+      "binaryDir": "${sourceDir}/build/windows-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "core-only",
+      "displayName": "Core, CLI and tests (no Qt required)",
+      "binaryDir": "${sourceDir}/build/core-only",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "ACESTUDIO_BUILD_APP": "OFF" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-release", "configurePreset": "windows-release" },
+    { "name": "windows-debug", "configurePreset": "windows-debug" },
+    { "name": "core-only", "configurePreset": "core-only" }
+  ],
+  "testPresets": [
+    { "name": "windows-release", "configurePreset": "windows-release", "output": { "outputOnFailure": true } },
+    { "name": "core-only", "configurePreset": "core-only", "output": { "outputOnFailure": true } }
+  ]
+}

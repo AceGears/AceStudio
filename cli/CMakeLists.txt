@@ -1,0 +1,6 @@
+add_executable(acestudio-cli main.cpp)
+target_link_libraries(acestudio-cli PRIVATE AceStudio::core)
+acestudio_set_warnings(acestudio-cli)
+if(WIN32)
+    target_compile_definitions(acestudio-cli PRIVATE UNICODE _UNICODE)
+endif()

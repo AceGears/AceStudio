@@ -1,0 +1,135 @@
+# AceStudio Architecture
+
+Status: Phase 1 (foundation). This document records the structure that exists today and the
+decisions (ADRs) that constrain future phases. Planned components are labelled **planned**.
+
+## 1. Shape of the system
+
+```
+                    ┌────────────────────────────────────────────┐
+                    │                acestudio_core              │  C++20, no Qt
+                    │  Image · Color · BlendMode · Palette       │
+                    │  Document (layers, frames, cels, tags)     │
+                    │  ProjectIO (.acestudio) · PngCodec         │
+                    │  Settings · Log · FileUtil (atomic I/O)    │
+                    └───────▲──────────────▲──────────────▲──────┘
+                            │              │              │
+          ┌─────────────────┴──┐   ┌───────┴───────┐  ┌───┴─────────────────┐
+          │ AceStudio (Qt 6    │   │ acestudio-cli │  │ acestudio-mcp       │
+          │ Widgets desktop)   │   │ (headless)    │  │ (planned, Phase 7)  │
+          └─────────┬──────────┘   └───────────────┘  └─────────────────────┘
+                    │ local IPC (planned, Phase 4)
+          ┌─────────▼────────────────────────────────┐
+          │ AI worker process (planned, Phase 4)      │  Python: PyTorch/Diffusers,
+          │ separate process; a crash cannot take     │  ONNX Runtime
+          │ down the editor                            │
+          └───────────────────────────────────────────┘
+```
+
+Every front end (desktop, CLI, MCP, Lua) drives the **same core services**; there is no
+duplicate implementation of document logic, file formats or export in any front end.
+
+## 2. Repository layout
+
+| Path | Contents |
+|---|---|
+| `core/` | `acestudio_core` static library. Public headers in `core/include/acestudio/core/`. Must never include Qt. |
+| `app/` | Qt 6 Widgets desktop application. `app/src/panels/` holds dock panels. |
+| `cli/` | `acestudio-cli` executable. |
+| `tests/` | Catch2 unit tests and CTest-driven CLI end-to-end test. |
+| `cmake/` | Dependency pins, warning flags, Qt license guard. |
+| `docs/` | Format specs and research notes (`docs/research/`). |
+| `.github/workflows/` | CI (Linux core build + Windows full build). |
+
+## 3. Core module contracts
+
+- **Result / Status** (`Result.h`): every fallible operation returns `Result<T>` or `Status`
+  (`[[nodiscard]]`). No exceptions cross module boundaries; JSON parse exceptions are caught
+  inside ProjectIO and converted to `CorruptData`.
+- **Image**: dense straight-alpha RGBA8, row-major. Dimension cap 16384 per side to bound memory
+  from untrusted files.
+- **BlendMode**: W3C separable compositing (normal, multiply, screen, overlay, darken, lighten,
+  add, subtract, difference). Opaque normal pixels take an exact fast path so pixel art is never
+  altered by float rounding.
+- **Document**: canvas, color mode, pixel aspect, color profile, palette, layers (bottom→top,
+  groups via `parent`), frames (durations 1–65535 ms), cels keyed by (layer, frame) with
+  offsets, animation tags, and a namespaced `extensions` JSON object for AI provenance,
+  export presets, tileset metadata and project preferences. Mutators preserve invariants;
+  `validate()` re-checks everything after loading untrusted data.
+- **ProjectIO**: see `docs/project-format.md`. Save = serialize → verify by deserializing →
+  atomic write with `.bak` of the previous file. Load = CRC-checked ZIP extraction with
+  per-entry and total size limits → schema check → structural validation.
+- **FileUtil::writeFileAtomic**: write temp sibling → flush to disk (`FlushFileBuffers` /
+  `fsync`) → optional backup copy → replace (`MoveFileExW(REPLACE_EXISTING|WRITE_THROUGH)` /
+  `rename` + directory fsync). Readers never observe a partial file.
+- **Settings**: every key has a registered default and type; wrong-typed writes are rejected;
+  corrupt files are quarantined (renamed `*.corrupt-<timestamp>`) and reported; files from a
+  newer schema are refused rather than overwritten.
+- **Log**: thread-safe, rotating file sink (5 × 5 MB default), optional stderr, listener hook
+  used by the in-app Log panel.
+
+## 4. Desktop application
+
+- Qt Widgets with `QDockWidget` docking (dock, float, resize, hide, restore; layout persisted
+  in settings; Window › Reset Layout).
+- `AppContext` owns settings, data directory and recent files. `MainWindow` owns tabs and
+  docks. Each tab is a `DocumentView` (owns a `Document`) with a `CanvasWidget`.
+- `CanvasWidget` displays the flattened frame with nearest-neighbour sampling at all zoom
+  levels, integer zoom steps ≥ 100%, checkerboard transparency, and a pixel grid. Zoom anchors
+  at the cursor; pan with middle-drag, Space+drag or Shift/Alt+wheel.
+- Menus for features in later phases exist only as disabled entries naming the phase
+  (execution rule 1: nothing fake, unavailable features clearly marked).
+
+## 5. Architecture decision records
+
+### ADR-001 — C++20 + Qt 6 Widgets, Qt under LGPLv3 with dynamic linking
+- **Decision:** C++20 for core and app; Qt 6 (target 6.12 LTS) Widgets for the shell.
+- **Why Widgets over QML for the shell:** dock-heavy creative tools (Krita-style) are mature in
+  Widgets; `QDockWidget` covers dock/float/restore without extra dependencies. QML remains
+  available (LGPL) for individual panels later if it proves better.
+- **Licensing:** Qt is linked dynamically and its LGPL obligations are met by shipping Qt DLLs,
+  license texts and relinking ability. `cmake/QtLicenseGuard.cmake` fails the build if a
+  GPL-only module (Graphs, Charts, Quick 3D, Virtual Keyboard, Lottie, Quick Timeline, Canvas
+  Painter, HTTP Server, Network Authorization) is linked or if Qt is static.
+- **Considered:** Rust core (rejected: bridge complexity for little gain at this stage);
+  Qt Advanced Docking System (LGPL-2.1, deferred until QDockWidget proves insufficient).
+
+### ADR-002 — Qt-free core shared by every front end
+- The core library cannot include Qt. This keeps CLI/MCP/tests light, allows headless servers,
+  and guarantees one implementation of every format.
+
+### ADR-003 — Project format: ZIP container with JSON + PNG cels
+- Human-inspectable, diffable metadata; PNG keeps cels lossless and compact; ZIP CRC-32 gives
+  integrity checking for free; partial reads are possible later. Versioned by
+  `manifest.schemaVersion`; newer versions are refused with a clear message, older versions
+  will be migrated in code.
+
+### ADR-004 — AI inference in a separate worker process (planned, Phase 4)
+- Python worker (PyTorch + Diffusers, ONNX Runtime for segmentation/upscaling) launched and
+  supervised by the app; communication over a local pipe/socket with job IDs, progress and
+  cancellation. A model crash or out-of-memory error restarts the worker, never the editor.
+- Default model set and exclusions: `docs/research/ai-models.md`. No model is downloaded
+  without explicit user approval.
+
+### ADR-005 — MCP server (planned, Phase 7)
+- No official C++ MCP SDK exists. AceStudio will implement the MCP JSON-RPC surface in C++ on
+  top of the core (nlohmann/json), exposed via a thin `acestudio-mcp` stdio executable that
+  connects to the running app (or runs headless). Target spec revision 2026-07-28 with
+  fallback to 2025-11-25; conformance-test with the official Python/TypeScript SDK clients
+  and MCP Inspector.
+
+### ADR-006 — Packaging: Inno Setup first, MSIX later
+- Inno Setup is free for commercial use; WiX binaries now carry a maintenance-fee EULA above
+  US$10k revenue. MSIX added later for Store/enterprise. AI models are a separate optional
+  download, never bundled in the base installer.
+
+### ADR-007 — Scripting: Lua 5.4.9 + sol2 3.3.0 (planned, Phase 7)
+- Final, stable pairing; sandboxed environment with no filesystem/process access by default.
+
+## 6. Error-handling rules
+
+1. No silent failures: every error reaches the user (dialog/status) and the log.
+2. A failed save leaves the previous file untouched (atomic replace + verification).
+3. Untrusted input (project files, settings, future plugins/models) is size-limited and
+   validated before use.
+4. Destructive actions require confirmation or keep a recovery copy (`.bak`, quarantine).
