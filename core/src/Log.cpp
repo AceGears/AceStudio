@@ -4,6 +4,10 @@
 #include <cstdio>
 #include <string>
 
+#ifdef _WIN32
+#  include <share.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace acestudio {
@@ -23,7 +27,7 @@ std::string_view toString(LogLevel l) noexcept {
 namespace {
 std::FILE* openAppend(const fs::path& p) {
 #ifdef _WIN32
-    return _wfsopen(p.c_str(), L"ab", 0x20 /*_SH_DENYWR*/);
+    return _wfsopen(p.c_str(), L"ab", _SH_DENYWR);   // others may read, not write
 #else
     return std::fopen(p.c_str(), "ab");
 #endif

@@ -4,6 +4,7 @@
 #include "acestudio/core/FileUtil.h"
 
 #include <cstdlib>
+#include <fstream>
 #include <filesystem>
 #include <string>
 
@@ -75,4 +76,17 @@ TEST_CASE("userDataDir honours override", "[fileutil]") {
 #else
     unsetenv("ACESTUDIO_DATA_DIR");
 #endif
+}
+
+TEST_CASE("Files can be read while another handle has them open for writing", "[fileutil]") {
+    // Regression: on Windows, _wfopen_s opens files exclusively, so reading a
+    // file that another program (or our own logger) holds open failed.
+    TempDir dir;
+    const auto path = dir / "busy.txt";
+    REQUIRE(writeFileAtomic(path, bytesOf("data")));
+    std::ofstream writer(path, std::ios::app);   // stays open during the read
+    REQUIRE(writer.is_open());
+    auto r = readFileBytes(path);
+    REQUIRE(r);
+    CHECK(r.value().size() == 4);
 }

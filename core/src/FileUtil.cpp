@@ -15,6 +15,7 @@
 #  endif
 #  include <windows.h>
 #  include <shlobj.h>
+#  include <share.h>
 #else
 #  include <cerrno>
 #  include <cstring>
@@ -108,7 +109,9 @@ Result<std::vector<std::uint8_t>> readFileBytes(const fs::path& path, std::uintm
 
     std::FILE* f = nullptr;
 #ifdef _WIN32
-    if (_wfopen_s(&f, path.c_str(), L"rb") != 0) f = nullptr;
+    // Shared read: _wfopen_s opens exclusively, which fails when any other
+    // handle (another app, antivirus, our own log writer) has the file open.
+    f = _wfsopen(path.c_str(), L"rb", _SH_DENYNO);
 #else
     f = std::fopen(path.c_str(), "rb");
 #endif
