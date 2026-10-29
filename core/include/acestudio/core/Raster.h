@@ -60,6 +60,18 @@ private:
     std::vector<std::uint8_t> m_bits;
 };
 
+enum class SelectionOp { Replace, Add, Subtract, Intersect };
+// Combines `src` into `dst` (same size required; Replace copies).
+void combineMask(Mask& dst, const Mask& src, SelectionOp op);
+
+// Pixels whose centres lie inside the polygon (even-odd rule). Closed
+// automatically; the outline pixels themselves are always included so a
+// lasso drawn along an edge selects that edge.
+Mask polygonMask(int width, int height, const std::vector<Point>& polygon);
+
+// 4×4 ordered-dither (Bayer) threshold in 0..15.
+int bayer4(int x, int y) noexcept;
+
 // Pixels matching the seed colour within `tolerance` (max per-channel
 // difference, 0 = exact). Contiguous uses 4-connectivity; otherwise every
 // matching pixel in the image. `limit` (optional) restricts the region.

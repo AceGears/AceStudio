@@ -29,6 +29,10 @@ struct BrushSettings {
     int size = 1;                       // 1..64 px
     BrushShape shape = BrushShape::Square;
     MirrorMode mirror = MirrorMode::None;
+    // Ordered-dither density 1..16 (16 = solid). Pixels whose Bayer
+    // threshold is >= density are skipped, giving a stable pattern that
+    // tiles seamlessly across strokes.
+    int ditherDensity = 16;
 };
 
 class PaintSession {
@@ -112,6 +116,13 @@ private:
 void drawLine(PaintSession& s, Point a, Point b, Rgba8 color);
 void drawRectangle(PaintSession& s, Point a, Point b, bool filled, Rgba8 color);
 void drawEllipse(PaintSession& s, Point a, Point b, bool filled, Rgba8 color);
+enum class GradientShape { Linear, Radial };
+enum class GradientDither { Smooth, Ordered };
+// Fills the selection (or canvas) with a gradient from `c0` at `a` to `c1`
+// at `b`. Ordered = only the two end colours, mixed with a Bayer pattern
+// (classic pixel-art dithering); Smooth = per-pixel interpolation.
+void drawGradient(PaintSession& s, Point a, Point b, Rgba8 c0, Rgba8 c1, GradientShape shape, GradientDither dither);
+
 // Fills the region of the layer's own pixels around `seed`.
 void fillRegion(PaintSession& s, Point seed, Rgba8 color, bool contiguous, int tolerance);
 

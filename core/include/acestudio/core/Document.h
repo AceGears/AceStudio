@@ -78,6 +78,10 @@ public:
     static Result<Document> create(int width, int height, ColorMode mode = ColorMode::Rgba);
 
     int width() const noexcept { return m_width; }
+    // Changes the canvas size only; cels keep their pixels and positions.
+    Status setCanvasSize(int width, int height);
+    // Moves every cel by (dx, dy).
+    void offsetCels(int dx, int dy) noexcept;
     int height() const noexcept { return m_height; }
     ColorMode colorMode() const noexcept { return m_colorMode; }
     void setColorMode(ColorMode m) noexcept { m_colorMode = m; }

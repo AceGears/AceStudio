@@ -152,3 +152,73 @@ TEST_CASE("Isolated group compositing applies the group blend mode once", "[docu
     const Rgba8 px = d.composite(0).pixel(0, 0);
     CHECK(px.r == 39);
 }
+
+TEST_CASE("Canvas operations undo and redo exactly", "[editor][undo][canvas]") {
+    Editor e = makeEditor();
+    SECTION("resize larger with offset") {
+        checkRoundTrip(e, [](Editor& ed) {
+            REQUIRE(ed.resizeCanvas(12, 10, 2, 1));
+            CHECK(ed.document().width() == 12);
+            CHECK(ed.document().composite(0).pixel(2, 1) == Rgba8::opaque(200, 0, 0));
+        });
+    }
+    SECTION("crop") {
+        checkRoundTrip(e, [](Editor& ed) {
+            REQUIRE(ed.cropCanvas({3, 3, 2, 2}));
+            CHECK(ed.document().width() == 2);
+        });
+    }
+    SECTION("flip horizontal") {
+        checkRoundTrip(e, [](Editor& ed) {
+            const Image before = ed.document().composite(1);
+            REQUIRE(ed.flipCanvas(true));
+            CHECK(ed.document().composite(1).pixel(6, 1) == before.pixel(1, 1));
+        });
+    }
+    SECTION("flip vertical") { checkRoundTrip(e, [](Editor& ed) { REQUIRE(ed.flipCanvas(false)); }); }
+    SECTION("rotate 90 on a non-square canvas") {
+        REQUIRE(e.resizeCanvas(8, 5, 0, 0));
+        checkRoundTrip(e, [](Editor& ed) {
+            const Image before = ed.document().composite(1);
+            REQUIRE(ed.rotateCanvas90(true));
+            CHECK(ed.document().width() == 5);
+            CHECK(ed.document().height() == 8);
+            // (x, y) -> (H-1-y, x)
+            CHECK(ed.document().composite(1).pixel(5 - 1 - 1, 1) == before.pixel(1, 1));
+        });
+    }
+    SECTION("rotate 180") { checkRoundTrip(e, [](Editor& ed) { REQUIRE(ed.rotateCanvas180()); }); }
+    CHECK_FALSE(e.resizeCanvas(0, 5, 0, 0));
+    CHECK_FALSE(e.cropCanvas({100, 100, 5, 5}));
+}
+
+TEST_CASE("Layer transforms honour selection and frames", "[editor][undo][transform]") {
+    Editor e = makeEditor();
+    const LayerId b = idOf(e, "B");
+    SECTION("flip whole layer on all frames") {
+        checkRoundTrip(e, [&](Editor& ed) {
+            REQUIRE(ed.transformLayer(b, 0, true, nullptr, "Flip", [](const Image& i) { return flipHorizontal(i); }));
+            CHECK(ed.document().cel(b, 1)->x == 6);   // 1px cel at x=1 mirrored to x=6 on an 8px canvas
+        });
+    }
+    SECTION("outline inside a selection only") {
+        Mask sel(8, 8);
+        sel.fillRect({2, 2, 4, 4}, true);
+        checkRoundTrip(e, [&](Editor& ed) {
+            REQUIRE(ed.transformLayer(b, 0, false, &sel, "Outline", [](const Image& i) {
+                return outline(i, Rgba8::opaque(1, 1, 1), OutlineMode::Outside, false);
+            }));
+            CHECK(ed.document().renderLayer(b, 0).pixel(3, 2) == Rgba8::opaque(1, 1, 1));
+            CHECK(ed.document().renderLayer(b, 1).pixel(1, 1) == Rgba8::opaque(0, 255, 0));   // other frame untouched
+        });
+    }
+    SECTION("scale up re-centres on the selection") {
+        checkRoundTrip(e, [&](Editor& ed) {
+            REQUIRE(ed.transformLayer(b, 1, false, nullptr, "Scale", [](const Image& i) {
+                return scaleNearest(i, i.width() * 2, i.height() * 2).value();
+            }));
+        });
+    }
+    REQUIRE(e.setLayerLocked(b, true));
+    CHECK_FALSE(e.transformLayer(b, 0, false, nullptr, "x", [](const Image& i) { return i; }));
+}

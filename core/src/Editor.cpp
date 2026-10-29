@@ -358,6 +358,150 @@ Status Editor::setFrameDuration(int frame, int durationMs) {
         [=](Document& d) { (void)d.setFrameDuration(frame, old); }));
 }
 
+// ------------------------------------------------------------------ canvas
+
+namespace {
+struct CelSnapshot {
+    std::vector<SavedCel> cels;
+    std::size_t bytes = 0;
+    static CelSnapshot capture(const Document& d) {
+        CelSnapshot s;
+        for (const auto& [k, c] : d.cels()) {
+            s.cels.push_back({k.layer, k.frame, c});
+            s.bytes += celBytes(c);
+        }
+        return s;
+    }
+    void restore(Document& d) const {
+        std::vector<CelKey> keys;
+        for (const auto& [k, c] : d.cels()) keys.push_back(k);
+        for (const auto& k : keys) d.clearCel(k.layer, k.frame);
+        for (const auto& sc : cels) (void)d.setCel(sc.layer, sc.frame, sc.cel);
+    }
+};
+
+// Applies a per-cel geometric transform to every cel and changes the canvas
+// size; undone by restoring the exact cels and the previous size.
+Status applyCanvasTransform(Editor& e, const std::string& label, int newW, int newH,
+                            std::function<Cel(const Cel&, int oldW, int oldH)> fn) {
+    const Document& d = e.document();
+    auto snap = std::make_shared<CelSnapshot>(CelSnapshot::capture(d));
+    const int oldW = d.width(), oldH = d.height();
+    return e.apply(std::make_unique<FnCommand>(
+        label,
+        [=](Document& doc) -> Status {
+            if (auto st = doc.setCanvasSize(newW, newH); !st) return st;
+            for (const auto& sc : snap->cels) (void)doc.setCel(sc.layer, sc.frame, fn(sc.cel, oldW, oldH));
+            return {};
+        },
+        [=](Document& doc) {
+            (void)doc.setCanvasSize(oldW, oldH);
+            snap->restore(doc);
+        },
+        snap->bytes * 2));
+}
+} // namespace
+
+Status Editor::resizeCanvas(int width, int height, int offsetX, int offsetY) {
+    if (width <= 0 || height <= 0 || width > Image::kMaxDimension || height > Image::kMaxDimension)
+        return Error{ErrorCode::InvalidArgument, "Canvas size must be between 1 and " + std::to_string(Image::kMaxDimension)};
+    if (width == m_doc.width() && height == m_doc.height() && offsetX == 0 && offsetY == 0) return {};
+    return applyCanvasTransform(*this, "Canvas Size", width, height, [=](const Cel& c, int, int) {
+        return Cel{c.image, c.x + offsetX, c.y + offsetY};
+    });
+}
+
+Status Editor::cropCanvas(const IntRect& rect) {
+    const IntRect r = rect.intersected({0, 0, m_doc.width(), m_doc.height()});
+    if (r.empty()) return Error{ErrorCode::InvalidArgument, "Nothing to crop to"};
+    return resizeCanvas(r.w, r.h, -r.x, -r.y);
+}
+
+Status Editor::flipCanvas(bool horizontal) {
+    return applyCanvasTransform(*this, horizontal ? "Flip Canvas Horizontal" : "Flip Canvas Vertical",
+                                m_doc.width(), m_doc.height(), [=](const Cel& c, int W, int H) {
+        if (horizontal) return Cel{flipHorizontal(c.image), W - (c.x + c.image.width()), c.y};
+        return Cel{flipVertical(c.image), c.x, H - (c.y + c.image.height())};
+    });
+}
+
+Status Editor::rotateCanvas90(bool clockwise) {
+    return applyCanvasTransform(*this, clockwise ? "Rotate Canvas 90° CW" : "Rotate Canvas 90° CCW",
+                                m_doc.height(), m_doc.width(), [=](const Cel& c, int W, int H) {
+        if (clockwise) return Cel{rotate90(c.image, true), H - (c.y + c.image.height()), c.x};
+        return Cel{rotate90(c.image, false), c.y, W - (c.x + c.image.width())};
+    });
+}
+
+Status Editor::rotateCanvas180() {
+    return applyCanvasTransform(*this, "Rotate Canvas 180°", m_doc.width(), m_doc.height(), [](const Cel& c, int W, int H) {
+        return Cel{rotate180(c.image), W - (c.x + c.image.width()), H - (c.y + c.image.height())};
+    });
+}
+
+// ------------------------------------------------------------------ layer transforms
+
+Status Editor::transformLayer(LayerId layer, int frame, bool allFrames, const Mask* selection,
+                              const std::string& label, const ImageFn& fn) {
+    const Layer* l = m_doc.layer(layer);
+    if (!l || l->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Select a raster layer to transform"};
+    if (!m_doc.isLayerEditable(layer)) return Error{ErrorCode::PermissionDenied, "The layer is locked"};
+    if (frame < 0 || frame >= m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
+
+    const bool useSel = selection && !selection->isNull() && selection->count() > 0;
+    const IntRect area = useSel ? selection->bounds() : IntRect{0, 0, m_doc.width(), m_doc.height()};
+
+    struct Change { int frame; std::optional<Cel> before, after; };
+    auto changes = std::make_shared<std::vector<Change>>();
+    std::size_t bytes = 0;
+    const int f0 = allFrames ? 0 : frame, f1 = allFrames ? m_doc.frameCount() - 1 : frame;
+    for (int f = f0; f <= f1; ++f) {
+        const Cel* c = m_doc.cel(layer, f);
+        if (!c) continue;
+        Image canvas = m_doc.renderLayer(layer, f);
+        // Lift the selected block.
+        Image block = canvas.copy(area);
+        if (useSel)
+            for (int y = 0; y < block.height(); ++y)
+                for (int x = 0; x < block.width(); ++x)
+                    if (!selection->get(area.x + x, area.y + y)) block.setPixel(x, y, Rgba8::transparent());
+        Image result = fn(block);
+        // Clear the lifted pixels, then paste the result centred on the area.
+        for (int y = area.y; y < area.y + area.h; ++y)
+            for (int x = area.x; x < area.x + area.w; ++x)
+                if (!useSel || selection->get(x, y)) canvas.setPixel(x, y, Rgba8::transparent());
+        const int px = area.x + (area.w - result.width()) / 2, py = area.y + (area.h - result.height()) / 2;
+        for (int y = 0; y < result.height(); ++y)
+            for (int x = 0; x < result.width(); ++x) {
+                const Rgba8 p = result.pixel(x, y);
+                if (p.a) canvas.setPixel(px + x, py + y, p);
+            }
+        const IntRect bounds = canvas.opaqueBounds();
+        std::optional<Cel> after;
+        if (!bounds.empty()) after = Cel{canvas.copy(bounds), bounds.x, bounds.y};
+        bytes += celBytes(*c) + (after ? celBytes(*after) : 0);
+        changes->push_back({f, *c, std::move(after)});
+    }
+    if (changes->empty()) return Error{ErrorCode::InvalidArgument, "The layer is empty"};
+
+    return apply(std::make_unique<FnCommand>(
+        label,
+        [=](Document& d) -> Status {
+            for (const auto& ch : *changes) {
+                if (ch.after) { if (auto st = d.setCel(layer, ch.frame, *ch.after); !st) return st; }
+                else d.clearCel(layer, ch.frame);
+            }
+            return {};
+        },
+        [=](Document& d) {
+            for (const auto& ch : *changes) {
+                if (ch.before) (void)d.setCel(layer, ch.frame, *ch.before);
+                else d.clearCel(layer, ch.frame);
+            }
+        },
+        bytes));
+}
+
 // ------------------------------------------------------------------ palette
 
 Status Editor::setPaletteColor(std::size_t index, Rgba8 color) {
@@ -382,6 +526,75 @@ Status Editor::removePaletteColor(std::size_t index) {
     return apply(std::make_unique<FnCommand>(
         "Remove Palette Color", [=](Document& d) { return d.palette().remove(index); },
         [=](Document& d) { (void)d.palette().insert(index, old); }));
+}
+
+Status Editor::replacePalette(Palette palette, const std::string& label) {
+    if (palette.size() > Palette::kMaxColors) return Error{ErrorCode::InvalidArgument, "Palette has more than 256 colours"};
+    auto before = std::make_shared<Palette>(m_doc.palette());
+    auto after = std::make_shared<Palette>(std::move(palette));
+    return apply(std::make_unique<FnCommand>(
+        label, [=](Document& d) { d.palette() = *after; return Status{}; },
+        [=](Document& d) { d.palette() = *before; }));
+}
+
+namespace {
+Rgba8 nearestOpaque(const std::vector<Rgba8>& cols, int r, int g, int b) {
+    long best = -1;
+    Rgba8 out{};
+    for (const auto& c : cols) {
+        if (c.a == 0) continue;
+        const long dr = c.r - r, dg = c.g - g, db = c.b - b;
+        const long d = dr * dr + dg * dg + db * db;
+        if (best < 0 || d < best) { best = d; out = {c.r, c.g, c.b, 255}; }
+    }
+    return out;
+}
+} // namespace
+
+Status Editor::convertColorMode(ColorMode mode, bool dither) {
+    const ColorMode oldMode = m_doc.colorMode();
+    const auto& pal = m_doc.palette().colors();
+    if (mode == ColorMode::Indexed &&
+        std::none_of(pal.begin(), pal.end(), [](Rgba8 c) { return c.a > 0; }))
+        return Error{ErrorCode::InvalidArgument, "The palette needs at least one opaque colour before converting to indexed"};
+
+    auto snap = std::make_shared<CelSnapshot>(CelSnapshot::capture(m_doc));
+    auto converted = std::make_shared<std::vector<SavedCel>>();
+    for (const auto& sc : snap->cels) {
+        Cel c = sc.cel;
+        if (mode != ColorMode::Rgba) {
+            for (int y = 0; y < c.image.height(); ++y)
+                for (int x = 0; x < c.image.width(); ++x) {
+                    const Rgba8 p = c.image.pixel(x, y);
+                    if (p.a == 0) continue;
+                    if (mode == ColorMode::Grayscale) {
+                        const auto l = p.luma();
+                        c.image.setPixel(x, y, {l, l, l, p.a});
+                    } else if (p.a < 128) {
+                        c.image.setPixel(x, y, Rgba8::transparent());
+                    } else {
+                        // Ordered dither: nudge the colour by a position-dependent
+                        // offset (±24) before choosing the nearest palette entry.
+                        const int off = dither ? (bayer4(c.x + x, c.y + y) - 8) * 3 : 0;
+                        c.image.setPixel(x, y, nearestOpaque(pal, p.r + off, p.g + off, p.b + off));
+                    }
+                }
+        }
+        converted->push_back({sc.layer, sc.frame, std::move(c)});
+    }
+    const char* names[] = {"Convert to RGBA", "Convert to Indexed", "Convert to Grayscale"};
+    return apply(std::make_unique<FnCommand>(
+        names[static_cast<int>(mode)],
+        [=](Document& d) -> Status {
+            for (const auto& sc : *converted) (void)d.setCel(sc.layer, sc.frame, sc.cel);
+            d.setColorMode(mode);
+            return {};
+        },
+        [=](Document& d) {
+            snap->restore(d);
+            d.setColorMode(oldMode);
+        },
+        snap->bytes * 2));
 }
 
 } // namespace acestudio

@@ -55,6 +55,22 @@ Result<Document> Document::create(int width, int height, ColorMode mode) {
     return d;
 }
 
+Status Document::setCanvasSize(int width, int height) {
+    if (width <= 0 || height <= 0 || width > Image::kMaxDimension || height > Image::kMaxDimension)
+        return Error{ErrorCode::InvalidArgument,
+                     "Canvas size must be between 1 and " + std::to_string(Image::kMaxDimension)};
+    m_width = width;
+    m_height = height;
+    return {};
+}
+
+void Document::offsetCels(int dx, int dy) noexcept {
+    for (auto& [k, c] : m_cels) {
+        c.x += dx;
+        c.y += dy;
+    }
+}
+
 Status Document::setPixelAspect(double x, double y) {
     if (!(x > 0.0 && x <= 16.0 && y > 0.0 && y <= 16.0))
         return Error{ErrorCode::InvalidArgument, "Pixel aspect must be in (0, 16]"};

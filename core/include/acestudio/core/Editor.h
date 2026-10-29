@@ -5,6 +5,8 @@
 // Shared by the desktop app, and later the CLI, Lua and MCP front ends.
 
 #include "acestudio/core/Document.h"
+#include "acestudio/core/Raster.h"
+#include "acestudio/core/Transform.h"
 #include "acestudio/core/UndoStack.h"
 
 #include <functional>
@@ -54,10 +56,35 @@ public:
     Status removeFrame(int frame);
     Status setFrameDuration(int frame, int durationMs);
 
+    // ---- Canvas (whole document) ----
+    // New size; existing content is shifted by (offsetX, offsetY).
+    Status resizeCanvas(int width, int height, int offsetX, int offsetY);
+    Status cropCanvas(const IntRect& rect);
+    Status flipCanvas(bool horizontal);
+    Status rotateCanvas90(bool clockwise);
+    Status rotateCanvas180();
+
+    // ---- Layer content transforms ----
+    // Applies `fn` to the current layer's pixels inside `selection` (or the
+    // whole canvas when the selection is null/empty). The transformed block is
+    // re-centred on the selection's bounding box. allFrames applies it to
+    // every frame in one undo step.
+    using ImageFn = std::function<Image(const Image&)>;
+    Status transformLayer(LayerId layer, int frame, bool allFrames, const Mask* selection,
+                          const std::string& label, const ImageFn& fn);
+
     // ---- Palette ----
     Status setPaletteColor(std::size_t index, Rgba8 color);
     Status addPaletteColor(Rgba8 color);
     Status removePaletteColor(std::size_t index);
+    Status replacePalette(Palette palette, const std::string& label = "Replace Palette");
+
+    // ---- Colour mode ----
+    // Converts every cel. Indexed: pixels snap to the nearest opaque palette
+    // colour (alpha < 128 becomes transparent, else opaque); with `dither`
+    // an ordered pattern spreads the error. Grayscale: Rec.709 luma, alpha
+    // kept. RGBA: pixels unchanged.
+    Status convertColorMode(ColorMode mode, bool dither = false);
 
     // ---- Low level (used by PaintSession) ----
     Document& mutableDocument() noexcept { return m_doc; }

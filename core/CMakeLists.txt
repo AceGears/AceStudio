@@ -10,12 +10,14 @@ add_library(acestudio_core STATIC
     src/Log.cpp
     src/Paint.cpp
     src/Palette.cpp
+    src/PaletteIO.cpp
     src/PngCodec.cpp
     src/ProjectIO.cpp
     src/Raster.cpp
     src/Recovery.cpp
     src/Settings.cpp
     src/StbImageImpl.cpp
+    src/Transform.cpp
     src/UndoStack.cpp
 )
 add_library(AceStudio::core ALIAS acestudio_core)

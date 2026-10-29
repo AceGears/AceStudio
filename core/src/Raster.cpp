@@ -113,6 +113,63 @@ std::size_t Mask::count() const noexcept {
     return static_cast<std::size_t>(std::count(m_bits.begin(), m_bits.end(), std::uint8_t{1}));
 }
 
+void combineMask(Mask& dst, const Mask& src, SelectionOp op) {
+    if (op == SelectionOp::Replace || dst.isNull()) {
+        if (op == SelectionOp::Subtract) { dst = Mask(src.width(), src.height()); return; }
+        if (op == SelectionOp::Intersect && dst.isNull()) { dst = Mask(src.width(), src.height()); return; }
+        dst = src;
+        return;
+    }
+    if (dst.width() != src.width() || dst.height() != src.height()) return;
+    for (int y = 0; y < dst.height(); ++y)
+        for (int x = 0; x < dst.width(); ++x) {
+            const bool a = dst.get(x, y), b = src.get(x, y);
+            bool v = a;
+            switch (op) {
+            case SelectionOp::Add: v = a || b; break;
+            case SelectionOp::Subtract: v = a && !b; break;
+            case SelectionOp::Intersect: v = a && b; break;
+            case SelectionOp::Replace: v = b; break;
+            }
+            dst.set(x, y, v);
+        }
+}
+
+Mask polygonMask(int width, int height, const std::vector<Point>& poly) {
+    Mask m(width, height);
+    if (poly.empty() || m.isNull()) return m;
+    const std::size_t n = poly.size();
+    if (n >= 3) {
+        for (int y = 0; y < height; ++y) {
+            const double py = y + 0.5;
+            std::vector<double> xs;
+            for (std::size_t i = 0; i < n; ++i) {
+                const Point a = poly[i], b = poly[(i + 1) % n];
+                // Polygon vertices are pixel centres.
+                const double ay = a.y + 0.5, by = b.y + 0.5;
+                if ((ay <= py && by > py) || (by <= py && ay > py)) {
+                    const double t = (py - ay) / (by - ay);
+                    xs.push_back(a.x + 0.5 + t * (b.x - a.x));
+                }
+            }
+            std::sort(xs.begin(), xs.end());
+            for (std::size_t i = 0; i + 1 < xs.size(); i += 2) {
+                const int x0 = std::max(0, static_cast<int>(std::ceil(xs[i] - 0.5)));
+                const int x1 = std::min(width - 1, static_cast<int>(std::floor(xs[i + 1] - 0.5)));
+                for (int x = x0; x <= x1; ++x) m.set(x, y, true);
+            }
+        }
+    }
+    for (std::size_t i = 0; i < n; ++i)
+        for (const Point& p : linePoints(poly[i], poly[(i + 1) % n])) m.set(p.x, p.y, true);
+    return m;
+}
+
+int bayer4(int x, int y) noexcept {
+    static constexpr int kBayer[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
+    return kBayer[y & 3][x & 3];
+}
+
 // ------------------------------------------------------------------ flood
 
 Mask floodRegion(const Image& img, Point seed, bool contiguous, int tolerance, const Mask* limit) {
