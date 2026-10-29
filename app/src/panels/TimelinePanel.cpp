@@ -6,6 +6,7 @@
 #include <QInputDialog>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
 #include <QStyle>
@@ -50,7 +51,8 @@ TimelinePanel::TimelinePanel(QWidget* parent) : QWidget(parent) {
     m_timer->setTimerType(Qt::PreciseTimer);
     connect(m_timer, &QTimer::timeout, this, [this] {
         if (!m_view) return stop();
-        m_view->setCurrentFrame((m_view->currentFrame() + 1) % m_view->document().frameCount());
+        if (!m_player.advance()) return stop();   // finite tag repeat finished
+        m_view->setCurrentFrame(std::clamp(m_player.currentFrame(), 0, m_view->document().frameCount() - 1));
         scheduleNext();
     });
 
@@ -75,6 +77,7 @@ TimelinePanel::TimelinePanel(QWidget* parent) : QWidget(parent) {
     m_tags->setTextFormat(Qt::RichText);
 
     auto* controls = new QHBoxLayout;
+    m_controls = controls;
     controls->addWidget(prev);
     controls->addWidget(m_play);
     controls->addWidget(next);
@@ -103,7 +106,9 @@ TimelinePanel::TimelinePanel(QWidget* parent) : QWidget(parent) {
         auto st = m_view->editor().removeFrame(m_view->currentFrame());
         if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
     });
+    frameButton(tr("Tags…"), tr("Add, edit or remove animation tags"), [this] { Q_EMIT tagsRequested(); });
     controls->addSpacing(12);
+    m_actionInsert = controls->count();
     controls->addWidget(m_info);
     controls->addStretch();
     controls->addWidget(m_tags);
@@ -118,17 +123,27 @@ TimelinePanel::TimelinePanel(QWidget* parent) : QWidget(parent) {
     m_frames->setViewMode(QListView::ListMode);
     m_frames->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
     m_frames->setFixedHeight(64);
-    m_frames->setToolTip(tr("Double-click a frame to change its duration"));
-    connect(m_frames, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem* item) {
-        if (!m_view) return;
-        const int f = m_frames->row(item);
-        bool ok = false;
-        const int ms = QInputDialog::getInt(this, tr("Frame Duration"), tr("Duration of frame %1 (ms):").arg(f + 1),
-                                            m_view->document().frames()[static_cast<std::size_t>(f)].durationMs, 1, 65535, 10, &ok);
-        if (!ok) return;
-        auto st = m_view->editor().setFrameDuration(f, ms);
-        if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
-    });
+    m_frames->setToolTip(tr("Drag to reorder · double-click for duration · right-click for more"));
+    m_frames->setDragDropMode(QAbstractItemView::InternalMove);
+    m_frames->setDefaultDropAction(Qt::MoveAction);
+    m_frames->setMovement(QListView::Snap);
+    m_frames->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_frames, &QWidget::customContextMenuRequested, this, &TimelinePanel::showContextMenu);
+    connect(m_frames, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem* item) { editDuration(m_frames->row(item)); });
+    // The list moves its own row first; apply the real (undoable) move once
+    // the drop has finished, then rebuild from the document.
+    connect(m_frames->model(), &QAbstractItemModel::rowsMoved, this,
+            [this](const QModelIndex&, int start, int, const QModelIndex&, int row) {
+                if (m_syncing || !m_view) return;
+                const int to = row > start ? row - 1 : row;
+                QTimer::singleShot(0, this, [this, start, to] {
+                    if (!m_view) return;
+                    if (start == to) return rebuild();
+                    auto st = m_view->editor().moveFrame(start, to);
+                    if (!st) { Q_EMIT m_view->statusMessage(qs(st.error().message)); rebuild(); return; }
+                    m_view->setCurrentFrame(to);
+                });
+            });
     connect(m_frames, &QListWidget::currentRowChanged, this, [this](int row) {
         if (!m_syncing && m_view && row >= 0) m_view->setCurrentFrame(row);
     });
@@ -161,6 +176,14 @@ void TimelinePanel::rebuild() {
         for (int i = 0; i < d.frameCount(); ++i) {
             auto* item = new QListWidgetItem(QStringLiteral("%1\n%2 ms").arg(i + 1).arg(d.frames()[static_cast<std::size_t>(i)].durationMs));
             item->setTextAlignment(Qt::AlignCenter);
+            item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
+            if (auto t = tagAt(d, i)) {
+                const auto& tag = d.tags()[*t];
+                QColor c(qs(tag.color).left(7));
+                c.setAlpha(70);
+                item->setBackground(c);
+                item->setToolTip(tr("Frame %1 · tag “%2”").arg(i + 1).arg(qs(tag.name)));
+            }
             m_frames->addItem(item);
         }
         QStringList tags;
@@ -186,6 +209,63 @@ void TimelinePanel::syncSelection(int frame) {
         m_info->setText(tr("No document"));
 }
 
+void TimelinePanel::addActionButton(QAction* action) {
+    auto* b = new QToolButton(this);
+    b->setDefaultAction(action);
+    b->setAutoRaise(true);
+    m_controls->insertWidget(m_actionInsert++, b);
+}
+
+bool TimelinePanel::isPlaying() const { return m_timer->isActive(); }
+
+void TimelinePanel::moveCurrentFrame(int delta) {
+    if (!m_view) return;
+    const int from = m_view->currentFrame();
+    const int to = from + delta;
+    if (to < 0 || to >= m_view->document().frameCount()) return;
+    auto st = m_view->editor().moveFrame(from, to);
+    if (!st) return void(Q_EMIT m_view->statusMessage(qs(st.error().message)));
+    m_view->setCurrentFrame(to);
+}
+
+void TimelinePanel::editDuration(int f) {
+    if (!m_view || f < 0) return;
+    bool ok = false;
+    const int ms = QInputDialog::getInt(this, tr("Frame Duration"), tr("Duration of frame %1 (ms):").arg(f + 1),
+                                        m_view->document().frames()[static_cast<std::size_t>(f)].durationMs, 1, 65535, 10, &ok);
+    if (!ok) return;
+    auto st = m_view->editor().setFrameDuration(f, ms);
+    if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
+}
+
+void TimelinePanel::editAllDurations() {
+    if (!m_view) return;
+    bool ok = false;
+    const int ms = QInputDialog::getInt(this, tr("Frame Duration"), tr("Duration of every frame (ms):"),
+                                        m_view->document().frames()[static_cast<std::size_t>(m_view->currentFrame())].durationMs,
+                                        1, 65535, 10, &ok);
+    if (!ok) return;
+    auto st = m_view->editor().setFrameDurations(0, m_view->document().frameCount() - 1, ms);
+    if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
+}
+
+void TimelinePanel::showContextMenu(const QPoint& pos) {
+    if (!m_view) return;
+    QListWidgetItem* item = m_frames->itemAt(pos);
+    if (item) m_view->setCurrentFrame(m_frames->row(item));
+    QMenu menu(this);
+    const int f = m_view->currentFrame();
+    const int n = m_view->document().frameCount();
+    menu.addAction(tr("Frame &Duration…"), this, [this, f] { editDuration(f); });
+    menu.addAction(tr("Duration of &All Frames…"), this, [this] { editAllDurations(); });
+    menu.addSeparator();
+    menu.addAction(tr("Move &Left"), this, [this] { moveCurrentFrame(-1); })->setEnabled(f > 0);
+    menu.addAction(tr("Move &Right"), this, [this] { moveCurrentFrame(1); })->setEnabled(f + 1 < n);
+    menu.addSeparator();
+    menu.addAction(tr("&Tags…"), this, [this] { Q_EMIT tagsRequested(); });
+    menu.exec(m_frames->viewport()->mapToGlobal(pos));
+}
+
 void TimelinePanel::stepFrame(int delta) {
     if (!m_view) return;
     const int n = m_view->document().frameCount();
@@ -195,6 +275,9 @@ void TimelinePanel::stepFrame(int delta) {
 void TimelinePanel::togglePlayback() {
     if (m_timer->isActive()) return stop();
     if (!m_view || m_view->document().frameCount() < 2) return;
+    // Plays the tag under the playhead (direction and repeats honoured),
+    // or every frame when the playhead is outside all tags.
+    m_player.reset(m_view->document(), m_view->currentFrame());
     m_play->setIcon(transportIcon(Glyph::Pause, palette().color(QPalette::WindowText)));
     scheduleNext();
 }

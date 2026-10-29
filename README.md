@@ -2,9 +2,10 @@
 
 AI-assisted game asset creation and 2D animation studio for Windows.
 
-> **Status: Phase 2b (core editor), version 0.3.0.** You can draw pixel art with layers and
-> frames, undo anything, and recover work after a crash. Animation tooling, AI generation and
-> engine export are planned — see [ROADMAP.md](ROADMAP.md). Nothing in the app pretends to
+> **Status: Phase 3 (animation), version 0.4.0.** You can draw and animate pixel art with
+> layers, frames, tags and onion skin, export sprite sheets (Aseprite-compatible JSON), GIF,
+> APNG, WebP and PNG sequences, undo anything, and recover work after a crash. AI generation,
+> tilesets and engine-specific export are planned — see [ROADMAP.md](ROADMAP.md). Nothing in the app pretends to
 > work when it doesn't; unavailable menus are disabled and name the phase that delivers them.
 
 ## What works today
@@ -18,15 +19,21 @@ AI-assisted game asset creation and 2D animation studio for Windows.
 - **Palettes:** edit, load/save .gpl/.pal/.hex/.txt, extract from image.
 - **Shortcuts:** every menu action can be rebound (Edit › Keyboard Shortcuts).
 - **Editing:** undo/redo for everything; layers (add, group, rename, reorder, duplicate,
-  merge, delete, opacity, blend, locks); frames (insert, duplicate, delete, duration); palette
-  editing; PNG import/export.
+  merge, delete, opacity, blend, locks); palette editing; PNG import/export.
+- **Animation:** frames (insert, duplicate, delete, drag or Alt+←/→ to reorder, per-frame and
+  all-frame durations); tags with colour, direction (forward/reverse/ping-pong) and repeat
+  count; playback that honours tags; onion skin (frames before/after, opacity, red/blue tint,
+  wrap); a Preview dock that keeps looping while you draw.
+- **Export:** sprite sheets (horizontal, vertical, grid, packed; padding, spacing, trim, merge
+  duplicates, power-of-two, scale) with Aseprite JSON (hash or array); animated GIF, APNG and
+  WebP (lossless); PNG sequences. Existing files are only replaced after you confirm.
 - **Safety:** atomic saves with `.bak`, autosave to recovery files, crash-recovery prompt.
 - **Desktop app:** multi-document tabs; dockable Tools, Layers, Properties, Palette, Timeline
-  and Log panels; dark and light themes; pixel-exact canvas (nearest-neighbour, integer zoom,
-  grid); frame playback; recent projects; layout persistence.
+  Preview and Log panels; dark and light themes; pixel-exact canvas (nearest-neighbour,
+  integer zoom, grid); recent projects; layout persistence.
 - **Project format:** versioned ZIP + JSON + PNG ([spec](docs/project-format.md)); atomic saves
   with a `.bak` of the previous version; corruption and newer-version detection.
-- **CLI:** `acestudio-cli new | info | validate | render | version`, all with `--json`.
+- **CLI:** `acestudio-cli new | info | validate | render | export | version`, all with `--json`.
 
 ### Shortcuts
 
@@ -44,6 +51,8 @@ AI-assisted game asset creation and 2D animation studio for Windows.
 | Delete | Clear selection or layer | Ctrl+Shift+N | New layer |
 | Ctrl+J / Ctrl+E | Duplicate layer / merge down | Alt+N / Alt+D | New / duplicate frame |
 | Enter | Play / pause | , / . | Previous / next frame |
+| Alt+← / Alt+→ | Move frame left / right | F3 | Onion skin on/off |
+| Ctrl+Alt+T | Animation tags | | |
 
 ## Build
 
@@ -84,6 +93,8 @@ acestudio-cli new hero.acestudio --width 64 --height 64 --frames 4
 acestudio-cli --json info hero.acestudio
 acestudio-cli validate hero.acestudio          # exit 3 if damaged
 acestudio-cli render hero.acestudio --frame 0 --scale 8 --out hero.png
+acestudio-cli export hero.acestudio --format sheet --layout packed --trim --out hero_sheet
+acestudio-cli export hero.acestudio --format gif --tag walk --scale 4 --out walk.gif
 ```
 
 Exit codes: 0 ok · 1 usage · 2 I/O or not found · 3 corrupt · 4 newer version · 5 internal.

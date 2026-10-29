@@ -129,6 +129,11 @@ void CanvasWidget::setSelectionPreview(const QPainterPath& path) {
     update();
 }
 
+void CanvasWidget::setUnderlay(const QImage& image) {
+    m_underlay = image;
+    update();
+}
+
 void CanvasWidget::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.fillRect(rect(), m_look.background);
@@ -143,6 +148,7 @@ void CanvasWidget::paintEvent(QPaintEvent*) {
 
     p.setRenderHint(QPainter::SmoothPixmapTransform, false);
     p.setRenderHint(QPainter::Antialiasing, false);
+    if (!m_underlay.isNull() && m_underlay.size() == m_image.size()) p.drawImage(target, m_underlay);
     p.drawImage(target, m_image);
 
     if (m_look.gridVisible && m_zoom >= m_look.gridMinZoom) {

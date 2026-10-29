@@ -2,6 +2,26 @@
 
 All notable changes are documented here. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.4.0] — 2026-10-29 — Phase 3 animation (unreleased)
+
+### Added
+- Timeline: drag frames to reorder (or Alt+← / Alt+→, or the right-click menu); set the
+  duration of one frame or all frames; tag ranges tinted in their colour; Tags… button.
+- Animation › Tags (Ctrl+Alt+T): add, edit and remove tags (name, range, colour, direction,
+  repeat). All tag edits are undoable.
+- Playback follows the tag under the playhead: forward, reverse, ping-pong, finite repeats.
+- Onion skin (F3) with configurable frames before/after, opacity, red/blue tint and wrap
+  (Animation › Onion Skin Settings…), remembered across sessions.
+- Preview dock: loops the tag at the playhead, all frames or a chosen tag at 1–32× zoom while
+  you keep editing.
+- File › Export Animation: Sprite Sheet (layouts, padding, spacing, trim, merge duplicates,
+  power-of-two, scale, Aseprite JSON hash/array), Animated GIF, Animated PNG, Animated WebP,
+  PNG Sequence. Asks before replacing any existing file.
+- CLI `export` command for every format (`--format sheet|gif|apng|webp|png`).
+- Core: `AnimationPlayer`, `renderOnionSkin`, `buildSpriteSheet`, `spriteSheetJson`, GIF
+  encoder (own LZW) and decoder, APNG encoder/decoder, WebP via libwebp 1.6.0,
+  `writeSpriteSheet`, `writeAnimation`, `exportPngSequence`.
+
 ## [0.3.0] — 2026-10-29 — Phase 2b (unreleased)
 
 ### Added

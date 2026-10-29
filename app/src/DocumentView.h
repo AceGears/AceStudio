@@ -1,5 +1,6 @@
 #pragma once
 
+#include "acestudio/core/Animation.h"
 #include "acestudio/core/Editor.h"
 #include "acestudio/core/Paint.h"
 #include "acestudio/core/ProjectIO.h"
@@ -36,6 +37,12 @@ public:
 
     void setCurrentFrame(int frame);
     void setCurrentLayer(LayerId id);
+
+    // Onion skin: ghosts of neighbouring frames under the current one.
+    // nullopt disables it. Ghosts are rebuilt on frame and document changes
+    // (strokes only touch the current frame, so they never invalidate them).
+    void setOnionSkin(std::optional<OnionSkin> opts);
+    const std::optional<OnionSkin>& onionSkin() const { return m_onion; }
 
     // Selection (rectangular for now). Empty mask = no selection.
     bool hasSelection() const { return !m_selection.isNull(); }
@@ -93,6 +100,7 @@ private:
     Mask m_selection;
     bool m_lastModified = false;
     bool m_neverSaved = false;
+    std::optional<OnionSkin> m_onion;
     Image m_composite;                      // cached flattened current frame
     std::optional<IntRect> m_pendingRegion; // next editor change only touched this area
     std::string m_recoveryId;

@@ -20,6 +20,10 @@ add_executable(AceStudio WIN32
     src/QtBridge.h
     src/ImageDialogs.h
     src/ImageDialogs.cpp
+    src/AnimationDialogs.h
+    src/AnimationDialogs.cpp
+    src/ExportDialog.h
+    src/ExportDialog.cpp
     src/Shortcuts.h
     src/Shortcuts.cpp
     src/ToolState.h
@@ -36,6 +40,8 @@ add_executable(AceStudio WIN32
     src/panels/TimelinePanel.cpp
     src/panels/LogPanel.h
     src/panels/LogPanel.cpp
+    src/panels/PreviewPanel.h
+    src/panels/PreviewPanel.cpp
 )
 
 target_include_directories(AceStudio PRIVATE src)

@@ -9,6 +9,9 @@
 #include "panels/LayersPanel.h"
 #include "panels/LogPanel.h"
 #include "panels/PalettePanel.h"
+#include "panels/PreviewPanel.h"
+#include "AnimationDialogs.h"
+#include "ExportDialog.h"
 #include "panels/PropertiesPanel.h"
 #include "panels/TimelinePanel.h"
 #include "panels/ToolsPanel.h"
@@ -160,6 +163,10 @@ void MainWindow::buildDocks() {
     m_toolsPanel = new ToolsPanel(m_tools, this);
     m_timeline = new TimelinePanel(this);
     m_log = new LogPanel(this);
+    m_preview = new PreviewPanel(this);
+    m_preview->setZoom(m_ctx.settings().get<int>("animation.preview.zoom"));
+    connect(m_preview, &PreviewPanel::zoomChanged, this, [this](int z) { (void)m_ctx.settings().set("animation.preview.zoom", z); });
+    connect(m_timeline, &TimelinePanel::tagsRequested, this, &MainWindow::editTags);
 
     m_toolsDock = makeDock(tr("Tools"), QStringLiteral("dock.tools"), m_toolsPanel, Qt::LeftDockWidgetArea);
     m_layersDock = makeDock(tr("Layers"), QStringLiteral("dock.layers"), m_layers, Qt::RightDockWidgetArea);
@@ -167,6 +174,9 @@ void MainWindow::buildDocks() {
     m_paletteDock = makeDock(tr("Palette"), QStringLiteral("dock.palette"), m_palette, Qt::RightDockWidgetArea);
     m_timelineDock = makeDock(tr("Timeline"), QStringLiteral("dock.timeline"), m_timeline, Qt::BottomDockWidgetArea);
     m_logDock = makeDock(tr("Log"), QStringLiteral("dock.log"), m_log, Qt::BottomDockWidgetArea);
+    m_previewDock = makeDock(tr("Preview"), QStringLiteral("dock.preview"), m_preview, Qt::RightDockWidgetArea);
+    tabifyDockWidget(m_paletteDock, m_previewDock);
+    m_paletteDock->raise();
     tabifyDockWidget(m_timelineDock, m_logDock);
     m_timelineDock->raise();
     resizeDocks({m_layersDock, m_toolsDock}, {300, 170}, Qt::Horizontal);
@@ -201,6 +211,12 @@ void MainWindow::buildMenus() {
     file->addAction(tr("&Import PNG as New Project…"), this, [this] { importPng(false); });
     docAction(file, tr("Import PNG as &Layer…"), QKeySequence(), [this] { importPng(true); });
     docAction(file, tr("&Export Frame as PNG…"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E), [this] { exportPng(); });
+    QMenu* exportMenu = file->addMenu(tr("Export &Animation"));
+    docAction(exportMenu, tr("&Sprite Sheet…"), QKeySequence(), [this] { exportAnimation(static_cast<int>(ExportKind::SpriteSheet)); });
+    docAction(exportMenu, tr("Animated &GIF…"), QKeySequence(), [this] { exportAnimation(static_cast<int>(ExportKind::Gif)); });
+    docAction(exportMenu, tr("Animated &PNG (APNG)…"), QKeySequence(), [this] { exportAnimation(static_cast<int>(ExportKind::Apng)); });
+    docAction(exportMenu, tr("Animated &WebP…"), QKeySequence(), [this] { exportAnimation(static_cast<int>(ExportKind::Webp)); });
+    docAction(exportMenu, tr("PNG Se&quence…"), QKeySequence(), [this] { exportAnimation(static_cast<int>(ExportKind::PngSequence)); });
     file->addSeparator();
     QAction* quit = file->addAction(tr("E&xit"), QKeySequence::Quit, this, &QWidget::close);
     quit->setMenuRole(QAction::QuitRole);
@@ -361,8 +377,22 @@ void MainWindow::buildMenus() {
     docAction(anim, tr("Delete Fra&me"), QKeySequence(), [this] {
         report(currentView()->editor().removeFrame(currentView()->currentFrame()));
     });
+    docAction(anim, tr("Move Frame &Left"), QKeySequence(Qt::ALT | Qt::Key_Left), [this] { m_timeline->moveCurrentFrame(-1); });
+    docAction(anim, tr("Move Frame R&ight"), QKeySequence(Qt::ALT | Qt::Key_Right), [this] { m_timeline->moveCurrentFrame(1); });
     anim->addSeparator();
-    planned(anim, tr("Onion skin, tags editor and frame reordering — Phase 3"));
+    docAction(anim, tr("&Tags…"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_T), [this] { editTags(); });
+    anim->addSeparator();
+    m_onionAction = anim->addAction(tr("&Onion Skin"));
+    m_onionAction->setCheckable(true);
+    m_onionAction->setShortcut(QKeySequence(Qt::Key_F3));
+    m_onionAction->setToolTip(tr("Onion skin: show neighbouring frames (F3)"));
+    m_onionAction->setChecked(m_ctx.settings().get<bool>("animation.onionSkin.enabled"));
+    connect(m_onionAction, &QAction::toggled, this, [this](bool on) {
+        (void)m_ctx.settings().set("animation.onionSkin.enabled", on);
+        applyOnionSkin();
+    });
+    m_timeline->addActionButton(m_onionAction);
+    anim->addAction(tr("Onion Skin &Settings…"), this, &MainWindow::editOnionSkin);
 
     planned(menuBar()->addMenu(tr("AI &Studio")), tr("Local AI generation — Phase 4"));
     planned(menuBar()->addMenu(tr("&Tilesets")), tr("Tileset and terrain tools — Phase 6"));
@@ -386,7 +416,7 @@ void MainWindow::buildMenus() {
 
     // Window
     QMenu* window = menuBar()->addMenu(tr("&Window"));
-    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_propsDock, m_paletteDock, m_timelineDock, m_logDock})
+    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_propsDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock})
         window->addAction(d->toggleViewAction());
     window->addSeparator();
     window->addAction(tr("&Reset Layout"), this, &MainWindow::resetLayout);
@@ -414,7 +444,7 @@ void MainWindow::saveWindowState() {
 }
 
 void MainWindow::resetLayout() {
-    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_propsDock, m_paletteDock, m_timelineDock, m_logDock}) {
+    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_propsDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock}) {
         d->setFloating(false);
         d->show();
     }
@@ -437,6 +467,7 @@ void MainWindow::addView(DocumentView* view) {
     look.gridMinZoom = s.get<int>("canvas.grid.minZoom");
     look.zoomStep = s.get<double>("canvas.zoomStep");
     view->canvas()->setAppearance(look);
+    if (m_onionAction && m_onionAction->isChecked()) view->setOnionSkin(onionSkinFromSettings());
 
     connect(view, &DocumentView::modifiedChanged, this, [this, view] { updateTabTitle(view); });
     connect(view, &DocumentView::documentChanged, this, [this, view] { if (view == currentView()) updateActions(); });
@@ -467,6 +498,7 @@ void MainWindow::onCurrentTabChanged() {
     m_props->setView(v);
     m_palette->setView(v);
     m_timeline->setView(v);
+    m_preview->setView(v);
     if (v) {
         setWindowTitle(QStringLiteral("%1%2 — AceStudio").arg(v->displayName(), v->isModified() ? QStringLiteral(" •") : QString()));
         m_statusCanvas->setText(QStringLiteral("%1 × %2").arg(v->document().width()).arg(v->document().height()));
@@ -659,6 +691,8 @@ void MainWindow::showNotices() {
         "<li><b>nlohmann/json 3.12.0</b> — MIT License</li>"
         "<li><b>miniz 3.1.2</b> — MIT License</li>"
         "<li><b>stb_image</b> — MIT License / Public Domain</li>"
+        "<li><b>libwebp 1.6.0</b> — BSD 3-Clause License, Copyright (c) 2010 Google Inc.; "
+        "with the WebM project's additional patent grant</li>"
         "</ul><p>Full license texts will ship in the installer's <i>licenses</i> folder "
         "(installer packaging is not built yet).</p>")
                     .arg(QString::fromLatin1(qVersion())));
@@ -707,6 +741,55 @@ void MainWindow::importPng(bool asLayer) {
     v->setCurrentLayer(layerId.value());
     if (src.width() > v->document().width() || src.height() > v->document().height())
         statusBar()->showMessage(tr("Image was larger than the canvas and has been cropped."), 5000);
+}
+
+void MainWindow::exportAnimation(int kind) {
+    DocumentView* v = currentView();
+    if (!v) return;
+    QString suggested = v->filePath();
+    if (suggested.isEmpty()) suggested = QDir::home().filePath(QStringLiteral("untitled.acestudio"));
+    ExportDialog dlg(static_cast<ExportKind>(kind), v->document(), v->currentFrame(), suggested, this);
+    if (dlg.exec() == QDialog::Accepted) statusBar()->showMessage(dlg.resultMessage(), 6000);
+}
+
+void MainWindow::editTags() {
+    DocumentView* v = currentView();
+    if (!v) return;
+    TagsDialog dlg(v, this);
+    dlg.exec();
+}
+
+OnionSkin MainWindow::onionSkinFromSettings() const {
+    const Settings& s = m_ctx.settings();
+    OnionSkin o;
+    o.before = std::clamp(s.get<int>("animation.onionSkin.before"), 0, 8);
+    o.after = std::clamp(s.get<int>("animation.onionSkin.after"), 0, 8);
+    o.opacity = std::clamp(static_cast<int>(std::lround(s.get<double>("animation.onionSkin.opacity") * 100)), 5, 100);
+    o.tint = s.get<bool>("animation.onionSkin.tint");
+    o.wrap = s.get<bool>("animation.onionSkin.wrap");
+    return o;
+}
+
+void MainWindow::applyOnionSkin() {
+    const bool on = m_onionAction && m_onionAction->isChecked();
+    const OnionSkin o = onionSkinFromSettings();
+    for (int i = 0; i < m_tabs->count(); ++i)
+        if (auto* v = qobject_cast<DocumentView*>(m_tabs->widget(i)))
+            v->setOnionSkin(on ? std::optional<OnionSkin>(o) : std::nullopt);
+}
+
+void MainWindow::editOnionSkin() {
+    OnionSkinDialog dlg(onionSkinFromSettings(), this);
+    if (dlg.exec() != QDialog::Accepted) return;
+    const OnionSkin o = dlg.options();
+    Settings& s = m_ctx.settings();
+    (void)s.set("animation.onionSkin.before", o.before);
+    (void)s.set("animation.onionSkin.after", o.after);
+    (void)s.set("animation.onionSkin.opacity", o.opacity / 100.0);
+    (void)s.set("animation.onionSkin.tint", o.tint);
+    (void)s.set("animation.onionSkin.wrap", o.wrap);
+    if (!m_onionAction->isChecked()) m_onionAction->setChecked(true);   // changing settings implies wanting to see them
+    else applyOnionSkin();
 }
 
 void MainWindow::exportPng() {

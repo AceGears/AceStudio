@@ -1,5 +1,6 @@
 // Micro-benchmarks for interactive editing paths. Prints median timings;
 // results depend on the machine, so record where they were measured.
+#include "acestudio/core/Animation.h"
 #include "acestudio/core/Paint.h"
 
 #include <algorithm>
@@ -56,6 +57,15 @@ int main() {
             for (int i = 0; i < 200; ++i) st.moveTo({i % size, (i * 7) % size});
             s->commit();
         }));
+        {
+            // Onion skin, 1 ghost each side: two extra full composites per frame change.
+            Editor anim = makeDoc(size, layers);
+            (void)anim.duplicateFrame(0);   // real content in every ghost
+            (void)anim.duplicateFrame(0);
+            OnionSkin o;
+            std::snprintf(name, sizeof name, "onion skin 1+1 ghosts on %dx%d", size, size);
+            std::printf("%-44s %10.2f\n", name, medianMs(9, [&] { volatile auto img = renderOnionSkin(anim.document(), 1, o); (void)img; }));
+        }
         std::snprintf(name, sizeof name, "undo+redo paint step on %dx%d", size, size);
         std::printf("%-44s %10.2f\n", name, medianMs(9, [&] { (void)e.undo(); (void)e.redo(); }));
     }

@@ -40,6 +40,35 @@ std::optional<std::size_t> tagAt(const Document& doc, int frame) {
     return std::nullopt;
 }
 
+Image renderOnionSkin(const Document& doc, int frame, const OnionSkin& o) {
+    Image out(doc.width(), doc.height());
+    const int n = doc.frameCount();
+    if (n < 2 || o.opacity <= 0) return out;
+    struct Ghost { int frame; int distance; bool before; };
+    std::vector<Ghost> ghosts;
+    auto add = [&](int f, int dist, bool before) {
+        if (o.wrap) f = ((f % n) + n) % n;
+        if (f < 0 || f >= n || f == frame) return;
+        ghosts.push_back({f, dist, before});
+    };
+    for (int d = 1; d <= std::max(0, o.before); ++d) add(frame - d, d, true);
+    for (int d = 1; d <= std::max(0, o.after); ++d) add(frame + d, d, false);
+    // Furthest first so nearer ghosts end up on top.
+    std::stable_sort(ghosts.begin(), ghosts.end(), [](const Ghost& a, const Ghost& b) { return a.distance > b.distance; });
+    for (const Ghost& g : ghosts) {
+        Image img = doc.composite(g.frame);
+        if (o.tint) {
+            const Rgba8 t = g.before ? Rgba8{220, 60, 60, 255} : Rgba8{60, 110, 230, 255};
+            for (auto& p : img.pixels())
+                if (p.a) p = {static_cast<std::uint8_t>((p.r + t.r) / 2), static_cast<std::uint8_t>((p.g + t.g) / 2),
+                              static_cast<std::uint8_t>((p.b + t.b) / 2), p.a};
+        }
+        const int pct = std::clamp(o.opacity / g.distance, 1, 100);
+        blendImage(out, img, 0, 0, BlendMode::Normal, static_cast<std::uint8_t>(pct * 255 / 100));
+    }
+    return out;
+}
+
 void AnimationPlayer::reset(const Document& doc, int startFrame) {
     m_sequence.clear();
     m_pos = 0;
@@ -52,10 +81,16 @@ void AnimationPlayer::reset(const Document& doc, int startFrame) {
         auto it = std::find(m_sequence.begin(), m_sequence.end(), startFrame);
         if (it != m_sequence.end()) m_pos = static_cast<std::size_t>(it - m_sequence.begin());
     } else {
-        for (int f = 0; f < doc.frameCount(); ++f) m_sequence.push_back(f);
-        m_loopForever = true;
-        m_pos = static_cast<std::size_t>(std::clamp(startFrame, 0, std::max(0, doc.frameCount() - 1)));
+        resetAll(doc, startFrame);
     }
+}
+
+void AnimationPlayer::resetAll(const Document& doc, int startFrame) {
+    m_sequence.clear();
+    m_finished = false;
+    for (int f = 0; f < doc.frameCount(); ++f) m_sequence.push_back(f);
+    m_loopForever = true;
+    m_pos = static_cast<std::size_t>(std::clamp(startFrame, 0, std::max(0, doc.frameCount() - 1)));
 }
 
 bool AnimationPlayer::advance() noexcept {

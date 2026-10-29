@@ -1,6 +1,6 @@
 # Known Issues and Limitations
 
-Current as of 0.3.0 (Phase 2b).
+Current as of 0.4.0 (Phase 3).
 
 ## Not yet verified
 - **Windows desktop app not yet used interactively.** CI builds everything with MSVC and
@@ -33,6 +33,20 @@ Current as of 0.3.0 (Phase 2b).
 - No AI, tileset, MCP, Lua or plugin functionality yet; those menus show one disabled entry
   naming the planned phase.
 - Workspace presets are not implemented; layout persistence and Reset Layout are.
+
+## Animation limitations (0.4.0)
+- Onion skin recomposites the ghost frames on every frame change: about 14 ms for one ghost
+  each side at 256×256 with 20 layers, but about 240 ms at 1024×1024 (2-vCPU test VM), so
+  playback with onion skin on large HD canvases stutters. Ghosts are not cached yet.
+- Tags may overlap; playback, export defaults and the timeline tint use the first tag that
+  contains the frame.
+- GIF export: at most 256 colours per frame (median-cut reduction beyond 255), 1-bit
+  transparency (alpha < 128 becomes transparent) and 10 ms duration steps (minimum 20 ms, as
+  browsers treat shorter delays as 100 ms). Use APNG or WebP for exact output.
+- Frames can be reordered one at a time; multi-frame selection and cel-level linking are not
+  implemented.
+- The Preview dock shows the whole canvas; it has no checkerboard behind transparent pixels.
+- Export presets are not remembered between exports yet.
 
 ## Cosmetic
 - The layer action buttons wrap tightly when the Layers dock is narrow.

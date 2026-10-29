@@ -1,5 +1,6 @@
 #include "acestudio/core/Export.h"
 #include "acestudio/core/Animation.h"
+#include "acestudio/core/FileUtil.h"
 #include "acestudio/core/PngCodec.h"
 #include "acestudio/core/Transform.h"
 #include "acestudio/core/Version.h"
@@ -200,18 +201,27 @@ std::string spriteSheetJson(const Document& doc, const SpriteSheet& sheet, const
     return json{{"frames", frames}, {"meta", meta}}.dump(1, ' ');
 }
 
+Result<std::vector<fs::path>> pngSequencePaths(const Document& doc, const FrameRange& range, const fs::path& dir,
+                                               const std::string& baseName) {
+    auto indices = resolveFrames(doc, range);
+    if (!indices) return indices.error();
+    const int digits = std::max(3, static_cast<int>(std::to_string(doc.frameCount() - 1).size()));
+    std::vector<fs::path> paths;
+    for (int index : indices.value()) {
+        char num[16];
+        std::snprintf(num, sizeof num, "%0*d", digits, index);
+        paths.push_back(dir / (baseName + "_" + num + ".png"));
+    }
+    return paths;
+}
+
 Result<std::vector<fs::path>> exportPngSequence(const Document& doc, const FrameRange& range, const fs::path& dir,
                                                 const std::string& baseName, int scale, bool overwrite) {
     auto frames = renderFrames(doc, range, scale, false);
     if (!frames) return frames.error();
-    auto indices = resolveFrames(doc, range).value();
-    const int digits = std::max(3, static_cast<int>(std::to_string(doc.frameCount() - 1).size()));
-    std::vector<fs::path> paths;
-    for (std::size_t i = 0; i < indices.size(); ++i) {
-        char num[16];
-        std::snprintf(num, sizeof num, "%0*d", digits, indices[i]);
-        paths.push_back(dir / (baseName + "_" + num + ".png"));
-    }
+    auto listed = pngSequencePaths(doc, range, dir, baseName);
+    if (!listed) return listed.error();
+    const std::vector<fs::path>& paths = listed.value();
     std::error_code ec;
     if (!overwrite)
         for (const auto& p : paths)
@@ -219,6 +229,50 @@ Result<std::vector<fs::path>> exportPngSequence(const Document& doc, const Frame
     for (std::size_t i = 0; i < paths.size(); ++i)
         if (auto st = writePng(frames.value()[i].image, paths[i]); !st) return st.error();
     return paths;
+}
+
+Result<SheetFiles> writeSpriteSheet(const Document& doc, const FrameRange& range, const SheetOptions& opts,
+                                    const fs::path& imagePath, std::optional<JsonStyle> json, bool overwrite) {
+    SheetFiles out;
+    out.image = imagePath;
+    if (out.image.extension() != ".png") out.image += ".png";
+    if (json) {
+        out.data = out.image;
+        out.data.replace_extension(".json");
+    }
+    std::error_code ec;
+    if (!overwrite)
+        for (const auto& p : {out.image, out.data})
+            if (!p.empty() && fs::exists(p, ec)) return Error{ErrorCode::IoError, p.string() + " already exists"};
+    auto sheet = buildSpriteSheet(doc, range, opts);
+    if (!sheet) return sheet.error();
+    auto png = encodePng(sheet.value().image);
+    if (!png) return png.error();
+    if (auto st = writeFileAtomic(out.image, png.value()); !st) return st.error();
+    if (json) {
+        const std::string meta = spriteSheetJson(doc, sheet.value(), out.image.filename().string(),
+                                                 out.image.stem().string(), *json);
+        if (auto st = writeFileAtomic(out.data, std::span(reinterpret_cast<const std::uint8_t*>(meta.data()), meta.size())); !st)
+            return st.error();
+    }
+    out.frames = sheet.value().frames.size();
+    out.width = sheet.value().image.width();
+    out.height = sheet.value().image.height();
+    return out;
+}
+
+Result<std::size_t> writeAnimation(const Document& doc, const FrameRange& range, AnimFormat format, const fs::path& path,
+                                   int scale, int loopCount, bool overwrite) {
+    std::error_code ec;
+    if (!overwrite && fs::exists(path, ec)) return Error{ErrorCode::IoError, path.string() + " already exists"};
+    auto frames = renderFrames(doc, range, scale, true);
+    if (!frames) return frames.error();
+    auto bytes = format == AnimFormat::Gif    ? encodeGif(frames.value(), loopCount)
+               : format == AnimFormat::Apng   ? encodeApng(frames.value(), loopCount)
+                                              : encodeWebp(frames.value(), loopCount);
+    if (!bytes) return bytes.error();
+    if (auto st = writeFileAtomic(path, bytes.value()); !st) return st.error();
+    return frames.value().size();
 }
 
 } // namespace acestudio

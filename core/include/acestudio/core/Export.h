@@ -71,6 +71,33 @@ enum class JsonStyle { Hash, Array };
 std::string spriteSheetJson(const Document& doc, const SpriteSheet& sheet, const std::string& imageFile,
                             const std::string& baseName, JsonStyle style);
 
+// Sprite sheet PNG plus (optionally) its JSON next to it. `imagePath` gets a
+// .png extension if it lacks one; the JSON shares its stem. Nothing is
+// written if any target exists and !overwrite.
+struct SheetFiles {
+    std::filesystem::path image;
+    std::filesystem::path data;   // empty when JSON was not requested
+    std::size_t frames = 0;
+    int width = 0;
+    int height = 0;
+};
+Result<SheetFiles> writeSpriteSheet(const Document& doc, const FrameRange& range, const SheetOptions& opts,
+                                    const std::filesystem::path& imagePath, std::optional<JsonStyle> json,
+                                    bool overwrite = false);
+
+enum class AnimFormat { Gif, Apng, Webp };
+// Renders the range in playback order (tags honour direction/repeat) and
+// writes one animated file. Returns the number of frames written.
+Result<std::size_t> writeAnimation(const Document& doc, const FrameRange& range, AnimFormat format,
+                                   const std::filesystem::path& path, int scale = 1, int loopCount = 0,
+                                   bool overwrite = false);
+
+// The paths exportPngSequence would write (frame numbers are the
+// document's own frame indices, zero-padded to at least 3 digits).
+Result<std::vector<std::filesystem::path>> pngSequencePaths(const Document& doc, const FrameRange& range,
+                                                            const std::filesystem::path& dir,
+                                                            const std::string& baseName);
+
 // Writes <dir>/<baseName>_<NNN>.png for each frame. Refuses to overwrite
 // existing files unless `overwrite`. Returns the written paths.
 Result<std::vector<std::filesystem::path>> exportPngSequence(const Document& doc, const FrameRange& range,

@@ -34,6 +34,9 @@ public:
     void setImage(const QImage& image);
     // Replaces part of the displayed image without copying the whole frame.
     void updateImageRegion(const QImage& patch, const QPoint& at);
+    // Drawn between the checkerboard and the image (onion-skin ghosts);
+    // a null image clears it.
+    void setUnderlay(const QImage& image);
     void setAppearance(const CanvasAppearance& a);
     double zoom() const { return m_zoom; }
 
@@ -81,6 +84,7 @@ private:
     void rebuildChecker();
 
     QImage m_image;
+    QImage m_underlay;
     CanvasAppearance m_look;
     QPixmap m_checkerTile;
     double m_zoom = 1.0;

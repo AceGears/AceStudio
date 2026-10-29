@@ -51,6 +51,10 @@ TEST_CASE("AnimationPlayer loops tags and stops finite repeats", "[animation]") 
 
     p.reset(d, 0);   // untagged frame: plays everything
     CHECK(p.sequence().size() == 6);
+    p.resetAll(d, 2);   // tags ignored
+    CHECK(p.currentFrame() == 2);
+    for (int i = 0; i < 4; ++i) REQUIRE(p.advance());
+    CHECK(p.currentFrame() == 0);
 }
 
 TEST_CASE("Moving frames carries cels and undoes exactly", "[animation][editor]") {
@@ -91,4 +95,26 @@ TEST_CASE("Tag editing is validated and undoable", "[animation][editor]") {
     CHECK(e.document().frames()[0].durationMs == 100);
     REQUIRE(e.undo());
     CHECK(e.document().frames()[2].durationMs == 120);
+}
+
+TEST_CASE("Onion skin shows tinted, fading neighbours only", "[animation][onion]") {
+    Editor e = fourFrames();   // frame f has one red-ish pixel at x = f
+    OnionSkin o;
+    o.before = 2;
+    o.after = 1;
+    o.opacity = 60;
+    const Image ghosts = renderOnionSkin(e.document(), 2, o);
+    CHECK(ghosts.pixel(2, 0).a == 0);                 // current frame is not a ghost
+    CHECK(ghosts.pixel(1, 0).a == 153);               // previous: 60 %
+    CHECK(ghosts.pixel(0, 0).a == 76);                // two back: 30 %
+    CHECK(ghosts.pixel(3, 0).a == 153);               // next: 60 %
+    CHECK(ghosts.pixel(3, 0).b > ghosts.pixel(3, 0).r);   // later frames tinted blue
+    o.tint = false;
+    o.after = 0;
+    CHECK(renderOnionSkin(e.document(), 2, o).pixel(3, 0).a == 0);
+    o.wrap = true;
+    o.before = 1;
+    CHECK(renderOnionSkin(e.document(), 0, o).pixel(3, 0).a > 0);   // wraps to the last frame
+    o.opacity = 0;
+    CHECK(renderOnionSkin(e.document(), 2, o).isFullyTransparent());
 }

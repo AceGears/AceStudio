@@ -60,11 +60,20 @@ tiled drawing and seamless preview; layer masks, clipping masks and adjustment l
 .ase palettes; moving/transforming a floating selection interactively; GPU compositing for
 large HD canvases.
 
-## Phase 3 — Animation · ⬜
-Acceptance: frame insert/delete/duplicate/reorder/drag; per-frame durations; tags with
-direction; onion skin (configurable range/opacity); floating preview window; sprite-sheet
-export (grid/packed) with Aseprite-compatible JSON; GIF, APNG, WebP export verified by
-re-decoding.
+## Phase 3 — Animation · ✅ (delivered in 0.4.0; real-Windows use pending as for Phase 1)
+
+| Criterion | Status |
+|---|---|
+| Frame insert / delete / duplicate / reorder (drag, Alt+←/→, context menu) with exact undo; durations travel with frames | ✅ unit-tested; drag and undo driven in the app |
+| Per-frame durations; set all durations at once | ✅ |
+| Tags: name, range, colour, forward/reverse/ping-pong, repeat count; validated and undoable; shown tinted in the timeline | ✅ tag created through the dialog in the app |
+| Playback honours the tag under the playhead (direction, repeats) and per-frame durations | ✅ `AnimationPlayer` unit-tested; driven in the app |
+| Onion skin: frames before/after (0–8), opacity, tint, wrap; persisted in settings | ✅ unit-tested; checked visually |
+| Preview dock (floatable) looping independently of the editing playhead, zoom 1–32× | ✅ |
+| Sprite sheet export: horizontal, vertical, grid, packed; padding/spacing; trim; merge duplicates; power-of-two; scale; Aseprite JSON hash/array | ✅ every frame region compared to the composite; 2× trimmed grid exported from the app and checked |
+| GIF, APNG, WebP export verified by re-decoding | ✅ exact round trip (APNG/WebP lossless incl. partial alpha; GIF exact for ≤255 colours); GIF also checked with Pillow |
+| PNG sequence export | ✅ |
+| CLI `export` for all formats | ✅ cli_smoke on Linux and the Windows build (Wine) |
 
 ## Phase 4 — AI Infrastructure · ⬜
 Acceptance: supervised Python worker with crash recovery (tested by killing it mid-job);

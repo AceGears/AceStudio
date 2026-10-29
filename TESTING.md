@@ -28,9 +28,41 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 | `test_recovery` | unit | recovery write/load/remove, live-writer exclusion, unsafe ids, bad metadata, process liveness |
 | `test_transform` | unit | flips/rotations as exact permutations, nearest scaling round trip, Scale2x behaviour, RotSprite palette preservation/area/right-angle equivalence, outline modes, polygon masks, selection ops, Bayer matrix, gradients, dither brush |
 | `test_palette_io` | unit | .gpl/.pal/.hex/.txt round trips, real-world variants (CRLF, comments, alpha), malformed and oversized input rejected, files on disk, extraction (exact and median cut), colour-mode conversion with undo |
+| `test_animation` | unit | tag cycles for every direction, repeats, `AnimationPlayer` looping/finite tags/all-frames, frame move with exact undo, tag validation and undo, onion-skin fade/tint/wrap |
+| `test_export` | unit/integration | frame ranges and playback order, every sheet layout placing frames exactly, trim/merge/packed/power-of-two, Aseprite JSON (hash/array, tag remapping), GIF/APNG/WebP round trips, noisy-frame LZW resets, >255-colour reduction bound, corrupt input, PNG sequence and file writers refusing to overwrite |
 | `cli_smoke` | end-to-end | every CLI command, JSON output, exit codes, overwrite protection, corrupt-file handling |
 
 ## Recorded results
+
+### 2026-10-29 — Phase 3, version 0.4.0
+
+| Environment | Build | Result |
+|---|---|---|
+| Linux, GCC 13.3, Qt 6.4.2, Release, `-Werror` | everything | ✅ zero warnings; 106/106 CTest |
+| Windows target via MinGW-w64, `-Werror`, under Wine | core + CLI + tests | ✅ 105/105 test cases, 1823 assertions; cli_smoke (incl. all export formats) passed |
+| Independent decoder | GIF from the app | ✅ Pillow: 4 frames, durations 100/120/120/120 ms, loop 0 |
+| GitHub Actions (Windows MSVC + Linux) | everything | see commit status on GitHub |
+
+Benchmarks (2-vCPU Xeon VM, Release, median ms):
+
+| Benchmark | 256×256 | 1024×1024 |
+|---|---|---|
+| Full composite, 20 layers | 6.5 | 110.3 |
+| Onion skin, 1 ghost each side (populated frames) | 14.2 | 242.7 |
+
+Manual desktop checks (Linux, Xvfb 1600×1000, Qt 6.4.2), real mouse/keyboard input on the
+knight sample:
+
+| Check | Result |
+|---|---|
+| F3 shows tinted ghosts of frames 1 and 3 under frame 2 | ✅ |
+| Dragging frame 1 past frame 3 moves it with its 100 ms duration; Ctrl+Z restores the order | ✅ |
+| Tags dialog: add "walk" frames 2–3 ping-pong; timeline lists both tags | ✅ |
+| Preview dock loops while the canvas stays on another frame | ✅ |
+| Export Sprite Sheet: grid, 2×, trim → 128×104 PNG + JSON with both tags and trimmed source rects | ✅ |
+| Export GIF twice: second time asks "Replace existing files?" with Cancel as default | ✅ |
+| Enter / play button: playback starts and stops on the current frame | ✅ |
+| Defects found and fixed during this check: literal "&" in the export dialog's File label; near-invisible summary text; every new tag got the same colour | ✅ fixed and re-verified |
 
 ### 2026-10-29 — Phase 2b, version 0.3.0
 

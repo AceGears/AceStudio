@@ -1,5 +1,7 @@
 #pragma once
 
+#include "acestudio/core/Animation.h"
+
 #include "acestudio/core/Result.h"
 
 #include "acestudio/core/Editor.h"
@@ -26,6 +28,7 @@ class DocumentView;
 class LayersPanel;
 class LogPanel;
 class PalettePanel;
+class PreviewPanel;
 class PropertiesPanel;
 class TimelinePanel;
 class ToolState;
@@ -72,6 +75,11 @@ private:
     void showNotices();
     void importPng(bool asLayer);
     void exportPng();
+    void exportAnimation(int kind);   // ExportKind
+    void editTags();
+    void editOnionSkin();
+    OnionSkin onionSkinFromSettings() const;
+    void applyOnionSkin();
     void report(const Status& st);
     void report(const Error& e);
     void autosaveTick();
@@ -96,6 +104,9 @@ private:
     QDockWidget* m_paletteDock = nullptr;
     QDockWidget* m_timelineDock = nullptr;
     QDockWidget* m_logDock = nullptr;
+    QDockWidget* m_previewDock = nullptr;
+    PreviewPanel* m_preview = nullptr;
+    QAction* m_onionAction = nullptr;
     LayersPanel* m_layers = nullptr;
     PropertiesPanel* m_props = nullptr;
     PalettePanel* m_palette = nullptr;

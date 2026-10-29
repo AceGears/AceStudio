@@ -250,11 +250,6 @@ int cmdExport(const Args& a, Output& out) {
     std::error_code ec;
     const fs::path target = *outPath;
 
-    auto writeChecked = [&](const fs::path& p, const std::vector<std::uint8_t>& bytes) -> std::optional<int> {
-        if (fs::exists(p, ec) && !a.force) return out.fail(kIo, p.string() + " already exists (use --force)");
-        if (auto st = writeFileAtomic(p, bytes); !st) return out.fail(st.error());
-        return std::nullopt;
-    };
 
     if (*format == "sheet") {
         SheetOptions o;
@@ -273,26 +268,12 @@ int cmdExport(const Args& a, Output& out) {
         o.scale = scale;
         const std::string style = a.opt("data").value_or("hash");
         if (style != "hash" && style != "array") return out.fail(kUsage, "export: --data must be hash or array");
-        auto sheet = buildSpriteSheet(doc.value(), range, o);
-        if (!sheet) return out.fail(sheet.error());
-        fs::path pngPath = target;
-        if (pngPath.extension() != ".png") pngPath += ".png";
-        fs::path jsonPath = pngPath;
-        jsonPath.replace_extension(".json");
-        if (!a.force)
-            for (const auto& p : {pngPath, jsonPath})
-                if (fs::exists(p, ec)) return out.fail(kIo, p.string() + " already exists (use --force)");
-        auto png = encodePng(sheet.value().image);
-        if (!png) return out.fail(png.error());
-        if (auto st = writeFileAtomic(pngPath, png.value()); !st) return out.fail(st.error());
-        const std::string meta = spriteSheetJson(doc.value(), sheet.value(), pngPath.filename().string(),
-                                                 pngPath.stem().string(), style == "hash" ? JsonStyle::Hash : JsonStyle::Array);
-        if (auto st = writeFileAtomic(jsonPath, std::span(reinterpret_cast<const std::uint8_t*>(meta.data()), meta.size())); !st)
-            return out.fail(st.error());
-        return out.success({{"image", pngPath.string()}, {"data", jsonPath.string()}, {"frames", sheet.value().frames.size()},
-                            {"width", sheet.value().image.width()}, {"height", sheet.value().image.height()}},
-                           "Wrote " + pngPath.string() + " and " + jsonPath.string() + " (" +
-                               std::to_string(sheet.value().frames.size()) + " frames)\n");
+        auto files = writeSpriteSheet(doc.value(), range, o, target, style == "hash" ? JsonStyle::Hash : JsonStyle::Array, a.force);
+        if (!files) return out.fail(files.error());
+        const SheetFiles& f = files.value();
+        return out.success({{"image", f.image.string()}, {"data", f.data.string()}, {"frames", f.frames},
+                            {"width", f.width}, {"height", f.height}},
+                           "Wrote " + f.image.string() + " and " + f.data.string() + " (" + std::to_string(f.frames) + " frames)\n");
     }
     if (*format == "png") {
         auto paths = exportPngSequence(doc.value(), range, target, fs::path(a.positional[1]).stem().string(), scale, a.force);
@@ -302,15 +283,12 @@ int cmdExport(const Args& a, Output& out) {
         return out.success({{"files", list}}, "Wrote " + std::to_string(paths.value().size()) + " PNG files to " + target.string() + "\n");
     }
     if (*format == "gif" || *format == "apng" || *format == "webp") {
-        auto frames = renderFrames(doc.value(), range, scale, true);
-        if (!frames) return out.fail(frames.error());
-        auto bytes = *format == "gif" ? encodeGif(frames.value(), loop)
-                   : *format == "apng" ? encodeApng(frames.value(), loop)
-                                       : encodeWebp(frames.value(), loop);
-        if (!bytes) return out.fail(bytes.error());
-        if (auto code = writeChecked(target, bytes.value())) return *code;
-        return out.success({{"path", target.string()}, {"frames", frames.value().size()}, {"bytes", bytes.value().size()}},
-                           "Wrote " + target.string() + " (" + std::to_string(frames.value().size()) + " frames)\n");
+        const AnimFormat fmt = *format == "gif" ? AnimFormat::Gif : *format == "apng" ? AnimFormat::Apng : AnimFormat::Webp;
+        auto n = writeAnimation(doc.value(), range, fmt, target, scale, loop, a.force);
+        if (!n) return out.fail(n.error());
+        std::uintmax_t size = fs::file_size(target, ec);
+        return out.success({{"path", target.string()}, {"frames", n.value()}, {"bytes", ec ? 0 : size}},
+                           "Wrote " + target.string() + " (" + std::to_string(n.value()) + " frames)\n");
     }
     return out.fail(kUsage, "export: unknown --format " + *format);
 }

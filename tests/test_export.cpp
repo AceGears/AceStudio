@@ -228,3 +228,28 @@ TEST_CASE("PNG sequence export", "[export]") {
     CHECK_FALSE(exportPngSequence(d, {"walk", 0, -1}, dir.path(), "hero", 2));   // refuses to overwrite
     CHECK(exportPngSequence(d, {"walk", 0, -1}, dir.path(), "hero", 2, true));
 }
+
+TEST_CASE("Sheet and animation file writers refuse to overwrite", "[export]") {
+    TempDir dir;
+    const Document d = sampleAnim();
+    auto files = writeSpriteSheet(d, {}, {}, dir.path() / "hero", JsonStyle::Array);
+    REQUIRE(files);
+    CHECK(files.value().image.filename() == "hero.png");
+    CHECK(files.value().data.filename() == "hero.json");
+    CHECK(files.value().frames == 4);
+    CHECK(readPng(files.value().image).value().width() == files.value().width);
+    CHECK_FALSE(writeSpriteSheet(d, {}, {}, dir.path() / "hero.png", JsonStyle::Hash));
+    auto noJson = writeSpriteSheet(d, {}, {}, dir.path() / "bare.png", std::nullopt);
+    REQUIRE(noJson);
+    CHECK(noJson.value().data.empty());
+    CHECK_FALSE(fs::exists(dir.path() / "bare.json"));
+
+    auto n = writeAnimation(d, {"walk", 0, -1}, AnimFormat::Gif, dir.path() / "w.gif", 2);
+    REQUIRE(n);
+    CHECK(n.value() == 4);   // ping-pong 0,1,2,1
+    auto back = decodeGif(readFileBytes(dir.path() / "w.gif").value());
+    REQUIRE(back);
+    CHECK(back.value().frames[0].image.width() == 16);
+    CHECK_FALSE(writeAnimation(d, {}, AnimFormat::Webp, dir.path() / "w.gif"));
+    CHECK(writeAnimation(d, {}, AnimFormat::Apng, dir.path() / "w.gif", 1, 0, true));
+}

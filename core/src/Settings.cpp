@@ -41,6 +41,11 @@ Settings::Settings() {
     registerDefault("animation.defaultFps", 10);
     registerDefault("animation.onionSkin.enabled", false);
     registerDefault("animation.onionSkin.opacity", 0.35);
+    registerDefault("animation.onionSkin.before", 1);
+    registerDefault("animation.onionSkin.after", 1);
+    registerDefault("animation.onionSkin.tint", true);
+    registerDefault("animation.onionSkin.wrap", false);
+    registerDefault("animation.preview.zoom", 4);
     // AI
     registerDefault("ai.modelDirectory", "");
     registerDefault("ai.outputDirectory", "");

@@ -57,6 +57,12 @@ QString DocumentView::displayName() const {
 void DocumentView::refreshCanvas() {
     m_composite = document().composite(m_frame);
     m_canvas->setImage(toQImage(m_composite));
+    m_canvas->setUnderlay(m_onion ? toQImage(renderOnionSkin(document(), m_frame, *m_onion)) : QImage());
+}
+
+void DocumentView::setOnionSkin(std::optional<OnionSkin> opts) {
+    m_onion = opts;
+    refreshCanvas();
 }
 
 void DocumentView::refreshRegion(const IntRect& region) {

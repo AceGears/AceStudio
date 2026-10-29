@@ -12,6 +12,7 @@ first paid release.
 | nlohmann/json | 3.12.0 | MIT | Header-only | Include copyright + license text | ✅ |
 | miniz | 3.1.2 | MIT | Static | Include copyright + license text | ✅ |
 | stb_image | commit 003501f | MIT / Public Domain (dual) | Compiled in | None required (MIT notice included anyway) | ✅ |
+| libwebp (libwebp, libwebpdemux, libwebpmux) | 1.6.0 | BSD-3-Clause | Static | Include copyright notice, licence text and the PATENTS grant file in the notices; do not use WebM project names to endorse the product | ✅ |
 
 ## Build/test-only components (not shipped)
 
@@ -32,8 +33,6 @@ time only and must not ship.
 
 | Component | License | Phase |
 |---|---|---|
-| libwebp | BSD-3 | 3 |
-| giflib | MIT-style | 3 |
 | Lua 5.4.9 | MIT | 7 |
 | sol2 3.3.0 | MIT | 7 |
 | ONNX Runtime | MIT | 4 |
@@ -41,6 +40,9 @@ time only and must not ship.
 | Hugging Face Diffusers | Apache-2.0 | 4 |
 | Inno Setup 7.x | Free for commercial use (keep notices) | 8 |
 | Qt Advanced Docking System | LGPL-2.1 (dynamic link) | optional |
+
+GIF is written by AceStudio's own encoder (LZW; the LZW patents expired in 2004) and read by
+stb_image, so giflib is not needed.
 
 Rejected: WiX binary releases (Open Source Maintenance Fee EULA above US$10k revenue) unless
 built from source or the fee is budgeted.
