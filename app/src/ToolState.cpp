@@ -10,6 +10,9 @@ QString toolName(Tool t) {
     case Tool::Rectangle: return QObject::tr("Rectangle");
     case Tool::Ellipse: return QObject::tr("Ellipse");
     case Tool::Fill: return QObject::tr("Paint Bucket");
+    case Tool::Gradient: return QObject::tr("Gradient");
+    case Tool::Lasso: return QObject::tr("Lasso Select");
+    case Tool::MagicWand: return QObject::tr("Magic Wand");
     case Tool::Eyedropper: return QObject::tr("Eyedropper");
     case Tool::Select: return QObject::tr("Rectangle Select");
     case Tool::Hand: return QObject::tr("Hand");
@@ -25,6 +28,9 @@ QString toolShortcut(Tool t) {
     case Tool::Rectangle: return QStringLiteral("U");
     case Tool::Ellipse: return QStringLiteral("O");
     case Tool::Fill: return QStringLiteral("G");
+    case Tool::Gradient: return QStringLiteral("D");
+    case Tool::Lasso: return QStringLiteral("Q");
+    case Tool::MagicWand: return QStringLiteral("W");
     case Tool::Eyedropper: return QStringLiteral("I");
     case Tool::Select: return QStringLiteral("M");
     case Tool::Hand: return QStringLiteral("H");

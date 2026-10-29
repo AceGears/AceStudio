@@ -38,6 +38,12 @@ private:
     QCheckBox* m_contiguous = nullptr;
     QSpinBox* m_tolerance = nullptr;
     QCheckBox* m_sampleMerged = nullptr;
+    QSpinBox* m_dither = nullptr;
+    QWidget* m_selBox = nullptr;
+    QComboBox* m_selOp = nullptr;
+    QWidget* m_gradBox = nullptr;
+    QComboBox* m_gradShape = nullptr;
+    QComboBox* m_gradDither = nullptr;
     bool m_syncing = false;
 };
 

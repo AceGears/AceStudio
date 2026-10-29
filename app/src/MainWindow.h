@@ -2,7 +2,9 @@
 
 #include "acestudio/core/Result.h"
 
+#include "acestudio/core/Editor.h"
 #include "acestudio/core/Recovery.h"
+#include "Shortcuts.h"
 
 #include <QMainWindow>
 
@@ -75,6 +77,8 @@ private:
     void autosaveTick();
     void discardRecovery(DocumentView* view);
     void applyAutosaveInterval();
+    void transformCurrentLayer(const QString& label, bool allFrames, const Editor::ImageFn& fn);
+    void editShortcuts();
 
     AppContext& m_ctx;
     QStackedWidget* m_stack = nullptr;
@@ -107,6 +111,7 @@ private:
     QAction* m_darkAction = nullptr;
     QAction* m_lightAction = nullptr;
     QByteArray m_defaultState;
+    ShortcutRegistry m_shortcuts;
     std::unique_ptr<RecoveryStore> m_recovery;
     QTimer* m_autosaveTimer = nullptr;
     bool m_autosaveErrorShown = false;

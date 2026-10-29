@@ -119,9 +119,13 @@ void CanvasWidget::setBrushOutline(const QRect& r) {
     update();
 }
 
-void CanvasWidget::setSelectionRect(const QRect& r) {
-    if (r == m_selection) return;
-    m_selection = r;
+void CanvasWidget::setSelectionOutline(const QPainterPath& path) {
+    m_selection = path;
+    update();
+}
+
+void CanvasWidget::setSelectionPreview(const QPainterPath& path) {
+    m_selectionPreview = path;
     update();
 }
 
@@ -161,15 +165,26 @@ void CanvasWidget::paintEvent(QPaintEvent*) {
     p.setPen(QPen(palette().color(QPalette::Mid), 1));
     p.drawRect(target.adjusted(-1, -1, 0, 0));
 
-    // Selection: two-tone dashed outline readable on any colour.
-    if (!m_selection.isEmpty()) {
-        const QRectF r = imageToWidget(m_selection).adjusted(0, 0, -1, -1);
-        p.setPen(QPen(Qt::black, 1));
-        p.drawRect(r);
-        QPen dash(Qt::white, 1, Qt::DashLine);
+    // Selection and preview: two-tone dashed outline readable on any colour,
+    // drawn with cosmetic (1 screen px) pens at any zoom.
+    for (const QPainterPath* path : {&m_selection, &m_selectionPreview}) {
+        if (path->isEmpty()) continue;
+        p.save();
+        QTransform t;
+        t.translate(m_offset.x(), m_offset.y());
+        t.scale(m_zoom, m_zoom);
+        p.setTransform(t);
+        QPen solid(Qt::black, 0);
+        solid.setCosmetic(true);
+        p.setPen(solid);
+        p.setBrush(Qt::NoBrush);
+        p.drawPath(*path);
+        QPen dash(Qt::white, 0, Qt::DashLine);
+        dash.setCosmetic(true);
         dash.setDashPattern({4, 4});
         p.setPen(dash);
-        p.drawRect(r);
+        p.drawPath(*path);
+        p.restore();
     }
     // Brush footprint preview (hidden while panning).
     if (!m_brushOutline.isEmpty() && !m_panning && !m_handMode && !m_spaceHeld) {

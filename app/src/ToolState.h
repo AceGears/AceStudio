@@ -11,7 +11,11 @@
 
 namespace acestudio::ui {
 
-enum class Tool { Pencil, Eraser, Line, Rectangle, Ellipse, Fill, Eyedropper, Select, Hand };
+enum class Tool { Pencil, Eraser, Line, Rectangle, Ellipse, Fill, Gradient, Eyedropper, Select, Lasso, MagicWand, Hand };
+
+constexpr Tool kAllTools[] = {Tool::Pencil, Tool::Eraser, Tool::Line, Tool::Rectangle, Tool::Ellipse, Tool::Fill,
+                              Tool::Gradient, Tool::Eyedropper, Tool::Select, Tool::Lasso, Tool::MagicWand, Tool::Hand};
+inline bool isSelectionTool(Tool t) { return t == Tool::Select || t == Tool::Lasso || t == Tool::MagicWand; }
 
 QString toolName(Tool t);
 QString toolShortcut(Tool t);   // single key, e.g. "B"
@@ -31,6 +35,9 @@ public:
     bool fillContiguous() const { return m_fillContiguous; }
     int fillTolerance() const { return m_fillTolerance; }
     bool sampleMerged() const { return m_sampleMerged; }
+    SelectionOp selectionOp() const { return m_selectionOp; }
+    GradientShape gradientShape() const { return m_gradientShape; }
+    GradientDither gradientDither() const { return m_gradientDither; }
 
 public Q_SLOTS:
     void setTool(acestudio::ui::Tool t) { if (t != m_tool) { m_tool = t; Q_EMIT changed(); } }
@@ -45,6 +52,10 @@ public Q_SLOTS:
     void setFillContiguous(bool on) { m_fillContiguous = on; Q_EMIT changed(); }
     void setFillTolerance(int t) { m_fillTolerance = std::clamp(t, 0, 255); Q_EMIT changed(); }
     void setSampleMerged(bool on) { m_sampleMerged = on; Q_EMIT changed(); }
+    void setDitherDensity(int d) { m_brush.ditherDensity = std::clamp(d, 1, 16); Q_EMIT changed(); }
+    void setSelectionOp(SelectionOp op) { m_selectionOp = op; Q_EMIT changed(); }
+    void setGradientShape(GradientShape s) { m_gradientShape = s; Q_EMIT changed(); }
+    void setGradientDither(GradientDither d) { m_gradientDither = d; Q_EMIT changed(); }
 
 Q_SIGNALS:
     void changed();
@@ -59,6 +70,9 @@ private:
     bool m_fillContiguous = true;
     int m_fillTolerance = 0;
     bool m_sampleMerged = true;
+    SelectionOp m_selectionOp = SelectionOp::Replace;
+    GradientShape m_gradientShape = GradientShape::Linear;
+    GradientDither m_gradientDither = GradientDither::Ordered;
 };
 
 } // namespace acestudio::ui

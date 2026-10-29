@@ -49,6 +49,35 @@ QIcon toolIcon(Tool t, const QColor& fg) {
         p.drawEllipse(QRectF(17, 15, 4, 5));
         break;
     }
+    case Tool::Gradient: {
+        QLinearGradient g(QPointF(4, 0), QPointF(20, 0));
+        g.setColorAt(0, fg);
+        g.setColorAt(1, Qt::transparent);
+        p.setBrush(g);
+        p.drawRect(QRectF(4, 6, 16, 12));
+        break;
+    }
+    case Tool::Lasso: {
+        QPen dash = pen;
+        dash.setStyle(Qt::DashLine);
+        dash.setWidthF(1.4);
+        p.setPen(dash);
+        QPainterPath path;
+        path.moveTo(6, 16);
+        path.cubicTo(1, 8, 12, 2, 19, 6);
+        path.cubicTo(23, 9, 16, 17, 10, 16);
+        p.drawPath(path);
+        p.setPen(pen);
+        p.drawLine(QPointF(10, 16), QPointF(8, 21));
+        break;
+    }
+    case Tool::MagicWand:
+        p.drawLine(QPointF(4, 20), QPointF(15, 9));
+        p.drawLine(QPointF(18, 3), QPointF(18, 7));
+        p.drawLine(QPointF(16, 5), QPointF(20, 5));
+        p.drawLine(QPointF(11, 4), QPointF(12, 6));
+        p.drawLine(QPointF(19, 11), QPointF(21, 12));
+        break;
     case Tool::Eyedropper:
         p.drawLine(QPointF(5, 19), QPointF(14, 10));
         p.drawEllipse(QRectF(13, 5, 6, 6));
@@ -127,10 +156,8 @@ ToolsPanel::ToolsPanel(ToolState* state, QWidget* parent) : QWidget(parent), m_s
     auto* grid = new QGridLayout;
     grid->setSpacing(2);
     const QColor fg = palette().color(QPalette::WindowText);
-    const Tool tools[] = {Tool::Pencil, Tool::Eraser, Tool::Line, Tool::Rectangle, Tool::Ellipse,
-                          Tool::Fill, Tool::Eyedropper, Tool::Select, Tool::Hand};
     int i = 0;
-    for (Tool t : tools) {
+    for (Tool t : kAllTools) {
         auto* b = new QToolButton(this);
         b->setIcon(toolIcon(t, fg));
         b->setIconSize(QSize(22, 22));
@@ -165,12 +192,17 @@ ToolsPanel::ToolsPanel(ToolState* state, QWidget* parent) : QWidget(parent), m_s
     m_mirror->addItem(tr("Left ↔ Right"), static_cast<int>(MirrorMode::Horizontal));
     m_mirror->addItem(tr("Top ↕ Bottom"), static_cast<int>(MirrorMode::Vertical));
     m_mirror->addItem(tr("Both"), static_cast<int>(MirrorMode::Both));
+    m_dither = new QSpinBox(m_brushBox);
+    m_dither->setRange(1, 16);
+    m_dither->setSuffix(tr(" / 16"));
+    m_dither->setToolTip(tr("Ordered-dither density: 16 paints solid, 8 paints a checkerboard"));
     m_pixelPerfect = new QCheckBox(tr("Pixel-perfect"), m_brushBox);
     m_pixelPerfect->setToolTip(tr("Removes doubled corner pixels from 1px freehand strokes"));
     m_filled = new QCheckBox(tr("Filled shape"), m_brushBox);
     bf->addRow(tr("Size"), m_size);
     bf->addRow(tr("Shape"), m_shape);
     bf->addRow(tr("Mirror"), m_mirror);
+    bf->addRow(tr("Density"), m_dither);
     bf->addRow(m_pixelPerfect);
     bf->addRow(m_filled);
 
@@ -184,6 +216,37 @@ ToolsPanel::ToolsPanel(ToolState* state, QWidget* parent) : QWidget(parent), m_s
     ff->addRow(m_contiguous);
     ff->addRow(tr("Tolerance"), m_tolerance);
     m_sampleMerged = new QCheckBox(tr("Sample all layers"), this);
+
+    // Selection mode
+    m_selBox = new QWidget(this);
+    auto* sf = new QFormLayout(m_selBox);
+    sf->setContentsMargins(0, 0, 0, 0);
+    m_selOp = new QComboBox(m_selBox);
+    m_selOp->addItem(tr("Replace"), static_cast<int>(SelectionOp::Replace));
+    m_selOp->addItem(tr("Add (Shift)"), static_cast<int>(SelectionOp::Add));
+    m_selOp->addItem(tr("Subtract (Alt)"), static_cast<int>(SelectionOp::Subtract));
+    m_selOp->addItem(tr("Intersect (Shift+Alt)"), static_cast<int>(SelectionOp::Intersect));
+    sf->addRow(tr("Mode"), m_selOp);
+
+    // Gradient
+    m_gradBox = new QWidget(this);
+    auto* gf = new QFormLayout(m_gradBox);
+    gf->setContentsMargins(0, 0, 0, 0);
+    m_gradShape = new QComboBox(m_gradBox);
+    m_gradShape->addItem(tr("Linear"), static_cast<int>(GradientShape::Linear));
+    m_gradShape->addItem(tr("Radial"), static_cast<int>(GradientShape::Radial));
+    m_gradDither = new QComboBox(m_gradBox);
+    m_gradDither->addItem(tr("Dithered (2 colours)"), static_cast<int>(GradientDither::Ordered));
+    m_gradDither->addItem(tr("Smooth"), static_cast<int>(GradientDither::Smooth));
+    gf->addRow(tr("Shape"), m_gradShape);
+    gf->addRow(tr("Style"), m_gradDither);
+    connect(m_selOp, &QComboBox::currentIndexChanged, this,
+            [this] { if (!m_syncing) m_state->setSelectionOp(static_cast<SelectionOp>(m_selOp->currentData().toInt())); });
+    connect(m_gradShape, &QComboBox::currentIndexChanged, this,
+            [this] { if (!m_syncing) m_state->setGradientShape(static_cast<GradientShape>(m_gradShape->currentData().toInt())); });
+    connect(m_gradDither, &QComboBox::currentIndexChanged, this,
+            [this] { if (!m_syncing) m_state->setGradientDither(static_cast<GradientDither>(m_gradDither->currentData().toInt())); });
+    connect(m_dither, &QSpinBox::valueChanged, this, [this](int v) { if (!m_syncing) m_state->setDitherDensity(v); });
 
     connect(m_size, &QSpinBox::valueChanged, this, [this](int v) { if (!m_syncing) m_state->setBrushSize(v); });
     connect(m_shape, &QComboBox::currentIndexChanged, this,
@@ -206,6 +269,8 @@ ToolsPanel::ToolsPanel(ToolState* state, QWidget* parent) : QWidget(parent), m_s
     root->addWidget(m_toolLabel);
     root->addWidget(m_brushBox);
     root->addWidget(m_fillBox);
+    root->addWidget(m_selBox);
+    root->addWidget(m_gradBox);
     root->addWidget(m_sampleMerged);
     root->addStretch();
     syncFromState();
@@ -225,13 +290,21 @@ void ToolsPanel::syncFromState() {
     m_contiguous->setChecked(m_state->fillContiguous());
     m_tolerance->setValue(m_state->fillTolerance());
     m_sampleMerged->setChecked(m_state->sampleMerged());
+    m_dither->setValue(br.ditherDensity);
+    m_selOp->setCurrentIndex(m_selOp->findData(static_cast<int>(m_state->selectionOp())));
+    m_gradShape->setCurrentIndex(m_gradShape->findData(static_cast<int>(m_state->gradientShape())));
+    m_gradDither->setCurrentIndex(m_gradDither->findData(static_cast<int>(m_state->gradientDither())));
 
     const bool brushTool = t == Tool::Pencil || t == Tool::Eraser || t == Tool::Line || t == Tool::Rectangle || t == Tool::Ellipse;
     m_brushBox->setVisible(brushTool);
     m_pixelPerfect->setVisible(t == Tool::Pencil || t == Tool::Eraser);
     m_filled->setVisible(t == Tool::Rectangle || t == Tool::Ellipse);
-    m_fillBox->setVisible(t == Tool::Fill);
-    m_sampleMerged->setVisible(t == Tool::Eyedropper);
+    m_fillBox->setVisible(t == Tool::Fill || t == Tool::MagicWand);
+    m_sampleMerged->setVisible(t == Tool::Eyedropper || t == Tool::MagicWand);
+    m_selBox->setVisible(isSelectionTool(t));
+    m_gradBox->setVisible(t == Tool::Gradient);
+    m_dither->setVisible(t == Tool::Pencil);
+    if (auto* lbl = qobject_cast<QFormLayout*>(m_brushBox->layout())->labelForField(m_dither)) lbl->setVisible(t == Tool::Pencil);
     m_syncing = false;
 }
 

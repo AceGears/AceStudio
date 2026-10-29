@@ -18,6 +18,10 @@ add_executable(AceStudio WIN32
     src/NewProjectDialog.h
     src/NewProjectDialog.cpp
     src/QtBridge.h
+    src/ImageDialogs.h
+    src/ImageDialogs.cpp
+    src/Shortcuts.h
+    src/Shortcuts.cpp
     src/ToolState.h
     src/ToolState.cpp
     src/panels/ToolsPanel.h

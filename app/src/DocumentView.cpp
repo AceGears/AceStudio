@@ -7,6 +7,7 @@
 #include "acestudio/core/Recovery.h"
 
 #include <QFileInfo>
+#include <QPainterPath>
 #include <QVBoxLayout>
 
 namespace acestudio::ui {
@@ -89,6 +90,8 @@ void DocumentView::onEditorChanged() {
         Q_EMIT currentFrameChanged(m_frame);
     }
     ensureValidLayer();
+    if (hasSelection() && (m_selection.width() != document().width() || m_selection.height() != document().height()))
+        deselect();   // canvas size changed
     if (m_pendingRegion) {
         refreshRegion(*m_pendingRegion);   // a stroke just committed: only its area changed
         m_pendingRegion.reset();
@@ -120,12 +123,51 @@ void DocumentView::setCurrentLayer(LayerId id) {
 
 void DocumentView::selectAll() {
     m_selection = Mask(document().width(), document().height(), true);
-    m_canvas->setSelectionRect(QRect(0, 0, document().width(), document().height()));
+    updateSelectionOutline();
 }
 
 void DocumentView::deselect() {
     m_selection = Mask();
-    m_canvas->setSelectionRect({});
+    updateSelectionOutline();
+}
+
+void DocumentView::applySelection(const Mask& shape, SelectionOp op) {
+    combineMask(m_selection, shape, op);
+    if (m_selection.count() == 0) m_selection = Mask();
+    updateSelectionOutline();
+}
+
+void DocumentView::updateSelectionOutline() {
+    QPainterPath path;
+    if (hasSelection()) {
+        // Boundary edges between selected and unselected pixels.
+        const Mask& m = m_selection;
+        for (int y = 0; y <= m.height(); ++y) {
+            int runStart = -1;
+            for (int x = 0; x <= m.width(); ++x) {
+                const bool edge = x < m.width() && m.get(x, y) != m.get(x, y - 1);
+                if (edge && runStart < 0) runStart = x;
+                if (!edge && runStart >= 0) { path.moveTo(runStart, y); path.lineTo(x, y); runStart = -1; }
+            }
+        }
+        for (int x = 0; x <= m.width(); ++x) {
+            int runStart = -1;
+            for (int y = 0; y <= m.height(); ++y) {
+                const bool edge = y < m.height() && m.get(x, y) != m.get(x - 1, y);
+                if (edge && runStart < 0) runStart = y;
+                if (!edge && runStart >= 0) { path.moveTo(x, runStart); path.lineTo(x, y); runStart = -1; }
+            }
+        }
+    }
+    m_canvas->setSelectionOutline(path);
+}
+
+SelectionOp DocumentView::opFor(Qt::KeyboardModifiers mods) const {
+    const bool shift = mods & Qt::ShiftModifier, alt = mods & Qt::AltModifier;
+    if (shift && alt) return SelectionOp::Intersect;
+    if (shift) return SelectionOp::Add;
+    if (alt) return SelectionOp::Subtract;
+    return m_tools ? m_tools->selectionOp() : SelectionOp::Replace;
 }
 
 void DocumentView::clearSelectionContents() {
@@ -172,9 +214,30 @@ void DocumentView::onToolPressed(QPoint px, Qt::MouseButton button, Qt::Keyboard
         else m_tools->setPrimary(q);
         return;
     }
-    case Tool::Select:
+    case Tool::Select: {
         m_selecting = true;
-        m_canvas->setSelectionRect(QRect(px, QSize(1, 1)));
+        m_gestureOp = opFor(mods);
+        QPainterPath preview;
+        preview.addRect(QRectF(px.x(), px.y(), 1, 1));
+        m_canvas->setSelectionPreview(preview);
+        return;
+    }
+    case Tool::Lasso:
+        m_selecting = true;
+        m_gestureOp = opFor(mods);
+        m_lasso = {p};
+        return;
+    case Tool::MagicWand: {
+        if (!QRect(0, 0, document().width(), document().height()).contains(px)) return;
+        const Image src = m_tools->sampleMerged() ? document().composite(m_frame) : document().renderLayer(m_layer, m_frame);
+        applySelection(floodRegion(src, p, m_tools->fillContiguous(), m_tools->fillTolerance()), opFor(mods));
+        return;
+    }
+    case Tool::Gradient:
+        if (!beginSession(toolName(tool))) return;
+        m_gradientEnd = toRgba(button == Qt::RightButton ? m_tools->primary() : m_tools->secondary());
+        drawGradient(*m_session, p, p, m_strokeColor, m_gradientEnd, m_tools->gradientShape(), m_tools->gradientDither());
+        refreshRegion(m_session->takeDirty());
         return;
     case Tool::Fill:
         if (!beginSession(toolName(tool))) return;
@@ -218,11 +281,26 @@ void DocumentView::applyToolTo(PaintSession& s, Point from, Point to, bool first
 void DocumentView::onToolMoved(QPoint px, Qt::MouseButtons, Qt::KeyboardModifiers mods) {
     Point p = toPoint(px);
     if (m_selecting) {
-        const IntRect r = rectFromCorners(m_anchor, p).intersected({0, 0, document().width(), document().height()});
-        m_canvas->setSelectionRect(QRect(r.x, r.y, r.w, r.h));
+        QPainterPath preview;
+        if (m_tools->tool() == Tool::Lasso) {
+            if (!m_lasso.empty() && m_lasso.back() == p) return;
+            m_lasso.push_back(p);
+            preview.moveTo(m_lasso[0].x + 0.5, m_lasso[0].y + 0.5);
+            for (std::size_t i = 1; i < m_lasso.size(); ++i) preview.lineTo(m_lasso[i].x + 0.5, m_lasso[i].y + 0.5);
+        } else {
+            const IntRect r = rectFromCorners(m_anchor, p).intersected({0, 0, document().width(), document().height()});
+            preview.addRect(QRectF(r.x, r.y, r.w, r.h));
+        }
+        m_canvas->setSelectionPreview(preview);
         return;
     }
     if (!m_session) return;
+    if (m_tools->tool() == Tool::Gradient) {
+        m_session->revertAll();
+        drawGradient(*m_session, m_anchor, p, m_strokeColor, m_gradientEnd, m_tools->gradientShape(), m_tools->gradientDither());
+        refreshRegion(m_session->takeDirty());
+        return;
+    }
     if (m_stroke) {
         m_stroke->moveTo(p);
         m_lastStrokeEnd = p;
@@ -242,14 +320,25 @@ void DocumentView::onToolMoved(QPoint px, Qt::MouseButtons, Qt::KeyboardModifier
 void DocumentView::onToolReleased(QPoint px, Qt::MouseButton, Qt::KeyboardModifiers) {
     if (m_selecting) {
         m_selecting = false;
-        const IntRect r = rectFromCorners(m_anchor, toPoint(px)).intersected({0, 0, document().width(), document().height()});
-        if (r.empty() || (r.w == 1 && r.h == 1 && m_anchor == toPoint(px))) {
-            deselect();   // a click without dragging clears the selection
+        m_canvas->setSelectionPreview({});
+        const int W = document().width(), H = document().height();
+        if (m_tools->tool() == Tool::Lasso) {
+            if (m_lasso.size() < 3) {
+                if (m_gestureOp == SelectionOp::Replace) deselect();
+            } else {
+                applySelection(polygonMask(W, H, m_lasso), m_gestureOp);
+            }
+            m_lasso.clear();
             return;
         }
-        m_selection = Mask(document().width(), document().height());
-        m_selection.fillRect(r, true);
-        m_canvas->setSelectionRect(QRect(r.x, r.y, r.w, r.h));
+        const IntRect r = rectFromCorners(m_anchor, toPoint(px)).intersected({0, 0, W, H});
+        if (r.empty() || (r.w == 1 && r.h == 1 && m_anchor == toPoint(px))) {
+            if (m_gestureOp == SelectionOp::Replace) deselect();   // a plain click clears the selection
+            return;
+        }
+        Mask shape(W, H);
+        shape.fillRect(r, true);
+        applySelection(shape, m_gestureOp);
         return;
     }
     if (!m_session) return;
@@ -266,7 +355,7 @@ void DocumentView::updateBrushOutline(int x, int y, bool inside) {
     int n = 1;
     if (t == Tool::Pencil || t == Tool::Eraser || t == Tool::Line || t == Tool::Rectangle || t == Tool::Ellipse)
         n = m_tools->brush().size;
-    if (t == Tool::Hand) { m_canvas->setBrushOutline({}); return; }
+    if (t == Tool::Hand || isSelectionTool(t)) { m_canvas->setBrushOutline({}); return; }
     const int off = (n - 1) / 2;
     m_canvas->setBrushOutline(QRect(x - off, y - off, n, n));
 }

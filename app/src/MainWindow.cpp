@@ -12,6 +12,8 @@
 #include "panels/PropertiesPanel.h"
 #include "panels/TimelinePanel.h"
 #include "panels/ToolsPanel.h"
+#include "ImageDialogs.h"
+#include "acestudio/core/PaletteIO.h"
 #include "ToolState.h"
 #include "acestudio/core/PngCodec.h"
 
@@ -90,6 +92,10 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
     m_autosaveTimer = new QTimer(this);
     connect(m_autosaveTimer, &QTimer::timeout, this, &MainWindow::autosaveTick);
     applyAutosaveInterval();
+
+    m_shortcuts.collect(menuBar(), m_recentMenu);
+    m_shortcuts.apply(m_ctx.settings().get("keyboard.shortcuts"));
+    for (const QString& c : m_shortcuts.conflicts()) ACE_LOG_WARN("shortcuts", "Conflicting shortcut " + c.toStdString());
 
     m_defaultState = saveState();
     restoreWindowState();
@@ -178,6 +184,7 @@ void MainWindow::buildMenus() {
     auto planned = [](QMenu* menu, const QString& what) {
         QAction* a = menu->addAction(what);
         a->setEnabled(false);
+        a->setProperty("acePlanned", true);
         return a;
     };
 
@@ -208,6 +215,14 @@ void MainWindow::buildMenus() {
     docAction(edit, tr("Select &All"), QKeySequence::SelectAll, [this] { currentView()->selectAll(); });
     docAction(edit, tr("&Deselect"), QKeySequence(Qt::CTRL | Qt::Key_D), [this] { currentView()->deselect(); });
     docAction(edit, tr("D&elete Selection / Clear Layer"), QKeySequence::Delete, [this] { currentView()->clearSelectionContents(); });
+    docAction(edit, tr("&Invert Selection"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_I), [this] {
+        auto* v = currentView();
+        Mask all(v->document().width(), v->document().height(), true);
+        if (v->hasSelection()) { Mask inv = *v->selection(); inv.invert(); v->deselect(); v->applySelection(inv, SelectionOp::Replace); }
+        else v->applySelection(all, SelectionOp::Replace);
+    });
+    edit->addSeparator();
+    edit->addAction(tr("&Keyboard Shortcuts…"), this, &MainWindow::editShortcuts);
 
     // View
     QMenu* view = menuBar()->addMenu(tr("&View"));
@@ -235,7 +250,73 @@ void MainWindow::buildMenus() {
     connect(m_darkAction, &QAction::triggered, this, [this] { setThemeAndPersist(QStringLiteral("dark")); });
     connect(m_lightAction, &QAction::triggered, this, [this] { setThemeAndPersist(QStringLiteral("light")); });
 
-    planned(menuBar()->addMenu(tr("&Image")), tr("Resize, crop, rotate and color-mode conversion — planned"));
+    QMenu* image = menuBar()->addMenu(tr("&Image"));
+    docAction(image, tr("&Canvas Size…"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_C), [this] {
+        auto* v = currentView();
+        CanvasSizeDialog dlg(v->document().width(), v->document().height(), this);
+        if (dlg.exec() == QDialog::Accepted)
+            report(v->editor().resizeCanvas(dlg.newWidth(), dlg.newHeight(), dlg.offsetX(), dlg.offsetY()));
+    });
+    docAction(image, tr("C&rop to Selection"), QKeySequence(), [this] {
+        auto* v = currentView();
+        if (!v->hasSelection()) { report(Error{ErrorCode::InvalidArgument, "Make a selection first"}); return; }
+        report(v->editor().cropCanvas(v->selection()->bounds()));
+    });
+    image->addSeparator();
+    docAction(image, tr("Flip Canvas &Horizontal"), QKeySequence(), [this] { report(currentView()->editor().flipCanvas(true)); });
+    docAction(image, tr("Flip Canvas &Vertical"), QKeySequence(), [this] { report(currentView()->editor().flipCanvas(false)); });
+    docAction(image, tr("Rotate Canvas 90° Clockwise"), QKeySequence(), [this] { report(currentView()->editor().rotateCanvas90(true)); });
+    docAction(image, tr("Rotate Canvas 90° Counter-clockwise"), QKeySequence(), [this] { report(currentView()->editor().rotateCanvas90(false)); });
+    docAction(image, tr("Rotate Canvas 180°"), QKeySequence(), [this] { report(currentView()->editor().rotateCanvas180()); });
+    image->addSeparator();
+    docAction(image, tr("Flip Layer Horizontal"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_H), [this] {
+        transformCurrentLayer(tr("Flip Layer Horizontal"), false, [](const Image& i) { return flipHorizontal(i); });
+    });
+    docAction(image, tr("Flip Layer Vertical"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_V), [this] {
+        transformCurrentLayer(tr("Flip Layer Vertical"), false, [](const Image& i) { return flipVertical(i); });
+    });
+    docAction(image, tr("Rotate Layer 90° Clockwise"), QKeySequence(), [this] {
+        transformCurrentLayer(tr("Rotate Layer 90°"), false, [](const Image& i) { return rotate90(i, true); });
+    });
+    docAction(image, tr("Rotate Layer 90° Counter-clockwise"), QKeySequence(), [this] {
+        transformCurrentLayer(tr("Rotate Layer -90°"), false, [](const Image& i) { return rotate90(i, false); });
+    });
+    docAction(image, tr("R&otate Layer (RotSprite)…"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R), [this] {
+        RotateDialog dlg(this);
+        if (dlg.exec() != QDialog::Accepted) return;
+        const double deg = dlg.degrees();
+        transformCurrentLayer(tr("Rotate Layer %1°").arg(deg), dlg.allFrames(), [deg](const Image& i) { return rotSprite(i, deg); });
+    });
+    docAction(image, tr("&Scale Layer…"), QKeySequence(), [this] {
+        ScaleDialog dlg(this);
+        if (dlg.exec() != QDialog::Accepted) return;
+        const double sx = dlg.percentX() / 100.0, sy = dlg.percentY() / 100.0;
+        transformCurrentLayer(tr("Scale Layer"), dlg.allFrames(), [sx, sy](const Image& i) {
+            auto r = scaleNearest(i, std::max(1, static_cast<int>(std::lround(i.width() * sx))),
+                                  std::max(1, static_cast<int>(std::lround(i.height() * sy))));
+            return r ? std::move(r).value() : i;
+        });
+    });
+    docAction(image, tr("Out&line…"), QKeySequence(), [this] {
+        OutlineDialog dlg(this);
+        if (dlg.exec() != QDialog::Accepted) return;
+        const QColor c = m_tools->primary();
+        const Rgba8 color{static_cast<std::uint8_t>(c.red()), static_cast<std::uint8_t>(c.green()),
+                          static_cast<std::uint8_t>(c.blue()), static_cast<std::uint8_t>(c.alpha())};
+        const OutlineMode mode = dlg.mode();
+        const bool diag = dlg.diagonal();
+        transformCurrentLayer(tr("Outline"), dlg.allFrames(), [=](const Image& i) { return outline(i, color, mode, diag); });
+    });
+    image->addSeparator();
+    QMenu* modeMenu = image->addMenu(tr("Color &Mode"));
+    docAction(modeMenu, tr("RGBA"), QKeySequence(), [this] { report(currentView()->editor().convertColorMode(ColorMode::Rgba)); });
+    docAction(modeMenu, tr("Indexed (nearest palette colour)"), QKeySequence(), [this] {
+        report(currentView()->editor().convertColorMode(ColorMode::Indexed, false));
+    });
+    docAction(modeMenu, tr("Indexed (ordered dither)"), QKeySequence(), [this] {
+        report(currentView()->editor().convertColorMode(ColorMode::Indexed, true));
+    });
+    docAction(modeMenu, tr("Grayscale"), QKeySequence(), [this] { report(currentView()->editor().convertColorMode(ColorMode::Grayscale)); });
     QMenu* layer = menuBar()->addMenu(tr("&Layer"));
     docAction(layer, tr("&New Layer"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N), [this] {
         auto* v = currentView();
@@ -287,8 +368,7 @@ void MainWindow::buildMenus() {
     planned(menuBar()->addMenu(tr("&Tilesets")), tr("Tileset and terrain tools — Phase 6"));
     QMenu* toolsMenu = menuBar()->addMenu(tr("T&ools"));
     auto* toolGroup = new QActionGroup(this);
-    for (Tool t : {Tool::Pencil, Tool::Eraser, Tool::Line, Tool::Rectangle, Tool::Ellipse, Tool::Fill,
-                   Tool::Eyedropper, Tool::Select, Tool::Hand}) {
+    for (Tool t : kAllTools) {
         QAction* a = toolsMenu->addAction(toolName(t));
         a->setShortcut(QKeySequence(toolShortcut(t)));
         a->setCheckable(true);
@@ -723,6 +803,21 @@ void MainWindow::offerRecovery() {
         ACE_LOG_INFO("recovery", "Recovered " + e.title);
     }
     autosaveTick();   // re-stamp recovered files with this process id
+}
+
+void MainWindow::transformCurrentLayer(const QString& label, bool allFrames, const Editor::ImageFn& fn) {
+    auto* v = currentView();
+    if (!v) return;
+    report(v->editor().transformLayer(v->currentLayer(), v->currentFrame(), allFrames, v->selection(), label.toStdString(), fn));
+}
+
+void MainWindow::editShortcuts() {
+    ShortcutsDialog dlg(m_shortcuts, m_ctx.settings().get("keyboard.shortcuts"), this);
+    if (dlg.exec() != QDialog::Accepted) return;
+    (void)m_ctx.settings().set("keyboard.shortcuts", dlg.overrides());
+    m_shortcuts.apply(dlg.overrides());
+    m_ctx.saveSettings();
+    statusBar()->showMessage(tr("Keyboard shortcuts updated"), 3000);
 }
 
 void MainWindow::closeEvent(QCloseEvent* e) {

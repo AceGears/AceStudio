@@ -4,8 +4,12 @@
 #include "ToolState.h"
 
 #include <QColorDialog>
+#include <QFileDialog>
+#include <QMessageBox>
+#include "acestudio/core/PaletteIO.h"
 #include <QHBoxLayout>
 #include <QPushButton>
+#include <QFileInfo>
 
 #include <QLabel>
 #include <QMouseEvent>
@@ -102,6 +106,41 @@ PalettePanel::PalettePanel(ToolState* tools, QWidget* parent) : QWidget(parent),
     row->addWidget(remove);
     row->addStretch();
     layout->addLayout(row);
+    auto* fileRow = new QHBoxLayout;
+    auto* load = new QPushButton(tr("Load…"), this);
+    auto* saveBtn = new QPushButton(tr("Save…"), this);
+    auto* extract = new QPushButton(tr("From Image"), this);
+    extract->setToolTip(tr("Replace the palette with the colours of the current frame (median cut above 256)"));
+    fileRow->addWidget(load);
+    fileRow->addWidget(saveBtn);
+    fileRow->addWidget(extract);
+    fileRow->addStretch();
+    layout->addLayout(fileRow);
+    const QString filter = tr("Palettes (*.gpl *.pal *.hex *.txt);;GIMP (*.gpl);;JASC-PAL (*.pal);;Hex list (*.hex);;Paint.NET (*.txt)");
+    connect(load, &QPushButton::clicked, this, [this, filter] {
+        if (!m_view) return;
+        const QString path = QFileDialog::getOpenFileName(this, tr("Load Palette"), QString(), filter);
+        if (path.isEmpty()) return;
+        auto p = loadPaletteFile(toPath(path));
+        if (!p) { QMessageBox::warning(this, tr("Load Palette"), qs(p.error().message)); return; }
+        auto st = m_view->editor().replacePalette(std::move(p).value(), "Load Palette");
+        if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
+    });
+    connect(saveBtn, &QPushButton::clicked, this, [this, filter] {
+        if (!m_view) return;
+        QString path = QFileDialog::getSaveFileName(this, tr("Save Palette"), qs(m_view->document().palette().name()) + QStringLiteral(".gpl"), filter);
+        if (path.isEmpty()) return;
+        if (QFileInfo(path).suffix().isEmpty()) path += QStringLiteral(".gpl");
+        if (auto st = savePaletteFile(m_view->document().palette(), toPath(path)); !st)
+            QMessageBox::warning(this, tr("Save Palette"), qs(st.error().message));
+    });
+    connect(extract, &QPushButton::clicked, this, [this] {
+        if (!m_view) return;
+        Palette p = extractPalette(m_view->document().composite(m_view->currentFrame()), 256);
+        if (p.empty()) { Q_EMIT m_view->statusMessage(tr("The frame has no opaque pixels")); return; }
+        auto st = m_view->editor().replacePalette(std::move(p), "Palette from Image");
+        if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
+    });
     layout->addStretch();
 
     connect(add, &QPushButton::clicked, this, [this] {

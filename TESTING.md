@@ -26,9 +26,29 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 | `test_editor` | unit | every Editor operation (layers, frames, palette) is checked to undo to the exact prior state and redo to the exact post state twice; invalid ops leave no history; slider merging; isolated group compositing |
 | `test_paint` | unit | Bresenham, rect/ellipse symmetry, pixel-perfect, flood fill (incl. 1M-pixel region without stack overflow), live painting + single undo step, cancel/no-op, offset-cel restore, brush size/shape/mirror, selection, alpha lock, lock/hidden/group refusal, indexed/grayscale constraints, shape preview, fill, eyedropper |
 | `test_recovery` | unit | recovery write/load/remove, live-writer exclusion, unsafe ids, bad metadata, process liveness |
+| `test_transform` | unit | flips/rotations as exact permutations, nearest scaling round trip, Scale2x behaviour, RotSprite palette preservation/area/right-angle equivalence, outline modes, polygon masks, selection ops, Bayer matrix, gradients, dither brush |
+| `test_palette_io` | unit | .gpl/.pal/.hex/.txt round trips, real-world variants (CRLF, comments, alpha), malformed and oversized input rejected, files on disk, extraction (exact and median cut), colour-mode conversion with undo |
 | `cli_smoke` | end-to-end | every CLI command, JSON output, exit codes, overwrite protection, corrupt-file handling |
 
 ## Recorded results
+
+### 2026-10-29 — Phase 2b, version 0.3.0
+
+| Environment | Build | Result |
+|---|---|---|
+| Linux, GCC 13.3, Qt 6.4.2, Release, `-Werror`, clean build | everything | ✅ zero warnings; 90/90 CTest |
+| Windows target via MinGW-w64, `-Werror`, under Wine | core + CLI + tests + bench | ✅ 89/89 test cases, 1518 assertions |
+| GitHub Actions (Windows MSVC + Linux) | everything | see commit status on GitHub |
+
+Manual desktop checks (Linux, Xvfb), real mouse/keyboard input:
+
+| Check | Result |
+|---|---|
+| RotSprite 45° on the knight's body layer: clean edges, no new colours; undo restores | ✅ |
+| Dithered gradient red→blue on a new layer (Bayer pattern) | ✅ (after fixing the Shift+G shortcut clash this check exposed) |
+| Lasso selection outline; magic wand Alt+click subtracts a region | ✅ |
+| Edit menu shows labelled undo ("Undo Gradient") and new items | ✅ |
+| Keyboard Shortcuts dialog: filter, conflict (Ctrl+J twice) refused, Ctrl+G saved to settings and immediately creates a group | ✅ |
 
 ### 2026-10-29 — Phase 2a, version 0.2.0
 

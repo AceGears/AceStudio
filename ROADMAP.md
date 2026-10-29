@@ -23,7 +23,7 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | App launched and used interactively on a Windows desktop | ⬜ needs a Windows machine |
 | High-DPI check at 150%/200% scaling on Windows | ⬜ |
 
-## Phase 2 — Core Editor · 🟡 (2a done; 2b remaining)
+## Phase 2 — Core Editor · 🟡 (2a and 2b done; 2c remaining)
 
 ### 2a — delivered in 0.2.0
 | Criterion | Status |
@@ -41,13 +41,24 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | Isolated group compositing (W3C semantics) | ✅ |
 | Canvas performance: 256×256, 20 layers | ✅ full composite 9.2 ms; stroke updates recomposite only the dirty region (~0.2 ms). Measured on a 2-vCPU Xeon VM, CPU only. Real-display FPS on Windows not yet measured |
 
-### 2b — remaining
-Gradient, curve, polygon, lasso, magic wand, clone, dithering and custom brushes; RotSprite
-rotation and nearest-neighbour scaling; outline generation; shading mode; tiled drawing and
-seamless preview; configurable shortcuts; colour-mode conversion; palette import/export
-(.gpl, .pal, .hex, .ase); canvas resize/crop/flip; layer masks, clipping masks and adjustment
-layers; GPU-accelerated compositing for large HD canvases (1024² × 20 layers currently 109 ms
-for a full recomposite).
+### 2b — delivered in 0.3.0
+| Criterion | Status |
+|---|---|
+| Canvas size (anchor), crop to selection, flip/rotate canvas — exact undo | ✅ |
+| Layer flip/rotate 90°/scale (nearest)/RotSprite at any angle, selection-aware, current or all frames | ✅ RotSprite verified to add no colours |
+| Outline generation (outside/inside, 4/8-neighbour) | ✅ |
+| Lasso and magic wand; selection add / subtract / intersect (Shift / Alt / Shift+Alt); invert | ✅ driven in the app |
+| Gradient tool: linear/radial, ordered-dither (2-colour) or smooth | ✅ |
+| Dither-density brush (Bayer 4×4) | ✅ |
+| Palette import/export: .gpl, .pal (JASC), .hex, .txt (Paint.NET); palette from image (median cut) | ✅ |
+| Colour-mode conversion RGBA / indexed (nearest or ordered dither) / grayscale | ✅ |
+| Customisable keyboard shortcuts with conflict detection, persisted in settings | ✅ driven in the app |
+
+### 2c — remaining
+Curve and polygon tools; clone tool; custom brushes (create/import/export); shading mode;
+tiled drawing and seamless preview; layer masks, clipping masks and adjustment layers; Adobe
+.ase palettes; moving/transforming a floating selection interactively; GPU compositing for
+large HD canvases.
 
 ## Phase 3 — Animation · ⬜
 Acceptance: frame insert/delete/duplicate/reorder/drag; per-frame durations; tags with

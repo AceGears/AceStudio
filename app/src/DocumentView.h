@@ -39,6 +39,9 @@ public:
 
     // Selection (rectangular for now). Empty mask = no selection.
     bool hasSelection() const { return !m_selection.isNull(); }
+    const Mask* selection() const { return hasSelection() ? &m_selection : nullptr; }
+    // Combines a new selection shape into the current one.
+    void applySelection(const Mask& shape, SelectionOp op);
     void selectAll();
     void deselect();
     // Erases the selection on the current layer, or the whole cel if none.
@@ -75,6 +78,8 @@ private:
     void onToolMoved(QPoint px, Qt::MouseButtons buttons, Qt::KeyboardModifiers mods);
     void onToolReleased(QPoint px, Qt::MouseButton button, Qt::KeyboardModifiers mods);
     void updateBrushOutline(int x, int y, bool inside);
+    void updateSelectionOutline();
+    SelectionOp opFor(Qt::KeyboardModifiers mods) const;
     void applyToolTo(PaintSession& s, Point from, Point to, bool first);
     bool beginSession(const QString& label);
 
@@ -101,6 +106,9 @@ private:
     Rgba8 m_strokeColor;
     bool m_selecting = false;
     std::optional<Point> m_lastStrokeEnd;
+    SelectionOp m_gestureOp = SelectionOp::Replace;
+    std::vector<Point> m_lasso;
+    Rgba8 m_gradientEnd;
 };
 
 } // namespace acestudio::ui

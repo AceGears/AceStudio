@@ -2,6 +2,7 @@
 
 #include <QColor>
 #include <QImage>
+#include <QPainterPath>
 #include <QPointF>
 #include <QWidget>
 
@@ -40,8 +41,10 @@ public:
     void setHandMode(bool on);
     // Outline of the brush footprint under the cursor (image coords).
     void setBrushOutline(const QRect& r);
-    // Marching outline of the active selection (empty = none).
-    void setSelectionRect(const QRect& r);
+    // Outline of the active selection in image coordinates (empty = none).
+    void setSelectionOutline(const QPainterPath& path);
+    // In-progress selection shape (rect drag, lasso path) in image coordinates.
+    void setSelectionPreview(const QPainterPath& path);
 
 public Q_SLOTS:
     void zoomIn();
@@ -90,7 +93,8 @@ private:
     bool m_toolActive = false;
     QPointF m_lastMouse;
     QRect m_brushOutline;
-    QRect m_selection;
+    QPainterPath m_selection;
+    QPainterPath m_selectionPreview;
 };
 
 } // namespace acestudio::ui

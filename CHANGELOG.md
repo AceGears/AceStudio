@@ -2,6 +2,26 @@
 
 All notable changes are documented here. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.3.0] — 2026-10-29 — Phase 2b (unreleased)
+
+### Added
+- Image menu: canvas size with anchor, crop to selection, flip/rotate canvas; flip, rotate 90°,
+  RotSprite rotation (any angle) and nearest-neighbour scale for the current layer, honouring
+  the selection and optionally all frames; outline generation.
+- Tools: lasso select (Q), magic wand (W), gradient (D) — linear/radial, ordered-dither or
+  smooth; brush dither density.
+- Selections are now arbitrary masks with add/subtract/intersect (Shift/Alt/Shift+Alt) and
+  Invert Selection (Ctrl+Shift+I); outline drawn along pixel edges.
+- Palette Load/Save (.gpl, .pal, .hex, .txt) and "From Image" (median cut).
+- Colour mode conversion: RGBA, indexed (nearest or ordered dither), grayscale.
+- Edit › Keyboard Shortcuts: every menu action can be rebound; conflicts are refused;
+  overrides persist in settings. Startup logs any clashing shortcuts.
+
+### Fixed
+- Shift+letter shortcuts could trigger the plain-letter tool (Shift+G opened the paint bucket);
+  gradient moved to D and layer flips to Ctrl+Alt+H / Ctrl+Alt+V.
+- Windows: files open in another program could not be read (found by the first Windows CI run).
+
 ## [0.2.0] — 2026-10-29 — Phase 2a core editor (unreleased)
 
 ### Added

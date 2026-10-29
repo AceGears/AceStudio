@@ -52,6 +52,8 @@ Settings::Settings() {
     registerDefault("mcp.port", 0);                           // 0 = stdio only
     // Advanced
     registerDefault("advanced.logLevel", "info");
+    // Keyboard shortcut overrides {actionId: "Ctrl+Shift+N"}
+    registerDefault("keyboard.shortcuts", json::object());
     // Window state (opaque Qt blobs stored as base64)
     registerDefault("window.geometry", "");
     registerDefault("window.state", "");

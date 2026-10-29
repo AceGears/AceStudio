@@ -2,16 +2,21 @@
 
 AI-assisted game asset creation and 2D animation studio for Windows.
 
-> **Status: Phase 2a (core editor), version 0.2.0.** You can draw pixel art with layers and
+> **Status: Phase 2b (core editor), version 0.3.0.** You can draw pixel art with layers and
 > frames, undo anything, and recover work after a crash. Animation tooling, AI generation and
 > engine export are planned — see [ROADMAP.md](ROADMAP.md). Nothing in the app pretends to
 > work when it doesn't; unavailable menus are disabled and name the phase that delivers them.
 
 ## What works today
 
-- **Drawing:** pencil (pixel-perfect), eraser, line, rectangle, ellipse, paint bucket,
-  eyedropper, rectangle select, hand; brush size/shape; mirror painting; alpha lock; indexed
-  and grayscale colour constraints.
+- **Drawing:** pencil (pixel-perfect, dither density), eraser, line, rectangle, ellipse, paint
+  bucket, gradient (dithered or smooth), eyedropper, hand; brush size/shape; mirror painting;
+  alpha lock; indexed and grayscale colour constraints.
+- **Selection:** rectangle, lasso, magic wand; add/subtract/intersect; invert.
+- **Image:** canvas size, crop, flip/rotate canvas; flip, rotate, RotSprite and scale layers;
+  outline; colour-mode conversion.
+- **Palettes:** edit, load/save .gpl/.pal/.hex/.txt, extract from image.
+- **Shortcuts:** every menu action can be rebound (Edit › Keyboard Shortcuts).
 - **Editing:** undo/redo for everything; layers (add, group, rename, reorder, duplicate,
   merge, delete, opacity, blend, locks); frames (insert, duplicate, delete, duration); palette
   editing; PNG import/export.
@@ -32,6 +37,8 @@ AI-assisted game asset creation and 2D animation studio for Windows.
 | O | Ellipse | G | Paint bucket |
 | I | Eyedropper (Alt = temporary) | M | Rectangle select |
 | H / Space | Hand / pan | X | Swap colours |
+| Q | Lasso select | W | Magic wand (Shift add, Alt subtract) |
+| D | Gradient | Ctrl+Shift+R | Rotate layer (RotSprite) |
 | [ / ] | Brush size | Shift | Square/circle shapes, line from last point |
 | Ctrl+Z / Ctrl+Y | Undo / redo | Ctrl+A / Ctrl+D | Select all / deselect |
 | Delete | Clear selection or layer | Ctrl+Shift+N | New layer |
