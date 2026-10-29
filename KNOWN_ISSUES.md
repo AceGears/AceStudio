@@ -3,13 +3,13 @@
 Current as of 0.2.0 (Phase 2a).
 
 ## Not yet verified
-- **Not yet run on real Windows or with MSVC.** Core, CLI and tests cross-compile for Windows
-  with MinGW-w64 and all pass under Wine, which exercises the Win32 file code
-  (`MoveFileExW`, `FlushFileBuffers`, `_wfopen`, `SHGetKnownFolderPath`). The Qt app has not
-  been built for Windows, and Wine is not a substitute for NTFS/antivirus behaviour on a real
-  machine. The CI Windows job is written but has not run.
-- **Qt 6.12 not yet compiled against.** Code targets Qt ≥ 6.4 APIs; `jurplel/install-qt-action`
-  availability of 6.12 is unverified.
+- **Windows desktop app not yet used interactively.** CI builds everything with MSVC and
+  `/W4 /WX`, runs all tests on Windows and packages the app with `windeployqt`, but nobody has
+  yet launched and drawn with the packaged app on a Windows desktop.
+- **CI builds against Qt 6.8.3, not 6.12.** As of 2026-10-29 the aqtinstall package index used by
+  CI lists Qt up to 6.11.3, and 6.11/6.12 metadata downloads fail checksum verification; CI tries
+  6.12 → 6.11 → 6.8 and reports which it used. Building locally against a Qt 6.12 install from
+  the official Qt installer is expected to work (code targets Qt ≥ 6.4) but is unverified.
 - **High-DPI** behaviour has not been checked at 150%/200% Windows scaling.
 
 ## Functional limitations (by design for this phase)

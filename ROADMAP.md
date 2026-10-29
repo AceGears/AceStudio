@@ -17,9 +17,10 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | Versioned `.acestudio` format, atomic save with backup, corruption detection | ✅ |
 | Qt desktop shell: docks, menus, themes, welcome page, recent files, layout persistence | ✅ (Linux/Xvfb) |
 | `acestudio-cli` (version/new/info/validate/render) with JSON output and exit codes | ✅ |
-| CI: Linux core job and Windows MSVC + Qt 6.12 job | 🟡 written, not yet run on GitHub |
+| CI: Linux core job and Windows MSVC + Qt job, green on GitHub Actions | ✅ (Windows built against Qt 6.8.3; see KNOWN_ISSUES) |
 | Core/CLI/tests build for Windows and pass (MinGW cross-compile, run under Wine) | ✅ |
-| App builds and runs on Windows 10/11 with MSVC and Qt 6.12 | ⬜ needs Windows machine/CI |
+| App builds with MSVC on Windows, tests pass, packaged with windeployqt | ✅ CI |
+| App launched and used interactively on a Windows desktop | ⬜ needs a Windows machine |
 | High-DPI check at 150%/200% scaling on Windows | ⬜ |
 
 ## Phase 2 — Core Editor · 🟡 (2a done; 2b remaining)

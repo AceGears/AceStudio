@@ -34,6 +34,8 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 
 | Environment | Build | Result |
 |---|---|---|
+| **GitHub Actions `windows-2022`, MSVC 2022, Qt 6.8.3, Release, `/W4 /WX`** | core + CLI + tests + bench + app, `windeployqt` staging | ✅ zero warnings; 71/71 CTest; `AceStudio-windows-x64` artifact produced (run 40944993023) |
+| GitHub Actions `ubuntu-24.04`, GCC, `-Werror` | core + CLI + tests | ✅ 71/71 |
 | Linux, GCC 13.3, Qt 6.4.2, Release, `-Werror`, clean build | core + CLI + tests + bench + app | ✅ zero warnings; 70/70 CTest (69 test cases + cli_smoke) |
 | Windows target via MinGW-w64, `-Werror`, run under Wine 64 | core + CLI + tests + bench | ✅ zero warnings; 69/69 test cases, 1192 assertions; cli_smoke passed |
 
@@ -60,7 +62,15 @@ target Windows/GPU machine):
 | Composite 32×32 dirty region of 1024×1024 | — | 0.10 ms |
 | Stroke 200 px + commit, 1024×1024 | 2.46 ms | 2.41 ms |
 
-Not yet measured: real on-screen frame rate on Windows, high-DPI rendering cost.
+Bugs found by the first real-Windows CI runs and fixed:
+- MSVC C4996 on `getenv`/`_wfopen` (now `GetEnvironmentVariableW` and shared `_wfsopen`).
+- MSVC C4245 signed/unsigned miniz constant in a test.
+- **Reading a file that another handle had open failed on Windows** (`_wfopen_s` opens
+  exclusively). Wine did not reproduce this. Regression test added in `test_fileutil`.
+
+Not yet measured: real on-screen frame rate on Windows, high-DPI rendering cost. The Windows
+app has been compiled, packaged and unit-tested on Windows, but not yet launched and used
+interactively on a Windows desktop.
 
 ### 2026-10-29 — Phase 1, version 0.1.0
 
