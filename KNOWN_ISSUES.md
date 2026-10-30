@@ -3,9 +3,12 @@
 Current as of 0.5.0 (Phase 4).
 
 ## Not yet verified
-- **Windows desktop app not yet used interactively.** CI builds everything with MSVC and
-  `/W4 /WX`, runs all tests on Windows and packages the app with `windeployqt`, but nobody has
-  yet launched and drawn with the packaged app on a Windows desktop.
+- **Windows desktop app only launched so far.** CI builds everything with MSVC and `/W4 /WX`,
+  runs all tests on Windows and packages the app; the packaged build opened on a Windows 11 PC,
+  but drawing, saving, export and AI on that desktop have not been recorded yet.
+- The CI package includes `vc_redist.x64.exe` but does not run it: on a PC without the Visual
+  C++ 2015-2022 runtime the app will not start until it is installed (the installer, Phase 8,
+  will handle this).
 - **CI builds against Qt 6.8.3, not 6.12.** As of 2026-10-29 the aqtinstall package index used by
   CI lists Qt up to 6.11.3, and 6.11/6.12 metadata downloads fail checksum verification; CI tries
   6.12 → 6.11 → 6.8 and reports which it used. Building locally against a Qt 6.12 install from

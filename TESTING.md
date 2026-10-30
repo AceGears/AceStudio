@@ -59,6 +59,19 @@ Manual desktop checks (Linux, Xvfb), real input:
 | Set Up AI Runtime in a fresh data folder: venv, install, restart, status "AI ready" | ✅ |
 | Defects found and fixed: hello blocked for tens of seconds importing torch (now probed after hello); "done" was sent before the worker was free, so the next job was refused as busy; a Diffusers 0.42 API change (VAE tiling); dropped final progress step; AI dock forced the window taller than the screen; long model names widened the dock; Models dialog buttons enabled with no selection; setup text named the wrong destination for a configured Python; log lines stuck in the buffer | ✅ fixed and re-verified |
 
+Windows (GitHub Actions, windows-2022, MSVC, Qt 6.8.3), first fully green run 2026-10-30
+(run 40998686282): all 124 CTest tests including the real-worker AI tests, the Python worker
+suite on Windows Python 3.14, and the packaged CLI finding its worker files. Three defects only
+real Windows exposed, all fixed: MSVC C4996 on `sscanf`/`getenv` (warnings are errors); a
+test-fixture bug that took `begin()`/`end()` from two copies of the Python launcher arguments
+(harmless on Linux where the list is empty, a crash on Windows where it holds `-3`); and
+program/working-directory paths are now normalised to backslashes before `CreateProcessW`
+(a defensive change made while diagnosing; not proven to have been needed).
+
+First desktop launch: the CI build started and opened its window on a Windows 11 PC
+(NVIDIA GPU, VC++ runtime already installed), copied without the software-OpenGL, DirectX
+shader compiler, network and TLS files windeployqt adds, which a Widgets app does not need.
+
 **Not yet verified:** anything on an NVIDIA GPU (SDXL quality and speed, CUDA wheels from the
 PyTorch index, DirectML), BiRefNet output quality, the `onnx-windows` and `diffusion-cuda`
 profiles, and the SDXL/Pixel Art XL file lists against Hugging Face (not reachable from the

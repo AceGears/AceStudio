@@ -20,7 +20,7 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | CI: Linux core job and Windows MSVC + Qt job, green on GitHub Actions | ✅ (Windows built against Qt 6.8.3; see KNOWN_ISSUES) |
 | Core/CLI/tests build for Windows and pass (MinGW cross-compile, run under Wine) | ✅ |
 | App builds with MSVC on Windows, tests pass, packaged with windeployqt | ✅ CI |
-| App launched and used interactively on a Windows desktop | ⬜ needs a Windows machine |
+| App launched and used interactively on a Windows desktop | 🟡 CI build (Qt 6.8.3, MSVC) launched on a Windows 11 PC with an NVIDIA GPU on 2026-10-30 and opened its window; interactive use still to be recorded |
 | High-DPI check at 150%/200% scaling on Windows | ⬜ |
 
 ## Phase 2 — Core Editor · 🟡 (2a and 2b done; 2c remaining)
@@ -82,7 +82,7 @@ large HD canvases.
 | Supervised Python worker with crash recovery, tested by killing it mid-job | ✅ SIGKILL mid-job → job retried on a fresh worker and succeeds (unit test); real out-of-memory kill in the app → retried once, then failed with a memory hint, editor unaffected |
 | Queue, progress, cancellation (cooperative, and forced for stuck jobs) | ✅ unit-tested against the real worker; queue UI in AI Studio |
 | Model manager with licence display and approval-gated downloads | ✅ licence dialog with mandatory acceptance; resumable downloads verified by SHA-256; real 224 MB and 18 MB downloads from the official releases |
-| Runtime setup (private Python environment, pinned packages, no system changes) | ✅ from the app and the CLI on Linux; Windows (`onnx-windows`, `diffusion-cuda`) not yet run |
+| Runtime setup (private Python environment, pinned packages, no system changes) | ✅ from the app and the CLI on Linux; Windows CI runs the real-worker supervision tests and the Python worker suite on Windows Python 3.14; Windows profiles (`onnx-windows`, `diffusion-cuda`) not yet installed on a user PC |
 | Text-to-image and image-to-image with SDXL on a 12 GB NVIDIA GPU | 🟡 code path verified end to end with real Diffusers 0.42 on a tiny random SDXL (seeds, img2img, LoRA hook, cancel, pixel-art post-process); real SDXL weights and GPU not available here |
 | BiRefNet background removal | 🟡 implemented; BiRefNet Lite needs more than 6 GB RAM on CPU and was OOM-killed on the 7 GB test VM. Must be verified on a GPU machine |
 | Real-ESRGAN upscaling | ✅ official x4plus and anime weights run on CPU (64→256 px in 6 s) |

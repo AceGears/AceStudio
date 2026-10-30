@@ -114,6 +114,12 @@ GPU with 8 GB+ VRAM (12 GB recommended). AI files live in `%LOCALAPPDATA%\AceStu
 Exit codes: 0 ok · 1 usage · 2 I/O or not found · 3 corrupt · 4 newer version · 5 internal.
 Existing files are never overwritten without `--force`.
 
+## Portable mode
+
+Put an empty file named `portable` next to `AceStudio.exe` (or `acestudio-cli.exe`) and all
+settings, logs, recovery files and AI data are kept in a `data` folder beside it instead of
+the user profile.
+
 ## User data
 
 Settings and logs live in `%APPDATA%\AceStudio` (Linux: `~/.config/AceStudio`). Set
