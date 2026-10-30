@@ -19,8 +19,10 @@ namespace {
 
 // The tests drive the real Python worker with its diagnostic tasks. They
 // are skipped when no Python 3.10+ is installed (e.g. under Wine).
-std::optional<PythonInfo> python() {
-    static std::optional<PythonInfo> cached = [] () -> std::optional<PythonInfo> {
+// Returns a reference: callers take begin()/end() of prefixArgs, which must
+// come from the same object (a by-value copy here once crashed on Windows).
+const std::optional<PythonInfo>& python() {
+    static const std::optional<PythonInfo> cached = [] () -> std::optional<PythonInfo> {
         auto p = findPython();
         if (!p) return std::nullopt;
         return p.value();
