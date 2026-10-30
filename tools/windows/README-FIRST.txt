@@ -1,8 +1,8 @@
 AceStudio - Windows build and test kit
 ======================================
 
-1. Extract this zip to a folder with a short path, e.g. C:\AceStudioDev
-   long paths can break the C++ build.
+1. Extract this zip to C:\ (it creates C:\AceStudioDev). Keep the path
+   short: long paths can break the C++ build.
 2. Double-click RUN-SETUP.cmd. It explains what it installs and asks first.
    - Installs Visual Studio 2022 Build Tools (C++) and Python 3.12 if missing
      (one administrator prompt), downloads Qt 6.8.3 into this folder,
