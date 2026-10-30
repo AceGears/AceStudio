@@ -84,6 +84,16 @@ TEST_CASE("Subprocess passes arguments, environment and working directory", "[su
     auto cwd = collect(*c.value());
     REQUIRE(cwd.size() == 1);
     CHECK(std::filesystem::equivalent(cwd[0], dir.path()));
+
+    // Paths built from generic (forward-slash) strings must work on Windows too.
+    auto gspec = child({"cwd"});
+    gspec.workingDir = std::filesystem::path(dir.path().generic_string());
+    gspec.program = std::filesystem::path(std::filesystem::path(ACESTUDIO_TEST_CHILD).generic_string());
+    auto g = Subprocess::start(gspec);
+    REQUIRE(g);
+    auto gcwd = collect(*g.value());
+    REQUIRE(gcwd.size() == 1);
+    CHECK(std::filesystem::equivalent(gcwd[0], dir.path()));
 }
 
 TEST_CASE("Subprocess can be killed and fails cleanly to start", "[subprocess]") {

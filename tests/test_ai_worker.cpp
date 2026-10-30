@@ -5,6 +5,7 @@
 #include "acestudio/core/PngCodec.h"
 
 #include <fstream>
+#include <iostream>
 
 #ifndef _WIN32
 #include <csignal>
@@ -41,7 +42,10 @@ struct Fixture {
     }
     bool ready() {
         sup->start();
-        return sup->runUntil([&] { return sup->state() == WorkerState::Ready; }, 60s);
+        const bool ok = sup->runUntil([&] { return sup->state() == WorkerState::Ready; }, 60s);
+        // Printed (and picked up by CI annotations) when the worker does not come up.
+        if (!ok) std::cerr << "AIDIAG state=" << toString(sup->state()) << " error=" << sup->lastError() << "\n";
+        return ok;
     }
     bool finished(const JobId& id, std::chrono::milliseconds t = 60s) {
         return sup->runUntil([&] { return isFinished(sup->job(id)->state); }, t);

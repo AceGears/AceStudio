@@ -247,7 +247,9 @@ void Subprocess::Impl::closeHandles() {
 
 Result<std::unique_ptr<Subprocess>> Subprocess::start(const ProcessSpec& spec) {
     auto impl = std::make_unique<Impl>();
-    fs::path program = spec.program;
+    // Win32 APIs (CreateProcessW's current directory in particular) do not
+    // reliably accept forward slashes: normalise to backslashes.
+    fs::path program = fs::path(spec.program).make_preferred();
     if (!program.has_parent_path()) {
         auto found = findExecutable(program.string());
         if (!found) return Error{ErrorCode::NotFound, "Program not found on PATH: " + program.string()};
@@ -291,7 +293,7 @@ Result<std::unique_ptr<Subprocess>> Subprocess::start(const ProcessSpec& spec) {
     si.hStdOutput = outW;
     si.hStdError = errW;
     PROCESS_INFORMATION pi{};
-    const std::wstring cwd = spec.workingDir.empty() ? std::wstring() : spec.workingDir.wstring();
+    const std::wstring cwd = spec.workingDir.empty() ? std::wstring() : fs::path(spec.workingDir).lexically_normal().make_preferred().wstring();
     const BOOL ok = CreateProcessW(program.wstring().c_str(), cmd.data(), nullptr, nullptr, TRUE,
                                    CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW | CREATE_SUSPENDED,
                                    envBlock.data(), cwd.empty() ? nullptr : cwd.c_str(), &si, &pi);

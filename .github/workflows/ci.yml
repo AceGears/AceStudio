@@ -105,7 +105,7 @@ jobs:
         run: |
           ctest --test-dir build --output-on-failure 2>&1 | Tee-Object -FilePath test.log
           $code = $LASTEXITCODE
-          Select-String -Path test.log -Pattern '\*\*\*Failed|FAILED:|tests failed out of' | Where-Object { $_.Line -notmatch ' 0 tests failed' } | Select-Object -First 30 |
+          Select-String -Path test.log -Pattern '\*\*\*Failed|FAILED:|tests failed out of|AIDIAG' | Where-Object { $_.Line -notmatch ' 0 tests failed' } | Select-Object -First 30 |
             ForEach-Object { Write-Host "::error::$($_.Line.Trim())" }
           exit $code
       - uses: actions/upload-artifact@v4
