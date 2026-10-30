@@ -203,10 +203,23 @@ std::optional<fs::path> envPath(const char* name) {
 }
 } // namespace
 
+// Portable mode: a file named "portable" next to the executable keeps all
+// user data in "<exe dir>/data" (USB sticks, test builds, no AppData).
+static std::optional<fs::path> portableDataDir() {
+    const fs::path exe = executableDir();
+    std::error_code ec;
+    if (exe.empty() || !fs::exists(exe / "portable", ec)) return std::nullopt;
+    return exe / "data";
+}
+
+bool isPortable() { return portableDataDir().has_value(); }
+
 Result<fs::path> userDataDir() {
     fs::path base;
     if (auto over = envPath("ACESTUDIO_DATA_DIR")) {
         base = *over;
+    } else if (auto portable = portableDataDir()) {
+        base = *portable;
     } else {
 #ifdef _WIN32
         PWSTR appData = nullptr;
@@ -233,6 +246,8 @@ Result<fs::path> userLocalDataDir() {
     fs::path base;
     if (auto over = envPath("ACESTUDIO_DATA_DIR")) {
         base = *over;
+    } else if (auto portable = portableDataDir()) {
+        base = *portable;
     } else {
 #ifdef _WIN32
         PWSTR local = nullptr;

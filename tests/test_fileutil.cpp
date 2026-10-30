@@ -1,5 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdlib>
+#include <fstream>
+
 #include "TestSupport.h"
 #include "acestudio/core/FileUtil.h"
 
@@ -89,4 +92,40 @@ TEST_CASE("Files can be read while another handle has them open for writing", "[
     auto r = readFileBytes(path);
     REQUIRE(r);
     CHECK(r.value().size() == 4);
+}
+
+TEST_CASE("Portable mode keeps data next to the executable", "[fileutil]") {
+    namespace fs = std::filesystem;
+    const fs::path exe = acestudio::executableDir();
+    REQUIRE_FALSE(exe.empty());
+    const fs::path marker = exe / "portable";
+    REQUIRE_FALSE(fs::exists(marker));
+    // ACESTUDIO_DATA_DIR (set by other tests' environment) still wins, so
+    // clear it for this check and restore afterwards.
+    const char* old = std::getenv("ACESTUDIO_DATA_DIR");
+    const std::string saved = old ? old : "";
+#ifdef _WIN32
+    _putenv_s("ACESTUDIO_DATA_DIR", "");
+#else
+    unsetenv("ACESTUDIO_DATA_DIR");
+#endif
+    struct Cleanup {
+        fs::path marker, data;
+        std::string saved;
+        ~Cleanup() {
+            std::error_code ec;
+            fs::remove(marker, ec);
+            fs::remove_all(data, ec);
+#ifdef _WIN32
+            if (!saved.empty()) _putenv_s("ACESTUDIO_DATA_DIR", saved.c_str());
+#else
+            if (!saved.empty()) setenv("ACESTUDIO_DATA_DIR", saved.c_str(), 1);
+#endif
+        }
+    } cleanup{marker, exe / "data", saved};
+    CHECK_FALSE(acestudio::isPortable());
+    { std::ofstream(marker) << ""; }
+    CHECK(acestudio::isPortable());
+    CHECK(fs::equivalent(acestudio::userDataDir().value(), exe / "data"));
+    CHECK(fs::equivalent(acestudio::userLocalDataDir().value(), exe / "data"));
 }

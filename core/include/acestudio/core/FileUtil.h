@@ -27,7 +27,7 @@ std::string nowUtcIso8601();
 // Per-user application data directory (created if missing):
 //   Windows: %APPDATA%\AceStudio
 //   Linux:   $XDG_CONFIG_HOME/AceStudio or ~/.config/AceStudio
-// ACESTUDIO_DATA_DIR overrides both (used by tests and portable installs).
+// ACESTUDIO_DATA_DIR overrides both (tests); portable mode (see isPortable) comes next.
 Result<std::filesystem::path> userDataDir();
 
 // Per-user, non-roaming folder for large files (AI runtime, models):
@@ -38,5 +38,9 @@ Result<std::filesystem::path> userLocalDataDir();
 
 // Folder containing the running executable (empty if unknown).
 std::filesystem::path executableDir();
+
+// True when a file named "portable" sits next to the executable: then both
+// data folders are "<exe dir>/data" (unless ACESTUDIO_DATA_DIR is set).
+bool isPortable();
 
 } // namespace acestudio
