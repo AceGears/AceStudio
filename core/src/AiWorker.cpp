@@ -3,6 +3,7 @@
 #include "acestudio/core/PngCodec.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <random>
@@ -498,8 +499,14 @@ Result<PythonInfo> probePython(const fs::path& exe, const std::vector<std::strin
     auto lines = p.value()->takeLines(Subprocess::Stream::Stdout);
     if (*code != 0 || lines.empty()) return Error{ErrorCode::IoError, exe.string() + " is not a working Python"};
     PythonInfo info{exe, prefixArgs, lines.back()};
+    // "3.12.4" -> major 3, minor 12
     int major = 0, minor = 0;
-    if (std::sscanf(info.version.c_str(), "%d.%d", &major, &minor) != 2 || major != 3 || minor < 10)
+    const char* b = info.version.data();
+    const char* e = b + info.version.size();
+    auto r1 = std::from_chars(b, e, major);
+    bool parsed = r1.ec == std::errc() && r1.ptr < e && *r1.ptr == '.';
+    if (parsed) parsed = std::from_chars(r1.ptr + 1, e, minor).ec == std::errc();
+    if (!parsed || major != 3 || minor < 10)
         return Error{ErrorCode::UnsupportedVersion, "Python " + info.version + " found; AceStudio needs Python 3.10 or newer"};
     return info;
 }

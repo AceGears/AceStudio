@@ -260,10 +260,12 @@ int cmdImageTask(const Args& a, Output& out, const AiContext& c, const ModelCata
             params["lora"] = {{"path", utf8(store.entryPath(*l))}, {"scale", 1.0}};
         }
         if (auto px = a.opt("pixel")) {
-            int w = 0, h = 0;
-            if (std::sscanf(px->c_str(), "%dx%d", &w, &h) != 2 || w < 1 || h < 1)
+            const std::size_t x = px->find('x');
+            const auto w = x == std::string::npos ? std::nullopt : parseInt(px->substr(0, x));
+            const auto h = x == std::string::npos ? std::nullopt : parseInt(px->substr(x + 1));
+            if (!w || !h || *w < 1 || *h < 1)
                 return out.fail(kUsage, "--pixel expects WIDTHxHEIGHT, e.g. 64x64");
-            params["pixel"] = {{"width", w}, {"height", h}};
+            params["pixel"] = {{"width", *w}, {"height", *h}};
             if (optInt(a, "colors")) params["pixel"]["colors"] = *optInt(a, "colors");
         }
         if (auto init = a.opt("init")) {

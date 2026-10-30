@@ -1,4 +1,7 @@
 // Helper process for test_subprocess. Behaviour is chosen by argv[1].
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS   // test helper: plain getenv is fine
+#endif
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
