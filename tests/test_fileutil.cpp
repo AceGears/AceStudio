@@ -102,8 +102,11 @@ TEST_CASE("Portable mode keeps data next to the executable", "[fileutil]") {
     REQUIRE_FALSE(fs::exists(marker));
     // ACESTUDIO_DATA_DIR (set by other tests' environment) still wins, so
     // clear it for this check and restore afterwards.
-    const char* old = std::getenv("ACESTUDIO_DATA_DIR");
-    const std::string saved = old ? old : "";
+    std::string saved;
+#ifdef _MSC_VER
+#pragma warning(suppress : 4996)   // test only; _dupenv_s is missing from MinGW's runtime
+#endif
+    if (const char* old = std::getenv("ACESTUDIO_DATA_DIR")) saved = old;
 #ifdef _WIN32
     _putenv_s("ACESTUDIO_DATA_DIR", "");
 #else
