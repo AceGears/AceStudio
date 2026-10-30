@@ -105,7 +105,13 @@ jobs:
         run: |
           ctest --test-dir build --output-on-failure 2>&1 | Tee-Object -FilePath test.log
           $code = $LASTEXITCODE
-          Select-String -Path test.log -Pattern '\*\*\*Failed|FAILED:|tests failed out of|AIDIAG' | Where-Object { $_.Line -notmatch ' 0 tests failed' } | Select-Object -First 30 |
+          # GitHub keeps 10 error annotations per step: diagnostics go out as
+          # warnings, and each failure's context as one multi-line warning.
+          Select-String -Path test.log -Pattern 'AIDIAG' | Select-Object -First 5 |
+            ForEach-Object { Write-Host "::warning::$($_.Line.Trim())" }
+          Select-String -Path test.log -Pattern 'FAILED:' -Context 0,10 | Select-Object -First 4 |
+            ForEach-Object { $ctx = (@($_.Line) + $_.Context.PostContext) -join '%0A'; Write-Host "::warning::$ctx" }
+          Select-String -Path test.log -Pattern '\*\*\*Failed|tests failed out of' | Where-Object { $_.Line -notmatch ' 0 tests failed' } | Select-Object -First 9 |
             ForEach-Object { Write-Host "::error::$($_.Line.Trim())" }
           exit $code
       - uses: actions/upload-artifact@v4
