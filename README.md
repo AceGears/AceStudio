@@ -2,10 +2,12 @@
 
 AI-assisted game asset creation and 2D animation studio for Windows.
 
-> **Status: Phase 3 (animation), version 0.4.0.** You can draw and animate pixel art with
-> layers, frames, tags and onion skin, export sprite sheets (Aseprite-compatible JSON), GIF,
-> APNG, WebP and PNG sequences, undo anything, and recover work after a crash. AI generation,
-> tilesets and engine-specific export are planned — see [ROADMAP.md](ROADMAP.md). Nothing in the app pretends to
+> **Status: Phase 4 (AI infrastructure), version 0.5.0.** You can draw and animate pixel art
+> with layers, frames, tags and onion skin, export sprite sheets (Aseprite-compatible JSON),
+> GIF, APNG, WebP and PNG sequences, undo anything, and recover work after a crash. AI Studio
+> runs models locally in a supervised worker: background removal, upscaling and SDXL
+> generation, with licence-gated model downloads. Real SDXL and BiRefNet runs still need
+> verifying on a GPU machine. Tilesets and engine-specific export are planned — see [ROADMAP.md](ROADMAP.md). Nothing in the app pretends to
 > work when it doesn't; unavailable menus are disabled and name the phase that delivers them.
 
 ## What works today
@@ -27,13 +29,19 @@ AI-assisted game asset creation and 2D animation studio for Windows.
 - **Export:** sprite sheets (horizontal, vertical, grid, packed; padding, spacing, trim, merge
   duplicates, power-of-two, scale) with Aseprite JSON (hash or array); animated GIF, APNG and
   WebP (lossless); PNG sequences. Existing files are only replaced after you confirm.
+- **AI Studio (local):** SDXL text-to-image and image-to-image with a pixel-art mode (canvas
+  size, document palette), BiRefNet background removal, Real-ESRGAN ×4 upscaling, a job queue
+  with progress and cancel. Runs in a separate Python process: a model crash never takes the
+  editor down. Setup installs pinned packages into a private environment; models download only
+  after you accept their licence, and are verified with SHA-256. See
+  [docs/ai-worker-protocol.md](docs/ai-worker-protocol.md).
 - **Safety:** atomic saves with `.bak`, autosave to recovery files, crash-recovery prompt.
 - **Desktop app:** multi-document tabs; dockable Tools, Layers, Properties, Palette, Timeline
   Preview and Log panels; dark and light themes; pixel-exact canvas (nearest-neighbour,
   integer zoom, grid); recent projects; layout persistence.
 - **Project format:** versioned ZIP + JSON + PNG ([spec](docs/project-format.md)); atomic saves
   with a `.bak` of the previous version; corruption and newer-version detection.
-- **CLI:** `acestudio-cli new | info | validate | render | export | version`, all with `--json`.
+- **CLI:** `acestudio-cli new | info | validate | render | export | ai | version`, all with `--json`.
 
 ### Shortcuts
 
@@ -95,7 +103,13 @@ acestudio-cli validate hero.acestudio          # exit 3 if damaged
 acestudio-cli render hero.acestudio --frame 0 --scale 8 --out hero.png
 acestudio-cli export hero.acestudio --format sheet --layout packed --trim --out hero_sheet
 acestudio-cli export hero.acestudio --format gif --tag walk --scale 4 --out walk.gif
+acestudio-cli ai setup --profile onnx-windows --yes          # private Python env + packages
+acestudio-cli ai download birefnet-lite --accept-license MIT
+acestudio-cli ai remove-bg photo.png --out cutout.png
 ```
+
+AI requirements: Python 3.10+ installed (python.org, "Add to PATH"); for generation an NVIDIA
+GPU with 8 GB+ VRAM (12 GB recommended). AI files live in `%LOCALAPPDATA%\AceStudio\ai`.
 
 Exit codes: 0 ok · 1 usage · 2 I/O or not found · 3 corrupt · 4 newer version · 5 internal.
 Existing files are never overwritten without `--force`.

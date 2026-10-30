@@ -2,6 +2,29 @@
 
 All notable changes are documented here. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.5.0] — 2026-10-30 — Phase 4 AI infrastructure (unreleased)
+
+### Added
+- **AI Studio** dock and menu: Generate (SDXL text-to-image / image-to-image, optional Pixel
+  Art XL LoRA, pixel-art mode that downsamples to the canvas and limits to the document
+  palette), Remove Background (BiRefNet, optional hard edges), Upscale ×4 (Real-ESRGAN). Results
+  arrive as new layers or new documents; existing pixels are never overwritten.
+- Job queue with progress, cancel and error details.
+- **Set Up AI Runtime**: creates a private Python environment and installs pinned package
+  profiles (ONNX for background removal; PyTorch + Diffusers with CUDA or CPU).
+- **Models** dialog: licence, size and install state of every catalogued model; downloads
+  require accepting the licence, resume after interruption and are verified with SHA-256.
+- `acestudio-cli ai status | setup | models | download | remove-bg | upscale | generate`.
+- Core: `Subprocess` (Windows job objects, POSIX pipes), `WorkerSupervisor` (handshake,
+  queue, cancel, crash restart policy), `ModelCatalog`/`ModelStore`, `userLocalDataDir`,
+  `executableDir`.
+- Python worker (`ai_worker/`): protocol server, tasks, own RRDBNet implementation for the
+  official Real-ESRGAN weights, test suite.
+
+### Fixed
+- Log lines below warning level could stay in the buffer indefinitely; the log now flushes on
+  warnings and at least once a second.
+
 ## [0.4.0] — 2026-10-29 — Phase 3 animation (unreleased)
 
 ### Added

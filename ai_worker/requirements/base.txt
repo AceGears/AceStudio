@@ -1,0 +1,3 @@
+# Image I/O for every AI task. Installed by AI Studio > Set Up AI Runtime.
+numpy==2.5.4
+pillow==13.0.0

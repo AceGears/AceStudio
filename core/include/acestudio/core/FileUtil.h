@@ -30,4 +30,13 @@ std::string nowUtcIso8601();
 // ACESTUDIO_DATA_DIR overrides both (used by tests and portable installs).
 Result<std::filesystem::path> userDataDir();
 
+// Per-user, non-roaming folder for large files (AI runtime, models):
+//   Windows: %LOCALAPPDATA%\AceStudio
+//   Linux:   $XDG_DATA_HOME/AceStudio or ~/.local/share/AceStudio
+// ACESTUDIO_DATA_DIR overrides it as well (everything in one folder).
+Result<std::filesystem::path> userLocalDataDir();
+
+// Folder containing the running executable (empty if unknown).
+std::filesystem::path executableDir();
+
 } // namespace acestudio

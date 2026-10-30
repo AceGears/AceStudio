@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(AceStudio
-    VERSION 0.4.0
+    VERSION 0.5.0
     DESCRIPTION "AI-assisted game asset creation and 2D animation studio"
     LANGUAGES C CXX)
 

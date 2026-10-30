@@ -1,0 +1,8 @@
+# Text-to-image / image-to-image (SDXL). torch itself comes from the profile:
+# torch-cuda.txt (NVIDIA) or torch-cpu.txt. Large download (~3 GB with CUDA).
+-r base.txt
+diffusers==0.42.1
+transformers==5.22.0
+accelerate==1.15.0
+safetensors==0.8.0
+peft==0.21.2

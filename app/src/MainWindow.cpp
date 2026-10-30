@@ -12,6 +12,8 @@
 #include "panels/PreviewPanel.h"
 #include "AnimationDialogs.h"
 #include "ExportDialog.h"
+#include "ai/AiPanel.h"
+#include "ai/AiService.h"
 #include "panels/PropertiesPanel.h"
 #include "panels/TimelinePanel.h"
 #include "panels/ToolsPanel.h"
@@ -94,6 +96,11 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
     m_recovery = std::make_unique<RecoveryStore>(m_ctx.dataDir() / "recovery");
     m_autosaveTimer = new QTimer(this);
     connect(m_autosaveTimer, &QTimer::timeout, this, &MainWindow::autosaveTick);
+    // Buffered log lines reach the disk within a second even when nothing
+    // else is logged (the logger itself flushes on warnings and errors).
+    auto* logFlush = new QTimer(this);
+    connect(logFlush, &QTimer::timeout, this, [] { Logger::instance().flush(); });
+    logFlush->start(1000);
     applyAutosaveInterval();
 
     m_shortcuts.collect(menuBar(), m_recentMenu);
@@ -163,6 +170,20 @@ void MainWindow::buildDocks() {
     m_toolsPanel = new ToolsPanel(m_tools, this);
     m_timeline = new TimelinePanel(this);
     m_log = new LogPanel(this);
+    m_ai = new AiService(m_ctx, this);
+    m_aiPanel = new AiPanel(*m_ai, m_ctx, this);
+    connect(m_aiPanel, &AiPanel::statusMessage, this, [this](const QString& t) { statusBar()->showMessage(t, 6000); });
+    connect(m_aiPanel, &AiPanel::resultAsDocument, this, [this](const Image& img, const QString& name) { openImageAsDocument(img, name); });
+    connect(m_aiPanel, &AiPanel::resultAsLayer, this, [this](DocumentView* v, const Image& img, const QString& name, LayerId above) {
+        // The view may have been closed while the job ran.
+        for (int i = 0; i < m_tabs->count(); ++i)
+            if (m_tabs->widget(i) == v) {
+                m_tabs->setCurrentIndex(i);
+                insertImageAsLayer(v, img, name, v->document().layer(above) ? std::optional<LayerId>(above) : std::nullopt);
+                return;
+            }
+        openImageAsDocument(img, name);
+    });
     m_preview = new PreviewPanel(this);
     m_preview->setZoom(m_ctx.settings().get<int>("animation.preview.zoom"));
     connect(m_preview, &PreviewPanel::zoomChanged, this, [this](int z) { (void)m_ctx.settings().set("animation.preview.zoom", z); });
@@ -175,6 +196,9 @@ void MainWindow::buildDocks() {
     m_timelineDock = makeDock(tr("Timeline"), QStringLiteral("dock.timeline"), m_timeline, Qt::BottomDockWidgetArea);
     m_logDock = makeDock(tr("Log"), QStringLiteral("dock.log"), m_log, Qt::BottomDockWidgetArea);
     m_previewDock = makeDock(tr("Preview"), QStringLiteral("dock.preview"), m_preview, Qt::RightDockWidgetArea);
+    m_aiDock = makeDock(tr("AI Studio"), QStringLiteral("dock.ai"), m_aiPanel, Qt::RightDockWidgetArea);
+    tabifyDockWidget(m_layersDock, m_aiDock);
+    m_layersDock->raise();
     tabifyDockWidget(m_paletteDock, m_previewDock);
     m_paletteDock->raise();
     tabifyDockWidget(m_timelineDock, m_logDock);
@@ -394,7 +418,22 @@ void MainWindow::buildMenus() {
     m_timeline->addActionButton(m_onionAction);
     anim->addAction(tr("Onion Skin &Settings…"), this, &MainWindow::editOnionSkin);
 
-    planned(menuBar()->addMenu(tr("AI &Studio")), tr("Local AI generation — Phase 4"));
+    QMenu* aiMenu = menuBar()->addMenu(tr("AI &Studio"));
+    auto showAi = [this](int tab) { m_aiDock->show(); m_aiDock->raise(); m_aiPanel->focusTab(tab); };
+    aiMenu->addAction(tr("&Generate Image…"), this, [showAi] { showAi(0); });
+    aiMenu->addAction(tr("&Remove Background…"), this, [showAi] { showAi(1); });
+    aiMenu->addAction(tr("AI &Upscale…"), this, [showAi] { showAi(2); });
+    aiMenu->addSeparator();
+    aiMenu->addAction(tr("&Models…"), m_aiPanel, &AiPanel::showModels);
+    aiMenu->addAction(tr("&Set Up AI Runtime…"), m_aiPanel, &AiPanel::showSetup);
+    aiMenu->addAction(tr("Restart AI &Worker"), m_ai, &AiService::restartWorker);
+    aiMenu->addAction(tr("Open AI &Data Folder"), this, [this] {
+        if (const auto* env = m_ai->environment()) {
+            std::error_code ec;
+            std::filesystem::create_directories(env->root, ec);
+            QDesktopServices::openUrl(QUrl::fromLocalFile(fromPath(env->root)));
+        }
+    });
     planned(menuBar()->addMenu(tr("&Tilesets")), tr("Tileset and terrain tools — Phase 6"));
     QMenu* toolsMenu = menuBar()->addMenu(tr("T&ools"));
     auto* toolGroup = new QActionGroup(this);
@@ -416,7 +455,7 @@ void MainWindow::buildMenus() {
 
     // Window
     QMenu* window = menuBar()->addMenu(tr("&Window"));
-    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_propsDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock})
+    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_aiDock, m_propsDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock})
         window->addAction(d->toggleViewAction());
     window->addSeparator();
     window->addAction(tr("&Reset Layout"), this, &MainWindow::resetLayout);
@@ -444,7 +483,7 @@ void MainWindow::saveWindowState() {
 }
 
 void MainWindow::resetLayout() {
-    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_propsDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock}) {
+    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_aiDock, m_propsDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock}) {
         d->setFloating(false);
         d->show();
     }
@@ -499,6 +538,7 @@ void MainWindow::onCurrentTabChanged() {
     m_palette->setView(v);
     m_timeline->setView(v);
     m_preview->setView(v);
+    m_aiPanel->setView(v);
     if (v) {
         setWindowTitle(QStringLiteral("%1%2 — AceStudio").arg(v->displayName(), v->isModified() ? QStringLiteral(" •") : QString()));
         m_statusCanvas->setText(QStringLiteral("%1 × %2").arg(v->document().width()).arg(v->document().height()));
@@ -714,26 +754,31 @@ void MainWindow::importPng(bool asLayer) {
         QMessageBox::warning(this, tr("Import PNG"), tr("Could not read %1.\n\n%2").arg(QDir::toNativeSeparators(path), qs(img.error().message)));
         return;
     }
-    const std::string name = QFileInfo(path).completeBaseName().toStdString();
-    if (!asLayer) {
-        auto doc = Document::create(img.value().width(), img.value().height());
-        if (!doc) { report(doc.error()); return; }
-        const LayerId l = doc.value().addLayer(name).value();
-        (void)doc.value().setCel(l, 0, Cel{std::move(img).value(), 0, 0});
-        auto* view = new DocumentView(std::move(doc).value(), QString(), ProjectInfo{}, m_tools, m_tabs);
-        addView(view);
-        view->markNeverSaved();
-        return;
+    const QString name = QFileInfo(path).completeBaseName();
+    if (asLayer) {
+        if (DocumentView* v = currentView()) insertImageAsLayer(v, img.value(), name);
+    } else {
+        openImageAsDocument(img.value(), name);
     }
-    DocumentView* v = currentView();
-    if (!v) return;
-    // Pasted at the top-left; images larger than the canvas are clipped by
-    // compositing but kept whole in the cel.
-    auto layerId = v->editor().addLayer(name, LayerKind::Raster, v->currentLayer());
-    if (!layerId) { report(layerId.error()); return; }
-    auto session = PaintSession::begin(v->editor(), layerId.value(), v->currentFrame(), "Import PNG");
-    if (!session) { report(session.error()); return; }
-    const Image& src = img.value();
+}
+
+DocumentView* MainWindow::openImageAsDocument(const Image& img, const QString& name) {
+    auto doc = Document::create(img.width(), img.height());
+    if (!doc) { report(doc.error()); return nullptr; }
+    const LayerId l = doc.value().addLayer(name.toStdString()).value();
+    (void)doc.value().setCel(l, 0, Cel{img, 0, 0});
+    auto* view = new DocumentView(std::move(doc).value(), QString(), ProjectInfo{}, m_tools, m_tabs);
+    addView(view);
+    view->markNeverSaved();
+    return view;
+}
+
+bool MainWindow::insertImageAsLayer(DocumentView* v, const Image& src, const QString& name, std::optional<LayerId> above) {
+    // Pasted at the top-left; images larger than the canvas are clipped.
+    auto layerId = v->editor().addLayer(name.toStdString(), LayerKind::Raster, above.value_or(v->currentLayer()));
+    if (!layerId) { report(layerId.error()); return false; }
+    auto session = PaintSession::begin(v->editor(), layerId.value(), v->currentFrame(), "Insert " + name.toStdString());
+    if (!session) { report(session.error()); return false; }
     for (int y = 0; y < std::min(src.height(), v->document().height()); ++y)
         for (int x = 0; x < std::min(src.width(), v->document().width()); ++x)
             if (src.pixel(x, y).a) session.value()->writePixel(x, y, src.pixel(x, y));
@@ -741,6 +786,7 @@ void MainWindow::importPng(bool asLayer) {
     v->setCurrentLayer(layerId.value());
     if (src.width() > v->document().width() || src.height() > v->document().height())
         statusBar()->showMessage(tr("Image was larger than the canvas and has been cropped."), 5000);
+    return true;
 }
 
 void MainWindow::exportAnimation(int kind) {

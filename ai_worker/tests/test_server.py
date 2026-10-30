@@ -1,0 +1,276 @@
+"""End-to-end tests of the worker protocol (stdlib only).
+
+Run from the ai_worker folder:  python -m unittest discover -s tests
+"""
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import unittest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+class Worker:
+    def __init__(self):
+        env = dict(os.environ, ACESTUDIO_WORKER_DIAG="1", PYTHONPATH=ROOT)
+        self.proc = subprocess.Popen([sys.executable, "-m", "acestudio_worker"], stdin=subprocess.PIPE,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, text=True,
+                                     encoding="utf-8", bufsize=1)
+        self.lines = []
+        self.cv = threading.Condition()
+        self.stderr = []
+        threading.Thread(target=self._read, daemon=True).start()
+        threading.Thread(target=lambda: self.stderr.extend(self.proc.stderr), daemon=True).start()
+        self.next_id = 1
+
+    def _read(self):
+        for line in self.proc.stdout:
+            with self.cv:
+                self.lines.append(json.loads(line))   # every stdout line must be valid JSON
+                self.cv.notify_all()
+
+    def send(self, method, params=None, raw=None):
+        if raw is not None:
+            self.proc.stdin.write(raw + "\n")
+        else:
+            msg = {"jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params or {}}
+            self.next_id += 1
+            self.proc.stdin.write(json.dumps(msg) + "\n")
+        self.proc.stdin.flush()
+        return self.next_id - 1
+
+    def wait_for(self, pred, timeout=20):
+        end = time.time() + timeout
+        with self.cv:
+            while True:
+                for m in self.lines:
+                    if pred(m):
+                        return m
+                left = end - time.time()
+                if left <= 0:
+                    raise AssertionError("timed out; got %r" % self.lines[-5:])
+                self.cv.wait(left)
+
+    def response(self, req_id):
+        return self.wait_for(lambda m: m.get("id") == req_id and ("result" in m or "error" in m))
+
+    def close(self):
+        if self.proc.poll() is None:
+            self.proc.stdin.close()
+            try:
+                self.proc.wait(10)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait()
+        for f in (self.proc.stdin, self.proc.stdout, self.proc.stderr):
+            try:
+                f.close()
+            except Exception:
+                pass
+
+
+class ProtocolTests(unittest.TestCase):
+    def setUp(self):
+        self.w = Worker()
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.w.close()
+        self.tmp.cleanup()
+
+    def submit(self, job, task, params=None):
+        rid = self.w.send("job.submit", {"job": job, "task": task, "params": params or {},
+                                         "dir": os.path.join(self.tmp.name, job)})
+        return self.w.response(rid)
+
+    def test_hello_reports_tasks_and_capabilities(self):
+        r = self.w.response(self.w.send("hello", {"protocol": 1}))["result"]
+        self.assertEqual(r["protocol"], 1)
+        self.assertIn("diag.sleep", r["tasks"])
+        self.assertIn("image.generate", r["tasks"])
+        self.assertIn("torch", r["capabilities"])
+        self.assertFalse(r["capabilities"]["probed"])   # hello never waits for torch
+        self.assertEqual(r["pid"], self.w.proc.pid)
+        caps = self.w.wait_for(lambda m: m.get("method") == "capabilities", 120)["params"]
+        self.assertTrue(caps["probed"])
+        self.assertIn("devices", caps)
+
+    def test_job_progress_and_done(self):
+        self.assertTrue(self.submit("j1", "diag.sleep", {"seconds": 0.3, "steps": 3})["result"]["accepted"])
+        done = self.w.wait_for(lambda m: m.get("method") == "job.done")
+        progress = [m for m in self.w.lines if m.get("method") == "job.progress"]
+        self.assertEqual([p["params"]["step"] for p in progress], [1, 2, 3])
+        out = done["params"]["outputs"]["result"]
+        with open(out, encoding="utf-8") as f:
+            self.assertIn("slept", f.read())
+
+    def test_next_job_is_accepted_right_after_done(self):
+        for i in range(20):   # regression: "done" used to arrive before the worker was free
+            self.submit("q%d" % i, "diag.echo", {"i": i})
+            self.w.wait_for(lambda m, i=i: m.get("method") == "job.done" and m["params"]["job"] == "q%d" % i)
+        self.assertFalse(any("error" in m for m in self.w.lines if m.get("id")))
+
+    def test_busy_worker_rejects_a_second_job(self):
+        self.submit("a", "diag.sleep", {"seconds": 2, "steps": 20})
+        r = self.submit("b", "diag.echo")
+        self.assertEqual(r["error"]["code"], -32001)
+
+    def test_cancel(self):
+        self.submit("c", "diag.sleep", {"seconds": 10, "steps": 100})
+        self.w.wait_for(lambda m: m.get("method") == "job.progress")
+        t0 = time.time()
+        r = self.w.response(self.w.send("job.cancel", {"job": "c"}))
+        self.assertTrue(r["result"]["cancelling"])
+        self.w.wait_for(lambda m: m.get("method") == "job.cancelled")
+        self.assertLess(time.time() - t0, 2)
+        # The worker is free again afterwards.
+        self.assertTrue(self.submit("d", "diag.echo", {"x": 1})["result"]["accepted"])
+        done = self.w.wait_for(lambda m: m.get("method") == "job.done")
+        self.assertEqual(done["params"]["info"]["params"], {"x": 1})
+
+    def test_failures_are_reported_not_fatal(self):
+        self.submit("f", "diag.fail", {"message": "boom", "kind": "oom"})
+        failed = self.w.wait_for(lambda m: m.get("method") == "job.failed")
+        self.assertEqual(failed["params"]["error"], "boom")
+        self.assertEqual(failed["params"]["kind"], "oom")
+        self.assertEqual(self.submit("u", "no.such.task")["error"]["code"], -32002)
+        self.w.send(None, raw="{not json")
+        self.w.wait_for(lambda m: m.get("error", {}).get("code") == -32700)
+        r = self.w.response(self.w.send("frobnicate"))
+        self.assertEqual(r["error"]["code"], -32601)
+        self.assertEqual(self.w.response(self.w.send("hello"))["result"]["protocol"], 1)
+
+    def test_stray_prints_do_not_corrupt_the_protocol(self):
+        code = "print('noise on stdout'); import os; os.write(1, b'raw fd write\\n')"
+        # diag.echo cannot print, so exercise the redirection directly in-process:
+        env = dict(os.environ, PYTHONPATH=ROOT)
+        script = ("import sys, json\nfrom acestudio_worker import server\n"
+                  "import builtins\norig = server.Server.on_hello\n"
+                  "def noisy(self, p):\n    %s\n    return orig(self, p)\n"
+                  "server.Server.on_hello = noisy\nsys.exit(server.main())\n") % code
+        p = subprocess.run([sys.executable, "-c", script], input='{"jsonrpc":"2.0","id":1,"method":"hello"}\n',
+                           capture_output=True, text=True, env=env, timeout=60)
+        for line in p.stdout.splitlines():
+            json.loads(line)
+        self.assertIn("noise on stdout", p.stderr)
+        self.assertIn("raw fd write", p.stderr)
+
+    def test_crash_exits_with_the_code(self):
+        self.submit("x", "diag.crash", {"after_steps": 1, "code": 17})
+        self.assertEqual(self.w.proc.wait(20), 17)
+
+    def test_stdin_eof_ends_the_worker(self):
+        self.w.proc.stdin.close()
+        self.assertEqual(self.w.proc.wait(20), 0)
+
+
+class DownloadTests(unittest.TestCase):
+    """model.download against a local HTTP server with Range support."""
+
+    @classmethod
+    def setUpClass(cls):
+        import http.server
+        import socketserver
+        cls.root = tempfile.TemporaryDirectory()
+        cls.payload = os.urandom(3 * 1024 * 1024 + 123)
+        with open(os.path.join(cls.root.name, "model.bin"), "wb") as f:
+            f.write(cls.payload)
+        root = cls.root.name
+
+        class Handler(http.server.SimpleHTTPRequestHandler):
+            def __init__(self, *a, **k):
+                super().__init__(*a, directory=root, **k)
+
+            def log_message(self, *a):
+                pass
+
+            def send_head(self):   # minimal Range support for resume tests
+                rng = self.headers.get("Range")
+                path = self.translate_path(self.path)
+                if not rng or not os.path.isfile(path):
+                    return super().send_head()
+                start = int(rng.split("=")[1].split("-")[0])
+                size = os.path.getsize(path)
+                f = open(path, "rb")
+                f.seek(start)
+                self.send_response(206)
+                self.send_header("Content-Length", str(size - start))
+                self.send_header("Content-Range", "bytes %d-%d/%d" % (start, size - 1, size))
+                self.end_headers()
+                return f
+
+        cls.httpd = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Handler)
+        cls.port = cls.httpd.server_address[1]
+        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+        cls.root.cleanup()
+
+    def setUp(self):
+        self.w = Worker()
+        self.tmp = tempfile.TemporaryDirectory()
+        import hashlib
+        self.sha = hashlib.sha256(self.payload).hexdigest()
+
+    def tearDown(self):
+        self.w.close()
+        self.tmp.cleanup()
+
+    def download(self, job, sha=None, accepted="CreativeML-OpenRAIL++-M"):
+        dest = os.path.join(self.tmp.name, "models")
+        self.w.send("job.submit", {"job": job, "task": "model.download", "dir": os.path.join(self.tmp.name, job),
+                                   "params": {"dest_dir": dest, "license_accepted": accepted,
+                                              "files": [{"url": "http://127.0.0.1:%d/model.bin" % self.port,
+                                                         "path": "sub/model.bin", "size": len(self.payload),
+                                                         "sha256": sha if sha is not None else self.sha}]}})
+        return dest, self.w.wait_for(lambda m: m.get("method", "").startswith("job.") and
+                                     m.get("method") != "job.progress" and m["params"].get("job") == job)
+
+    def test_download_verifies_and_installs(self):
+        dest, msg = self.download("d1")
+        self.assertEqual(msg["method"], "job.done", msg)
+        with open(os.path.join(dest, "sub", "model.bin"), "rb") as f:
+            self.assertEqual(f.read(), self.payload)
+        self.assertEqual(msg["params"]["info"]["sha256"]["sub/model.bin"], self.sha)
+        self.assertFalse(os.path.exists(os.path.join(dest, "sub", "model.bin.part")))
+
+    def test_resume_from_partial_file(self):
+        dest = os.path.join(self.tmp.name, "models", "sub")
+        os.makedirs(dest)
+        with open(os.path.join(dest, "model.bin.part"), "wb") as f:
+            f.write(self.payload[:1000000])
+        _, msg = self.download("d2")
+        self.assertEqual(msg["method"], "job.done", msg)
+        with open(os.path.join(dest, "model.bin"), "rb") as f:
+            self.assertEqual(f.read(), self.payload)
+
+    def test_hash_mismatch_is_rejected_and_cleaned_up(self):
+        dest, msg = self.download("d3", sha="0" * 64)
+        self.assertEqual(msg["method"], "job.failed")
+        self.assertIn("verification", msg["params"]["error"])
+        self.assertFalse(os.path.exists(os.path.join(dest, "sub", "model.bin")))
+        self.assertFalse(os.path.exists(os.path.join(dest, "sub", "model.bin.part")))
+
+    def test_refused_without_licence_acceptance(self):
+        _, msg = self.download("d4", accepted="")
+        self.assertEqual(msg["method"], "job.failed")
+        self.assertIn("licence", msg["params"]["error"])
+
+    def test_unsafe_paths_are_refused(self):
+        self.w.send("job.submit", {"job": "d5", "task": "model.download", "dir": self.tmp.name,
+                                   "params": {"dest_dir": self.tmp.name, "license_accepted": "x",
+                                              "files": [{"url": "http://127.0.0.1:1/x", "path": "../evil"}]}})
+        msg = self.w.wait_for(lambda m: m.get("method") == "job.failed")
+        self.assertIn("Unsafe", msg["params"]["error"])
+
+
+if __name__ == "__main__":
+    unittest.main()

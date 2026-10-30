@@ -21,7 +21,7 @@ decisions (ADRs) that constrain future phases. Planned components are labelled *
           └─────────┬──────────┘   └───────────────┘  └─────────────────────┘
                     │ local IPC (planned, Phase 4)
           ┌─────────▼────────────────────────────────┐
-          │ AI worker process (planned, Phase 4)      │  Python: PyTorch/Diffusers,
+          │ AI worker process (Phase 4)               │  Python: PyTorch/Diffusers,
           │ separate process; a crash cannot take     │  ONNX Runtime
           │ down the editor                            │
           └───────────────────────────────────────────┘
@@ -133,10 +133,23 @@ duplicate implementation of document logic, file formats or export in any front 
   `manifest.schemaVersion`; newer versions are refused with a clear message, older versions
   will be migrated in code.
 
-### ADR-004 — AI inference in a separate worker process (planned, Phase 4)
-- Python worker (PyTorch + Diffusers, ONNX Runtime for segmentation/upscaling) launched and
-  supervised by the app; communication over a local pipe/socket with job IDs, progress and
-  cancellation. A model crash or out-of-memory error restarts the worker, never the editor.
+### ADR-004 — AI inference in a separate worker process (implemented in 0.5.0)
+- Python worker (`ai_worker/acestudio_worker`; PyTorch + Diffusers for SDXL, ONNX Runtime for
+  BiRefNet, PyTorch or ONNX for Real-ESRGAN) launched and supervised by the Qt-free core
+  (`Subprocess`, `WorkerSupervisor`), so the app and `acestudio-cli ai` share one
+  implementation. Protocol: newline-delimited JSON-RPC 2.0 over stdin/stdout
+  (`docs/ai-worker-protocol.md`), one job at a time, file-based image exchange in per-job
+  folders. A model crash or out-of-memory kill restarts the worker, never the editor; the
+  policy (retry once, hard cancel after 10 s, stop after repeated crashes) is in the protocol
+  document and covered by tests that kill the real worker.
+- The worker's core is standard-library Python, so it starts and reports missing packages
+  before any AI package is installed. Packages are installed per profile
+  (`ai_worker/requirements/*.txt`, pinned) into a private virtual environment in the
+  non-roaming user data folder (`%LOCALAPPDATA%\AceStudio\ai`); models live there too
+  (`ai.modelDirectory` overrides).
+- Models come from `ai_worker/catalog/models.json` (licence, size, SHA-256 per file). A
+  download requires a recorded licence approval; files are verified before being renamed into
+  place, and hashes the catalogue could not pin are recorded at first download.
 - Default model set and exclusions: `docs/research/ai-models.md`. No model is downloaded
   without explicit user approval.
 

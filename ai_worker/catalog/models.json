@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "note": "Models AceStudio can download after the user accepts the licence. Sizes and SHA-256 values marked pinned were measured from the official files on 2026-10-29. Entries with verification 'first-download' could not be fetched from the build environment: their hashes are recorded on first download and checked afterwards, and their file lists still need confirming against the repository.",
+  "licenses": {
+    "MIT": {
+      "name": "MIT License",
+      "url": "https://opensource.org/license/mit",
+      "commercialUse": true,
+      "summary": "Free to use, including commercially. Generated outputs are yours.",
+      "obligations": "Keep the copyright notice and licence text with the software."
+    },
+    "BSD-3-Clause": {
+      "name": "BSD 3-Clause License",
+      "url": "https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE",
+      "commercialUse": true,
+      "summary": "Free to use, including commercially. Generated outputs are yours.",
+      "obligations": "Keep the copyright notice (Xintao Wang) and licence text; do not use the authors' names to endorse products."
+    },
+    "CreativeML-OpenRAIL++-M": {
+      "name": "CreativeML Open RAIL++-M",
+      "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/LICENSE.md",
+      "commercialUse": true,
+      "summary": "Commercial use of the model and its outputs is allowed, subject to use-based restrictions.",
+      "obligations": "You must not use the model or outputs for the purposes listed in Attachment A of the licence (for example: illegal content, harming minors, harassment, disinformation, discrimination, unqualified medical advice). Anyone you share the model with must receive the same restrictions."
+    },
+    "CreativeML-OpenRAIL-M": {
+      "name": "CreativeML Open RAIL-M",
+      "url": "https://huggingface.co/spaces/CompVis/stable-diffusion-license",
+      "commercialUse": true,
+      "summary": "Commercial use of the model and its outputs is allowed, subject to use-based restrictions.",
+      "obligations": "The use restrictions of Attachment A apply to you and to anyone you share the model with."
+    }
+  },
+  "models": [
+    {
+      "id": "birefnet-lite",
+      "name": "BiRefNet Lite (background removal)",
+      "task": "background.remove",
+      "description": "Fast, high-quality foreground segmentation. Recommended default.",
+      "license": "MIT",
+      "copyright": "BiRefNet authors (see LICENSE in the source repository)",
+      "source": "https://github.com/ZhengPeng7/BiRefNet",
+      "entry": "BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
+      "runtime": "onnx",
+      "vramMb": 1500,
+      "verification": "pinned",
+      "files": [
+        {"path": "BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
+         "url": "https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
+         "size": 224005088,
+         "sha256": "5600024376f572a557870a5eb0afb1e5961636bef4e1e22132025467d0f03333"}
+      ]
+    },
+    {
+      "id": "birefnet-general",
+      "name": "BiRefNet General (background removal, best quality)",
+      "task": "background.remove",
+      "description": "Larger Swin-L model: cleaner edges, roughly 4x slower than Lite.",
+      "license": "MIT",
+      "copyright": "BiRefNet authors (see LICENSE in the source repository)",
+      "source": "https://github.com/ZhengPeng7/BiRefNet",
+      "entry": "BiRefNet-general-epoch_244.onnx",
+      "runtime": "onnx",
+      "vramMb": 4000,
+      "verification": "pinned",
+      "files": [
+        {"path": "BiRefNet-general-epoch_244.onnx",
+         "url": "https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-general-epoch_244.onnx",
+         "size": 972666916,
+         "sha256": "58f621f00f5d756097615970a88a791584600dcf7c45b18a0a6267535a1ebd3c"}
+      ]
+    },
+    {
+      "id": "realesrgan-x4plus",
+      "name": "Real-ESRGAN x4plus (4x upscaling, photos/painted art)",
+      "task": "upscale.esrgan",
+      "description": "General-purpose 4x upscaler for HD assets. Use nearest-neighbour for pixel art instead.",
+      "license": "BSD-3-Clause",
+      "copyright": "Copyright (c) 2021, Xintao Wang",
+      "source": "https://github.com/xinntao/Real-ESRGAN",
+      "entry": "RealESRGAN_x4plus.pth",
+      "runtime": "torch",
+      "vramMb": 1500,
+      "verification": "pinned",
+      "files": [
+        {"path": "RealESRGAN_x4plus.pth",
+         "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
+         "size": 67040989,
+         "sha256": "4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1"}
+      ]
+    },
+    {
+      "id": "realesrgan-x4plus-anime",
+      "name": "Real-ESRGAN x4plus Anime 6B (4x upscaling, illustration)",
+      "task": "upscale.esrgan",
+      "description": "Smaller model tuned for line art and flat colours.",
+      "license": "BSD-3-Clause",
+      "copyright": "Copyright (c) 2021, Xintao Wang",
+      "source": "https://github.com/xinntao/Real-ESRGAN",
+      "entry": "RealESRGAN_x4plus_anime_6B.pth",
+      "runtime": "torch",
+      "vramMb": 800,
+      "verification": "pinned",
+      "files": [
+        {"path": "RealESRGAN_x4plus_anime_6B.pth",
+         "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
+         "size": 17938799,
+         "sha256": "f872d837d3c90ed2e05227bed711af5671a6fd1c9f7d7e91c911a61f155e99da"}
+      ]
+    },
+    {
+      "id": "sdxl-base-1.0",
+      "name": "Stable Diffusion XL Base 1.0 (text-to-image)",
+      "task": "image.generate",
+      "description": "Text-to-image and image-to-image at up to 1024x1024. Needs an NVIDIA GPU with 8 GB+ VRAM (12 GB recommended). About 7 GB download (fp16).",
+      "license": "CreativeML-OpenRAIL++-M",
+      "copyright": "Stability AI",
+      "source": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0",
+      "entry": ".",
+      "runtime": "diffusion",
+      "vramMb": 9000,
+      "verification": "first-download",
+      "fileListVerified": false,
+      "files": [
+        {"path": "model_index.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/model_index.json"},
+        {"path": "scheduler/scheduler_config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/scheduler/scheduler_config.json"},
+        {"path": "text_encoder/config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/text_encoder/config.json"},
+        {"path": "text_encoder/model.fp16.safetensors", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/text_encoder/model.fp16.safetensors"},
+        {"path": "text_encoder_2/config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/text_encoder_2/config.json"},
+        {"path": "text_encoder_2/model.fp16.safetensors", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/text_encoder_2/model.fp16.safetensors"},
+        {"path": "tokenizer/merges.txt", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer/merges.txt"},
+        {"path": "tokenizer/special_tokens_map.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer/special_tokens_map.json"},
+        {"path": "tokenizer/tokenizer_config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer/tokenizer_config.json"},
+        {"path": "tokenizer/vocab.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer/vocab.json"},
+        {"path": "tokenizer_2/merges.txt", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer_2/merges.txt"},
+        {"path": "tokenizer_2/special_tokens_map.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer_2/special_tokens_map.json"},
+        {"path": "tokenizer_2/tokenizer_config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer_2/tokenizer_config.json"},
+        {"path": "tokenizer_2/vocab.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer_2/vocab.json"},
+        {"path": "unet/config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/unet/config.json"},
+        {"path": "unet/diffusion_pytorch_model.fp16.safetensors", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/unet/diffusion_pytorch_model.fp16.safetensors"},
+        {"path": "vae/config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/vae/config.json"},
+        {"path": "vae/diffusion_pytorch_model.fp16.safetensors", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/vae/diffusion_pytorch_model.fp16.safetensors"}
+      ]
+    },
+    {
+      "id": "pixel-art-xl",
+      "name": "Pixel Art XL (SDXL LoRA)",
+      "task": "image.generate",
+      "kind": "lora",
+      "requiresModel": "sdxl-base-1.0",
+      "description": "Style LoRA for SDXL. Generate at 8x the target size; AceStudio downsamples with nearest neighbour and reduces to your palette.",
+      "license": "CreativeML-OpenRAIL-M",
+      "copyright": "nerijs",
+      "source": "https://huggingface.co/nerijs/pixel-art-xl",
+      "entry": "pixel-art-xl.safetensors",
+      "runtime": "diffusion",
+      "vramMb": 200,
+      "verification": "first-download",
+      "fileListVerified": false,
+      "files": [
+        {"path": "pixel-art-xl.safetensors", "url": "https://huggingface.co/nerijs/pixel-art-xl/resolve/main/pixel-art-xl.safetensors"}
+      ]
+    }
+  ]
+}

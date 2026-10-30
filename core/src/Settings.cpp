@@ -48,6 +48,8 @@ Settings::Settings() {
     registerDefault("animation.preview.zoom", 4);
     // AI
     registerDefault("ai.modelDirectory", "");
+    registerDefault("ai.pythonPath", "");                     // empty = find Python 3.10+ automatically
+    registerDefault("ai.autoStart", false);                   // start the worker when the app opens
     registerDefault("ai.outputDirectory", "");
     registerDefault("ai.vramLimitMb", 0);                     // 0 = auto
     // Export

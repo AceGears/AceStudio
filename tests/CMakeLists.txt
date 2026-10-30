@@ -16,7 +16,16 @@ add_executable(acestudio_core_tests
     test_palette_io.cpp
     test_animation.cpp
     test_export.cpp
+    test_subprocess.cpp
+    test_ai_worker.cpp
+    test_model_catalog.cpp
 )
+add_executable(acestudio_test_child test_child.cpp)
+acestudio_set_warnings(acestudio_test_child)
+add_dependencies(acestudio_core_tests acestudio_test_child)
+target_compile_definitions(acestudio_core_tests PRIVATE
+    ACESTUDIO_TEST_CHILD="$<TARGET_FILE:acestudio_test_child>"
+    ACESTUDIO_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 target_link_libraries(acestudio_core_tests PRIVATE AceStudio::core miniz Catch2::Catch2WithMain)
 acestudio_set_warnings(acestudio_core_tests)
 

@@ -4,6 +4,7 @@
 // Usage: ACE_LOG_INFO("project", "Saved " + path.string());
 
 #include <cstdint>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <functional>
@@ -45,6 +46,7 @@ private:
     mutable std::mutex m_mutex;
     LogConfig m_cfg;
     std::FILE* m_file = nullptr;
+    std::chrono::steady_clock::time_point m_lastFlush{};
     std::uintmax_t m_fileBytes = 0;
     Listener m_listener;
 };

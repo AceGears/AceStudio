@@ -1,0 +1,6 @@
+# PyTorch with CUDA 12.8 from the official PyTorch index (NVIDIA GPUs).
+# UNVERIFIED: download.pytorch.org is not reachable from the build environment, so this
+# pin has not been checked against the cu128 index. pip reports clearly if it is missing.
+--index-url https://download.pytorch.org/whl/cu128
+--extra-index-url https://pypi.org/simple
+torch==2.15.0

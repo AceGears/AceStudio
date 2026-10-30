@@ -1,6 +1,6 @@
 # Known Issues and Limitations
 
-Current as of 0.4.0 (Phase 3).
+Current as of 0.5.0 (Phase 4).
 
 ## Not yet verified
 - **Windows desktop app not yet used interactively.** CI builds everything with MSVC and
@@ -33,6 +33,26 @@ Current as of 0.4.0 (Phase 3).
 - No AI, tileset, MCP, Lua or plugin functionality yet; those menus show one disabled entry
   naming the planned phase.
 - Workspace presets are not implemented; layout persistence and Reset Layout are.
+
+## AI limitations (0.5.0)
+- **Not yet run on a GPU.** SDXL generation was verified only with a tiny randomly initialised
+  model (real Diffusers code path, meaningless images). Speed, quality and VRAM use on a 12 GB
+  NVIDIA GPU are unmeasured; the VRAM figures in the Models dialog are estimates and say so.
+- **BiRefNet needs a lot of memory on CPU:** BiRefNet Lite exceeded 6 GB RAM at its fixed
+  1024×1024 input and was killed on the 7 GB test VM. On a machine without a suitable GPU,
+  background removal may fail the same way (the app reports it and recovers).
+- **Unverified download details:** the SDXL and Pixel Art XL file lists could not be checked
+  against Hugging Face from the build environment, so their hashes are recorded at first
+  download rather than pinned. The PyTorch `cu128`/`cpu` index pins are also unchecked. If a
+  file or wheel is missing, the download or install fails with the server's message.
+- **Python is not bundled yet:** AI features need Python 3.10+ installed (or configured in Set
+  Up AI Runtime). Bundling an embeddable Python is planned for packaging (Phase 8). Choosing a
+  specific Python installs packages into that environment.
+- Generation shows no live preview while it runs; the LoRA strength is fixed at 1.0 in the UI.
+- Remove Background adds its layer on the frame that is current when the job finishes.
+- Inserting an AI result as a layer is two undo steps (new layer, then pixels).
+- Upscaling works on the visible frame only; only ×4 models are catalogued.
+- Real-ESRGAN smears small pixel art (expected for that model); use Image › Scale instead.
 
 ## Animation limitations (0.4.0)
 - Onion skin recomposites the ghost frames on every frame change: about 14 ms for one ghost

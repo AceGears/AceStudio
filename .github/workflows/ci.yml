@@ -21,6 +21,9 @@ jobs:
         run: cmake --build build -j
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: AI worker tests (protocol, cancellation, crash, downloads)
+        working-directory: ai_worker
+        run: python3 -m unittest discover -s tests -v
 
   windows:
     name: Full build (Windows, MSVC, Qt)
@@ -120,6 +123,22 @@ jobs:
           Copy-Item build/app/AceStudio.exe dist/
           Copy-Item build/cli/acestudio-cli.exe dist/
           windeployqt --release --no-translations --no-system-d3d-compiler dist/AceStudio.exe
+          # The AI worker ships next to the executables (without its tests).
+          New-Item -ItemType Directory -Force dist/ai_worker | Out-Null
+          Copy-Item -Recurse ai_worker/acestudio_worker, ai_worker/requirements, ai_worker/catalog dist/ai_worker/
+          Get-ChildItem dist/ai_worker -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
+      - name: AI worker tests (Windows Python)
+        shell: pwsh
+        working-directory: ai_worker
+        run: python -m unittest discover -s tests -v
+      - name: Packaged CLI finds the AI worker
+        shell: pwsh
+        run: |
+          $env:ACESTUDIO_DATA_DIR = "$env:RUNNER_TEMP/acestudio-data"
+          dist/acestudio-cli.exe ai models
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          dist/acestudio-cli.exe ai status
+          if ($LASTEXITCODE -ne 0) { exit 1 }
       - uses: actions/upload-artifact@v4
         with:
           name: AceStudio-windows-x64

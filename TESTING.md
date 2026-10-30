@@ -30,9 +30,39 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 | `test_palette_io` | unit | .gpl/.pal/.hex/.txt round trips, real-world variants (CRLF, comments, alpha), malformed and oversized input rejected, files on disk, extraction (exact and median cut), colour-mode conversion with undo |
 | `test_animation` | unit | tag cycles for every direction, repeats, `AnimationPlayer` looping/finite tags/all-frames, frame move with exact undo, tag validation and undo, onion-skin fade/tint/wrap |
 | `test_export` | unit/integration | frame ranges and playback order, every sheet layout placing frames exactly, trim/merge/packed/power-of-two, Aseprite JSON (hash/array, tag remapping), GIF/APNG/WebP round trips, noisy-frame LZW resets, >255-colour reduction bound, corrupt input, PNG sequence and file writers refusing to overwrite |
+| `test_subprocess` | unit | stdin/stdout/stderr lines, UTF-8, exit codes, 5000-line output with unterminated tail, arguments with spaces/quotes/backslashes (Windows quoting round-trips through the real C runtime), environment, working directory, kill, destructor kill, missing programs |
+| `test_ai_worker` | integration | the real Python worker: handshake, progress, ordering, queued cancel, cooperative and forced cancel, crash retry then failure with stderr, restart-storm cut-off, external SIGKILL mid-job (job retried and succeeds), image inputs, stop, unstartable worker |
+| `test_model_catalog` | unit/integration | shipped catalogue valid and commercial-only, unsafe entries rejected, licence-gated downloads, install state, hash pinning, end-to-end download through the worker from a local HTTP server |
+| `ai_worker/tests/test_server.py` | integration (Python) | protocol, busy/next-job race, cancel, failures, stdout protection, crash exit, EOF, downloads with resume, hash mismatch, licence refusal, unsafe paths |
+| `ai_worker/tests/test_models_real.py` | integration (Python, optional) | BiRefNet IoU against a known mask; Real-ESRGAN reconstruction; tiny random SDXL through real Diffusers (seeds, cache, pixel post-process with exact palette, img2img, cancel, input errors) |
 | `cli_smoke` | end-to-end | every CLI command, JSON output, exit codes, overwrite protection, corrupt-file handling |
 
 ## Recorded results
+
+### 2026-10-30 — Phase 4, version 0.5.0
+
+| Environment | Build | Result |
+|---|---|---|
+| Linux, GCC 13.3, Qt 6.4.2, Python 3.13 | everything | ✅ 125/125 CTest (incl. the real-worker AI tests); Python worker suite 14/14 |
+| Windows target via MinGW-w64, `-Werror`, under Wine | core + CLI + tests | ✅ 116 passed, 7 skipped (they need Python, absent in Wine), 1941 assertions; `ai models` / `ai status` find the worker files |
+| Real models, CPU (2-vCPU VM, 7 GB RAM) | Python suite with torch 2.15, diffusers 0.42, onnxruntime 1.31 | ✅ Real-ESRGAN x4plus 64→256 px: 6.0 s, PSNR 28.3 dB vs original (bicubic 33.2 dB on this synthetic image; ESRGAN adds texture); ✅ tiny SDXL plumbing 12.8 s; ❌ BiRefNet Lite: OOM-killed above 6 GB RSS at its fixed 1024² input |
+| Real downloads | CLI | ✅ Real-ESRGAN anime 17.9 MB in 1.4 s and BiRefNet Lite 224 MB in 12 s from the official GitHub releases, both matching the pinned SHA-256 |
+| Runtime setup | CLI and app | ✅ private venv created, `onnx-cpu` profile installed from PyPI, worker restarted with the new packages |
+
+Manual desktop checks (Linux, Xvfb), real input:
+
+| Check | Result |
+|---|---|
+| AI Studio menu and dock; Upscale ×4 on the knight opens a 128×128 document | ✅ |
+| Models dialog: licence, size, state; SDXL licence dialog keeps "Accept and Download" disabled until the box is ticked | ✅ |
+| Remove Background with BiRefNet on the 7 GB VM: worker OOM-killed twice (attempt + retry), job Failed with "The system may have run out of memory", worker restarted, editor responsive | ✅ (recovery path); the model itself is unverified here |
+| Set Up AI Runtime in a fresh data folder: venv, install, restart, status "AI ready" | ✅ |
+| Defects found and fixed: hello blocked for tens of seconds importing torch (now probed after hello); "done" was sent before the worker was free, so the next job was refused as busy; a Diffusers 0.42 API change (VAE tiling); dropped final progress step; AI dock forced the window taller than the screen; long model names widened the dock; Models dialog buttons enabled with no selection; setup text named the wrong destination for a configured Python; log lines stuck in the buffer | ✅ fixed and re-verified |
+
+**Not yet verified:** anything on an NVIDIA GPU (SDXL quality and speed, CUDA wheels from the
+PyTorch index, DirectML), BiRefNet output quality, the `onnx-windows` and `diffusion-cuda`
+profiles, and the SDXL/Pixel Art XL file lists against Hugging Face (not reachable from the
+build environment).
 
 ### 2026-10-29 — Phase 3, version 0.4.0
 

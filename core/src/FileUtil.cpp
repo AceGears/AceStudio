@@ -229,4 +229,44 @@ Result<fs::path> userDataDir() {
     return base;
 }
 
+Result<fs::path> userLocalDataDir() {
+    fs::path base;
+    if (auto over = envPath("ACESTUDIO_DATA_DIR")) {
+        base = *over;
+    } else {
+#ifdef _WIN32
+        PWSTR local = nullptr;
+        if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local)))
+            return Error{ErrorCode::NotFound, "Cannot locate %LOCALAPPDATA%"};
+        base = fs::path(local) / "AceStudio";
+        CoTaskMemFree(local);
+#else
+        if (auto xdg = envPath("XDG_DATA_HOME"))
+            base = *xdg / "AceStudio";
+        else if (auto home = envPath("HOME"))
+            base = *home / ".local" / "share" / "AceStudio";
+        else
+            return Error{ErrorCode::NotFound, "Cannot determine home directory"};
+#endif
+    }
+    std::error_code ec;
+    fs::create_directories(base, ec);
+    if (ec) return Error{ErrorCode::IoError, "Cannot create " + base.string() + ": " + ec.message()};
+    return base;
+}
+
+fs::path executableDir() {
+    std::error_code ec;
+#ifdef _WIN32
+    std::wstring buf(32768, L'\0');
+    const DWORD n = GetModuleFileNameW(nullptr, buf.data(), static_cast<DWORD>(buf.size()));
+    if (n == 0 || n >= buf.size()) return {};
+    buf.resize(n);
+    return fs::path(buf).parent_path();
+#else
+    const fs::path self = fs::read_symlink("/proc/self/exe", ec);
+    return ec ? fs::path() : self.parent_path();
+#endif
+}
+
 } // namespace acestudio

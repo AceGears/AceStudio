@@ -29,6 +29,8 @@ class LayersPanel;
 class LogPanel;
 class PalettePanel;
 class PreviewPanel;
+class AiPanel;
+class AiService;
 class PropertiesPanel;
 class TimelinePanel;
 class ToolState;
@@ -74,6 +76,11 @@ private:
     void showAbout();
     void showNotices();
     void importPng(bool asLayer);
+public:
+    // Used by AI Studio for results.
+    DocumentView* openImageAsDocument(const Image& img, const QString& name);
+    bool insertImageAsLayer(DocumentView* view, const Image& img, const QString& name, std::optional<LayerId> above = {});
+private:
     void exportPng();
     void exportAnimation(int kind);   // ExportKind
     void editTags();
@@ -106,6 +113,9 @@ private:
     QDockWidget* m_logDock = nullptr;
     QDockWidget* m_previewDock = nullptr;
     PreviewPanel* m_preview = nullptr;
+    QDockWidget* m_aiDock = nullptr;
+    AiPanel* m_aiPanel = nullptr;
+    AiService* m_ai = nullptr;
     QAction* m_onionAction = nullptr;
     LayersPanel* m_layers = nullptr;
     PropertiesPanel* m_props = nullptr;

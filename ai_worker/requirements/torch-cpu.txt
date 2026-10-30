@@ -1,0 +1,6 @@
+# PyTorch CPU-only build (slow; for machines without a supported GPU).
+# UNVERIFIED: download.pytorch.org is not reachable from the build environment, so this
+# pin has not been checked against the cu128 index. pip reports clearly if it is missing.
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+torch==2.15.0

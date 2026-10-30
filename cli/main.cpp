@@ -4,6 +4,7 @@
 //   0 success, 1 usage error, 2 I/O or not found, 3 corrupt or invalid data,
 //   4 unsupported (newer) version, 5 internal error.
 
+#include "CliCommon.h"
 #include "acestudio/core/Document.h"
 #include "acestudio/core/Export.h"
 #include "acestudio/core/FileUtil.h"
@@ -30,73 +31,7 @@ using namespace acestudio;
 
 namespace {
 
-enum Exit : int { kOk = 0, kUsage = 1, kIo = 2, kCorrupt = 3, kUnsupported = 4, kInternal = 5 };
-
-int exitFor(ErrorCode c) {
-    switch (c) {
-    case ErrorCode::Ok: return kOk;
-    case ErrorCode::InvalidArgument: return kUsage;
-    case ErrorCode::IoError:
-    case ErrorCode::NotFound:
-    case ErrorCode::PermissionDenied: return kIo;
-    case ErrorCode::CorruptData: return kCorrupt;
-    case ErrorCode::UnsupportedVersion: return kUnsupported;
-    case ErrorCode::Cancelled:
-    case ErrorCode::Internal: return kInternal;
-    }
-    return kInternal;
-}
-
-struct Args {
-    std::vector<std::string> positional;
-    std::map<std::string, std::string> options;   // --key value
-    bool json = false;
-    bool force = false;
-    std::set<std::string> flags;   // boolean options such as --trim
-
-    std::optional<std::string> opt(const std::string& k) const {
-        auto it = options.find(k);
-        if (it == options.end()) return std::nullopt;
-        return it->second;
-    }
-};
-
-class Output {
-public:
-    explicit Output(bool asJson) : m_json(asJson) {}
-
-    int fail(int code, const std::string& message) {
-        if (m_json) std::cout << json{{"ok", false}, {"exitCode", code}, {"error", message}}.dump() << "\n";
-        else std::cerr << "error: " << message << "\n";
-        return code;
-    }
-    int fail(const Error& e) { return fail(exitFor(e.code), e.describe()); }
-
-    int success(json payload, const std::string& human) {
-        if (m_json) {
-            payload["ok"] = true;
-            std::cout << payload.dump() << "\n";
-        } else {
-            std::cout << human;
-        }
-        return kOk;
-    }
-
-private:
-    bool m_json;
-};
-
-std::optional<int> parseInt(const std::string& s) {
-    int v = 0;
-    auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), v);
-    if (ec != std::errc() || p != s.data() + s.size()) return std::nullopt;
-    return v;
-}
-
-std::optional<int> optInt(const Args& a, const std::string& key) {
-    auto v = a.opt(key);
-    return v ? parseInt(*v) : std::nullopt;
-}
+using namespace acestudio::cli;
 
 const char* kUsageText =
     "Usage: acestudio-cli [--json] <command> [options]\n"
@@ -117,6 +52,17 @@ const char* kUsageText =
     "                                         --data hash|array (writes <out>.json beside the PNG)\n"
     "                                  png:   --out is a folder; writes <name>_NNN.png per frame\n"
     "\n"
+    "  ai status                       Show the AI runtime, GPU and available tasks\n"
+    "  ai setup --profile P --yes      Create the AI Python environment and install packages\n"
+    "                                  P: onnx-windows | onnx-cpu | diffusion-cuda | diffusion-cpu\n"
+    "  ai models                       List downloadable models, licences and install state\n"
+    "  ai download <id> --accept-license <licence-id>\n"
+    "  ai remove-bg <in.png> --out <png> [--model id] [--threshold 0.5] [--cpu]\n"
+    "  ai upscale <in.png> --out <png> [--model id] [--tile 192] [--cpu]\n"
+    "  ai generate --prompt TEXT --out <png> [--negative TEXT] [--width W --height H] [--steps N]\n"
+    "              [--guidance G] [--seed S] [--lora pixel-art-xl] [--pixel 64x64 [--colors 16]]\n"
+    "              [--init in.png --strength 0.6] [--cpu]\n"
+    "\n"
     "Existing files are never overwritten unless --force is given.\n";
 
 std::optional<Args> parseArgs(int argc, char** argv, std::string& err) {
@@ -125,7 +71,8 @@ std::optional<Args> parseArgs(int argc, char** argv, std::string& err) {
         std::string s = argv[i];
         if (s == "--json") a.json = true;
         else if (s == "--force") a.force = true;
-        else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot") a.flags.insert(s.substr(2));
+        else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot" || s == "--yes" || s == "--cpu")
+            a.flags.insert(s.substr(2));
         else if (s == "-h" || s == "--help") { a.positional = {"help"}; return a; }
         else if (s.rfind("--", 0) == 0) {
             if (i + 1 >= argc) { err = "Missing value for " + s; return std::nullopt; }
@@ -318,6 +265,7 @@ int main(int argc, char** argv) {
         if (cmd == "validate") return cmdInfo(*args, out, true);
         if (cmd == "render") return cmdRender(*args, out);
         if (cmd == "export") return cmdExport(*args, out);
+        if (cmd == "ai") return acestudio::cli::cmdAi(*args, out);
         return out.fail(kUsage, "Unknown command '" + cmd + "'. Run with --help.");
     } catch (const std::exception& e) {
         return out.fail(kInternal, std::string("Unexpected error: ") + e.what());

@@ -1,4 +1,6 @@
 #include "acestudio/core/Log.h"
+
+#include <chrono>
 #include "acestudio/core/FileUtil.h"
 
 #include <cstdio>
@@ -89,7 +91,13 @@ void Logger::log(LogLevel level, std::string_view module, std::string_view messa
             rotateIfNeededLocked();
             if (m_file) {
                 std::fwrite(line.data(), 1, line.size(), m_file);
-                if (level >= LogLevel::Error) std::fflush(m_file);
+                // Warnings and errors reach the disk immediately; other lines
+                // at least once a second, so a crash loses little.
+                const auto now = std::chrono::steady_clock::now();
+                if (level >= LogLevel::Warning || now - m_lastFlush > std::chrono::seconds(1)) {
+                    std::fflush(m_file);
+                    m_lastFlush = now;
+                }
                 m_fileBytes += line.size();
             }
         }

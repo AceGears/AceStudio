@@ -14,6 +14,25 @@ first paid release.
 | stb_image | commit 003501f | MIT / Public Domain (dual) | Compiled in | None required (MIT notice included anyway) | ✅ |
 | libwebp (libwebp, libwebpdemux, libwebpmux) | 1.6.0 | BSD-3-Clause | Static | Include copyright notice, licence text and the PATENTS grant file in the notices; do not use WebM project names to endorse the product | ✅ |
 
+| AceStudio AI worker (`ai_worker/`, Python source) | 0.5.0 | Proprietary (ours) | Shipped as source next to the executable | Includes an independent implementation of the RRDBNet architecture compatible with the published Real-ESRGAN (BSD-3) weights | ✅ |
+
+## Installed on demand by the user (not shipped, not redistributed)
+
+AI Studio › Set Up AI Runtime installs these with pip into a private environment on the
+user's machine, after an explicit confirmation. AceStudio does not redistribute them.
+
+| Package | Pinned version | License | Notes |
+|---|---|---|---|
+| numpy | 2.5.4 | BSD-3-Clause | |
+| Pillow | 13.0.0 | MIT-CMU (HPND) | |
+| onnxruntime / onnxruntime-directml | 1.31.1 / 1.24.4 | MIT | Usage telemetry is disabled by the worker (`disable_telemetry_events`) |
+| torch | 2.15.0 | BSD-3-Clause | CUDA builds pull NVIDIA runtime wheels under the NVIDIA software licence, downloaded by the user from the PyTorch index |
+| diffusers, transformers, accelerate, safetensors, peft | 0.42.1, 5.22.0, 1.15.0, 0.8.0, 0.21.2 | Apache-2.0 | |
+
+Models are listed in `ai_worker/catalog/models.json` with their licence, obligations and
+source; the user must accept the licence in the app (or with `--accept-license`) before a
+download starts. The catalogue only contains models whose licences allow commercial use.
+
 ## Build/test-only components (not shipped)
 
 | Component | Version | License | Notes |
@@ -35,9 +54,6 @@ time only and must not ship.
 |---|---|---|
 | Lua 5.4.9 | MIT | 7 |
 | sol2 3.3.0 | MIT | 7 |
-| ONNX Runtime | MIT | 4 |
-| PyTorch | BSD-3 | 4 |
-| Hugging Face Diffusers | Apache-2.0 | 4 |
 | Inno Setup 7.x | Free for commercial use (keep notices) | 8 |
 | Qt Advanced Docking System | LGPL-2.1 (dynamic link) | optional |
 
