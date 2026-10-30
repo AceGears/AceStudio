@@ -1,3 +1,7 @@
+// Test-only use of getenv (_dupenv_s is missing from MinGW's runtime).
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdlib>
@@ -103,9 +107,6 @@ TEST_CASE("Portable mode keeps data next to the executable", "[fileutil]") {
     // ACESTUDIO_DATA_DIR (set by other tests' environment) still wins, so
     // clear it for this check and restore afterwards.
     std::string saved;
-#ifdef _MSC_VER
-#pragma warning(suppress : 4996)   // test only; _dupenv_s is missing from MinGW's runtime
-#endif
     if (const char* old = std::getenv("ACESTUDIO_DATA_DIR")) saved = old;
 #ifdef _WIN32
     _putenv_s("ACESTUDIO_DATA_DIR", "");
