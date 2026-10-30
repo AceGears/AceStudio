@@ -12,6 +12,7 @@
 # the folder to remove it. Run with: right-click > Run with PowerShell,
 # or double-click RUN-SETUP.cmd.
 
+param([switch]$Yes)   # -Yes: no prompts (consent given elsewhere), for unattended runs
 $ErrorActionPreference = 'Continue'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Src = Join-Path $Root 'src'
@@ -43,8 +44,10 @@ Write-Host "Folder: $Root"
 Write-Host 'This installs VS 2022 Build Tools and Python if missing (system-wide, via winget),'
 Write-Host 'downloads Qt into this folder, then builds and tests AceStudio.'
 Write-Host 'Licences: VS Build Tools (Microsoft licence terms, shown by winget), Python (PSF), Qt (LGPLv3).'
-$answer = Read-Host 'Continue? (y/n)'
-if ($answer -ne 'y') { exit 1 }
+if (-not $Yes) {
+    $answer = Read-Host 'Continue? (y/n)'
+    if ($answer -ne 'y') { exit 1 }
+}
 
 Say ("Started " + (Get-Date -Format o))
 Say ("Windows: " + [Environment]::OSVersion.VersionString)
@@ -65,7 +68,7 @@ if (-not $vs) {
     $vs = Find-VS
 }
 Step 'Visual Studio C++ Build Tools' ([bool]$vs) "$vs"
-if (-not $vs) { Say 'Cannot continue without the C++ compiler.'; $Summary | Set-Content (Join-Path $Root 'SUMMARY.txt'); Read-Host 'Press Enter to close'; exit 1 }
+if (-not $vs) { Say 'Cannot continue without the C++ compiler.'; $Summary | Set-Content (Join-Path $Root 'SUMMARY.txt'); if (-not $Yes) { Read-Host 'Press Enter to close' }; exit 1 }
 $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
 
 # --- 2. Python -----------------------------------------------------------------
@@ -88,7 +91,7 @@ if (-not $py) {
     $py = Find-Python
 }
 Step 'Python 3.10+' ([bool]$py) $(if ($py) { $py.version } else { 'not found' })
-if (-not $py) { Say 'Cannot continue without Python (needed for Qt download and AI tests).'; $Summary | Set-Content (Join-Path $Root 'SUMMARY.txt'); Read-Host 'Press Enter to close'; exit 1 }
+if (-not $py) { Say 'Cannot continue without Python (needed for Qt download and AI tests).'; $Summary | Set-Content (Join-Path $Root 'SUMMARY.txt'); if (-not $Yes) { Read-Host 'Press Enter to close' }; exit 1 }
 $pyExe = $py.cmd[0]; $pyArgs = @(Rest $py.cmd)
 
 # --- 3. Qt ---------------------------------------------------------------------
@@ -101,7 +104,7 @@ if (-not (Test-Path (Join-Path $QtDir 'bin\Qt6Widgets.dll'))) {
 }
 $qtOk = Test-Path (Join-Path $QtDir 'bin\Qt6Widgets.dll')
 Step "Qt $QtVersion (MSVC 2022)" $qtOk $QtDir
-if (-not $qtOk) { $Summary | Set-Content (Join-Path $Root 'SUMMARY.txt'); Read-Host 'Press Enter to close'; exit 1 }
+if (-not $qtOk) { $Summary | Set-Content (Join-Path $Root 'SUMMARY.txt'); if (-not $Yes) { Read-Host 'Press Enter to close' }; exit 1 }
 
 # --- 4. Build and test ---------------------------------------------------------
 $env:CMAKE_BUILD_PARALLEL_LEVEL = [Environment]::ProcessorCount
@@ -138,4 +141,4 @@ Write-Host 'Summary' -ForegroundColor Cyan
 $Summary | ForEach-Object { Write-Host $_ }
 Write-Host "`nLog: $Log"
 Write-Host "Run the app: $Dist\AceStudio.exe"
-Read-Host 'Press Enter to close'
+if (-not $Yes) { Read-Host 'Press Enter to close' }
