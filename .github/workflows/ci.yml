@@ -28,6 +28,8 @@ jobs:
   windows:
     name: Full build (Windows, MSVC, Qt)
     runs-on: windows-2022
+    permissions:
+      contents: write   # publishes the "nightly" pre-release below
     steps:
       - uses: actions/checkout@v4
       # aqtinstall (used by install-qt-action) is not yet tested on the
@@ -149,3 +151,17 @@ jobs:
         with:
           name: AceStudio-windows-x64
           path: dist/
+      # Same build as a release file: release downloads work with a token from
+      # tools that cannot reach the artifact storage host. The repository is
+      # private, so the pre-release is visible to collaborators only.
+      - name: Publish nightly pre-release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Compress-Archive -Path dist/* -DestinationPath AceStudio-windows-x64.zip -Force
+          gh release delete nightly --yes --cleanup-tag 2>$null
+          gh release create nightly AceStudio-windows-x64.zip --prerelease --target $env:GITHUB_SHA `
+            --title "Nightly $($env:GITHUB_SHA.Substring(0,7))" `
+            --notes "Automatic Windows build of $env:GITHUB_SHA for testing. Unsigned; not a release."
