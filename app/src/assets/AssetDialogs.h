@@ -63,7 +63,9 @@ private:
     QCheckBox* m_repeat = nullptr;
     QSpinBox* m_overlap = nullptr;
     QSpinBox* m_skyTolerance = nullptr;
-    QCheckBox* m_skyEverywhere = nullptr;
+    QComboBox* m_skyMode = nullptr;
+    QPushButton* m_aiCut = nullptr;
+    AiImageJob* m_cutJob = nullptr;
     QLineEdit* m_prompt = nullptr;
     QPushButton* m_generate = nullptr;
     QLabel* m_genStatus = nullptr;
@@ -108,7 +110,7 @@ private:
 class SliceDialog : public QDialog {
     Q_OBJECT
 public:
-    SliceDialog(DocumentView* view, OpenFramesFn openFrames, QWidget* parent = nullptr);
+    SliceDialog(AiService& ai, DocumentView* view, OpenFramesFn openFrames, QWidget* parent = nullptr);
 
 private:
     void detectGridNow();
@@ -119,7 +121,18 @@ private:
     SliceOptions options() const;
     GridGuess grid() const;
 
+    void updateBackgroundLabel();
+
+    AiService& m_ai;
     Image m_sheet;
+    Image m_original;             // the sheet before AI background removal
+    std::optional<Rgba8> m_key;   // background colour picked by clicking
+    int m_zoom = 1;               // preview scale (for mapping clicks)
+    AiImageJob* m_job = nullptr;
+    QLabel* m_bgLabel = nullptr;
+    QPushButton* m_autoKey = nullptr;
+    QPushButton* m_aiRemove = nullptr;
+    QPushButton* m_restore = nullptr;
     QString m_name;
     OpenFramesFn m_openFrames;
     std::vector<SlicedSprite> m_slices;
@@ -165,6 +178,7 @@ private:
     QCheckBox* m_trim = nullptr;
     QCheckBox* m_merge = nullptr;
     QCheckBox* m_pot = nullptr;
+    QCheckBox* m_rotate = nullptr;
     QSpinBox* m_page = nullptr;
     PixelView* m_preview = nullptr;
     QLabel* m_info = nullptr;

@@ -36,12 +36,14 @@ struct AtlasOptions {
     bool mergeDuplicates = true;   // identical (trimmed) images share one rect
     bool powerOfTwo = false;  // page sizes rounded up to powers of two
     bool multiplePages = true;     // otherwise fail when one page is not enough
+    bool allowRotation = false;    // sprites may be turned 90 degrees clockwise to pack tighter
 };
 
 struct AtlasSprite {
     std::string name;
     int page = 0;
-    IntRect rect;             // where the (trimmed) image sits on its page, extrusion excluded
+    IntRect rect;             // where the (trimmed) image sits on its page, extrusion excluded (turned size when rotated)
+    bool rotated = false;     // stored turned 90 degrees clockwise
     IntRect source;           // the trimmed area within the original image
     int sourceWidth = 0, sourceHeight = 0;   // original size
     bool trimmed = false;

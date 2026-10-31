@@ -13,6 +13,7 @@
 #include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QImageReader>
@@ -22,11 +23,13 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSlider>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <set>
@@ -47,22 +50,33 @@ QString schemeLabel(AutotileScheme s) {
 }
 
 // A small map with an island, a lake inside it, a thin bridge and loose
-// cells, so every kind of tile shows up.
-TerrainMap sampleMap() {
-    TerrainMap m(16, 10);
+// cells, so every kind of tile shows up; higher levels sit inside it.
+LevelMap sampleMap(int levels) {
+    LevelMap m(16, 10);
     for (int y = 0; y < 10; ++y)
         for (int x = 0; x < 16; ++x) {
             const double dx = (x - 6.0) / 4.6, dy = (y - 4.5) / 3.6;
-            if (dx * dx + dy * dy < 1.0) m.set(x, y, true);
+            if (dx * dx + dy * dy < 1.0) m.set(x, y, 1);
         }
-    m.set(6, 4, false);
-    m.set(7, 4, false);
-    m.set(6, 5, false);
-    for (int x = 10; x < 14; ++x) m.set(x, 5, true);
-    for (int y = 2; y < 8; ++y) m.set(13, y, true);
-    m.set(15, 1, true);
-    m.set(15, 8, true);
-    m.set(14, 8, true);
+    m.set(6, 4, 0);
+    m.set(7, 4, 0);
+    m.set(6, 5, 0);
+    for (int x = 10; x < 14; ++x) m.set(x, 5, 1);
+    for (int y = 2; y < 8; ++y) m.set(13, y, 1);
+    m.set(15, 1, 1);
+    m.set(15, 8, 1);
+    m.set(14, 8, 1);
+    if (levels >= 2) {
+        for (int y = 2; y < 8; ++y)
+            for (int x = 3; x < 6; ++x) m.set(x, y, 2);
+        m.set(8, 3, 2);
+        m.set(8, 2, 2);
+        for (int y = 3; y < 7; ++y) m.set(13, y, 2);
+    }
+    if (levels >= 3) {
+        for (int y = 3; y < 7; ++y) m.set(4, y, 3);
+        m.set(3, 4, 3);
+    }
     return m;
 }
 
@@ -76,6 +90,8 @@ QString wrapText(const Image& tex) {
     return t;
 }
 
+const char* const kDefaultPrompts[] = {"brown dirt ground", "lush green grass", "grey mountain rock", "white snow"};
+
 } // namespace
 
 TilesetDialog::TilesetDialog(AiService& ai, DocumentView* view, OpenImageFn openImage, QWidget* parent)
@@ -88,6 +104,9 @@ TilesetDialog::TilesetDialog(AiService& ai, DocumentView* view, OpenImageFn open
     m_tileSize->setRange(8, 64);
     m_tileSize->setValue(16);
     m_tileSize->setSuffix(tr(" px"));
+    m_phases = new QComboBox(this);
+    for (int p = 1; p <= 4; ++p) m_phases->addItem(p == 1 ? tr("1 tile") : tr("%1 × %1 tiles").arg(p), p);
+    m_phases->setToolTip(tr("Texture size. Larger textures keep more detail: each tile gets one variant per position in the texture"));
     m_roundness = new QSlider(Qt::Horizontal, this);
     m_roundness->setRange(0, 100);
     m_roundness->setValue(100);
@@ -109,25 +128,48 @@ TilesetDialog::TilesetDialog(AiService& ai, DocumentView* view, OpenImageFn open
     auto* settings = new QFormLayout;
     settings->addRow(tr("Layout:"), m_scheme);
     settings->addRow(tr("Tile size:"), m_tileSize);
+    settings->addRow(tr("Texture size:"), m_phases);
     settings->addRow(tr("Roundness:"), m_roundness);
     settings->addRow(tr("Edge noise:"), m_noise);
     settings->addRow(tr("Noise detail:"), m_noiseScale);
     settings->addRow(tr("Seed:"), m_seed);
     settings->addRow(QString(), m_outline);
 
+    auto* sourcesWidget = new QWidget(this);
+    m_sourceLayout = new QVBoxLayout(sourcesWidget);
+    m_sourceLayout->setContentsMargins(0, 0, 0, 0);
+    m_sourceLayout->addStretch();
+    auto* scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setWidget(sourcesWidget);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setMinimumWidth(420);
+    m_addLevel = new QPushButton(tr("Add Terrain Level"), this);
+    m_addLevel->setToolTip(tr("Another terrain drawn over the one below it, e.g. grass over sand over water"));
+    m_removeLevel = new QPushButton(tr("Remove Top Level"), this);
+    auto* levelButtons = new QHBoxLayout;
+    levelButtons->addWidget(m_addLevel);
+    levelButtons->addWidget(m_removeLevel);
+    levelButtons->addStretch();
+
     auto* left = new QVBoxLayout;
-    left->addWidget(buildSource(m_terrain, tr("Terrain texture (drawn on top)"), tr("lush green grass")));
-    left->addWidget(buildSource(m_base, tr("Base texture (underneath)"), tr("brown dirt ground")));
+    left->addWidget(scroll, 1);
+    left->addLayout(levelButtons);
     left->addLayout(settings);
-    left->addStretch();
 
     m_preview = new PixelView(this);
     m_preview->setMinimumSize(384, 288);
+    m_previewLevel = new QComboBox(this);
     m_mapPreview = new PixelView(this);
     m_mapPreview->setMinimumSize(384, 240);
+    auto* tilesetPage = new QWidget(this);
+    auto* tilesetLay = new QVBoxLayout(tilesetPage);
+    tilesetLay->setContentsMargins(0, 0, 0, 0);
+    tilesetLay->addWidget(m_previewLevel);
+    tilesetLay->addWidget(m_preview, 1);
     auto* tabs = new QTabWidget(this);
     tabs->addTab(m_mapPreview, tr("Preview map"));
-    tabs->addTab(m_preview, tr("Tileset"));
+    tabs->addTab(tilesetPage, tr("Tileset"));
     m_seams = new QLabel(this);
     m_seams->setWordWrap(true);
     auto* right = new QVBoxLayout;
@@ -142,7 +184,13 @@ TilesetDialog::TilesetDialog(AiService& ai, DocumentView* view, OpenImageFn open
     connect(m_sandbox, &QPushButton::clicked, this, &TilesetDialog::openSandbox);
     connect(m_export, &QPushButton::clicked, this, &TilesetDialog::exportFiles);
     connect(m_open, &QPushButton::clicked, this, [this] {
-        if (m_tileset && m_openImage) m_openImage(m_tileset->image, tr("Tileset %1").arg(schemeLabel(m_tileset->scheme)));
+        const int i = std::max(0, m_previewLevel->currentIndex());
+        if (i < static_cast<int>(m_levels.size()) && m_openImage)
+            m_openImage(m_levels[static_cast<std::size_t>(i)].image,
+                        tr("Tileset %1 level %2").arg(schemeLabel(m_levels[0].scheme)).arg(i + 1));
+    });
+    connect(m_previewLevel, &QComboBox::currentIndexChanged, this, [this](int i) {
+        if (i >= 0 && i < static_cast<int>(m_levels.size())) m_preview->setImage(m_levels[static_cast<std::size_t>(i)].image);
     });
     auto* buttons = new QHBoxLayout;
     buttons->addWidget(m_sandbox);
@@ -158,35 +206,73 @@ TilesetDialog::TilesetDialog(AiService& ai, DocumentView* view, OpenImageFn open
     root->addLayout(body, 1);
     root->addLayout(buttons);
 
-    for (QObject* o : std::initializer_list<QObject*>{m_scheme, m_tileSize, m_roundness, m_noise, m_noiseScale, m_seed, m_outline}) {
+    for (QObject* o : std::initializer_list<QObject*>{m_scheme, m_roundness, m_noise, m_noiseScale, m_seed, m_outline}) {
         if (auto* c = qobject_cast<QComboBox*>(o)) connect(c, &QComboBox::currentIndexChanged, this, &TilesetDialog::rebuild);
         if (auto* sp = qobject_cast<QSpinBox*>(o)) connect(sp, &QSpinBox::valueChanged, this, &TilesetDialog::rebuild);
         if (auto* sl = qobject_cast<QSlider*>(o)) connect(sl, &QSlider::valueChanged, this, &TilesetDialog::rebuild);
         if (auto* cb = qobject_cast<QCheckBox*>(o)) connect(cb, &QCheckBox::toggled, this, &TilesetDialog::rebuild);
     }
-    // When the tile size changes, textures are re-fitted from what they were.
-    connect(m_tileSize, &QSpinBox::valueChanged, this, [this](int t) {
-        for (Source* s : {&m_terrain, &m_base})
-            if (!s->texture.isNull() && s->texture.width() != t) setTexture(*s, s->texture);
+    // When the tile or texture size changes, textures are re-fitted from the
+    // images they were made from, not from the reduced copy.
+    auto refit = [this] {
+        for (auto& s : m_sources)
+            if (!s->original.isNull()) {
+                const int want = tileSize() * phases();
+                s->texture = fitSquare(s->original, want);
+                s->view->setImage(s->texture);
+                QString text = wrapText(s->texture);
+                if (std::min(s->original.width(), s->original.height()) < want)
+                    text += tr("\nEnlarged from %1 px: open or generate it again for full detail.").arg(std::min(s->original.width(), s->original.height()));
+                s->status->setText(text);
+            }
+        rebuild();
+    };
+    connect(m_tileSize, &QSpinBox::valueChanged, this, refit);
+    connect(m_phases, &QComboBox::currentIndexChanged, this, refit);
+    connect(m_addLevel, &QPushButton::clicked, this, [this] {
+        if (m_sources.size() >= 4) return;
+        addSource(QString::fromLatin1(kDefaultPrompts[m_sources.size()]));
+        retitleSources();
+        rebuild();
     });
-    resize(1120, 700);
+    connect(m_removeLevel, &QPushButton::clicked, this, [this] {
+        if (m_sources.size() <= 2) return;
+        Source& s = *m_sources.back();
+        if (s.job && s.job->running()) s.job->cancel();
+        s.box->deleteLater();
+        m_sources.pop_back();
+        retitleSources();
+        rebuild();
+    });
+
+    // Base and one terrain to start with: dirt under grass.
+    addSource(tr("brown dirt ground"));
+    addSource(tr("lush green grass"));
+    retitleSources();
+    resize(1180, 760);
     rebuild();
 }
 
-QWidget* TilesetDialog::buildSource(Source& s, const QString& title, const QString& defaultPrompt) {
-    auto* box = new QGroupBox(title, this);
-    s.view = new PixelView(box);
+TilesetDialog::~TilesetDialog() = default;
+
+TilesetDialog::Source& TilesetDialog::addSource(const QString& defaultPrompt) {
+    auto owned = std::make_unique<Source>();
+    Source& s = *owned;
+    m_sources.push_back(std::move(owned));
+    s.box = new QGroupBox(this);
+    s.view = new PixelView(s.box);
     s.view->setRepeat(3);
-    s.view->setMinimumSize(144, 144);
+    s.view->setFixedSize(120, 120);
     s.view->setToolTip(tr("Shown 3×3 times to reveal seams"));
-    s.status = new QLabel(box);
-    s.prompt = new QLineEdit(defaultPrompt, box);
+    s.status = new QLabel(s.box);
+    s.status->setWordWrap(true);
+    s.prompt = new QLineEdit(defaultPrompt, s.box);
     s.prompt->setToolTip(tr("What the texture shows, for AI generation"));
-    auto* fromLayer = new QPushButton(tr("From Document"), box);
-    fromLayer->setToolTip(tr("The current frame (or the selection), cropped square and scaled to one tile"));
-    auto* open = new QPushButton(tr("Open…"), box);
-    s.generate = new QPushButton(tr("Generate"), box);
-    s.generate->setToolTip(tr("A seamless texture from Stable Diffusion XL, reduced to one tile"));
+    auto* fromLayer = new QPushButton(tr("From Document"), s.box);
+    fromLayer->setToolTip(tr("The current frame (or the selection), cropped square and scaled to the texture size"));
+    auto* open = new QPushButton(tr("Open…"), s.box);
+    s.generate = new QPushButton(tr("Generate"), s.box);
+    s.generate->setToolTip(tr("A seamless texture from Stable Diffusion XL, reduced to the texture size"));
     Source* sp = &s;
     connect(fromLayer, &QPushButton::clicked, this, [this, sp] {
         const Image img = documentImage(m_view);
@@ -208,22 +294,30 @@ QWidget* TilesetDialog::buildSource(Source& s, const QString& title, const QStri
     auto* gen = new QHBoxLayout;
     gen->addWidget(s.prompt, 1);
     gen->addWidget(s.generate);
-    auto* v = new QVBoxLayout(box);
-    auto* top = new QHBoxLayout;
-    top->addWidget(s.view);
     auto* side = new QVBoxLayout;
     side->addLayout(row);
     side->addWidget(s.status);
     side->addStretch();
+    side->addLayout(gen);
+    auto* top = new QHBoxLayout(s.box);
+    top->addWidget(s.view);
     top->addLayout(side, 1);
-    v->addLayout(top);
-    v->addLayout(gen);
     s.status->setText(wrapText({}));
-    return box;
+    m_sourceLayout->insertWidget(m_sourceLayout->count() - 1, s.box);
+    return s;
+}
+
+void TilesetDialog::retitleSources() {
+    for (std::size_t i = 0; i < m_sources.size(); ++i)
+        m_sources[i]->box->setTitle(i == 0 ? tr("Base (level 0, underneath)")
+                                           : tr("Terrain level %1 (drawn over level %2)").arg(i).arg(i - 1));
+    m_addLevel->setEnabled(m_sources.size() < 4);
+    m_removeLevel->setEnabled(m_sources.size() > 2);
 }
 
 void TilesetDialog::setTexture(Source& s, const Image& img) {
-    s.texture = fitSquare(img, tileSize());
+    s.original = img;
+    s.texture = fitSquare(img, tileSize() * phases());
     s.view->setImage(s.texture);
     s.status->setText(wrapText(s.texture));
     rebuild();
@@ -258,7 +352,7 @@ void TilesetDialog::generateTexture(Source& s) {
     r.prompt = s.prompt->text().trimmed() + tr(", seamless repeating texture filling the whole image, top-down view, flat even lighting, pixel art");
     r.negative = tr("objects, border, frame, perspective, horizon, shadow, vignette, text, watermark");
     r.tileable = QStringLiteral("xy");
-    r.pixelWidth = r.pixelHeight = tileSize();
+    r.pixelWidth = r.pixelHeight = tileSize() * phases();
     r.colors = 16;
     r.seed = m_seed->value();
     r.label = tr("Texture: %1").arg(s.prompt->text().left(30));
@@ -274,16 +368,20 @@ AutotileScheme TilesetDialog::scheme() const {
 
 int TilesetDialog::tileSize() const { return m_tileSize->value(); }
 
+int TilesetDialog::phases() const { return std::max(1, m_phases->currentData().toInt()); }
+
 void TilesetDialog::rebuild() {
-    m_tileset.reset();
-    const bool ready = !m_terrain.texture.isNull() && !m_base.texture.isNull();
+    m_levels.clear();
     m_export->setEnabled(false);
     m_sandbox->setEnabled(false);
     m_open->setEnabled(false);
-    if (!ready) {
-        m_seams->setText(tr("Choose a terrain and a base texture: from the document, a file, or Generate."));
+    const bool ready = std::all_of(m_sources.begin(), m_sources.end(), [](const auto& s) { return !s->texture.isNull(); });
+    if (!ready || m_sources.size() < 2) {
+        m_seams->setText(tr("Choose a texture for every level: from the document, a file, or Generate."));
         m_preview->setImage(Image());
         m_mapPreview->setImage(Image());
+        const QSignalBlocker block(m_previewLevel);
+        m_previewLevel->clear();
         return;
     }
     TilesetStyle st;
@@ -292,22 +390,42 @@ void TilesetDialog::rebuild() {
     st.noiseScale = m_noiseScale->value();
     st.outline = m_outline->isChecked();
     st.seed = static_cast<std::uint32_t>(m_seed->value());
-    auto t = generateTileset(scheme(), m_base.texture, m_terrain.texture, st);
-    if (!t) { m_seams->setText(qs(t.error().message)); return; }
-    m_tileset = std::move(t).value();
-    m_preview->setImage(m_tileset->image);
-    if (auto img = renderMap(sampleMap(), *m_tileset)) m_mapPreview->setImage(img.value());
-    const auto rep = checkSeams(*m_tileset);
-    QString text;
-    if (rep && rep.value().ok()) {
-        text = tr("✓ Seam check: %1 tile pairs that can touch, no seams.").arg(rep.value().pairsChecked);
-    } else if (rep) {
-        text = tr("✗ Seam check: %1 of %2 pairs show a seam (largest: tile %3 → %4). The textures probably do not tile seamlessly.")
-                   .arg(rep.value().issues.size()).arg(rep.value().pairsChecked).arg(rep.value().issues.front().a).arg(rep.value().issues.front().b);
+    for (std::size_t i = 1; i < m_sources.size(); ++i) {
+        // Level 1 is drawn over the base texture; higher levels over a
+        // transparent base, so the level below shows through.
+        auto t = generateTileset(scheme(), i == 1 ? m_sources[0]->texture : Image(), m_sources[i]->texture, st, tileSize());
+        if (!t) { m_seams->setText(qs(t.error().message)); m_levels.clear(); return; }
+        m_levels.push_back(std::move(t).value());
     }
-    const WrapCheck a = checkWrap(m_terrain.texture), b = checkWrap(m_base.texture);
-    if (!(a.horizontal && a.vertical && b.horizontal && b.vertical))
+    {
+        const int keep = std::max(0, m_previewLevel->currentIndex());
+        const QSignalBlocker block(m_previewLevel);
+        m_previewLevel->clear();
+        for (std::size_t i = 0; i < m_levels.size(); ++i)
+            m_previewLevel->addItem(i == 0 ? tr("Level 1 over the base") : tr("Level %1 (transparent base)").arg(i + 1));
+        m_previewLevel->setCurrentIndex(std::min(keep, m_previewLevel->count() - 1));
+    }
+    m_preview->setImage(m_levels[static_cast<std::size_t>(std::max(0, m_previewLevel->currentIndex()))].image);
+    if (auto img = renderLevels(sampleMap(static_cast<int>(m_levels.size())), m_levels)) m_mapPreview->setImage(img.value());
+    int pairs = 0, issues = 0;
+    QString worst;
+    for (std::size_t i = 0; i < m_levels.size(); ++i) {
+        const auto rep = checkSeams(m_levels[i]);
+        if (!rep) continue;
+        pairs += rep.value().pairsChecked;
+        issues += static_cast<int>(rep.value().issues.size());
+        if (worst.isEmpty() && !rep.value().ok())
+            worst = tr("level %1, tile %2 → %3").arg(i + 1).arg(rep.value().issues.front().a).arg(rep.value().issues.front().b);
+    }
+    QString text = issues == 0 ? tr("✓ Seam check: %1 tile pairs that can touch, no seams.").arg(pairs)
+                               : tr("✗ Seam check: %1 of %2 pairs show a seam (largest: %3). The textures probably do not tile seamlessly.")
+                                     .arg(issues).arg(pairs).arg(worst);
+    if (std::any_of(m_sources.begin(), m_sources.end(), [](const auto& s) {
+            const WrapCheck w = checkWrap(s->texture);
+            return !(w.horizontal && w.vertical);
+        }))
         text += tr("\nA texture does not tile seamlessly, so repeated tiles will show its edges.");
+    if (phases() > 1) text += tr("\nEach tile has %1 × %1 variants: draw cell (x, y) with variant (x mod %1, y mod %1).").arg(phases());
     m_seams->setText(text);
     m_export->setEnabled(true);
     m_sandbox->setEnabled(true);
@@ -315,36 +433,55 @@ void TilesetDialog::rebuild() {
 }
 
 void TilesetDialog::exportFiles() {
-    if (!m_tileset) return;
+    if (m_levels.empty()) return;
     const QString f = QFileDialog::getSaveFileName(this, tr("Export Tileset"), QStringLiteral("tileset.png"), tr("PNG image (*.png)"));
     if (f.isEmpty()) return;
     fs::path png = toPath(f);
     if (png.extension() != ".png") png += ".png";
-    const fs::path json = fs::path(png).replace_extension(".json");
-    const fs::path base = png.parent_path() / (png.stem().string() + "_base.png");
-    const bool withBase = !m_tileset->base.isNull();
-    Status st = writePng(m_tileset->image, png);
-    if (st && withBase) st = writePng(m_tileset->base, base);
-    if (st) st = writeTextFile(json, tilesetJson(*m_tileset, png.filename().string(), withBase ? base.filename().string() : std::string()));
-    if (!st) { QMessageBox::warning(this, windowTitle(), qs(st.error().message)); return; }
-    QMessageBox::information(this, windowTitle(), tr("Wrote %1 and %2%3.").arg(fromPath(png.filename()), fromPath(json.filename()),
-                                                                                  withBase ? tr(" and %1").arg(fromPath(base.filename())) : QString()));
+    const fs::path dir = png.parent_path();
+    const std::string stem = png.stem().string();
+    const Tileset& first = m_levels.front();
+    const bool withBase = !first.base.isNull();
+    const fs::path base = dir / (stem + "_base.png");
+    std::vector<std::string> images, jsons;
+    QStringList written;
+    auto fail = [this](const Status& st) { QMessageBox::warning(this, windowTitle(), qs(st.error().message)); };
+    if (withBase) {
+        if (Status st = writePng(first.base, base); !st) return fail(st);
+        written << fromPath(base.filename());
+    }
+    const bool single = m_levels.size() == 1;
+    for (std::size_t i = 0; i < m_levels.size(); ++i) {
+        const std::string name = single ? stem : stem + "_level" + std::to_string(i + 1);
+        const fs::path img = dir / (name + ".png"), js = dir / (name + ".json");
+        Status st = writePng(m_levels[i].image, img);
+        if (st) st = writeTextFile(js, tilesetJson(m_levels[i], img.filename().string(), i == 0 && withBase ? base.filename().string() : std::string()));
+        if (!st) return fail(st);
+        images.push_back(img.filename().string());
+        jsons.push_back(js.filename().string());
+        written << fromPath(img.filename()) << fromPath(js.filename());
+    }
+    if (!single) {
+        const fs::path set = dir / (stem + "_terrain.json");
+        if (Status st = writeTextFile(set, terrainSetJson(m_levels, images, jsons, withBase ? base.filename().string() : std::string())); !st) return fail(st);
+        written << fromPath(set.filename());
+    }
+    QMessageBox::information(this, windowTitle(), tr("Wrote %1.").arg(written.join(QStringLiteral(", "))));
 }
 
 void TilesetDialog::openSandbox() {
-    if (!m_tileset) return;
-    TerrainSandbox box(*m_tileset, this);
+    if (m_levels.empty()) return;
+    TerrainSandbox box(m_levels, this);
     box.exec();
 }
 
 // ---------------------------------------------------------------- sandbox
 
-TerrainSandbox::TerrainSandbox(Tileset tileset, QWidget* parent) : QDialog(parent), m_tileset(std::move(tileset)) {
-    setWindowTitle(tr("Terrain Sandbox — %1").arg(schemeLabel(m_tileset.scheme)));
-    m_map = sampleMap();
+TerrainSandbox::TerrainSandbox(std::vector<Tileset> levels, QWidget* parent) : QDialog(parent), m_levels(std::move(levels)) {
+    setWindowTitle(tr("Terrain Sandbox — %1").arg(schemeLabel(m_levels.front().scheme)));
+    m_map = sampleMap(static_cast<int>(m_levels.size()));
     m_view = new PixelView(this);
     m_view->setMinimumSize(512, 360);
-    m_view->setMouseTracking(false);
     m_w = new QSpinBox(this);
     m_w->setRange(2, 128);
     m_w->setValue(m_map.width());
@@ -354,6 +491,10 @@ TerrainSandbox::TerrainSandbox(Tileset tileset, QWidget* parent) : QDialog(paren
     m_brush = new QSpinBox(this);
     m_brush->setRange(1, 8);
     m_brush->setValue(1);
+    m_level = new QComboBox(this);
+    for (std::size_t i = 1; i <= m_levels.size(); ++i) m_level->addItem(tr("Level %1").arg(i), static_cast<int>(i));
+    m_level->setCurrentIndex(0);
+    m_level->setVisible(m_levels.size() > 1);
     m_status = new QLabel(this);
     auto* clear = new QPushButton(tr("Clear"), this);
     auto* fill = new QPushButton(tr("Fill"), this);
@@ -361,34 +502,51 @@ TerrainSandbox::TerrainSandbox(Tileset tileset, QWidget* parent) : QDialog(paren
     auto* exportBtn = new QPushButton(tr("Export Map…"), this);
     auto* close = new QPushButton(tr("Close"), this);
     connect(close, &QPushButton::clicked, this, &QDialog::accept);
-    connect(clear, &QPushButton::clicked, this, [this] { m_map.fill(false); redraw(); });
-    connect(fill, &QPushButton::clicked, this, [this] { m_map.fill(true); redraw(); });
+    connect(clear, &QPushButton::clicked, this, [this] { m_map.fill(0); redraw(); });
+    connect(fill, &QPushButton::clicked, this, [this] { m_map.fill(m_level->currentData().toInt()); redraw(); });
     connect(noise, &QPushButton::clicked, this, [this] {
-        // Smoothed noise so it reads as terrain, not static.
-        std::uint32_t s = static_cast<std::uint32_t>(m_map.width() * 7919 + m_map.height() * 104729 + m_status->text().size());
-        TerrainMap r(m_map.width(), m_map.height());
-        for (int y = 0; y < r.height(); ++y)
-            for (int x = 0; x < r.width(); ++x) {
-                s = s * 1664525u + 1013904223u;
-                r.set(x, y, (s >> 24) < 120);
-            }
-        for (int pass = 0; pass < 2; ++pass) {
-            TerrainMap n = r;
-            for (int y = 0; y < r.height(); ++y)
-                for (int x = 0; x < r.width(); ++x) {
+        // Smoothed noise so it reads as terrain, not static; higher levels
+        // are thresholds of the same field, so they nest inside lower ones.
+        static std::uint32_t s = 12345;
+        const int w = m_map.width(), h = m_map.height(), n = static_cast<int>(m_levels.size());
+        std::vector<double> f(static_cast<std::size_t>(w * h));
+        for (auto& v : f) { s = s * 1664525u + 1013904223u; v = (s >> 8) / double(1u << 24); }
+        for (int pass = 0; pass < 3; ++pass) {
+            std::vector<double> g(f.size());
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < w; ++x) {
+                    double sum = 0;
                     int c = 0;
                     for (int dy = -1; dy <= 1; ++dy)
-                        for (int dx = -1; dx <= 1; ++dx) c += r.at(x + dx, y + dy);
-                    n.set(x, y, c >= 5);
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            const int xx = x + dx, yy = y + dy;
+                            if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+                            sum += f[static_cast<std::size_t>(yy * w + xx)];
+                            ++c;
+                        }
+                    g[static_cast<std::size_t>(y * w + x)] = sum / c;
                 }
-            r = n;
+            f = std::move(g);
         }
-        m_map = r;
+        std::vector<double> sorted = f;
+        std::sort(sorted.begin(), sorted.end());
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x) {
+                const double v = f[static_cast<std::size_t>(y * w + x)];
+                int level = 0;
+                for (int k = 1; k <= n; ++k) {
+                    // Each level covers a smaller share of the cells than the one below.
+                    const double share = 0.55 * (1.0 - double(k - 1) / (n + 0.5));
+                    const double thr = sorted[static_cast<std::size_t>(std::clamp((1.0 - share) * double(sorted.size() - 1), 0.0, double(sorted.size() - 1)))];
+                    if (v >= thr) level = k;
+                }
+                m_map.set(x, y, level);
+            }
         redraw();
     });
     connect(exportBtn, &QPushButton::clicked, this, &TerrainSandbox::exportMap);
     auto resize = [this] {
-        TerrainMap n(m_w->value(), m_h->value());
+        LevelMap n(m_w->value(), m_h->value());
         for (int y = 0; y < n.height(); ++y)
             for (int x = 0; x < n.width(); ++x) n.set(x, y, m_map.at(x, y));
         m_map = n;
@@ -396,8 +554,8 @@ TerrainSandbox::TerrainSandbox(Tileset tileset, QWidget* parent) : QDialog(paren
     };
     connect(m_w, &QSpinBox::valueChanged, this, resize);
     connect(m_h, &QSpinBox::valueChanged, this, resize);
-    connect(m_view, &PixelView::pressed, this, [this](QPoint p, Qt::MouseButton b) { paintAt(p, b != Qt::RightButton); });
-    connect(m_view, &PixelView::dragged, this, [this](QPoint p, Qt::MouseButtons b) { paintAt(p, !(b & Qt::RightButton)); });
+    connect(m_view, &PixelView::pressed, this, [this](QPoint p, Qt::MouseButton b) { paintAt(p, b == Qt::RightButton); });
+    connect(m_view, &PixelView::dragged, this, [this](QPoint p, Qt::MouseButtons b) { paintAt(p, (b & Qt::RightButton) != 0); });
     auto* bar = new QHBoxLayout;
     bar->addWidget(new QLabel(tr("Map"), this));
     bar->addWidget(m_w);
@@ -405,6 +563,7 @@ TerrainSandbox::TerrainSandbox(Tileset tileset, QWidget* parent) : QDialog(paren
     bar->addWidget(m_h);
     bar->addWidget(new QLabel(tr("Brush"), this));
     bar->addWidget(m_brush);
+    bar->addWidget(m_level);
     bar->addWidget(clear);
     bar->addWidget(fill);
     bar->addWidget(noise);
@@ -412,7 +571,9 @@ TerrainSandbox::TerrainSandbox(Tileset tileset, QWidget* parent) : QDialog(paren
     bar->addWidget(exportBtn);
     bar->addWidget(close);
     auto* root = new QVBoxLayout(this);
-    root->addWidget(new QLabel(tr("Left button paints terrain, right button erases."), this));
+    root->addWidget(new QLabel(m_levels.size() > 1 ? tr("Left button paints the chosen level, right button paints the base.")
+                                                   : tr("Left button paints terrain, right button erases."),
+                               this));
     root->addWidget(m_view, 1);
     root->addWidget(m_status);
     root->addLayout(bar);
@@ -420,30 +581,33 @@ TerrainSandbox::TerrainSandbox(Tileset tileset, QWidget* parent) : QDialog(paren
     redraw();
 }
 
-void TerrainSandbox::paintAt(QPoint p, bool terrain) {
-    const int T = m_tileset.tileSize;
+void TerrainSandbox::paintAt(QPoint p, bool erase) {
+    const int T = m_levels.front().tileSize;
     if (p.x() < 0 || p.y() < 0) return;
     const int cx = p.x() / T, cy = p.y() / T, r = m_brush->value() - 1;
+    const int level = erase ? 0 : m_level->currentData().toInt();
     for (int y = cy - r; y <= cy + r; ++y)
-        for (int x = cx - r; x <= cx + r; ++x) m_map.set(x, y, terrain);
+        for (int x = cx - r; x <= cx + r; ++x) m_map.set(x, y, level);
     redraw();
 }
 
 void TerrainSandbox::redraw() {
-    auto img = renderMap(m_map, m_tileset);
+    auto img = renderLevels(m_map, m_levels);
     if (!img) { m_status->setText(qs(img.error().message)); return; }
     m_view->setImage(img.value());
-    const TilePlacement p = autotile(m_map, m_tileset.scheme);
     std::set<int> used;
-    for (int t : p.tiles) if (t >= 0) used.insert(t);
+    for (std::size_t k = 0; k < m_levels.size(); ++k) {
+        const TilePlacement p = autotile(m_map.atLeast(static_cast<int>(k) + 1), m_levels[k].scheme);
+        for (int t : p.tiles) if (t >= 0) used.insert(static_cast<int>(k) * 100 + t);
+    }
     m_status->setText(tr("%1 × %2 cells · %3 of %4 tile variants in use").arg(m_map.width()).arg(m_map.height())
-                          .arg(used.size()).arg(tileCount(m_tileset.scheme)));
+                          .arg(used.size()).arg(tileCount(m_levels.front().scheme) * static_cast<int>(m_levels.size())));
 }
 
 void TerrainSandbox::exportMap() {
     const QString f = QFileDialog::getSaveFileName(this, tr("Export Map Image"), QStringLiteral("map.png"), tr("PNG image (*.png)"));
     if (f.isEmpty()) return;
-    auto img = renderMap(m_map, m_tileset);
+    auto img = renderLevels(m_map, m_levels);
     Status st = img ? writePng(img.value(), toPath(f)) : Status(img.error());
     if (!st) QMessageBox::warning(this, windowTitle(), qs(st.error().message));
 }
@@ -471,7 +635,15 @@ void checkDocumentSeams(DocumentView* view, QWidget* parent) {
     Tileset t;
     t.scheme = s;
     t.image = img;
-    t.tileSize = img.width() / tilesetGrid(s).first;
+    // Phase variants make the image a multiple of the plain grid.
+    const QStringList phaseItems{QObject::tr("1 (one copy of the grid)"), QObject::tr("2 × 2 copies"), QObject::tr("3 × 3 copies"), QObject::tr("4 × 4 copies")};
+    int defPhase = 0;
+    const int phase = static_cast<int>(phaseItems.indexOf(QInputDialog::getItem(parent, QObject::tr("Check Tileset Seams"),
+                                                               QObject::tr("Phase variants in the image (from a texture larger than one tile):"),
+                                                               phaseItems, defPhase, false, &ok))) + 1;
+    if (!ok || phase < 1) return;
+    t.phases = phase;
+    t.tileSize = img.width() / (tilesetGrid(s).first * phase);
     auto rep = checkSeams(t);
     if (!rep) { QMessageBox::warning(parent, QObject::tr("Check Tileset Seams"), qs(rep.error().message)); return; }
     QDialog dlg(parent);
@@ -480,7 +652,8 @@ void checkDocumentSeams(DocumentView* view, QWidget* parent) {
     const auto [cols, rows] = tilesetGrid(s);
     (void)rows;
     for (const auto& i : rep.value().issues)
-        list->addItem(QObject::tr("Tile %1 (column %2, row %3) %4 tile %5: jump %6% where the tiles vary %7%")
+        list->addItem((phase > 1 ? QObject::tr("[variant %1,%2] ").arg(i.phaseX).arg(i.phaseY) : QString()) +
+                      QObject::tr("Tile %1 (column %2, row %3) %4 tile %5: jump %6% where the tiles vary %7%")
                           .arg(i.a).arg(i.a % cols + 1).arg(i.a / cols + 1)
                           .arg(i.horizontal ? QObject::tr("→ right edge into") : QObject::tr("↓ bottom edge into"))
                           .arg(i.b).arg(qRound(i.jump * 100)).arg(qRound(i.typical * 100)));

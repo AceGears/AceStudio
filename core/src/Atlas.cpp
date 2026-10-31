@@ -17,24 +17,33 @@ class MaxRectsBin {
 public:
     MaxRectsBin(int w, int h) : m_w(w), m_h(h) { m_free.push_back({0, 0, w, h}); }
 
-    // Places a w x h rect; returns false if it does not fit.
-    bool insert(int w, int h, IntRect& out) {
+    // Places a w x h rect (or h x w when `allowRotate` and that fits
+    // better); returns false if it does not fit.
+    bool insert(int w, int h, IntRect& out, bool allowRotate = false, bool* rotated = nullptr) {
         int bestShort = INT32_MAX, bestLong = INT32_MAX;
         IntRect best{};
-        for (const IntRect& f : m_free) {
-            if (f.w < w || f.h < h) continue;
-            const int lw = f.w - w, lh = f.h - h;
-            const int s = std::min(lw, lh), l = std::max(lw, lh);
-            // Ties broken by position (top, then left) for determinism.
-            if (s < bestShort || (s == bestShort && (l < bestLong || (l == bestLong && (f.y < best.y || (f.y == best.y && f.x < best.x)))))) {
-                bestShort = s;
-                bestLong = l;
-                best = {f.x, f.y, w, h};
+        bool bestRot = false;
+        for (const bool rot : {false, true}) {
+            if (rot && (!allowRotate || w == h)) continue;
+            const int rw = rot ? h : w, rh = rot ? w : h;
+            for (const IntRect& f : m_free) {
+                if (f.w < rw || f.h < rh) continue;
+                const int lw = f.w - rw, lh = f.h - rh;
+                const int s = std::min(lw, lh), l = std::max(lw, lh);
+                // Ties broken by position (top, then left), then unrotated
+                // first, for determinism.
+                if (s < bestShort || (s == bestShort && (l < bestLong || (l == bestLong && (f.y < best.y || (f.y == best.y && f.x < best.x)))))) {
+                    bestShort = s;
+                    bestLong = l;
+                    best = {f.x, f.y, rw, rh};
+                    bestRot = rot;
+                }
             }
         }
         if (bestShort == INT32_MAX) return false;
         place(best);
         out = best;
+        if (rotated) *rotated = bestRot;
         return true;
     }
 
@@ -85,16 +94,22 @@ std::vector<std::size_t> packOrder(const std::vector<std::pair<int, int>>& sizes
     return order;
 }
 
-// Packs as many of `idx` as fit into one bin; returns their rects (by
-// position in `idx`; empty rect = did not fit).
+// Packs as many of `idx` as fit into one bin; returns their rects on the
+// page (by position in `idx`; empty rect = did not fit). With `rotate`, a
+// sprite may be placed turned (its rect then has width and height swapped).
 std::vector<IntRect> packInto(const std::vector<std::pair<int, int>>& sizes, const std::vector<std::size_t>& idx,
-                              int w, int h, int gap) {
+                              int w, int h, int gap, bool rotate = false, std::vector<char>* rotated = nullptr) {
     MaxRectsBin bin(w + gap, h + gap);   // the last row/column does not need its gap
     std::vector<IntRect> out(idx.size());
+    if (rotated) rotated->assign(idx.size(), 0);
     for (std::size_t k = 0; k < idx.size(); ++k) {
         const auto [sw, sh] = sizes[idx[k]];
         IntRect r;
-        if (bin.insert(sw + gap, sh + gap, r)) out[k] = {r.x, r.y, sw, sh};
+        bool rot = false;
+        if (bin.insert(sw + gap, sh + gap, r, rotate, &rot)) {
+            out[k] = rot ? IntRect{r.x, r.y, sh, sw} : IntRect{r.x, r.y, sw, sh};
+            if (rotated) (*rotated)[k] = rot;
+        }
     }
     return out;
 }
@@ -107,12 +122,13 @@ int nextPow2(int v) {
 
 // Smallest bin (by area, then height, then width) that holds all `idx`.
 bool smallestBin(const std::vector<std::pair<int, int>>& sizes, const std::vector<std::size_t>& idx, int maxW, int maxH,
-                 int gap, bool pot, std::vector<IntRect>& rects, int& binW, int& binH) {
+                 int gap, bool pot, bool rotate, std::vector<IntRect>& rects, std::vector<char>& rotatedOut, int& binW, int& binH) {
     int widest = 1, tallest = 1;
     long long area = 0;
     for (std::size_t i : idx) {
-        widest = std::max(widest, sizes[i].first);
-        tallest = std::max(tallest, sizes[i].second);
+        // A sprite that may turn needs only its shorter side to fit across.
+        widest = std::max(widest, rotate ? std::min(sizes[i].first, sizes[i].second) : sizes[i].first);
+        tallest = std::max(tallest, rotate ? std::min(sizes[i].first, sizes[i].second) : sizes[i].second);
         area += static_cast<long long>(sizes[i].first + gap) * (sizes[i].second + gap);
     }
     if (widest > maxW || tallest > maxH) return false;
@@ -129,6 +145,7 @@ bool smallestBin(const std::vector<std::pair<int, int>>& sizes, const std::vecto
     // GPUs limit the longest side.
     struct Candidate {
         std::vector<IntRect> rects;
+        std::vector<char> rotated;
         int w = 0, h = 0;
         long long area = 0;
     };
@@ -136,7 +153,8 @@ bool smallestBin(const std::vector<std::pair<int, int>>& sizes, const std::vecto
     long long bestArea = -1;
     for (int w : widths) {
         if (static_cast<long long>(w) * maxH < area) continue;
-        auto r = packInto(sizes, idx, w, maxH, gap);
+        std::vector<char> rot;
+        auto r = packInto(sizes, idx, w, maxH, gap, rotate, &rot);
         bool all = true;
         int usedW = 0, usedH = 0;
         for (const IntRect& q : r) {
@@ -148,7 +166,7 @@ bool smallestBin(const std::vector<std::pair<int, int>>& sizes, const std::vecto
         if (pot) { usedW = nextPow2(usedW); usedH = nextPow2(usedH); }
         const long long a = static_cast<long long>(usedW) * usedH;
         if (bestArea < 0 || a < bestArea) bestArea = a;
-        cands.push_back({std::move(r), usedW, usedH, a});
+        cands.push_back({std::move(r), std::move(rot), usedW, usedH, a});
     }
     if (bestArea < 0) return false;
     const Candidate* pick = nullptr;
@@ -158,6 +176,7 @@ bool smallestBin(const std::vector<std::pair<int, int>>& sizes, const std::vecto
         if (!pick || key(c) < key(*pick)) pick = &c;
     }
     rects = pick->rects;
+    rotatedOut = pick->rotated;
     binW = pick->w;
     binH = pick->h;
     return true;
@@ -230,7 +249,9 @@ Result<Atlas> packAtlas(const std::vector<AtlasItem>& items, const AtlasOptions&
     std::vector<std::pair<int, int>> sizes(items.size());
     for (std::size_t i : uniqueIdx) {
         sizes[i] = {content[i].width() + 2 * o.extrude, content[i].height() + 2 * o.extrude};
-        if (sizes[i].first > innerW || sizes[i].second > innerH)
+        const bool fits = (sizes[i].first <= innerW && sizes[i].second <= innerH) ||
+                          (o.allowRotation && sizes[i].second <= innerW && sizes[i].first <= innerH);
+        if (!fits)
             return Error{ErrorCode::InvalidArgument, "Sprite \"" + items[i].name + "\" (" + std::to_string(content[i].width()) + "x" +
                                                        std::to_string(content[i].height()) + ") does not fit on a " +
                                                        std::to_string(o.maxWidth) + "x" + std::to_string(o.maxHeight) + " page"};
@@ -246,7 +267,7 @@ Result<Atlas> packAtlas(const std::vector<AtlasItem>& items, const AtlasOptions&
     while (!remaining.empty()) {
         const int page = static_cast<int>(atlas.pages.size());
         // Which sprites fit on a full page?
-        const auto full = packInto(sizes, remaining, innerW, innerH, o.padding);
+        const auto full = packInto(sizes, remaining, innerW, innerH, o.padding, o.allowRotation);
         std::vector<std::size_t> here, later;
         for (std::size_t k = 0; k < remaining.size(); ++k) (full[k].empty() ? later : here).push_back(remaining[k]);
         if (here.empty()) return Error{ErrorCode::Internal, "Atlas packing made no progress"};
@@ -254,9 +275,10 @@ Result<Atlas> packAtlas(const std::vector<AtlasItem>& items, const AtlasOptions&
             return Error{ErrorCode::InvalidArgument, std::to_string(later.size()) + " sprite(s) do not fit on one " + std::to_string(o.maxWidth) +
                                                        "x" + std::to_string(o.maxHeight) + " page"};
         std::vector<IntRect> rects;
+        std::vector<char> rotated;
         int bw = 0, bh = 0;
-        if (!smallestBin(sizes, here, innerW, innerH, o.padding, o.powerOfTwo, rects, bw, bh)) {
-            rects = packInto(sizes, here, innerW, innerH, o.padding);
+        if (!smallestBin(sizes, here, innerW, innerH, o.padding, o.powerOfTwo, o.allowRotation, rects, rotated, bw, bh)) {
+            rects = packInto(sizes, here, innerW, innerH, o.padding, o.allowRotation, &rotated);
             bw = 0; bh = 0;
             for (const IntRect& q : rects) { bw = std::max(bw, q.x + q.w); bh = std::max(bh, q.y + q.h); }
             if (o.powerOfTwo) { bw = nextPow2(bw); bh = nextPow2(bh); }
@@ -268,7 +290,17 @@ Result<Atlas> packAtlas(const std::vector<AtlasItem>& items, const AtlasOptions&
         Image pageImg = std::move(img).value();
         for (std::size_t k = 0; k < here.size(); ++k) {
             const std::size_t i = here[k];
-            const Image& c = content[i];
+            const bool rot = k < rotated.size() && rotated[k];
+            // A turned sprite is stored rotated 90 degrees clockwise, as
+            // TexturePacker does: source (x, y) goes to (h - 1 - y, x).
+            Image turned;
+            if (rot) {
+                const Image& src = content[i];
+                turned = Image(src.height(), src.width());
+                for (int y = 0; y < src.height(); ++y)
+                    for (int x = 0; x < src.width(); ++x) turned.setPixel(src.height() - 1 - y, x, src.pixel(x, y));
+            }
+            const Image& c = rot ? turned : content[i];
             const int x0 = o.border + rects[k].x + o.extrude, y0 = o.border + rects[k].y + o.extrude;
             pageImg.blit(c, x0, y0);
             // Extrude: repeat the edge pixels outwards.
@@ -286,6 +318,7 @@ Result<Atlas> packAtlas(const std::vector<AtlasItem>& items, const AtlasOptions&
             }
             atlas.sprites[i].page = page;
             atlas.sprites[i].rect = {x0, y0, c.width(), c.height()};
+            atlas.sprites[i].rotated = rot;
         }
         atlas.pages.push_back(std::move(pageImg));
         remaining = std::move(later);
@@ -294,6 +327,7 @@ Result<Atlas> packAtlas(const std::vector<AtlasItem>& items, const AtlasOptions&
         if (s.duplicateOf >= 0) {
             s.page = atlas.sprites[static_cast<std::size_t>(s.duplicateOf)].page;
             s.rect = atlas.sprites[static_cast<std::size_t>(s.duplicateOf)].rect;
+            s.rotated = atlas.sprites[static_cast<std::size_t>(s.duplicateOf)].rotated;
         }
     return atlas;
 }
@@ -304,8 +338,10 @@ std::string atlasJson(const Atlas& atlas, const std::vector<std::string>& pageFi
     auto frameObj = [](const AtlasSprite& s, bool withName) {
         ordered_json f = ordered_json::object();
         if (withName) f["filename"] = s.name;
-        f["frame"] = {{"x", s.rect.x}, {"y", s.rect.y}, {"w", s.rect.w}, {"h", s.rect.h}};
-        f["rotated"] = false;
+        // TexturePacker: "frame" w/h are the sprite's own (unturned) size.
+        const int fw = s.rotated ? s.rect.h : s.rect.w, fh = s.rotated ? s.rect.w : s.rect.h;
+        f["frame"] = {{"x", s.rect.x}, {"y", s.rect.y}, {"w", fw}, {"h", fh}};
+        f["rotated"] = s.rotated;
         f["trimmed"] = s.trimmed;
         f["spriteSourceSize"] = {{"x", s.source.x}, {"y", s.source.y}, {"w", s.source.w}, {"h", s.source.h}};
         f["sourceSize"] = {{"w", s.sourceWidth}, {"h", s.sourceHeight}};

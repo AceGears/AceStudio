@@ -37,6 +37,9 @@ public:
 
     // False (with a reason) when SDXL is not installed or the worker cannot start.
     bool start(const Request& r, QString* why);
+    // Background removal with the first installed background model (BiRefNet);
+    // `finished` then carries the cut-out image twice.
+    bool startRemoveBackground(const Image& img, const QString& label, QString* why);
     void cancel();
     bool running() const { return !m_job.empty(); }
 
@@ -49,6 +52,7 @@ private:
     AiService& m_ai;
     std::string m_job;
     int m_previewSerial = 0;
+    bool m_cutout = false;
 };
 
 } // namespace acestudio::ui

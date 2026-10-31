@@ -142,3 +142,51 @@ TEST_CASE("Atlas pages stay roughly square rather than long strips", "[atlas]") 
     CHECK(static_cast<long long>(p.width()) * p.height() <= 47LL * 17 * 17 * 5 / 4);
     INFO(p.width() << "x" << p.height());
 }
+
+TEST_CASE("Atlas rotation: sprites may be turned, and are recoverable from the page", "[atlas]") {
+    // Long thin sprites in both orientations with distinct pixels.
+    std::vector<AtlasItem> items;
+    for (int i = 0; i < 12; ++i) {
+        const bool tall = i % 2 == 0;
+        Image img(tall ? 8 : 40, tall ? 40 : 8);
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = 0; x < img.width(); ++x)
+                img.setPixel(x, y, {static_cast<std::uint8_t>(x * 6), static_cast<std::uint8_t>(y * 6), static_cast<std::uint8_t>(i * 20), 255});
+        items.push_back({"s" + std::to_string(i), img});
+    }
+    AtlasOptions o;
+    o.padding = 1;
+    o.allowRotation = true;
+    const Atlas a = packAtlas(items, o).value();
+    AtlasOptions plain = o;
+    plain.allowRotation = false;
+    const Atlas b = packAtlas(items, plain).value();
+    auto area = [](const Atlas& x) { return static_cast<long long>(x.pages[0].width()) * x.pages[0].height(); };
+    CHECK(area(a) <= area(b));
+    int turned = 0;
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const AtlasSprite& s = a.sprites[i];
+        const Image& src = items[i].image;
+        turned += s.rotated;
+        // Undo the clockwise turn: page (x0 + h - 1 - y, y0 + x) holds source (x, y).
+        bool same = true;
+        for (int y = 0; y < src.height() && same; ++y)
+            for (int x = 0; x < src.width() && same; ++x) {
+                const Rgba8 p = s.rotated ? a.pages[0].pixel(s.rect.x + src.height() - 1 - y, s.rect.y + x)
+                                          : a.pages[0].pixel(s.rect.x + x, s.rect.y + y);
+                same = p == src.pixel(x, y);
+            }
+        CHECK(same);
+        CHECK(s.rect.w == (s.rotated ? src.height() : src.width()));
+    }
+    CHECK(turned > 0);
+    // JSON: frame keeps the sprite's own size, rotated is flagged.
+    const auto j = nlohmann::json::parse(atlasJson(a, {"a.png"}));
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const auto& f = j["frames"][items[i].name];
+        CHECK(f["frame"]["w"] == items[i].image.width());
+        CHECK(f["rotated"] == a.sprites[i].rotated);
+    }
+    // Deterministic.
+    CHECK(packAtlas(items, o).value().pages[0] == a.pages[0]);
+}

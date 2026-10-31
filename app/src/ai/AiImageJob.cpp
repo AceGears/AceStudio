@@ -44,6 +44,11 @@ AiImageJob::AiImageJob(AiService& ai, QObject* parent) : QObject(parent), m_ai(a
             auto img = readPng(o->second);
             return img ? std::move(img).value() : Image();
         };
+        if (m_cutout) {
+            Image cut = load("image");
+            if (cut.isNull()) return Q_EMIT failed(tr("The worker returned no image"));
+            return Q_EMIT finished(cut, cut);
+        }
         Image raw = load("raw0"), pixel = load("image0");
         if (pixel.isNull()) return Q_EMIT failed(tr("The worker returned no image"));
         if (raw.isNull()) raw = pixel;
@@ -90,6 +95,36 @@ bool AiImageJob::start(const Request& r, QString* why) {
     }
     m_job = id.value();
     m_previewSerial = 0;
+    m_cutout = false;
+    return true;
+}
+
+bool AiImageJob::startRemoveBackground(const Image& img, const QString& label, QString* why) {
+    const ModelCatalog* cat = m_ai.catalog();
+    ModelStore* store = m_ai.store();
+    const ModelEntry* model = nullptr;
+    if (cat && store)
+        for (const ModelEntry* m : cat->forTask("background.remove"))
+            if (m->kind == "model" && store->state(*m) == InstallState::Installed) { model = m; break; }
+    if (!model) {
+        if (why) *why = tr("This needs a background removal model. Download BiRefNet in AI Studio › Models…");
+        return false;
+    }
+    if (img.isNull() || img.isFullyTransparent()) {
+        if (why) *why = tr("There is nothing to process.");
+        return false;
+    }
+    if (!m_ai.ensureStarted(why)) return false;
+    json p = {{"model", utf8(store->entryPath(*model))}, {"model_id", model->id}};
+    if (model->cpuMemoryMb > 0) p["cpu_memory_mb"] = model->cpuMemoryMb;
+    auto id = m_ai.submit("background.remove", std::move(p), label, {{"input", &img}});
+    if (!id) {
+        if (why) *why = qs(id.error().message);
+        return false;
+    }
+    m_job = id.value();
+    m_previewSerial = 0;
+    m_cutout = true;
     return true;
 }
 

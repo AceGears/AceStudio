@@ -8,6 +8,7 @@
 #include <cmath>
 #include <deque>
 #include <map>
+#include <tuple>
 
 namespace acestudio {
 
@@ -83,6 +84,7 @@ std::vector<SlicedSprite> detectSprites(const Image& img, const SliceOptions& o)
     const auto fg = foreground(img, sliceBackground(img, o), o.tolerance);
     std::vector<std::uint8_t> seen(fg.size(), 0);
     std::vector<IntRect> rects;
+    std::vector<int> counts;
     std::deque<std::pair<int, int>> q;
     for (int y = 0; y < h; ++y)
         for (int x = 0; x < w; ++x) {
@@ -106,7 +108,23 @@ std::vector<SlicedSprite> detectSprites(const Image& img, const SliceOptions& o)
                         q.emplace_back(nx, ny);
                     }
             }
-            if (n >= o.minPixels) rects.push_back({x0, y0, x1 - x0 + 1, y1 - y0 + 1});
+            if (n >= o.minPixels) {
+                rects.push_back({x0, y0, x1 - x0 + 1, y1 - y0 + 1});
+                counts.push_back(n);
+            }
+        }
+    // A frame or border line around the whole sheet is not a sprite: it would
+    // swallow every sprite inside it. Drop thin parts spanning the sheet when
+    // there is something else.
+    if (rects.size() > 1)
+        for (std::size_t i = rects.size(); i-- > 0;) {
+            const IntRect& r = rects[i];
+            const bool spans = r.w * 100 >= w * 95 && r.h * 100 >= h * 95;
+            const bool thin = static_cast<long long>(counts[i]) * 4 < static_cast<long long>(r.w) * r.h;
+            if (spans && thin) {
+                rects.erase(rects.begin() + static_cast<std::ptrdiff_t>(i));
+                counts.erase(counts.begin() + static_cast<std::ptrdiff_t>(i));
+            }
         }
     // Merge parts that are close to each other until nothing changes.
     for (bool merged = true; merged;) {
@@ -422,6 +440,50 @@ int wrapStepRows(const Image& img, int* typical) {
     const int p95 = runs[std::min(runs.size() - 1, runs.size() * 95 / 100)];
     if (typical) *typical = std::max(3 * p95 / 2, runs.back());
     return differingRun(img, img.width() - 1, 0);
+}
+
+namespace {
+int maxChannelDiff(Rgba8 a, Rgba8 b) {
+    return std::max({std::abs(a.r - b.r), std::abs(a.g - b.g), std::abs(a.b - b.b), std::abs(a.a - b.a)});
+}
+} // namespace
+
+// Makes the sky of a layer transparent, starting from the top edge:
+//   Flat     pixels connected to the top edge that match the top-left colour
+//   Gradient pixels connected to the top edge, each close to the cleared
+//            neighbour it was reached from (follows gradients and clouds)
+//   Every    every pixel matching the top-left colour, also enclosed gaps
+Image clearSky(const Image& src, int tolerance, SkyClear mode) {
+    Image img = src;
+    if (img.isNull()) return img;
+    const Rgba8 key = img.pixel(0, 0);
+    if (mode == SkyClear::Every) {
+        for (auto& p : img.pixels())
+            if (maxChannelDiff(p, key) <= tolerance) p = Rgba8::transparent();
+        return img;
+    }
+    const auto W = static_cast<std::size_t>(img.width());
+    std::vector<std::uint8_t> seen(W * static_cast<std::size_t>(img.height()), 0);
+    // Each entry: a pixel and the (original) colour it is compared with.
+    std::deque<std::tuple<int, int, Rgba8>> q;
+    for (int x = 0; x < img.width(); ++x) q.emplace_back(x, 0, key);
+    while (!q.empty()) {
+        const auto [x, y, ref] = q.front();
+        q.pop_front();
+        if (!img.contains(x, y)) continue;
+        auto& s = seen[static_cast<std::size_t>(y) * W + static_cast<std::size_t>(x)];
+        if (s) continue;
+        const Rgba8 here = src.pixel(x, y);
+        if (maxChannelDiff(here, ref) > tolerance) continue;
+        s = 1;
+        img.setPixel(x, y, Rgba8::transparent());
+        const Rgba8 next = mode == SkyClear::Flat ? key : here;
+        q.emplace_back(x + 1, y, next);
+        q.emplace_back(x - 1, y, next);
+        q.emplace_back(x, y + 1, next);
+        q.emplace_back(x, y - 1, next);
+    }
+    return img;
 }
 
 std::vector<std::string> checkParallax(const ParallaxSet& set) {

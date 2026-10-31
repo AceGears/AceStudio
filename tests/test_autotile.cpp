@@ -144,3 +144,97 @@ TEST_CASE("Tileset JSON lists every tile with its mask and position", "[autotile
     CHECK(w["tiles"][5]["corners"] == 5);
     CHECK_FALSE(w.contains("base"));
 }
+
+TEST_CASE("Phases: textures larger than a tile keep their detail and stay seamless", "[autotile]") {
+    const int T = 16;
+    for (int P : {2, 3}) {
+        const Image grass = texture(P * T, {70, 150, 60, 255}, 1), dirt = texture(P * T, {140, 100, 60, 255}, 2);
+        for (auto s : {AutotileScheme::Cardinal16, AutotileScheme::Blob47, AutotileScheme::Wang16}) {
+            INFO(toString(s) << " phases " << P);
+            const auto t = generateTileset(s, dirt, grass, {}, T).value();
+            CHECK(t.phases == P);
+            REQUIRE(validateTileset(t));
+            const auto rep = checkSeams(t).value();
+            CHECK(rep.ok());
+            CHECK(rep.pairsChecked == checkSeams(generateTileset(s, texture(T, {70, 150, 60, 255}, 1), texture(T, {140, 100, 60, 255}, 2)).value()).value().pairsChecked * P * P);
+            // A map full of terrain shows the whole large texture, repeating
+            // every P tiles, not one tile repeated.
+            TerrainMap full(8, 8);
+            full.fill(true);
+            const Image img = renderMap(full, t).value();
+            const int shift = s == AutotileScheme::Wang16 ? T / 2 : 0;
+            bool same = true;
+            for (int y = T; y < 7 * T && same; ++y)
+                for (int x = T; x < 7 * T && same; ++x)
+                    same = img.pixel(x, y) == grass.pixel((x + shift) % (P * T), (y + shift) % (P * T));
+            CHECK(same);
+            const auto j = nlohmann::json::parse(tilesetJson(t, "t.png"));
+            CHECK(j["phases"] == P);
+            CHECK(j["phaseOffset"]["x"] == tilesetGrid(s).first * T);
+        }
+    }
+    // Sizes that are not whole tiles, or too many phases, are refused.
+    CHECK_FALSE(generateTileset(AutotileScheme::Blob47, Image(24, 24), Image(24, 24), {}, 16));
+    CHECK_FALSE(generateTileset(AutotileScheme::Blob47, Image(80, 80), Image(80, 80), {}, 16));
+}
+
+TEST_CASE("Levels: several terrains drawn as layers over each other", "[autotile]") {
+    const int T = 16;
+    const Image water = texture(T, {40, 80, 200, 255}, 3), sand = texture(T, {220, 200, 120, 255}, 4),
+                grass = texture(T, {70, 150, 60, 255}, 1);
+    for (auto s : {AutotileScheme::Blob47, AutotileScheme::Wang16, AutotileScheme::Cardinal16}) {
+        INFO(toString(s));
+        std::vector<Tileset> levels{generateTileset(s, water, sand).value(), generateTileset(s, Image(), grass).value()};
+        // The upper set has a transparent base and still has no seams.
+        CHECK(checkSeams(levels[1]).value().ok());
+        if (s != AutotileScheme::Wang16) CHECK(levels[1].base.pixel(3, 3).a == 0);
+        LevelMap m(12, 10);
+        for (int y = 2; y < 9; ++y)
+            for (int x = 2; x < 11; ++x) m.set(x, y, 1);
+        for (int y = 4; y < 7; ++y)
+            for (int x = 4; x < 9; ++x) m.set(x, y, 2);
+        CHECK(m.maxLevel() == 2);
+        CHECK(m.atLeast(2).at(5, 5));
+        CHECK_FALSE(m.atLeast(2).at(2, 2));
+        const Image img = renderLevels(m, levels).value();
+        CHECK(img.width() == 12 * T);
+        const int sh = s == AutotileScheme::Wang16 ? T / 2 : 0;
+        auto tex = [&](const Image& t, int x, int y) { return t.pixel((x + sh) % T, (y + sh) % T); };
+        // Middle of a grass cell, a sand cell and a water cell.
+        CHECK(img.pixel(6 * T + 8, 5 * T + 8) == tex(grass, 6 * T + 8, 5 * T + 8));
+        CHECK(img.pixel(2 * T + 8 + T, 7 * T + 8) == tex(sand, 3 * T + 8, 7 * T + 8));
+        CHECK(img.pixel(8, 8) == tex(water, 8, 8));
+        // Fully opaque everywhere.
+        bool opaque = true;
+        for (const Rgba8 p : img.pixels()) opaque = opaque && p.a == 255;
+        CHECK(opaque);
+        const auto j = nlohmann::json::parse(terrainSetJson(levels, {"a.png", "b.png"}, {"a.json", "b.json"}, "base.png"));
+        CHECK(j["levels"].size() == 2);
+        CHECK(j["levels"][1]["level"] == 2);
+    }
+    // Sets that do not match are refused.
+    std::vector<Tileset> bad{generateTileset(AutotileScheme::Blob47, water, sand).value(),
+                             generateTileset(AutotileScheme::Wang16, Image(), grass).value()};
+    CHECK_FALSE(renderLevels(LevelMap(4, 4), bad));
+    CHECK_FALSE(renderLevels(LevelMap(4, 4), {}));
+}
+
+TEST_CASE("Seam check: textures that do not wrap give seams; ragged edges do not", "[autotile]") {
+    // A horizontal gradient as the terrain: every terrain-to-terrain edge jumps.
+    Image grad(16, 16);
+    for (int y = 0; y < 16; ++y)
+        for (int x = 0; x < 16; ++x) grad.setPixel(x, y, {static_cast<std::uint8_t>(40 + x * 10), 140, 60, 255});
+    const Image dirt = texture(16, {140, 100, 60, 255}, 2);
+    for (auto s : {AutotileScheme::Blob47, AutotileScheme::Wang16}) {
+        INFO(toString(s));
+        CHECK_FALSE(checkSeams(generateTileset(s, dirt, grad).value()).value().ok());
+        // Very ragged edges on a transparent base are still seamless.
+        TilesetStyle st;
+        st.edgeNoise = 0.9;
+        st.noiseScale = 8;
+        for (std::uint32_t seed = 1; seed <= 4; ++seed) {
+            st.seed = seed;
+            CHECK(checkSeams(generateTileset(s, Image(), texture(16, {70, 150, 60, 255}, 1), st).value()).value().ok());
+        }
+    }
+}

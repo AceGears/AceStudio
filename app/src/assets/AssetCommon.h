@@ -35,6 +35,7 @@ public:
     const QImage& image() const { return m_img; }
     QSize sizeHint() const override { return {256, 256}; }
     int zoom() const;
+    double scale() const;            // display scale: integer when the image fits, below 1 when it does not
 
 Q_SIGNALS:
     void pressed(QPoint imagePos, Qt::MouseButton button);

@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <array>
 #include <map>
+#include <tuple>
 #include <cmath>
 #include <deque>
 
@@ -64,37 +65,6 @@ fs::path withExtension(const QString& f, const char* ext) {
 
 int colourDistance(Rgba8 a, Rgba8 b) {
     return std::max({std::abs(a.r - b.r), std::abs(a.g - b.g), std::abs(a.b - b.b), std::abs(a.a - b.a)});
-}
-
-// Makes the region connected to the top edge that matches the top-left
-// colour transparent: removes a flat sky behind a generated silhouette.
-Image clearSky(const Image& src, int tolerance, bool connectedOnly) {
-    Image img = src;
-    if (img.isNull()) return img;
-    const Rgba8 key = img.pixel(0, 0);
-    std::vector<std::uint8_t> seen(static_cast<std::size_t>(img.width()) * static_cast<std::size_t>(img.height()), 0);
-    if (!connectedOnly) {   // every matching pixel, also gaps enclosed by the silhouette
-        for (auto& p : img.pixels())
-            if (colourDistance(p, key) <= tolerance) p = Rgba8::transparent();
-        return img;
-    }
-    std::deque<std::pair<int, int>> q;
-    for (int x = 0; x < img.width(); ++x) q.emplace_back(x, 0);
-    while (!q.empty()) {
-        const auto [x, y] = q.front();
-        q.pop_front();
-        if (!img.contains(x, y)) continue;
-        auto& s = seen[static_cast<std::size_t>(y) * static_cast<std::size_t>(img.width()) + static_cast<std::size_t>(x)];
-        if (s) continue;
-        s = 1;
-        if (colourDistance(img.pixel(x, y), key) > tolerance) continue;
-        img.setPixel(x, y, Rgba8::transparent());
-        q.emplace_back(x + 1, y);
-        q.emplace_back(x - 1, y);
-        q.emplace_back(x, y + 1);
-        q.emplace_back(x, y - 1);
-    }
-    return img;
 }
 
 QIcon swatch(Rgba8 c) {
@@ -144,8 +114,14 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
     m_skyTolerance->setRange(0, 255);
     m_skyTolerance->setValue(24);
     m_skyTolerance->setToolTip(tr("How far from the sky colour a pixel may be and still be cleared"));
-    m_skyEverywhere = new QCheckBox(tr("Also enclosed gaps"), this);
-    m_skyEverywhere->setToolTip(tr("Clear every pixel of the sky colour, also between trees or inside the silhouette"));
+    m_skyMode = new QComboBox(this);
+    m_skyMode->addItem(tr("Flat colour"), static_cast<int>(SkyClear::Flat));
+    m_skyMode->addItem(tr("Follow gradient"), static_cast<int>(SkyClear::Gradient));
+    m_skyMode->addItem(tr("Every matching pixel"), static_cast<int>(SkyClear::Every));
+    m_skyMode->setToolTip(tr("Flat: one colour touching the top. Follow gradient: also skies that change colour or have clouds. "
+                             "Every matching pixel: also gaps between trees"));
+    m_aiCut = new QPushButton(tr("Remove Background (AI)"), this);
+    m_aiCut->setToolTip(tr("Cut the layer out with BiRefNet: for skies Clear Sky cannot handle"));
     m_prompt = new QLineEdit(tr("distant purple mountains at dusk"), this);
     m_generate = new QPushButton(tr("Generate Layer"), this);
     m_generate->setToolTip(tr("A horizontally seamless layer from Stable Diffusion XL, reduced to the view width"));
@@ -163,8 +139,9 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
     layerForm->addRow(tr("Blend width:"), seamRow);
     auto* skyRow = new QHBoxLayout;
     skyRow->addWidget(m_skyTolerance);
-    skyRow->addWidget(m_skyEverywhere);
+    skyRow->addWidget(m_skyMode, 1);
     layerForm->addRow(tr("Sky tolerance:"), skyRow);
+    layerForm->addRow(QString(), m_aiCut);
     auto* listButtons = new QHBoxLayout;
     for (auto* b : {fromDoc, fromFile, remove}) listButtons->addWidget(b);
     auto* orderButtons = new QHBoxLayout;
@@ -260,8 +237,38 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
         const int i = current();
         if (i < 0) return;
         auto& l = m_set.layers[static_cast<std::size_t>(i)];
-        l.image = clearSky(l.image, m_skyTolerance->value(), !m_skyEverywhere->isChecked());
+        l.image = clearSky(l.image, m_skyTolerance->value(), static_cast<SkyClear>(m_skyMode->currentData().toInt()));
         redraw();
+    });
+    connect(m_aiCut, &QPushButton::clicked, this, [this] {
+        if (m_cutJob && m_cutJob->running()) { m_cutJob->cancel(); return; }
+        const int i = current();
+        if (i < 0) return;
+        if (!m_cutJob) {
+            m_cutJob = new AiImageJob(m_ai, this);
+            connect(m_cutJob, &AiImageJob::progress, this, [this](const QString& msg, const QString&) { m_genStatus->setText(msg); });
+            connect(m_cutJob, &AiImageJob::finished, this, [this](const Image& cut, const Image&) {
+                m_aiCut->setText(tr("Remove Background (AI)"));
+                const int k = m_cutJob->property("layer").toInt();
+                if (k >= 0 && k < static_cast<int>(m_set.layers.size()) && cut.width() == m_set.layers[static_cast<std::size_t>(k)].image.width()) {
+                    m_set.layers[static_cast<std::size_t>(k)].image = cut;
+                    m_genStatus->setText(tr("Background removed."));
+                    redraw();
+                }
+            });
+            connect(m_cutJob, &AiImageJob::failed, this, [this](const QString& msg) {
+                m_aiCut->setText(tr("Remove Background (AI)"));
+                m_genStatus->setText(msg);
+            });
+        }
+        QString why;
+        m_cutJob->setProperty("layer", i);
+        if (!m_cutJob->startRemoveBackground(m_set.layers[static_cast<std::size_t>(i)].image, tr("Parallax: remove background"), &why)) {
+            QMessageBox::information(this, windowTitle(), why);
+            return;
+        }
+        m_aiCut->setText(tr("Cancel"));
+        m_genStatus->setText(tr("Removing the background…"));
     });
     connect(m_generate, &QPushButton::clicked, this, &ParallaxDialog::generate);
     resize(1000, 600);
@@ -577,10 +584,11 @@ void UiKitDialog::exportFiles() {
 
 // ================================================================ slicer
 
-SliceDialog::SliceDialog(DocumentView* view, OpenFramesFn openFrames, QWidget* parent)
-    : QDialog(parent), m_openFrames(std::move(openFrames)) {
+SliceDialog::SliceDialog(AiService& ai, DocumentView* view, OpenFramesFn openFrames, QWidget* parent)
+    : QDialog(parent), m_ai(ai), m_openFrames(std::move(openFrames)) {
     setWindowTitle(tr("Smart Slicer"));
     m_sheet = documentImage(view);
+    m_original = m_sheet;
     m_name = view ? view->displayName() : QString();
     m_mode = new QComboBox(this);
     m_mode->addItem(tr("Find separate sprites"));
@@ -605,8 +613,25 @@ SliceDialog::SliceDialog(DocumentView* view, OpenFramesFn openFrames, QWidget* p
     m_skipEmpty->setChecked(true);
     auto* detect = new QPushButton(tr("Detect Grid"), this);
 
+    m_bgLabel = new QLabel(this);
+    m_bgLabel->setWordWrap(true);
+    m_autoKey = new QPushButton(tr("Auto"), this);
+    m_autoKey->setToolTip(tr("Find the background colour automatically again"));
+    m_aiRemove = new QPushButton(tr("Remove Background (AI)"), this);
+    m_aiRemove->setToolTip(tr("For sprites on a busy background (a scene, a gradient): cut them out with BiRefNet, then slice"));
+    m_restore = new QPushButton(tr("Restore Original"), this);
+    m_restore->setVisible(false);
+    auto* bgRow = new QHBoxLayout;
+    bgRow->addWidget(m_bgLabel, 1);
+    bgRow->addWidget(m_autoKey);
+    auto* aiRow = new QHBoxLayout;
+    aiRow->addWidget(m_aiRemove);
+    aiRow->addWidget(m_restore);
+
     auto* common = new QFormLayout;
     common->addRow(tr("Mode:"), m_mode);
+    common->addRow(tr("Background:"), bgRow);
+    common->addRow(QString(), aiRow);
     common->addRow(tr("Background tolerance:"), m_tolerance);
     m_autoBox = new QWidget(this);
     auto* autoForm = new QFormLayout(m_autoBox);
@@ -662,6 +687,45 @@ SliceDialog::SliceDialog(DocumentView* view, OpenFramesFn openFrames, QWidget* p
     connect(pngs, &QPushButton::clicked, this, &SliceDialog::exportPngs);
     connect(json, &QPushButton::clicked, this, &SliceDialog::exportJson);
     connect(detect, &QPushButton::clicked, this, &SliceDialog::detectGridNow);
+    connect(m_preview, &PixelView::pressed, this, [this](QPoint p, Qt::MouseButton) {
+        // Click the background to use its colour.
+        const int x = p.x() / std::max(1, m_zoom), y = p.y() / std::max(1, m_zoom);
+        if (!m_sheet.contains(x, y)) return;
+        m_key = m_sheet.pixel(x, y);
+        reslice();
+    });
+    connect(m_autoKey, &QPushButton::clicked, this, [this] { m_key.reset(); reslice(); });
+    connect(m_restore, &QPushButton::clicked, this, [this] {
+        m_sheet = m_original;
+        m_restore->setVisible(false);
+        reslice();
+    });
+    connect(m_aiRemove, &QPushButton::clicked, this, [this] {
+        if (m_job && m_job->running()) { m_job->cancel(); return; }
+        if (!m_job) {
+            m_job = new AiImageJob(m_ai, this);
+            connect(m_job, &AiImageJob::progress, this, [this](const QString& msg, const QString&) { m_info->setText(msg); });
+            connect(m_job, &AiImageJob::finished, this, [this](const Image& cut, const Image&) {
+                m_aiRemove->setText(tr("Remove Background (AI)"));
+                if (cut.width() != m_original.width() || cut.height() != m_original.height()) return;
+                m_sheet = cut;
+                m_key.reset();
+                m_restore->setVisible(true);
+                reslice();
+            });
+            connect(m_job, &AiImageJob::failed, this, [this](const QString& msg) {
+                m_aiRemove->setText(tr("Remove Background (AI)"));
+                m_info->setText(msg);
+            });
+        }
+        QString why;
+        if (!m_job->startRemoveBackground(m_original, tr("Slicer: remove background"), &why)) {
+            QMessageBox::information(this, windowTitle(), why);
+            return;
+        }
+        m_aiRemove->setText(tr("Cancel"));
+        m_info->setText(tr("Removing the background…"));
+    });
     connect(m_mode, &QComboBox::currentIndexChanged, this, &SliceDialog::reslice);
     connect(m_skipEmpty, &QCheckBox::toggled, this, &SliceDialog::reslice);
     for (QSpinBox* s : {m_tolerance, m_merge, m_minPixels, m_cellW, m_cellH, m_offX, m_offY, m_spaceX, m_spaceY})
@@ -685,7 +749,20 @@ SliceOptions SliceDialog::options() const {
     o.tolerance = m_tolerance->value();
     o.mergeDistance = m_merge->value();
     o.minPixels = m_minPixels->value();
+    o.background = m_key;
     return o;
+}
+
+void SliceDialog::updateBackgroundLabel() {
+    const auto bg = m_sheet.isNull() ? std::nullopt : sliceBackground(m_sheet, options());
+    QString t;
+    if (!bg) t = tr("none found: click the background in the picture, or use Remove Background (AI)");
+    else if (bg->a == 0) t = tr("transparent");
+    else t = tr("#%1%2%3").arg(bg->r, 2, 16, QLatin1Char('0')).arg(bg->g, 2, 16, QLatin1Char('0')).arg(bg->b, 2, 16, QLatin1Char('0'));
+    if (m_key) t += tr(" (picked)");
+    else if (bg) t += tr(" (automatic; click the picture to pick another)");
+    m_bgLabel->setText(t);
+    m_autoKey->setEnabled(m_key.has_value());
 }
 
 GridGuess SliceDialog::grid() const {
@@ -731,16 +808,15 @@ void SliceDialog::reslice() {
     m_slices = gridMode ? sliceGrid(m_sheet, grid(), m_skipEmpty->isChecked(), options()) : detectSprites(m_sheet, options());
     // The overlay: the sheet scaled up with each slice outlined.
     const int z = std::clamp(720 / std::max(m_sheet.width(), m_sheet.height()), 1, 8);
+    m_zoom = z;
     QImage q = toQImage(m_sheet).scaled(m_sheet.width() * z, m_sheet.height() * z);
     QPainter p(&q);
     p.setPen(QPen(QColor(255, 64, 160), 1));
     for (const auto& s : m_slices) p.drawRect(s.rect.x * z, s.rect.y * z, s.rect.w * z - 1, s.rect.h * z - 1);
     p.end();
     m_preview->setImage(q);
-    const auto bg = sliceBackground(m_sheet, options());
-    QString bgText = bg ? (bg->a == 0 ? tr("transparent background") : tr("background #%1%2%3").arg(bg->r, 2, 16, QLatin1Char('0')).arg(bg->g, 2, 16, QLatin1Char('0')).arg(bg->b, 2, 16, QLatin1Char('0')))
-                        : tr("no uniform background");
-    m_info->setText(tr("%1 sprite(s) in %2×%3, %4.").arg(m_slices.size()).arg(m_sheet.width()).arg(m_sheet.height()).arg(bgText));
+    updateBackgroundLabel();
+    m_info->setText(tr("%1 sprite(s) in %2×%3.").arg(m_slices.size()).arg(m_sheet.width()).arg(m_sheet.height()));
 }
 
 void SliceDialog::exportJson() {
@@ -816,6 +892,8 @@ AtlasDialog::AtlasDialog(DocumentView* view, QWidget* parent) : QDialog(parent),
     m_merge = new QCheckBox(tr("Merge identical sprites"), this);
     m_merge->setChecked(true);
     m_pot = new QCheckBox(tr("Power-of-two pages"), this);
+    m_rotate = new QCheckBox(tr("Allow rotation"), this);
+    m_rotate->setToolTip(tr("Turn sprites 90° clockwise where that packs tighter (\"rotated\": true in the JSON; the engine turns them back)"));
     auto* form = new QFormLayout;
     form->addRow(tr("Max page size:"), m_maxSize);
     form->addRow(tr("Padding:"), m_padding);
@@ -824,6 +902,7 @@ AtlasDialog::AtlasDialog(DocumentView* view, QWidget* parent) : QDialog(parent),
     form->addRow(QString(), m_trim);
     form->addRow(QString(), m_merge);
     form->addRow(QString(), m_pot);
+    form->addRow(QString(), m_rotate);
     auto* listButtons = new QHBoxLayout;
     listButtons->addWidget(addFiles);
     listButtons->addWidget(addFrames);
@@ -889,7 +968,7 @@ AtlasDialog::AtlasDialog(DocumentView* view, QWidget* parent) : QDialog(parent),
     });
     connect(m_maxSize, &QComboBox::currentIndexChanged, this, &AtlasDialog::repack);
     for (QSpinBox* s : {m_padding, m_border, m_extrude}) connect(s, &QSpinBox::valueChanged, this, &AtlasDialog::repack);
-    for (QCheckBox* c : {m_trim, m_merge, m_pot}) connect(c, &QCheckBox::toggled, this, &AtlasDialog::repack);
+    for (QCheckBox* c : {m_trim, m_merge, m_pot, m_rotate}) connect(c, &QCheckBox::toggled, this, &AtlasDialog::repack);
     connect(m_page, &QSpinBox::valueChanged, this, [this](int p) {
         if (m_atlas && p >= 1 && p <= static_cast<int>(m_atlas->pages.size())) m_preview->setImage(m_atlas->pages[static_cast<std::size_t>(p - 1)]);
     });
@@ -925,6 +1004,7 @@ void AtlasDialog::repack() {
     o.trim = m_trim->isChecked();
     o.mergeDuplicates = m_merge->isChecked();
     o.powerOfTwo = m_pot->isChecked();
+    o.allowRotation = m_rotate->isChecked();
     auto a = packAtlas(m_items, o);
     if (!a) {
         m_preview->setImage(Image());
@@ -933,8 +1013,9 @@ void AtlasDialog::repack() {
     }
     m_atlas = std::move(a).value();
     long long used = 0, total = 0;
-    int dups = 0;
+    int dups = 0, turned = 0;
     for (const auto& s : m_atlas->sprites) {
+        turned += s.rotated && s.duplicateOf < 0;
         if (s.duplicateOf >= 0) { ++dups; continue; }
         used += static_cast<long long>(s.rect.w) * s.rect.h;
     }
@@ -944,9 +1025,10 @@ void AtlasDialog::repack() {
     m_preview->setImage(m_atlas->pages.front());
     QString sizes;
     for (const auto& p : m_atlas->pages) sizes += QStringLiteral(" %1×%2").arg(p.width()).arg(p.height());
-    m_info->setText(tr("%1 sprite(s) on %2 page(s):%3 · %4% filled · %5 duplicate(s) merged. The same input always packs the same way.")
+    m_info->setText(tr("%1 sprite(s) on %2 page(s):%3 · %4% filled · %5 duplicate(s) merged%6. The same input always packs the same way.")
                         .arg(m_atlas->sprites.size()).arg(m_atlas->pages.size()).arg(sizes)
-                        .arg(total ? qRound(100.0 * double(used) / double(total)) : 0).arg(dups));
+                        .arg(total ? qRound(100.0 * double(used) / double(total)) : 0).arg(dups)
+                        .arg(turned ? tr(" · %1 rotated").arg(turned) : QString()));
     m_export->setEnabled(true);
 }
 

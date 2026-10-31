@@ -1,4 +1,5 @@
 // Slicer, nine-slice, UI kit and parallax (Phase 6).
+#include <algorithm>
 #include <cmath>
 #include <catch2/catch_test_macros.hpp>
 
@@ -170,4 +171,43 @@ TEST_CASE("Parallax: a step in a silhouette at the wrap is found", "[assets]") {
     // And Make Seamless fixes the first one.
     set.layers[0].image = makeSeamlessX(mountains(false), 40).value();
     CHECK(checkParallax(set).empty());
+}
+
+TEST_CASE("Clear Sky: flat, gradient and every-pixel modes", "[assets]") {
+    // A vertical gradient sky over a dark hill, with a pocket of sky colour
+    // enclosed inside the hill.
+    Image layer(40, 40);
+    for (int y = 0; y < 40; ++y)
+        for (int x = 0; x < 40; ++x) layer.setPixel(x, y, {static_cast<std::uint8_t>(250 - y * 4), 160, 220, 255});
+    for (int y = 25; y < 40; ++y)
+        for (int x = 0; x < 40; ++x) layer.setPixel(x, y, {40, 30, 60, 255});
+    for (int y = 30; y < 33; ++y)
+        for (int x = 10; x < 13; ++x) layer.setPixel(x, y, layer.pixel(0, 0));   // pocket of the top colour
+    const Image flat = clearSky(layer, 12, SkyClear::Flat);
+    CHECK(flat.pixel(5, 0).a == 0);
+    CHECK(flat.pixel(5, 20).a == 255);        // the gradient drifted too far from the top colour
+    const Image grad = clearSky(layer, 12, SkyClear::Gradient);
+    CHECK(grad.pixel(5, 20).a == 0);          // followed the gradient down to the hill
+    CHECK(grad.pixel(5, 24).a == 0);
+    CHECK(grad.pixel(5, 26).a == 255);        // the hill stays
+    CHECK(grad.pixel(11, 31).a == 255);       // the enclosed pocket stays
+    const Image every = clearSky(layer, 12, SkyClear::Every);
+    CHECK(every.pixel(11, 31).a == 0);        // ...unless every matching pixel goes
+    CHECK(every.pixel(5, 26).a == 255);
+}
+
+TEST_CASE("Slicer: a picked background colour and a frame around the sheet", "[assets]") {
+    // Magenta sheet with a black 1 px frame: the border colour is black, so
+    // the automatic background is wrong until magenta is picked.
+    Image sheet(96, 48, {255, 0, 255, 255});
+    for (int x = 0; x < 96; ++x) { sheet.setPixel(x, 0, {0, 0, 0, 255}); sheet.setPixel(x, 47, {0, 0, 0, 255}); }
+    for (int y = 0; y < 48; ++y) { sheet.setPixel(0, y, {0, 0, 0, 255}); sheet.setPixel(95, y, {0, 0, 0, 255}); }
+    const IntRect boxes[] = {{6, 6, 14, 12}, {30, 8, 14, 12}, {60, 5, 14, 12}, {10, 28, 14, 12}, {40, 26, 14, 12}, {70, 30, 14, 12}};
+    for (const auto& b : boxes) sheet.fillRect(b, {40, 120, 60, 255});
+    SliceOptions o;
+    o.background = Rgba8{255, 0, 255, 255};
+    const auto found = detectSprites(sheet, o);
+    REQUIRE(found.size() == 6);
+    for (const auto& b : boxes)
+        CHECK(std::any_of(found.begin(), found.end(), [&](const SlicedSprite& s) { return s.rect == b; }));
 }

@@ -132,52 +132,143 @@ TilePlacement autotile(const TerrainMap& map, AutotileScheme s) {
     return p;
 }
 
-Image Tileset::tile(int index) const {
-    if (index == kBaseTile) return base;
+Image Tileset::tile(int index, int px, int py) const {
+    const int P = std::max(1, phases);
+    px = ((px % P) + P) % P;
+    py = ((py % P) + P) % P;
+    if (index == kBaseTile) return base.isNull() ? Image() : base.copy({px * tileSize, py * tileSize, tileSize, tileSize});
     const auto [cols, rows] = tilesetGrid(scheme);
-    (void)rows;
-    return image.copy({(index % cols) * tileSize, (index / cols) * tileSize, tileSize, tileSize});
+    return image.copy({(px * cols + index % cols) * tileSize, (py * rows + index / cols) * tileSize, tileSize, tileSize});
 }
 
 Status validateTileset(const Tileset& t) {
     if (t.tileSize < 2 || t.tileSize > 512) return Error{ErrorCode::InvalidArgument, "Tile size must be between 2 and 512 pixels"};
+    if (t.phases < 1 || t.phases > 4) return Error{ErrorCode::InvalidArgument, "A tileset has 1 to 4 phases"};
     const auto [cols, rows] = tilesetGrid(t.scheme);
-    if (t.image.width() != cols * t.tileSize || t.image.height() != rows * t.tileSize)
+    const int W = t.phases * cols * t.tileSize, H = t.phases * rows * t.tileSize;
+    if (t.image.width() != W || t.image.height() != H)
         return Error{ErrorCode::InvalidArgument, "A " + std::string(toString(t.scheme)) + " tileset of " + std::to_string(t.tileSize) +
-                                                   " px tiles must be " + std::to_string(cols * t.tileSize) + "x" +
-                                                   std::to_string(rows * t.tileSize) + " px (" + std::to_string(cols) + "x" +
-                                                   std::to_string(rows) + " tiles)"};
-    if (!t.base.isNull() && (t.base.width() != t.tileSize || t.base.height() != t.tileSize))
-        return Error{ErrorCode::InvalidArgument, "The base tile must be one tile in size"};
+                                                   " px tiles" + (t.phases > 1 ? " with " + std::to_string(t.phases) + "x" + std::to_string(t.phases) + " phases" : std::string()) +
+                                                   " must be " + std::to_string(W) + "x" + std::to_string(H) + " px (" +
+                                                   std::to_string(cols * t.phases) + "x" + std::to_string(rows * t.phases) + " tiles)"};
+    if (!t.base.isNull() && (t.base.width() != t.phases * t.tileSize || t.base.height() != t.phases * t.tileSize))
+        return Error{ErrorCode::InvalidArgument, t.phases > 1 ? "The base must be " + std::to_string(t.phases) + "x" + std::to_string(t.phases) + " tiles in size"
+                                                              : std::string("The base tile must be one tile in size")};
     return {};
 }
 
 Result<Image> renderMap(const TerrainMap& map, const Tileset& t) {
     if (auto st = validateTileset(t); !st) return st.error();
-    const int T = t.tileSize;
+    const int T = t.tileSize, P = t.phases;
     auto out = Image::create(std::max(1, map.width() * T), std::max(1, map.height() * T));
     if (!out) return out.error();
     Image img = std::move(out).value();
     const TilePlacement p = autotile(map, t.scheme);
-    std::vector<Image> tiles;
-    for (int i = 0; i < tileCount(t.scheme); ++i) tiles.push_back(t.tile(i));
     // The dual grid (Wang16) is offset by half a tile so tiles straddle cells.
     const int off = t.scheme == AutotileScheme::Wang16 ? -T / 2 : 0;
+    const auto [cols, rows] = tilesetGrid(t.scheme);
     for (int y = 0; y < p.rows; ++y)
         for (int x = 0; x < p.columns; ++x) {
             const int idx = p.at(x, y);
+            const int px = x % P, py = y % P;
+            const Image* src = &t.image;
+            int sx = 0, sy = 0;
             if (idx < 0) {
-                if (!t.base.isNull()) img.blit(t.base, x * T, y * T);
-                continue;
+                if (t.base.isNull()) continue;
+                src = &t.base;
+                sx = px * T;
+                sy = py * T;
+            } else {
+                sx = (px * cols + idx % cols) * T;
+                sy = (py * rows + idx / cols) * T;
             }
-            const Image& tile = tiles[static_cast<std::size_t>(idx)];
             for (int ty = 0; ty < T; ++ty)
                 for (int tx = 0; tx < T; ++tx) {
-                    const int px = x * T + off + tx, py = y * T + off + ty;
-                    if (img.contains(px, py)) img.setPixel(px, py, tile.pixel(tx, ty));
+                    const int dx = x * T + off + tx, dy = y * T + off + ty;
+                    if (img.contains(dx, dy)) img.setPixel(dx, dy, src->pixel(sx + tx, sy + ty));
                 }
         }
     return img;
+}
+
+LevelMap::LevelMap(int w, int h) : m_w(std::max(0, w)), m_h(std::max(0, h)), m_cells(static_cast<std::size_t>(m_w) * static_cast<std::size_t>(m_h), 0) {}
+
+int LevelMap::at(int x, int y) const noexcept {
+    if (x < 0 || y < 0 || x >= m_w || y >= m_h) return 0;
+    return m_cells[static_cast<std::size_t>(y) * static_cast<std::size_t>(m_w) + static_cast<std::size_t>(x)];
+}
+
+void LevelMap::set(int x, int y, int level) noexcept {
+    if (x < 0 || y < 0 || x >= m_w || y >= m_h) return;
+    m_cells[static_cast<std::size_t>(y) * static_cast<std::size_t>(m_w) + static_cast<std::size_t>(x)] = static_cast<std::uint8_t>(std::clamp(level, 0, 255));
+}
+
+void LevelMap::fill(int level) noexcept { std::fill(m_cells.begin(), m_cells.end(), static_cast<std::uint8_t>(std::clamp(level, 0, 255))); }
+
+TerrainMap LevelMap::atLeast(int level) const {
+    TerrainMap m(m_w, m_h);
+    for (int y = 0; y < m_h; ++y)
+        for (int x = 0; x < m_w; ++x) m.set(x, y, at(x, y) >= level);
+    return m;
+}
+
+int LevelMap::maxLevel() const noexcept {
+    int m = 0;
+    for (std::uint8_t v : m_cells) m = std::max(m, static_cast<int>(v));
+    return m;
+}
+
+namespace {
+Rgba8 over(Rgba8 dst, Rgba8 src) {
+    if (src.a == 255 || dst.a == 0) return src;
+    if (src.a == 0) return dst;
+    const int a = src.a, b = dst.a * (255 - a) / 255, oa = a + b;
+    auto ch = [&](int s, int d) { return static_cast<std::uint8_t>((s * a + d * b + oa / 2) / oa); };
+    return {ch(src.r, dst.r), ch(src.g, dst.g), ch(src.b, dst.b), static_cast<std::uint8_t>(oa)};
+}
+} // namespace
+
+Result<Image> renderLevels(const LevelMap& map, const std::vector<Tileset>& levels) {
+    if (levels.empty()) return Error{ErrorCode::InvalidArgument, "At least one terrain level is needed"};
+    for (const Tileset& t : levels) {
+        if (auto st = validateTileset(t); !st) return st.error();
+        if (t.scheme != levels[0].scheme || t.tileSize != levels[0].tileSize || t.phases != levels[0].phases)
+            return Error{ErrorCode::InvalidArgument, "All terrain levels must use the same layout, tile size and phases"};
+    }
+    auto first = renderMap(map.atLeast(1), levels[0]);
+    if (!first) return first.error();
+    Image img = std::move(first).value();
+    for (std::size_t k = 1; k < levels.size(); ++k) {
+        auto layer = renderMap(map.atLeast(static_cast<int>(k) + 1), levels[k]);
+        if (!layer) return layer.error();
+        auto dst = img.pixels();
+        const auto src = layer.value().pixels();
+        for (std::size_t i = 0; i < dst.size(); ++i) dst[i] = over(dst[i], src[i]);
+    }
+    return img;
+}
+
+std::string terrainSetJson(const std::vector<Tileset>& levels, const std::vector<std::string>& imageFiles,
+                           const std::vector<std::string>& jsonFiles, const std::string& baseFile) {
+    using nlohmann::ordered_json;
+    ordered_json root = ordered_json::object();
+    if (!levels.empty()) {
+        root["scheme"] = std::string(toString(levels[0].scheme));
+        root["tileSize"] = levels[0].tileSize;
+        root["phases"] = levels[0].phases;
+    }
+    if (!baseFile.empty()) root["base"] = baseFile;
+    ordered_json ls = ordered_json::array();
+    for (std::size_t i = 0; i < levels.size(); ++i) {
+        ordered_json o = ordered_json::object();
+        o["level"] = static_cast<int>(i) + 1;
+        o["image"] = i < imageFiles.size() ? imageFiles[i] : std::string();
+        o["json"] = i < jsonFiles.size() ? jsonFiles[i] : std::string();
+        ls.push_back(std::move(o));
+    }
+    root["levels"] = std::move(ls);
+    root["drawOrder"] = "level 1 over the base, then each higher level over the result; a cell of level k is terrain for levels 1..k";
+    return root.dump(2) + "\n";
 }
 
 namespace {
@@ -197,6 +288,25 @@ double interiorDiff(const Image& img, bool columns) {
     for (int k = 0; k + 1 < n; ++k) s += edgeDiff(img, k, img, k + 1, columns);
     return s / (n - 1);
 }
+// The largest difference between neighbouring columns (or rows) inside,
+// leaving out the outermost ones, where a broken edge would itself show.
+double interiorMax(const Image& img, bool columns) {
+    const int n = columns ? img.width() : img.height();
+    double m = 0;
+    for (int k = 1; k + 2 < n; ++k) m = std::max(m, edgeDiff(img, k, img, k + 1, columns));
+    return m;
+}
+// A layer with a transparent base is judged as it will look, drawn over
+// something: here a neutral grey, so a pixel's coverage counts as much as a
+// colour change of the same size would, not as a full 0-to-255 alpha jump.
+Image flattenOverGrey(Image img) {
+    for (auto& p : img.pixels()) {
+        if (p.a == 255) continue;
+        auto ch = [&](int c) { return static_cast<std::uint8_t>((c * p.a + 128 * (255 - p.a) + 127) / 255); };
+        p = {ch(p.r), ch(p.g), ch(p.b), 255};
+    }
+    return img;
+}
 bool sideMatches(const TileSamples& a, const TileSamples& b, bool horizontal) {
     // a left of b: a's right column (TR, R, BR) vs b's left (TL, L, BL);
     // a above b: a's bottom row (BL, B, BR) vs b's top (TL, T, TR).
@@ -207,29 +317,46 @@ bool sideMatches(const TileSamples& a, const TileSamples& b, bool horizontal) {
 
 Result<SeamReport> checkSeams(const Tileset& t, const SeamOptions& o) {
     if (auto st = validateTileset(t); !st) return st.error();
-    const int n = tileCount(t.scheme), T = t.tileSize;
+    const int n = tileCount(t.scheme), T = t.tileSize, P = t.phases;
     std::vector<int> ids;
     for (int i = 0; i < n; ++i) ids.push_back(i);
     if (t.scheme != AutotileScheme::Wang16 && !t.base.isNull()) ids.push_back(kBaseTile);
-    std::vector<Image> img(ids.size());
-    std::vector<TileSamples> smp(ids.size());
-    std::vector<double> typX(ids.size()), typY(ids.size());
-    for (std::size_t k = 0; k < ids.size(); ++k) {
-        img[k] = t.tile(ids[k]);
-        smp[k] = ids[k] == kBaseTile ? TileSamples{} : tileSamples(t.scheme, ids[k]);
-        typX[k] = interiorDiff(img[k], true);
-        typY[k] = interiorDiff(img[k], false);
-    }
-    SeamReport r;
-    for (std::size_t a = 0; a < ids.size(); ++a)
-        for (std::size_t b = 0; b < ids.size(); ++b)
-            for (bool horizontal : {true, false}) {
-                if (!sideMatches(smp[a], smp[b], horizontal)) continue;
-                ++r.pairsChecked;
-                const double jump = edgeDiff(img[a], T - 1, img[b], 0, horizontal);
-                const double typical = horizontal ? (typX[a] + typX[b]) / 2 : (typY[a] + typY[b]) / 2;
-                if (jump > o.factor * typical && jump > o.floor) r.issues.push_back({ids[a], ids[b], horizontal, jump, typical});
+    const std::size_t N = ids.size();
+    // Images per (phase, tile): index (py * P + px) * N + k.
+    std::vector<Image> img(N * static_cast<std::size_t>(P * P));
+    std::vector<double> typX(img.size()), typY(img.size()), maxX(img.size()), maxY(img.size());
+    std::vector<TileSamples> smp(N);
+    for (std::size_t k = 0; k < N; ++k) smp[k] = ids[k] == kBaseTile ? TileSamples{} : tileSamples(t.scheme, ids[k]);
+    auto slot = [&](int px, int py, std::size_t k) { return (static_cast<std::size_t>(py * P + px)) * N + k; };
+    for (int py = 0; py < P; ++py)
+        for (int px = 0; px < P; ++px)
+            for (std::size_t k = 0; k < N; ++k) {
+                const std::size_t s = slot(px, py, k);
+                img[s] = flattenOverGrey(t.tile(ids[k], px, py));
+                typX[s] = interiorDiff(img[s], true);
+                typY[s] = interiorDiff(img[s], false);
+                maxX[s] = interiorMax(img[s], true);
+                maxY[s] = interiorMax(img[s], false);
             }
+    SeamReport r;
+    for (int py = 0; py < P; ++py)
+        for (int px = 0; px < P; ++px)
+            for (std::size_t a = 0; a < N; ++a)
+                for (std::size_t b = 0; b < N; ++b)
+                    for (bool horizontal : {true, false}) {
+                        if (!sideMatches(smp[a], smp[b], horizontal)) continue;
+                        // The neighbour to the right / below is in the next phase.
+                        const std::size_t sa = slot(px, py, a);
+                        const std::size_t sb = horizontal ? slot((px + 1) % P, py, b) : slot(px, (py + 1) % P, b);
+                        ++r.pairsChecked;
+                        const double jump = edgeDiff(img[sa], T - 1, img[sb], 0, horizontal);
+                        const double typical = horizontal ? (typX[sa] + typX[sb]) / 2 : (typY[sa] + typY[sb]) / 2;
+                        // A step no bigger than ones inside the tiles (a ragged
+                        // edge moving by a pixel) is not a seam.
+                        const double inside = horizontal ? std::max(maxX[sa], maxX[sb]) : std::max(maxY[sa], maxY[sb]);
+                        if (jump > o.factor * typical && jump > o.floor && jump > 1.25 * inside)
+                            r.issues.push_back({ids[a], ids[b], horizontal, jump, typical, px, py});
+                    }
     std::stable_sort(r.issues.begin(), r.issues.end(), [](const SeamIssue& x, const SeamIssue& y) { return x.jump > y.jump; });
     return r;
 }
@@ -280,10 +407,18 @@ double periodicNoise(double u, double v, int L, std::uint32_t seed) {
 }
 } // namespace
 
-Result<Tileset> generateTileset(AutotileScheme s, const Image& baseTex, const Image& terrainTex, const TilesetStyle& st) {
-    const int T = terrainTex.width();
-    if (T < 4 || T > 256 || terrainTex.height() != T) return Error{ErrorCode::InvalidArgument, "The terrain texture must be square, 4 to 256 px (one tile)"};
-    if (baseTex.width() != T || baseTex.height() != T) return Error{ErrorCode::InvalidArgument, "The base texture must be the same size as the terrain texture"};
+Result<Tileset> generateTileset(AutotileScheme s, const Image& baseTex, const Image& terrainTex, const TilesetStyle& st, int tileSize) {
+    const int W = terrainTex.width();
+    const int T = tileSize > 0 ? tileSize : W;
+    if (W < 4 || terrainTex.height() != W) return Error{ErrorCode::InvalidArgument, "The terrain texture must be square"};
+    if (T < 4 || T > 256) return Error{ErrorCode::InvalidArgument, "Tiles must be 4 to 256 px"};
+    if (W % T != 0 || W / T > 4)
+        return Error{ErrorCode::InvalidArgument, "The terrain texture must be 1 to 4 tiles a side (" + std::to_string(T) + ", " +
+                                                     std::to_string(2 * T) + ", " + std::to_string(3 * T) + " or " + std::to_string(4 * T) + " px)"};
+    const int P = W / T;
+    const bool transparentBase = baseTex.isNull();
+    if (!transparentBase && (baseTex.width() != W || baseTex.height() != W))
+        return Error{ErrorCode::InvalidArgument, "The base texture must be the same size as the terrain texture"};
     if (st.edgeNoise < 0 || st.edgeNoise > 0.9) return Error{ErrorCode::InvalidArgument, "Edge noise must be between 0 and 0.9"};
     const int L = std::clamp(st.noiseScale, 1, T);
     Rgba8 outline{};
@@ -297,33 +432,44 @@ Result<Tileset> generateTileset(AutotileScheme s, const Image& baseTex, const Im
             outline = {static_cast<std::uint8_t>(r / n * 55 / 100), static_cast<std::uint8_t>(g / n * 55 / 100), static_cast<std::uint8_t>(b / n * 55 / 100), 255};
         }
     }
+    const Image base = transparentBase ? Image(W, W) : baseTex;
     Tileset t;
     t.scheme = s;
     t.tileSize = T;
+    t.phases = P;
     const auto [cols, rows] = tilesetGrid(s);
-    t.image = Image(cols * T, rows * T);
-    if (s != AutotileScheme::Wang16) t.base = baseTex;
+    t.image = Image(P * cols * T, P * rows * T);
+    if (s != AutotileScheme::Wang16) t.base = base;
     for (int i = 0; i < tileCount(s); ++i) {
         const TileSamples smp = tileSamples(s, i);
-        auto covered = [&](int x, int y) {
-            const double u = (x + 0.5) / T, v = (y + 0.5) / T;
-            const double f = tileCoverage(smp, u, v, st.roundness);
-            return f + st.edgeNoise * (periodicNoise(u, v, L, st.seed) - 0.5) >= 0.5;
-        };
-        const int ox = (i % cols) * T, oy = (i / cols) * T;
+        // Coverage depends only on the tile, not the phase: every phase has
+        // the same shape and edges, only the texture underneath moves.
+        std::vector<std::uint8_t> cov(static_cast<std::size_t>(T) * static_cast<std::size_t>(T));
         for (int y = 0; y < T; ++y)
             for (int x = 0; x < T; ++x) {
-                if (!covered(x, y)) { t.image.setPixel(ox + x, oy + y, baseTex.pixel(x, y)); continue; }
-                bool edge = false;
-                if (st.outline) {
-                    // In-tile neighbours only: what lies across the tile edge
-                    // is the same for every tile that may touch it.
-                    for (auto [dx, dy] : {std::pair{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
-                        const int nx = x + dx, ny = y + dy;
-                        if (nx >= 0 && ny >= 0 && nx < T && ny < T && !covered(nx, ny)) edge = true;
+                const double u = (x + 0.5) / T, v = (y + 0.5) / T;
+                const double f = tileCoverage(smp, u, v, st.roundness);
+                cov[static_cast<std::size_t>(y * T + x)] = f + st.edgeNoise * (periodicNoise(u, v, L, st.seed) - 0.5) >= 0.5;
+            }
+        auto covered = [&](int x, int y) { return cov[static_cast<std::size_t>(y * T + x)] != 0; };
+        for (int py = 0; py < P; ++py)
+            for (int px = 0; px < P; ++px) {
+                const int ox = (px * cols + i % cols) * T, oy = (py * rows + i / cols) * T;
+                const int tx0 = px * T, ty0 = py * T;
+                for (int y = 0; y < T; ++y)
+                    for (int x = 0; x < T; ++x) {
+                        if (!covered(x, y)) { t.image.setPixel(ox + x, oy + y, base.pixel(tx0 + x, ty0 + y)); continue; }
+                        bool edge = false;
+                        if (st.outline) {
+                            // In-tile neighbours only: what lies across the tile edge
+                            // is the same for every tile that may touch it.
+                            for (auto [dx, dy] : {std::pair{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                                const int nx = x + dx, ny = y + dy;
+                                if (nx >= 0 && ny >= 0 && nx < T && ny < T && !covered(nx, ny)) edge = true;
+                            }
+                        }
+                        t.image.setPixel(ox + x, oy + y, edge ? outline : terrainTex.pixel(tx0 + x, ty0 + y));
                     }
-                }
-                t.image.setPixel(ox + x, oy + y, edge ? outline : terrainTex.pixel(x, y));
             }
     }
     return t;
@@ -351,6 +497,14 @@ std::string tilesetJson(const Tileset& t, const std::string& imageFile, const st
     root["tileSize"] = t.tileSize;
     root["columns"] = cols;
     root["rows"] = rows;
+    root["phases"] = t.phases;
+    if (t.phases > 1) {
+        ordered_json po = ordered_json::object();
+        po["x"] = cols * t.tileSize;
+        po["y"] = rows * t.tileSize;
+        root["phaseOffset"] = std::move(po);
+        root["phaseRule"] = "cell (x, y) uses the copy at (x mod phases, y mod phases) * phaseOffset";
+    }
     root["image"] = imageFile;
     if (!baseFile.empty()) root["base"] = baseFile;
     root["tiles"] = std::move(tiles);

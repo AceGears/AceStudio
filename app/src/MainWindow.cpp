@@ -622,7 +622,7 @@ void MainWindow::buildMenus() {
     });
     assets->addSeparator();
     assets->addAction(tr("Smart S&licer…"), this, [this, openFrames] {
-        SliceDialog dlg(currentView(), openFrames, this);
+        SliceDialog dlg(*m_ai, currentView(), openFrames, this);
         dlg.exec();
     });
     assets->addAction(tr("Pack Sprite &Atlas…"), this, [this] {

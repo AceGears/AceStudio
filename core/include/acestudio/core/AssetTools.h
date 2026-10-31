@@ -127,6 +127,15 @@ struct ParallaxSet {
 // Problems that would show in game: layers that repeat but do not wrap
 // seamlessly, layers narrower than the view that do not repeat, layers outside
 // the view.
+// Makes the sky of a layer transparent, starting from the top edge (the
+// top-left pixel is the sky colour):
+//   Flat     pixels connected to the top edge within `tolerance` of the sky colour
+//   Gradient pixels connected to the top edge, each within `tolerance` of the
+//            neighbour it was reached from (follows gradients and soft clouds)
+//   Every    every pixel within `tolerance` of the sky colour, also enclosed gaps
+enum class SkyClear { Flat, Gradient, Every };
+Image clearSky(const Image& img, int tolerance, SkyClear mode);
+
 // Rows in the longest clear step where the right edge wraps into the left
 // (and, in `typical`, the most it changes between neighbouring columns:
 // max(1.5 x 95th percentile, largest)).
