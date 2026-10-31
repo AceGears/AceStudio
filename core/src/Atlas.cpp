@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <tuple>
 #include <cstdint>
 #include <map>
 #include <numeric>
@@ -123,6 +124,15 @@ bool smallestBin(const std::vector<std::pair<int, int>>& sizes, const std::vecto
         for (int w = widest; w < maxW; w += step) widths.push_back(w);
         widths.push_back(maxW);
     }
+    // Among the packings, the smallest area wins, but a squarer page within
+    // 25% of that area is preferred: long strips are awkward to view and some
+    // GPUs limit the longest side.
+    struct Candidate {
+        std::vector<IntRect> rects;
+        int w = 0, h = 0;
+        long long area = 0;
+    };
+    std::vector<Candidate> cands;
     long long bestArea = -1;
     for (int w : widths) {
         if (static_cast<long long>(w) * maxH < area) continue;
@@ -137,14 +147,20 @@ bool smallestBin(const std::vector<std::pair<int, int>>& sizes, const std::vecto
         if (!all) continue;
         if (pot) { usedW = nextPow2(usedW); usedH = nextPow2(usedH); }
         const long long a = static_cast<long long>(usedW) * usedH;
-        if (bestArea < 0 || a < bestArea || (a == bestArea && usedH < binH)) {
-            bestArea = a;
-            rects = std::move(r);
-            binW = usedW;
-            binH = usedH;
-        }
+        if (bestArea < 0 || a < bestArea) bestArea = a;
+        cands.push_back({std::move(r), usedW, usedH, a});
     }
-    return bestArea >= 0;
+    if (bestArea < 0) return false;
+    const Candidate* pick = nullptr;
+    for (const Candidate& c : cands) {
+        if (c.area * 4 > bestArea * 5) continue;
+        auto key = [](const Candidate& k) { return std::tuple(std::max(k.w, k.h), k.area, k.h); };
+        if (!pick || key(c) < key(*pick)) pick = &c;
+    }
+    rects = pick->rects;
+    binW = pick->w;
+    binH = pick->h;
+    return true;
 }
 
 std::uint64_t hashImage(const Image& img) {

@@ -396,13 +396,47 @@ Result<UiKitFiles> packUiKit(const std::vector<UiElement>& kit, const std::strin
 
 // ---------------------------------------------------------------- parallax
 
+namespace {
+// Longest run of rows where columns a and b clearly differ. A mean over the
+// column hides a step in a silhouette (a 6 px cliff in an 80 px mountain
+// layer), so the wrap is also judged by this run length.
+int differingRun(const Image& img, int a, int b) {
+    int best = 0, run = 0;
+    for (int y = 0; y < img.height(); ++y) {
+        const Rgba8 p = img.pixel(a, y), q = img.pixel(b, y);
+        const int d = std::max({std::abs(p.r - q.r), std::abs(p.g - q.g), std::abs(p.b - q.b), std::abs(p.a - q.a)});
+        run = d > 64 ? run + 1 : 0;
+        best = std::max(best, run);
+    }
+    return best;
+}
+} // namespace
+
+int wrapStepRows(const Image& img, int* typical) {
+    if (img.width() < 3) { if (typical) *typical = 0; return 0; }
+    std::vector<int> runs;
+    for (int x = 0; x + 1 < img.width(); ++x) runs.push_back(differingRun(img, x, x + 1));
+    std::sort(runs.begin(), runs.end());
+    // The larger of 1.5 x the 95th percentile and the largest change: a
+    // step bigger than anything inside the layer stands out.
+    const int p95 = runs[std::min(runs.size() - 1, runs.size() * 95 / 100)];
+    if (typical) *typical = std::max(3 * p95 / 2, runs.back());
+    return differingRun(img, img.width() - 1, 0);
+}
+
 std::vector<std::string> checkParallax(const ParallaxSet& set) {
     std::vector<std::string> out;
     for (const auto& l : set.layers) {
         if (l.image.isNull()) { out.push_back("Layer \"" + l.name + "\" has no image"); continue; }
         if (l.repeatX) {
             const WrapCheck w = checkWrap(l.image);
-            if (!w.horizontal)
+            int typicalRun = 0;
+            const int step = wrapStepRows(l.image, &typicalRun);
+            if (w.horizontal && step >= 3 && step > typicalRun)
+                out.push_back("Layer \"" + l.name + "\" repeats but its outline jumps " + std::to_string(step) +
+                              " px where its left and right edges meet (it changes by up to " + std::to_string(typicalRun) +
+                              " px elsewhere); use Make Seamless");
+            else if (!w.horizontal)
                 out.push_back("Layer \"" + l.name + "\" repeats but its left and right edges do not match (jump " +
                               std::to_string(static_cast<int>(std::lround(w.jumpX * 100))) + "% vs " +
                               std::to_string(static_cast<int>(std::lround(w.typicalX * 100))) + "% inside); use Make Seamless");

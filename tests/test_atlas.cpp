@@ -127,3 +127,18 @@ TEST_CASE("Atlas: several pages when one is not enough; errors are clear", "[atl
     CHECK_FALSE(packAtlas({{"x", solid(2, 2, 1)}, {"x", solid(3, 3, 1)}}));
     CHECK_FALSE(packAtlas({}));
 }
+
+TEST_CASE("Atlas pages stay roughly square rather than long strips", "[atlas]") {
+    std::vector<AtlasItem> items;
+    for (int i = 0; i < 47; ++i) items.push_back({"t" + std::to_string(i), solid(16, 16, static_cast<std::uint8_t>(i + 1))});
+    AtlasOptions o;
+    o.padding = 1;
+    o.mergeDuplicates = false;
+    auto a = packAtlas(items, o);
+    REQUIRE(a);
+    const Image& p = a.value().pages.front();
+    CHECK(std::max(p.width(), p.height()) <= 2 * std::min(p.width(), p.height()));
+    // ...and not much larger than the sprites need.
+    CHECK(static_cast<long long>(p.width()) * p.height() <= 47LL * 17 * 17 * 5 / 4);
+    INFO(p.width() << "x" << p.height());
+}

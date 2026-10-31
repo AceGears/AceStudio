@@ -137,6 +137,12 @@ Result<Tileset> generateTileset(AutotileScheme s, const Image& baseTexture, cons
 // samples; exposed for tests and previews.
 double tileCoverage(const TileSamples& samples, double u, double v, double roundness);
 
+// Metadata for a tileset image: {"scheme", "tileSize", "columns", "rows",
+// "image", "base", "tiles": [{"index", "x", "y", "mask" | "corners",
+// "samples"}]}. Cardinal16 masks use N=1 E=2 S=4 W=8, Blob47 masks N=1 NE=2
+// E=4 SE=8 S=16 SW=32 W=64 NW=128, Wang16 corners TL=1 TR=2 BR=4 BL=8.
+std::string tilesetJson(const Tileset& t, const std::string& imageFile, const std::string& baseFile = {});
+
 // A guide image for drawing a tileset by hand: every tile shows its terrain
 // samples (terrain = `terrain`, base = `base`) as a 3x3 pattern with a grid.
 Image tilesetTemplate(AutotileScheme s, int tileSize, Rgba8 terrain, Rgba8 base);

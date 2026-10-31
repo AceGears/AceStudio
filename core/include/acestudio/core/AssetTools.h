@@ -127,6 +127,10 @@ struct ParallaxSet {
 // Problems that would show in game: layers that repeat but do not wrap
 // seamlessly, layers narrower than the view that do not repeat, layers outside
 // the view.
+// Rows in the longest clear step where the right edge wraps into the left
+// (and, in `typical`, the most it changes between neighbouring columns:
+// max(1.5 x 95th percentile, largest)).
+int wrapStepRows(const Image& img, int* typical = nullptr);
 std::vector<std::string> checkParallax(const ParallaxSet& set);
 
 // The view at camera position `cameraX` (layers composited back to front).

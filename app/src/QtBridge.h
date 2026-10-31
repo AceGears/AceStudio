@@ -23,6 +23,19 @@ inline QImage toQImage(const Image& img) {
     return q.copy();   // detach from core buffer
 }
 
+// Copies a QImage (any format) into a core image.
+inline Image fromQImage(const QImage& src) {
+    if (src.isNull()) return {};
+    const QImage q = src.convertToFormat(QImage::Format_RGBA8888);
+    Image img(q.width(), q.height());
+    for (int y = 0; y < q.height(); ++y) {
+        const uchar* row = q.constScanLine(y);
+        for (int x = 0; x < q.width(); ++x)
+            img.setPixel(x, y, {row[x * 4], row[x * 4 + 1], row[x * 4 + 2], row[x * 4 + 3]});
+    }
+    return img;
+}
+
 inline std::filesystem::path toPath(const QString& s) {
 #ifdef _WIN32
     return std::filesystem::path(s.toStdWString());

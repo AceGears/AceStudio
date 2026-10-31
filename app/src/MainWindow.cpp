@@ -12,6 +12,8 @@
 #include "panels/PreviewPanel.h"
 #include "AnimationDialogs.h"
 #include "ExportDialog.h"
+#include "assets/AssetDialogs.h"
+#include "assets/TilesetDialog.h"
 #include "ai/AnimationDialog.h"
 #include "ai/CharacterDialog.h"
 #include "ai/AiPanel.h"
@@ -253,12 +255,6 @@ void MainWindow::buildMenus() {
         if (!key.isEmpty()) a->setShortcut(key);
         connect(a, &QAction::triggered, this, slot);
         m_docActions << a;
-        return a;
-    };
-    auto planned = [](QMenu* menu, const QString& what) {
-        QAction* a = menu->addAction(what);
-        a->setEnabled(false);
-        a->setProperty("acePlanned", true);
         return a;
     };
 
@@ -604,7 +600,35 @@ void MainWindow::buildMenus() {
             QDesktopServices::openUrl(QUrl::fromLocalFile(fromPath(env->root)));
         }
     });
-    planned(menuBar()->addMenu(tr("&Tilesets")), tr("Tileset and terrain tools — Phase 6"));
+    QMenu* assets = menuBar()->addMenu(tr("A&ssets"));
+    auto openImage = [this](const Image& img, const QString& name) { openImageAsDocument(img, name); };
+    auto openFrames = [this](const std::vector<Image>& frames, const std::vector<int>& durations, const QString& name) {
+        openAnimationAsDocument(frames, durations, name);
+    };
+    assets->addAction(tr("&Tileset Generator…"), this, [this, openImage] {
+        TilesetDialog dlg(*m_ai, currentView(), openImage, this);
+        dlg.exec();
+    });
+    assets->addAction(tr("New Tileset &Template…"), this, [this, openImage] { newTilesetTemplate(openImage, this); });
+    assets->addAction(tr("Check Tileset &Seams…"), this, [this] { checkDocumentSeams(currentView(), this); });
+    assets->addSeparator();
+    assets->addAction(tr("&Parallax Background…"), this, [this] {
+        ParallaxDialog dlg(*m_ai, currentView(), this);
+        dlg.exec();
+    });
+    assets->addAction(tr("&UI Kit Generator…"), this, [this, openImage] {
+        UiKitDialog dlg(currentView(), openImage, this);
+        dlg.exec();
+    });
+    assets->addSeparator();
+    assets->addAction(tr("Smart S&licer…"), this, [this, openFrames] {
+        SliceDialog dlg(currentView(), openFrames, this);
+        dlg.exec();
+    });
+    assets->addAction(tr("Pack Sprite &Atlas…"), this, [this] {
+        AtlasDialog dlg(currentView(), this);
+        dlg.exec();
+    });
     QMenu* toolsMenu = menuBar()->addMenu(tr("T&ools"));
     auto* toolGroup = new QActionGroup(this);
     for (Tool t : kAllTools) {

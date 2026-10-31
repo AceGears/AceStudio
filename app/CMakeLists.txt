@@ -37,6 +37,14 @@ add_executable(AceStudio WIN32
     src/ai/PoseEditor.cpp
     src/ai/AnimationDialog.h
     src/ai/AnimationDialog.cpp
+    src/ai/AiImageJob.h
+    src/ai/AiImageJob.cpp
+    src/assets/AssetCommon.h
+    src/assets/AssetCommon.cpp
+    src/assets/TilesetDialog.h
+    src/assets/TilesetDialog.cpp
+    src/assets/AssetDialogs.h
+    src/assets/AssetDialogs.cpp
     src/SingleInstance.h
     src/SingleInstance.cpp
     src/Shortcuts.h

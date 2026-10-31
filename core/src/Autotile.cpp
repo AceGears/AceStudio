@@ -1,5 +1,7 @@
 #include "acestudio/core/Autotile.h"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -325,6 +327,34 @@ Result<Tileset> generateTileset(AutotileScheme s, const Image& baseTex, const Im
             }
     }
     return t;
+}
+
+std::string tilesetJson(const Tileset& t, const std::string& imageFile, const std::string& baseFile) {
+    using nlohmann::ordered_json;
+    const auto [cols, rows] = tilesetGrid(t.scheme);
+    ordered_json tiles = ordered_json::array();
+    for (int i = 0; i < tileCount(t.scheme); ++i) {
+        ordered_json o = ordered_json::object();
+        o["index"] = i;
+        o["x"] = (i % cols) * t.tileSize;
+        o["y"] = (i / cols) * t.tileSize;
+        if (t.scheme == AutotileScheme::Wang16) o["corners"] = i;
+        else o["mask"] = t.scheme == AutotileScheme::Blob47 ? static_cast<int>(blobMasks()[static_cast<std::size_t>(i)]) : i;
+        const TileSamples smp = tileSamples(t.scheme, i);
+        ordered_json sa = ordered_json::array();
+        for (std::uint8_t v : smp) sa.push_back(v);
+        o["samples"] = std::move(sa);
+        tiles.push_back(std::move(o));
+    }
+    ordered_json root = ordered_json::object();
+    root["scheme"] = std::string(toString(t.scheme));
+    root["tileSize"] = t.tileSize;
+    root["columns"] = cols;
+    root["rows"] = rows;
+    root["image"] = imageFile;
+    if (!baseFile.empty()) root["base"] = baseFile;
+    root["tiles"] = std::move(tiles);
+    return root.dump(2) + "\n";
 }
 
 Image tilesetTemplate(AutotileScheme s, int T, Rgba8 terrain, Rgba8 base) {

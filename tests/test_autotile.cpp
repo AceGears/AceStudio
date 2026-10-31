@@ -3,6 +3,8 @@
 
 #include "acestudio/core/Autotile.h"
 
+#include <nlohmann/json.hpp>
+
 #include <random>
 
 using namespace acestudio;
@@ -126,4 +128,19 @@ TEST_CASE("Coverage follows the samples; templates have the scheme's size", "[au
     const Image tmpl = tilesetTemplate(AutotileScheme::Blob47, 12, {0, 200, 0, 255}, {120, 80, 40, 255});
     CHECK(tmpl.width() == 8 * 12);
     CHECK(tmpl.height() == 6 * 12);
+}
+
+TEST_CASE("Tileset JSON lists every tile with its mask and position", "[autotile]") {
+    const Image grass = texture(16, {70, 150, 60, 255}, 1), dirt = texture(16, {140, 100, 60, 255}, 2);
+    const auto t = generateTileset(AutotileScheme::Blob47, dirt, grass).value();
+    const auto j = nlohmann::json::parse(tilesetJson(t, "grass.png", "dirt.png"));
+    CHECK(j["scheme"] == "blob47");
+    CHECK(j["tiles"].size() == 47);
+    CHECK(j["tiles"][46]["mask"] == 255);
+    CHECK(j["tiles"][9]["x"] == 16);
+    CHECK(j["tiles"][9]["y"] == 16);
+    CHECK(j["base"] == "dirt.png");
+    const auto w = nlohmann::json::parse(tilesetJson(generateTileset(AutotileScheme::Wang16, dirt, grass).value(), "w.png"));
+    CHECK(w["tiles"][5]["corners"] == 5);
+    CHECK_FALSE(w.contains("base"));
 }

@@ -1,4 +1,5 @@
 // Slicer, nine-slice, UI kit and parallax (Phase 6).
+#include <cmath>
 #include <catch2/catch_test_macros.hpp>
 
 #include "acestudio/core/AssetTools.h"
@@ -141,4 +142,32 @@ TEST_CASE("Parallax: wrap check, rendering at camera positions, seamless fix", "
     CHECK(j["layers"][1]["scroll"] == 0.5);
     CHECK(j["layers"][1]["file"] == "hills.png");
     CHECK_FALSE(makeSeamlessX(hills, 40));
+}
+
+TEST_CASE("Parallax: a step in a silhouette at the wrap is found", "[assets]") {
+    // Rolling mountains whose height at the right edge is 6 px off the left
+    // edge: the column mean barely changes, the outline visibly jumps.
+    auto mountains = [](bool periodic) {
+        Image m(200, 80, {240, 240, 250, 255});
+        for (int x = 0; x < 200; ++x) {
+            const double u = periodic ? x * 2 * 3.14159265 / 200 : 0;
+            const double h = periodic ? 40 + 18 * std::sin(2 * u) + 10 * std::sin(5 * u) : 40 + 18 * std::sin(x / 13.0) + 10 * std::sin(x / 5.3);
+            for (int y = 80 - static_cast<int>(h); y < 80; ++y) m.setPixel(x, y, {70, 50, 110, 255});
+        }
+        return m;
+    };
+    ParallaxSet set;
+    set.viewWidth = 160;
+    set.viewHeight = 80;
+    set.layers = {{"mountains", mountains(false), 0.5, 0, true}};
+    const auto issues = checkParallax(set);
+    REQUIRE(issues.size() == 1);
+    CHECK(issues[0].find("outline jumps") != std::string::npos);
+    CHECK(checkWrap(set.layers[0].image).horizontal);   // the column mean alone misses it
+    // The same shape with a period that divides the width wraps cleanly.
+    set.layers[0].image = mountains(true);
+    CHECK(checkParallax(set).empty());
+    // And Make Seamless fixes the first one.
+    set.layers[0].image = makeSeamlessX(mountains(false), 40).value();
+    CHECK(checkParallax(set).empty());
 }
