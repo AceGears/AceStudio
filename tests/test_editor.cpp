@@ -413,3 +413,22 @@ TEST_CASE("Fit canvas to content brings off-canvas pixels into view", "[editor][
     auto empty = Editor(Document::create(4, 4).value());
     CHECK_FALSE(empty.fitCanvasToContent());
 }
+
+TEST_CASE("transformLayer with an offset and an explicit area", "[editor][transform]") {
+    auto d = Document::create(8, 8).value();
+    const LayerId l = d.addLayer("L").value();
+    Image img(8, 8);
+    img.fillRect({1, 1, 2, 2}, Rgba8::opaque(255, 0, 0));
+    REQUIRE(d.setCel(l, 0, Cel{img, 0, 0}));
+    Editor ed(std::move(d));
+    // Lift the 2×2 block, scale it ×2 and move it 3 px right.
+    REQUIRE(ed.transformLayer(l, 0, false, nullptr, "Free Transform",
+                              [](const Image& i) { return freeTransform(i, 2.0, 2.0, 0.0, false); }, Point{3, 0},
+                              IntRect{1, 1, 2, 2}));
+    const Image out = ed.document().composite(0);
+    CHECK(out.pixel(1, 1).a == 0);                               // lifted
+    for (int y = 0; y < 4; ++y)
+        for (int x = 3; x < 7; ++x) CHECK(out.pixel(x, y) == Rgba8::opaque(255, 0, 0));   // centred on (2,2) then +3
+    REQUIRE(ed.undo());
+    CHECK(ed.document().composite(0) == img);
+}

@@ -232,3 +232,23 @@ TEST_CASE("RotSprite expand keeps the corners of a full square", "[transform]") 
     // Right angles on a non-square image swap the dimensions when expanding.
     CHECK(rotSprite(asym(), 90.0, 24, true) == rotate90(asym(), true));
 }
+
+TEST_CASE("Free transform: scale, flip and rotate without new colours", "[transform]") {
+    Image img(4, 2);
+    img.fillRect({0, 0, 2, 2}, R);
+    img.fillRect({2, 0, 2, 2}, G);
+    const Image twice = freeTransform(img, 2.0, 2.0, 0.0, false);
+    CHECK(twice.width() == 8);
+    CHECK(twice.height() == 4);
+    CHECK(twice.pixel(0, 0) == R);
+    CHECK(twice.pixel(7, 3) == G);
+    const Image flipped = freeTransform(img, -1.0, 1.0, 0.0, false);
+    CHECK(flipped == flipHorizontal(img));
+    CHECK(freeTransform(img, 1.0, 1.0, 90.0, false) == rotate90(img, true));
+    const Image r = freeTransform(img, 3.0, 3.0, 30.0, true);
+    CHECK(colorsOf(r) == colorsOf(img));
+    const Image n = rotateNearest(twice, 30.0);
+    CHECK(colorsOf(n) == colorsOf(img));
+    CHECK(n.width() > twice.width());
+    CHECK(freeTransform(img, 0.01, 0.01, 0.0, false).width() == 1);   // never empty
+}

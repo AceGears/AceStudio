@@ -824,14 +824,15 @@ Status Editor::rotateCanvas180() {
 // ------------------------------------------------------------------ layer transforms
 
 Status Editor::transformLayer(LayerId layer, int frame, bool allFrames, const Mask* selection,
-                              const std::string& label, const ImageFn& fn) {
+                              const std::string& label, const ImageFn& fn, Point offset, std::optional<IntRect> areaIn) {
     const Layer* l = m_doc.layer(layer);
     if (!l || l->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Select a raster layer to transform"};
     if (!m_doc.isLayerEditable(layer)) return Error{ErrorCode::PermissionDenied, "The layer is locked"};
     if (frame < 0 || frame >= m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
 
     const bool useSel = selection && !selection->isNull() && selection->count() > 0;
-    const IntRect area = useSel ? selection->bounds() : IntRect{0, 0, m_doc.width(), m_doc.height()};
+    const IntRect area = areaIn && !areaIn->empty() ? *areaIn
+                        : useSel ? selection->bounds() : IntRect{0, 0, m_doc.width(), m_doc.height()};
 
     struct Change { int frame; std::optional<Cel> before, after; };
     auto changes = std::make_shared<std::vector<Change>>();
@@ -850,7 +851,8 @@ Status Editor::transformLayer(LayerId layer, int frame, bool allFrames, const Ma
         const Image result = fn(block);
         // Work on the union of the cel and the pasted result, so pixels past the
         // canvas edge (kept from imports or earlier transforms) are never lost.
-        const int px = area.x + (area.w - result.width()) / 2, py = area.y + (area.h - result.height()) / 2;
+        const int px = area.x + (area.w - result.width()) / 2 + offset.x;
+        const int py = area.y + (area.h - result.height()) / 2 + offset.y;
         const int ux = std::min(c->x, px), uy = std::min(c->y, py);
         const int uw = std::max(c->x + c->image.width(), px + result.width()) - ux;
         const int uh = std::max(c->y + c->image.height(), py + result.height()) - uy;

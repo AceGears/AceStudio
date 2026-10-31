@@ -93,6 +93,8 @@ public:
     // The live working image (canvas-sized) and the state at session start.
     const Image& pixels() const;
     const Image& original() const noexcept { return m_original; }
+    // The exact cel before the session (may extend past the canvas); null if none.
+    const Cel* originalCel() const noexcept { return m_originalCel ? &*m_originalCel : nullptr; }
     IntRect touched() const noexcept { return m_touched; }
     // Area modified since the previous call (for incremental redraw).
     IntRect takeDirty() noexcept { const IntRect r = m_dirty; m_dirty = {}; return r; }

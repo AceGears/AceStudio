@@ -74,7 +74,11 @@ public:
     // True while a stroke or selection drag is in progress.
     bool isBusy() const { return m_session != nullptr || m_selecting; }
     // A curve, polygon or move is in progress (Enter/Escape finish it).
-    bool hasGesture() const { return m_curveStage >= 0 || !m_polygon.empty() || m_moving; }
+    bool hasGesture() const { return m_curveStage >= 0 || !m_polygon.empty() || m_moving || m_xf.active; }
+    // Free transform of the selection (or the layer's pixels): drag inside to
+    // move, handles to scale, the knob to rotate; Enter applies, Esc cancels.
+    void beginFreeTransform();
+    bool isTransforming() const { return m_xf.active; }
     // Moves the selected pixels (or the layer) by (dx, dy) in one step.
     void nudge(int dx, int dy);
 
@@ -110,6 +114,26 @@ private:
     void redrawCurve();
     void redrawPolygonPreview(std::optional<Point> cursor);
     void beginMove(Point at, bool copy);
+    enum class XGrab { None, Move, Rotate, N, S, E, W, NE, NW, SE, SW };
+    struct FreeXform {
+        bool active = false;
+        IntRect area;
+        Image block;          // lifted pixels, area-sized
+        Mask selection;       // selection when the transform began (null: whole area)
+        double sx = 1, sy = 1, deg = 0;
+        int dx = 0, dy = 0;
+        XGrab grab = XGrab::None;
+        QPointF grabStart;
+        double startSx = 1, startSy = 1, startDeg = 0;
+        int startDx = 0, startDy = 0;
+    } m_xf;
+    QPointF xfCentre() const;
+    QPointF xfMap(double ux, double uy) const;   // box-local (-1..1) -> image coordinates
+    XGrab xfHit(QPointF p) const;
+    void xfPress(QPointF p);
+    void xfDrag(QPointF p, Qt::KeyboardModifiers mods);
+    void xfRedraw();
+    void finishFreeTransform(bool commit);
     void updateMove(Point to);
     void finishMove(bool commit);
 

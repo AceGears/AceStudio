@@ -309,6 +309,8 @@ void MainWindow::buildMenus() {
     docAction(edit, tr("Select &All"), QKeySequence::SelectAll, [this] { currentView()->selectAll(); });
     docAction(edit, tr("&Deselect"), QKeySequence(Qt::CTRL | Qt::Key_D), [this] { currentView()->deselect(); });
     docAction(edit, tr("D&elete Selection / Clear Layer"), QKeySequence::Delete, [this] { currentView()->clearSelectionContents(); });
+    docAction(edit, tr("&Free Transform"), QKeySequence(Qt::CTRL | Qt::Key_T), [this] { currentView()->beginFreeTransform(); })
+        ->setToolTip(tr("Move, scale and rotate the selection (or the layer) with handles; Enter applies"));
     docAction(edit, tr("&Invert Selection"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_I), [this] {
         auto* v = currentView();
         Mask inv = v->hasSelection() ? *v->selection() : Mask(v->document().width(), v->document().height());

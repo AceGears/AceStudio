@@ -315,6 +315,192 @@ void DocumentView::finishGesture(bool commit) {
         return;
     }
     if (m_moving) finishMove(commit);
+    if (m_xf.active) finishFreeTransform(commit);
+}
+
+// ------------------------------------------------------------------ free transform
+
+void DocumentView::beginFreeTransform() {
+    if (m_xf.active) return;
+    finishGesture(true);
+    const Layer* l = document().layer(m_layer);
+    if (!l || l->kind != LayerKind::Raster || m_editMask) {
+        Q_EMIT statusMessage(tr("Free Transform works on a raster layer's pixels"));
+        return;
+    }
+    IntRect area;
+    if (hasSelection()) {
+        area = document().selection().bounds();
+    } else if (const Cel* c = document().cel(m_layer, m_frame)) {
+        const IntRect b = c->image.opaqueBounds();
+        if (!b.empty()) area = {c->x + b.x, c->y + b.y, b.w, b.h};
+    }
+    if (area.empty()) {
+        Q_EMIT statusMessage(tr("There are no pixels to transform on this layer and frame"));
+        return;
+    }
+    if (!beginSession(tr("Free Transform"), Qt::LeftButton, /*useSelection=*/false)) return;
+    FreeXform x;
+    x.active = true;
+    x.area = area;
+    x.selection = hasSelection() ? document().selection() : Mask();
+    x.block = Image(area.w, area.h);
+    if (const Cel* c = m_session->originalCel())
+        x.block.blit(c->image, c->x - area.x, c->y - area.y);
+    if (!x.selection.isNull())
+        for (int y = 0; y < area.h; ++y)
+            for (int xx = 0; xx < area.w; ++xx)
+                if (!x.selection.get(area.x + xx, area.y + y)) x.block.setPixel(xx, y, Rgba8::transparent());
+    m_xf = std::move(x);
+    xfRedraw();
+    Q_EMIT statusMessage(tr("Free Transform: drag inside to move, handles to scale (Shift keeps proportions), "
+                            "the top knob to rotate (Shift: 15° steps). Enter applies, Esc cancels."));
+}
+
+QPointF DocumentView::xfCentre() const {
+    return {m_xf.area.x + m_xf.area.w / 2.0 + m_xf.dx, m_xf.area.y + m_xf.area.h / 2.0 + m_xf.dy};
+}
+
+QPointF DocumentView::xfMap(double ux, double uy) const {
+    const double hw = m_xf.area.w * m_xf.sx / 2.0, hh = m_xf.area.h * m_xf.sy / 2.0;
+    const double rad = m_xf.deg * 3.14159265358979323846 / 180.0, c = std::cos(rad), sn = std::sin(rad);
+    const double lx = ux * hw, ly = uy * hh;
+    const QPointF ctr = xfCentre();
+    return {ctr.x() + c * lx - sn * ly, ctr.y() + sn * lx + c * ly};
+}
+
+DocumentView::XGrab DocumentView::xfHit(QPointF p) const {
+    const double tol = std::max(0.75, 6.0 / m_canvas->zoom());
+    auto near = [&](QPointF q) { return QLineF(p, q).length() <= tol; };
+    // Rotation knob: 20 screen px beyond the top edge, along the box's own up direction.
+    const QPointF top = xfMap(0, m_xf.sy >= 0 ? -1 : 1), ctr = xfCentre();
+    const QPointF up = top - ctr;
+    const double len = std::hypot(up.x(), up.y());
+    const QPointF knob = len > 1e-9 ? top + up / len * (20.0 / m_canvas->zoom()) : top;
+    if (near(knob)) return XGrab::Rotate;
+    const std::pair<XGrab, QPointF> handles[] = {
+        {XGrab::NW, xfMap(-1, -1)}, {XGrab::NE, xfMap(1, -1)}, {XGrab::SW, xfMap(-1, 1)}, {XGrab::SE, xfMap(1, 1)},
+        {XGrab::N, xfMap(0, -1)},   {XGrab::S, xfMap(0, 1)},   {XGrab::W, xfMap(-1, 0)},  {XGrab::E, xfMap(1, 0)}};
+    for (const auto& [g, q] : handles)
+        if (near(q)) return g;
+    // Inside the box (or anywhere else) moves it.
+    return XGrab::Move;
+}
+
+void DocumentView::xfPress(QPointF p) {
+    m_xf.grab = xfHit(p);
+    m_xf.grabStart = p;
+    m_xf.startSx = m_xf.sx;
+    m_xf.startSy = m_xf.sy;
+    m_xf.startDeg = m_xf.deg;
+    m_xf.startDx = m_xf.dx;
+    m_xf.startDy = m_xf.dy;
+}
+
+void DocumentView::xfDrag(QPointF p, Qt::KeyboardModifiers mods) {
+    using G = XGrab;
+    const G g = m_xf.grab;
+    if (g == G::None) return;
+    const QPointF ctr = xfCentre();
+    if (g == G::Move) {
+        m_xf.dx = m_xf.startDx + static_cast<int>(std::lround(p.x() - m_xf.grabStart.x()));
+        m_xf.dy = m_xf.startDy + static_cast<int>(std::lround(p.y() - m_xf.grabStart.y()));
+    } else if (g == G::Rotate) {
+        const double a0 = std::atan2(m_xf.grabStart.y() - ctr.y(), m_xf.grabStart.x() - ctr.x());
+        const double a1 = std::atan2(p.y() - ctr.y(), p.x() - ctr.x());
+        double deg = m_xf.startDeg + (a1 - a0) * 180.0 / 3.14159265358979323846;
+        if (mods & Qt::ShiftModifier) deg = std::round(deg / 15.0) * 15.0;
+        deg = std::fmod(deg, 360.0);
+        m_xf.deg = deg < 0 ? deg + 360.0 : deg;
+    } else {
+        // Scale about the centre: the handle follows the mouse in the box's axes.
+        const double rad = m_xf.deg * 3.14159265358979323846 / 180.0, c = std::cos(rad), sn = std::sin(rad);
+        const double vx = p.x() - ctr.x(), vy = p.y() - ctr.y();
+        const double lx = c * vx + sn * vy, ly = -sn * vx + c * vy;   // into box axes
+        const int ux = (g == G::E || g == G::NE || g == G::SE) ? 1 : (g == G::W || g == G::NW || g == G::SW) ? -1 : 0;
+        const int uy = (g == G::S || g == G::SE || g == G::SW) ? 1 : (g == G::N || g == G::NE || g == G::NW) ? -1 : 0;
+        double sx = m_xf.sx, sy = m_xf.sy;
+        if (ux) sx = ux * lx / (m_xf.area.w / 2.0);
+        if (uy) sy = uy * ly / (m_xf.area.h / 2.0);
+        auto snap = [&](double v, int size) {   // whole output pixels, never zero
+            double px = std::round(v * size);
+            if (std::abs(px) < 1) px = v < 0 ? -1 : 1;
+            return px / size;
+        };
+        if (ux && uy && (mods & Qt::ShiftModifier)) {
+            const double m = std::max(std::abs(sx), std::abs(sy));
+            sx = std::copysign(m, sx);
+            sy = std::copysign(m, sy);
+        }
+        m_xf.sx = snap(sx, m_xf.area.w);
+        m_xf.sy = snap(sy, m_xf.area.h);
+    }
+    xfRedraw();
+}
+
+void DocumentView::xfRedraw() {
+    if (!m_xf.active || !m_session) return;
+    PaintSession& s = *m_session;
+    s.revertAll();
+    const IntRect a = m_xf.area;
+    for (int y = a.y; y < a.y + a.h; ++y)
+        for (int x = a.x; x < a.x + a.w; ++x)
+            if (m_xf.selection.isNull() || m_xf.selection.get(x, y)) s.writeExact(x, y, Rgba8::transparent());
+    const Image r = freeTransform(m_xf.block, m_xf.sx, m_xf.sy, m_xf.deg, /*quality=*/false);
+    const int px = a.x + (a.w - r.width()) / 2 + m_xf.dx, py = a.y + (a.h - r.height()) / 2 + m_xf.dy;
+    for (int y = 0; y < r.height(); ++y)
+        for (int x = 0; x < r.width(); ++x)
+            if (r.pixel(x, y).a) s.writeExact(px + x, py + y, r.pixel(x, y));
+    refreshRegion(s.takeDirty());
+    // Box, handles and rotation knob (image coordinates; cosmetic pens).
+    QPainterPath guide;
+    const QPointF c[4] = {xfMap(-1, -1), xfMap(1, -1), xfMap(1, 1), xfMap(-1, 1)};
+    guide.moveTo(c[0]);
+    for (int i = 1; i < 4; ++i) guide.lineTo(c[i]);
+    guide.closeSubpath();
+    const double hs = std::max(0.4, 4.0 / m_canvas->zoom());
+    for (QPointF q : {c[0], c[1], c[2], c[3], xfMap(0, -1), xfMap(0, 1), xfMap(-1, 0), xfMap(1, 0)})
+        guide.addRect(QRectF(q.x() - hs, q.y() - hs, 2 * hs, 2 * hs));
+    const QPointF top = xfMap(0, m_xf.sy >= 0 ? -1 : 1), ctr = xfCentre(), up = top - ctr;
+    const double len = std::hypot(up.x(), up.y());
+    if (len > 1e-9) {
+        const QPointF knob = top + up / len * (20.0 / m_canvas->zoom());
+        guide.moveTo(top);
+        guide.lineTo(knob);
+        guide.addEllipse(knob, hs * 1.2, hs * 1.2);
+    }
+    m_canvas->setOverlay(guide);
+    Q_EMIT statusMessage(tr("Free Transform: %1 × %2 px, %3°, offset %4, %5")
+                             .arg(r.width()).arg(r.height()).arg(m_xf.deg, 0, 'f', 1).arg(m_xf.dx).arg(m_xf.dy));
+}
+
+void DocumentView::finishFreeTransform(bool commit) {
+    if (!m_xf.active) return;
+    FreeXform x = std::move(m_xf);
+    m_xf = FreeXform{};
+    m_canvas->setOverlay({});
+    if (m_session) { m_session->cancel(); m_session.reset(); }   // drop the preview; the real edit follows
+    const bool changed = x.sx != 1 || x.sy != 1 || std::abs(x.deg) > 1e-9 || x.dx != 0 || x.dy != 0;
+    if (!commit || !changed) { refreshCanvas(); return; }
+    const std::size_t mark = m_editor.history().mark();
+    const double sx = x.sx, sy = x.sy, deg = x.deg;
+    const Status st = m_editor.transformLayer(m_layer, m_frame, false, x.selection.isNull() ? nullptr : &x.selection,
+                                              "Free Transform",
+                                              [sx, sy, deg](const Image& i) { return freeTransform(i, sx, sy, deg, true); },
+                                              Point{x.dx, x.dy}, x.area);
+    if (!st) { Q_EMIT statusMessage(qs(st.error().message)); return; }
+    if (!x.selection.isNull()) {
+        // The selection becomes the transformed pixels' footprint.
+        const Image r = freeTransform(x.block, sx, sy, deg, true);
+        const int px = x.area.x + (x.area.w - r.width()) / 2 + x.dx, py = x.area.y + (x.area.h - r.height()) / 2 + x.dy;
+        Mask sel(document().width(), document().height());
+        for (int y = 0; y < r.height(); ++y)
+            for (int xx = 0; xx < r.width(); ++xx)
+                if (r.pixel(xx, y).a) sel.set(px + xx, py + y, true);
+        (void)m_editor.setSelection(std::move(sel), "Transform Selection");
+        (void)m_editor.history().squash(mark, "Free Transform");
+        Q_EMIT documentChanged();
+    }
 }
 
 void DocumentView::redrawCurve() {
@@ -443,6 +629,10 @@ void DocumentView::nudge(int dx, int dy) {
 
 void DocumentView::onToolPressed(QPoint px, Qt::MouseButton button, Qt::KeyboardModifiers mods) {
     if (!m_tools) return;
+    if (m_xf.active) {
+        if (button == Qt::LeftButton) xfPress(QPointF(px.x() + 0.5, px.y() + 0.5));
+        return;
+    }
     Tool tool = m_tools->tool();
     // Multi-click tools keep their session between clicks.
     if (m_curveStage >= 1 && tool == Tool::Curve) {
@@ -576,7 +766,11 @@ void DocumentView::applyToolTo(PaintSession& s, Point from, Point to, bool first
     refreshRegion(s.takeDirty());
 }
 
-void DocumentView::onToolMoved(QPoint px, Qt::MouseButtons, Qt::KeyboardModifiers mods) {
+void DocumentView::onToolMoved(QPoint px, Qt::MouseButtons buttons, Qt::KeyboardModifiers mods) {
+    if (m_xf.active) {
+        if (buttons & Qt::LeftButton) xfDrag(QPointF(px.x() + 0.5, px.y() + 0.5), mods);
+        return;
+    }
     Point p = toPoint(px);
     if (m_selecting) {
         QPainterPath preview;
@@ -635,6 +829,7 @@ void DocumentView::onToolMoved(QPoint px, Qt::MouseButtons, Qt::KeyboardModifier
 }
 
 void DocumentView::onToolReleased(QPoint px, Qt::MouseButton, Qt::KeyboardModifiers) {
+    if (m_xf.active) { m_xf.grab = XGrab::None; return; }
     if (m_selecting) {
         m_selecting = false;
         m_canvas->setSelectionPreview({});

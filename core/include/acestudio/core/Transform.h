@@ -30,6 +30,15 @@ Image scale2xSimilar(const Image& src, int threshold);
 // (centred on the same point) instead of keeping the source size.
 Image rotSprite(const Image& src, double degrees, int similarity = 24, bool expand = false);
 
+// Fast nearest-neighbour rotation (no Scale2x pass), for interactive
+// previews; same geometry as rotSprite.
+Image rotateNearest(const Image& src, double degrees, bool expand = true);
+
+// Free transform of a lifted block: nearest-neighbour scale by (sx, sy) —
+// negative factors flip — then rotation by `degrees` clockwise, expanded to
+// fit. `quality` uses RotSprite for the rotation, otherwise rotateNearest.
+Image freeTransform(const Image& src, double sx, double sy, double degrees, bool quality);
+
 enum class OutlineMode { Outside, Inside };
 // Draws a 1px outline in `color` around opaque pixels (alpha > 0).
 // Outside: transparent pixels touching the shape become `color`.

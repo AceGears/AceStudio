@@ -11,6 +11,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace acestudio {
@@ -113,8 +114,11 @@ public:
     // re-centred on the selection's bounding box. allFrames applies it to
     // every frame in one undo step.
     using ImageFn = std::function<Image(const Image&)>;
+    // `offset` moves the pasted result; `area` replaces the lifted rectangle
+    // (default: the selection bounds, or the canvas).
     Status transformLayer(LayerId layer, int frame, bool allFrames, const Mask* selection,
-                          const std::string& label, const ImageFn& fn);
+                          const std::string& label, const ImageFn& fn, Point offset = {0, 0},
+                          std::optional<IntRect> area = std::nullopt);
 
     // ---- Palette ----
     Status setPaletteColor(std::size_t index, Rgba8 color);

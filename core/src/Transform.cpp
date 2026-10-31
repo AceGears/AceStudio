@@ -81,6 +81,41 @@ Image scale2xSimilar(const Image& src, int threshold) {
     return out;
 }
 
+namespace {
+// Inverse-maps every destination pixel centre into `big` (the source scaled
+// by `factor`) and samples the nearest pixel. Output size: the source size,
+// or the rotated bounding box when expanding.
+Image rotateSampled(int sw, int sh, const Image& big, int factor, double norm, bool expand) {
+    const double rad = norm * 3.14159265358979323846 / 180.0;
+    const double c = std::cos(rad), s = std::sin(rad);
+    const double cx = sw / 2.0, cy = sh / 2.0;
+    int ow = sw, oh = sh;
+    if (expand) {
+        const double ac = std::abs(c), as = std::abs(s);
+        ow = static_cast<int>(std::ceil(sw * ac + sh * as - 1e-9));
+        oh = static_cast<int>(std::ceil(sw * as + sh * ac - 1e-9));
+        // Same parity as the source, so the centre stays on the same pixel grid.
+        ow += (ow - sw) & 1;
+        oh += (oh - sh) & 1;
+        ow = std::clamp(std::max(ow, sw), 1, Image::kMaxDimension);
+        oh = std::clamp(std::max(oh, sh), 1, Image::kMaxDimension);
+    }
+    const double ocx = ow / 2.0, ocy = oh / 2.0;
+    Image out(ow, oh);
+    for (int y = 0; y < oh; ++y)
+        for (int x = 0; x < ow; ++x) {
+            const double dx = x + 0.5 - ocx, dy = y + 0.5 - ocy;
+            const double sxp = c * dx + s * dy + cx;
+            const double syp = -s * dx + c * dy + cy;
+            const int bx = static_cast<int>(std::floor(sxp * factor));
+            const int by = static_cast<int>(std::floor(syp * factor));
+            if (bx < 0 || by < 0 || bx >= big.width() || by >= big.height()) continue;
+            out.setPixel(x, y, big.pixel(bx, by));
+        }
+    return out;
+}
+} // namespace
+
 Image rotSprite(const Image& src, double degrees, int similarity, bool expand) {
     if (src.isNull()) return src;
     double norm = std::fmod(degrees, 360.0);
@@ -92,33 +127,28 @@ Image rotSprite(const Image& src, double degrees, int similarity, bool expand) {
         return rotate90(src, std::abs(norm - 90.0) < 1e-9);
 
     const Image big = scale2xSimilar(scale2xSimilar(scale2xSimilar(src, similarity), similarity), similarity);
-    const double rad = norm * 3.14159265358979323846 / 180.0;
-    const double c = std::cos(rad), s = std::sin(rad);
-    const double cx = src.width() / 2.0, cy = src.height() / 2.0;
-    int ow = src.width(), oh = src.height();
-    if (expand) {
-        const double ac = std::abs(c), as = std::abs(s);
-        ow = static_cast<int>(std::ceil(src.width() * ac + src.height() * as - 1e-9));
-        oh = static_cast<int>(std::ceil(src.width() * as + src.height() * ac - 1e-9));
-        // Same parity as the source, so the centre stays on the same pixel grid.
-        ow += (ow - src.width()) & 1;
-        oh += (oh - src.height()) & 1;
-        ow = std::clamp(std::max(ow, src.width()), 1, Image::kMaxDimension);
-        oh = std::clamp(std::max(oh, src.height()), 1, Image::kMaxDimension);
-    }
-    const double ocx = ow / 2.0, ocy = oh / 2.0;
-    Image out(ow, oh);
-    for (int y = 0; y < oh; ++y)
-        for (int x = 0; x < ow; ++x) {
-            // Inverse-rotate the destination pixel centre into source space.
-            const double dx = x + 0.5 - ocx, dy = y + 0.5 - ocy;
-            const double sx = c * dx + s * dy + cx;
-            const double sy = -s * dx + c * dy + cy;
-            const int bx = static_cast<int>(std::floor(sx * 8.0));
-            const int by = static_cast<int>(std::floor(sy * 8.0));
-            if (bx < 0 || by < 0 || bx >= big.width() || by >= big.height()) continue;
-            out.setPixel(x, y, big.pixel(bx, by));
-        }
+    return rotateSampled(src.width(), src.height(), big, 8, norm, expand);
+}
+
+Image rotateNearest(const Image& src, double degrees, bool expand) {
+    if (src.isNull()) return src;
+    double norm = std::fmod(degrees, 360.0);
+    if (norm < 0) norm += 360.0;
+    if (std::abs(norm) < 1e-9) return src;
+    if (std::abs(norm - 180.0) < 1e-9) return rotate180(src);
+    if ((std::abs(norm - 90.0) < 1e-9 || std::abs(norm - 270.0) < 1e-9) && (expand || src.width() == src.height()))
+        return rotate90(src, std::abs(norm - 90.0) < 1e-9);
+    return rotateSampled(src.width(), src.height(), src, 1, norm, expand);
+}
+
+Image freeTransform(const Image& src, double sx, double sy, double degrees, bool quality) {
+    if (src.isNull()) return src;
+    const int w = std::clamp(static_cast<int>(std::lround(std::abs(sx) * src.width())), 1, Image::kMaxDimension);
+    const int h = std::clamp(static_cast<int>(std::lround(std::abs(sy) * src.height())), 1, Image::kMaxDimension);
+    Image out = (w == src.width() && h == src.height()) ? src : scaleNearest(src, w, h).value();
+    if (sx < 0) out = flipHorizontal(out);
+    if (sy < 0) out = flipVertical(out);
+    if (std::abs(std::fmod(degrees, 360.0)) > 1e-9) out = quality ? rotSprite(out, degrees, 24, true) : rotateNearest(out, degrees, true);
     return out;
 }
 
