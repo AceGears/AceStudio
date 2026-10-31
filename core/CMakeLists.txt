@@ -7,6 +7,7 @@ add_library(acestudio_core STATIC
     src/Animation.cpp
     src/AnimationQA.cpp
     src/BlendMode.cpp
+    src/Character.cpp
     src/Color.cpp
     src/Document.cpp
     src/Editor.cpp
