@@ -184,7 +184,17 @@ def main():
     os.dup2(2, 1)
     sys.stdout = sys.stderr
     out = os.fdopen(proto_fd, "w", encoding="utf-8", newline="\n")
-    stdin = open(sys.stdin.fileno(), "r", encoding="utf-8", newline="\n", closefd=False)
+    # Same for stdin: read the protocol from a private descriptor and point
+    # fd 0 at the null device. On Windows the main thread blocks in a
+    # synchronous read on that pipe, and any other query of the same handle
+    # (isatty/fstat by a library imported on another thread, or a child
+    # process inheriting it) waits until the read completes, i.e. hangs.
+    proto_in = os.dup(0)
+    null_fd = os.open(os.devnull, os.O_RDONLY)
+    os.dup2(null_fd, 0)
+    os.close(null_fd)
+    sys.stdin = open(os.devnull, "r")
+    stdin = os.fdopen(proto_in, "r", encoding="utf-8", newline="\n")
 
     server = Server(out)
     server.log("info", "AceStudio worker %s (Python %s) ready" % (__version__, platform.python_version()))

@@ -1,5 +1,7 @@
 #include "AiPanel.h"
 
+#include <array>
+
 #include "AiDialogs.h"
 #include "AiService.h"
 #include "AppContext.h"
@@ -78,6 +80,17 @@ AiPanel::AiPanel(AiService& ai, AppContext& ctx, QWidget* parent) : QWidget(pare
     m_tabs->addTab(scrolled(buildRemoveTab()), tr("Remove BG"));
     m_tabs->addTab(scrolled(buildUpscaleTab()), tr("Upscale"));
     m_tabs->setMinimumHeight(80);   // pages scroll; keep the dock short enough for small screens
+    // The run buttons sit under the pages, outside the scroll areas, so they
+    // stay visible on short screens; only the current tab's button shows.
+    auto* runRow = new QHBoxLayout;
+    runRow->addStretch();
+    const std::array<QPushButton*, 3> runButtons{m_genButton, m_bgButton, m_upButton};
+    for (QPushButton* b : runButtons) { b->setParent(this); runRow->addWidget(b); }
+    auto showRun = [runButtons](int index) {
+        for (int i = 0; i < 3; ++i) runButtons[static_cast<std::size_t>(i)]->setVisible(i == index);
+    };
+    connect(m_tabs, &QTabWidget::currentChanged, this, showRun);
+    showRun(m_tabs->currentIndex());
 
     m_queue = new QTreeWidget(this);
     m_queue->setColumnCount(2);
@@ -120,6 +133,7 @@ AiPanel::AiPanel(AiService& ai, AppContext& ctx, QWidget* parent) : QWidget(pare
     layout->addWidget(m_status);
     layout->addLayout(top);
     layout->addWidget(m_tabs, 3);
+    layout->addLayout(runRow);
     layout->addLayout(queueHeader);
     layout->addWidget(m_queue, 1);
 
@@ -199,7 +213,6 @@ QWidget* AiPanel::buildGenerateTab() {
     f->addRow(tr("Images:"), m_count);
     f->addRow(QString(), m_img2img);
     f->addRow(tr("Strength:"), m_strength);
-    f->addRow(QString(), m_genButton);
     return w;
 }
 
@@ -218,7 +231,6 @@ QWidget* AiPanel::buildRemoveTab() {
     f->addRow(tr("Model:"), m_bgModel);
     f->addRow(QString(), m_bgHard);
     f->addRow(QString(), m_bgMerged);
-    f->addRow(QString(), m_bgButton);
     f->addRow(note);
     return w;
 }
@@ -233,7 +245,6 @@ QWidget* AiPanel::buildUpscaleTab() {
     note->setWordWrap(true);
     auto* f = new QFormLayout(w);
     f->addRow(tr("Model:"), m_upModel);
-    f->addRow(QString(), m_upButton);
     f->addRow(note);
     return w;
 }

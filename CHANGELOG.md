@@ -22,6 +22,17 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   official Real-ESRGAN weights, test suite.
 
 ### Fixed
+- Windows: the AI worker's device check ("checking GPU…") could hang indefinitely. Any query
+  of the protocol stdin handle from another thread (library imports on the probe thread)
+  waits behind the main thread's blocking read. The worker now reads the protocol from a
+  private descriptor and points fd 0 at the null device.
+- The CUDA runtime profile silently installed the CPU-only PyTorch from PyPI (no torch
+  2.15.0 build exists on the cu128 index). Pinned to `torch==2.14.1+cu126` (the local label
+  forces the CUDA build or a clear failure), and the install now checks that the imported
+  torch reports a CUDA version.
+- Log panel follows new lines even when it was hidden behind another tab when they arrived.
+- AI Studio: the Generate / Remove Background / Upscale buttons sit below the tab pages instead
+  of inside their scroll areas, so they stay visible on short screens.
 - Windows: AI runtime installs hung with no output. pip inherited the worker's protocol stdin,
   which the worker's main thread is blocked reading, and stalled at startup. pip now gets an
   empty stdin.

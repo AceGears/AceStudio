@@ -18,6 +18,7 @@ Q_SIGNALS:
 
 private:
     QPlainTextEdit* m_text = nullptr;
+    bool m_follow = true;   // keep the newest line in view unless the user scrolled up
 };
 
 } // namespace acestudio::ui

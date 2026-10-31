@@ -1,6 +1,10 @@
-# PyTorch with CUDA 12.8 from the official PyTorch index (NVIDIA GPUs).
-# UNVERIFIED: download.pytorch.org is not reachable from the build environment, so this
-# pin has not been checked against the cu128 index. pip reports clearly if it is missing.
---index-url https://download.pytorch.org/whl/cu128
+# PyTorch with CUDA 12.6 from the official PyTorch index (NVIDIA GPUs; needs an NVIDIA
+# driver new enough for CUDA 12.6). Checked 2026-10-31 on pytorch.org/get-started/
+# previous-versions: torch 2.14.1 ships cu126, cu130 and cu132 builds; cu128 is no longer
+# published for current releases, and the page lists no 2.15 yet.
+# The +cu126 local label makes pip install the CUDA build or fail. Without it, the PyPI
+# index (needed for torch's own dependencies) offered the CPU-only Windows build instead,
+# which pip took silently (seen on a user's PC: a 126.7 MB wheel instead of ~2.5 GB).
+--index-url https://download.pytorch.org/whl/cu126
 --extra-index-url https://pypi.org/simple
-torch==2.15.0
+torch==2.14.1+cu126

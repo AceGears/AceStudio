@@ -1,6 +1,6 @@
 # PyTorch CPU-only build (slow; for machines without a supported GPU).
-# UNVERIFIED: download.pytorch.org is not reachable from the build environment, so this
-# pin has not been checked against the cu128 index. pip reports clearly if it is missing.
+# Checked 2026-10-31: torch 2.14.1 is the newest release listed on
+# pytorch.org/get-started/previous-versions. The +cpu label pins the CPU build.
 --index-url https://download.pytorch.org/whl/cpu
 --extra-index-url https://pypi.org/simple
-torch==2.15.0
+torch==2.14.1+cpu

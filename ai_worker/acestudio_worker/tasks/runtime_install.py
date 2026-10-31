@@ -104,5 +104,29 @@ def run(ctx):
             raise JobError("Requirements file missing: " + path, kind="missing_dependency")
         ctx.progress(i / len(files), "Installing %s" % name, force=True)
         _pip(ctx, ["-r", path], name)
+    info = {"profile": profile, "restartRequired": True}
+    if profile == "diffusion-cuda":
+        info["torchCuda"] = _check_torch_cuda(ctx)
     ctx.progress(1.0, "Installed %s" % profile, force=True)
-    return {"outputs": {}, "info": {"profile": profile, "restartRequired": True}}
+    return {"outputs": {}, "info": info}
+
+
+def _check_torch_cuda(ctx):
+    """The CUDA profile must leave a CUDA build of torch behind (a CPU build
+    from PyPI once replaced it silently). Runs in a fresh interpreter: torch
+    was just installed, and importing it can take a while on first use."""
+    ctx.progress(None, "Checking the PyTorch CUDA build", force=True)
+    code = "import torch; print(torch.__version__); print(torch.version.cuda or '')"
+    try:
+        out = subprocess.run([sys.executable, "-c", code], stdin=subprocess.DEVNULL, capture_output=True,
+                             text=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        raise JobError("Importing PyTorch took more than 10 minutes", kind="missing_dependency")
+    lines = out.stdout.split()
+    if out.returncode != 0 or not lines:
+        raise JobError("PyTorch was installed but does not import:\n" + out.stderr[-1500:], kind="missing_dependency")
+    version, cuda = lines[0], (lines[1] if len(lines) > 1 else "")
+    ctx.log("Installed PyTorch %s (CUDA %s)" % (version, cuda or "none"))
+    if not cuda:
+        raise JobError("pip installed a CPU-only PyTorch (%s) for the CUDA profile" % version, kind="missing_dependency")
+    return cuda
