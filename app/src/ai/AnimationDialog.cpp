@@ -209,7 +209,9 @@ AnimationDialog::AnimationDialog(AppContext& ctx, AiService& ai, DocumentView* v
     });
     connect(m_regen, &QPushButton::clicked, this, [this] {
         std::vector<int> todo;
-        if (m_report) todo = m_report->toRegenerate();
+        // After Auto-Correct, frames that still fail could not be corrected
+        // (e.g. no room on the canvas to lift a jump frame): retry those too.
+        if (m_report) todo = m_corrected ? m_report->failing() : m_report->toRegenerate();
         for (std::size_t i = 0; i < m_results.size(); ++i)
             if (!m_results[i] && std::find(todo.begin(), todo.end(), static_cast<int>(i)) == todo.end()) todo.push_back(static_cast<int>(i));
         if (!todo.empty()) generate(todo, false);
@@ -318,7 +320,8 @@ void AnimationDialog::updateButtons() {
     bool any = false, all = !m_results.empty();
     for (const auto& r : m_results) { any = any || r.has_value(); all = all && r.has_value(); }
     m_generate->setEnabled(!busy && m_profile.has_value());
-    m_regen->setEnabled(!busy && any && (!all || (m_report && !m_report->toRegenerate().empty())));
+    const bool retryable = m_report && !(m_corrected ? m_report->failing() : m_report->toRegenerate()).empty();
+    m_regen->setEnabled(!busy && any && (!all || retryable));
     m_correct->setEnabled(!busy && all && m_report && !m_report->failing().empty());
     m_commit->setEnabled(!busy && all);
     m_cancel->setEnabled(busy);
@@ -523,7 +526,9 @@ void AnimationDialog::evaluate() {
         text += tr(" %n frame(s) need attention", nullptr, static_cast<int>(failing.size()));
         if (!regen.empty()) text += tr(", %n of them need regenerating", nullptr, static_cast<int>(regen.size()));
         text += QStringLiteral(". ");
-        text += m_corrected ? tr("Hover a frame for details.") : tr("Auto-Correct fixes ground line, height and palette.");
+        text += m_corrected ? tr("Auto-Correct could not fix these without cutting off part of the figure; "
+                                 "Regenerate Flagged retries them, or hover a frame for details.")
+                            : tr("Auto-Correct fixes ground line, height, facing and palette.");
     }
     m_status->setText(text);
 }
