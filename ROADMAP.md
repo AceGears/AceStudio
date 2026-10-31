@@ -131,7 +131,8 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | Parallax backgrounds | ✅ layers with scroll factor, position and repeat; animated preview; checks for seams (also outline steps in silhouettes), gaps and off-view layers; Make Seamless (dithered); Clear Sky; SDXL layers with horizontal wrap (43 s each on the PC); PNG + JSON export |
 | UI kit generator with 9-slice metadata | ✅ 19 themed elements with exact 9-slice borders (unit-tested to be uniform), colours from the document palette, stretch test, atlas + JSON export |
 | Smart slicer | ✅ connected sprites with merge distance and noise filter, or a detected / manual grid; JSON, PNG files, or a new animation document |
-| Deterministic atlas packer | ✅ MaxRects, byte-identical output across runs, trim, duplicates, extrusion, padding, border, power of two, several pages, TexturePacker-compatible JSON; squarer pages preferred within 25% of the minimum area |
+| Deterministic atlas packer | ✅ MaxRects, byte-identical output across runs, trim, duplicates, extrusion, padding, border, power of two, several pages, optional 90° rotation, TexturePacker-compatible JSON; squarer pages preferred within 25% of the minimum area |
+| Review pass (2026-10-31) | ✅ Several terrains as levels (base + up to 3: dirt, grass, rock, snow from SDXL on the PC, 0 seams in 1536 pairs); textures up to 4×4 tiles with phase variants; per-pixel seam check without false seams on noisy textures; slicer on busy backgrounds (picked colour, or BiRefNet: 4 of 4 knights found in 11 s on the PC); Clear Sky follows gradients, BiRefNet cut-out (9.6 s) and undo; atlas rotation. See TESTING.md |
 
 ## Phase 7 — Developer Integrations · ⬜
 CLI generation/export commands; Lua 5.4 API (sandboxed); MCP server (spec 2026-07-28 with

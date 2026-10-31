@@ -90,7 +90,7 @@ QString wrapText(const Image& tex) {
     return t;
 }
 
-const char* const kDefaultPrompts[] = {"brown dirt ground", "lush green grass", "grey mountain rock", "white snow"};
+const char* const kDefaultPrompts[] = {"brown dirt ground", "dense short green grass lawn, solid green", "grey mountain rock", "white snow"};
 
 } // namespace
 
@@ -247,7 +247,7 @@ TilesetDialog::TilesetDialog(AiService& ai, DocumentView* view, OpenImageFn open
 
     // Base and one terrain to start with: dirt under grass.
     addSource(tr("brown dirt ground"));
-    addSource(tr("lush green grass"));
+    addSource(tr("dense short green grass lawn, solid green"));
     retitleSources();
     noDefaultButtons(this);
     resize(1180, 760);

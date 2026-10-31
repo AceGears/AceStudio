@@ -23,9 +23,32 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - **Worker:** `tileable` parameter (`none`/`x`/`xy`) for SDXL generation using circular padding
   in the UNet and VAE.
 
+### Added — Phase 6 review pass
+- **Terrain levels:** a base and up to three terrains (e.g. dirt, grass, rock, snow) drawn as
+  layers; upper levels are sets with a transparent base. The sandbox paints levels; export writes
+  one set per level and a `_terrain.json` describing the draw order.
+- **Texture size up to 4×4 tiles:** each tile gets one variant per position in the texture
+  (cell `x mod n, y mod n`), so large textures keep their detail without seams.
+- **Atlas rotation** (optional): sprites turned 90° clockwise where that packs tighter, with
+  `"rotated": true` in the JSON.
+- **Slicer:** click the picture to pick the background colour; **Remove Background (AI)** for
+  sprites on busy backgrounds; a frame around the sheet no longer swallows every sprite.
+- **Parallax:** Clear Sky modes (flat colour, follow gradient, every matching pixel), BiRefNet
+  background removal, and Undo for layer edits.
+
+### Changed
+- The seam check judges each edge pixel by pixel: most of the edge must jump more than the image
+  changes beside it, or form a line along it. Outline corners, ragged edges and noisy textures
+  no longer count as seams (the earlier check flagged 1 of 1536 pairs on a real SDXL set).
+- Previews scale large images down instead of cutting them off.
+- Return in a spin or combo box no longer presses a dialog button.
+
 ### Verified
 - Real SDXL on the RTX 4070 Laptop: seamless grass and dirt textures (72 s cold, 41 s warm),
   a 47-tile set with 0 seams, and two parallax layers (43 s and 42 s).
+- Review pass: four 2×2-tile textures (dirt, grass, rock, snow, about 40 s each) as a
+  three-level Wang set, 0 seams in 1536 pairs; BiRefNet cut a generated castle layer out in
+  9.6 s and found all 4 knights on a noisy gradient sheet in 11.4 s.
 
 ## [0.6.0] — 2026-10-31 — Phase 5: advanced AI generation (unreleased)
 

@@ -41,6 +41,29 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 
 ## Recorded results
 
+### 2026-10-31 — Phase 6 review pass, version 0.7.0
+
+| Environment | Build | Result |
+|---|---|---|
+| Linux, GCC 13.3, Qt 6.4.2 | everything, Release, and the app with `-Werror` | ✅ 215/215 CTest: levels, phases, rotation, Clear Sky modes, picked background, sheet frames, noisy-texture seam false positives (72 sets), template grid lines |
+| GitHub Actions, Windows, MSVC `/W4 /WX`, Qt 6.12.0 | everything + package | ✅ |
+
+Xvfb: three-level set from files with 2×2 phases (8288 pairs, no seams), export (`_base`,
+`_level1..2`, `_terrain.json`, `phases`/`phaseOffset` in each JSON), level painting and
+Random in the sandbox, slicer colour picking on a framed magenta sheet.
+
+Real models on the Windows 11 test PC (RTX 4070 Laptop, 8 GB):
+
+| Check | Result |
+|---|---|
+| Tileset Generator, Wang, 2×2-tile textures: dirt base, grass, rock, snow (4 queued SDXL jobs) | ✅ about 40 s each; all "tiles seamlessly"; three levels render as layers. The first build's check flagged 1 of 1536 pairs, an outline corner and not a seam → the per-pixel check reports 0 on the exported PNGs. Grass still came out as bushes on pale stone with the reworded prompt; the negative prompt now also excludes paving |
+| Return in the Layout box | ❌ pressed Add Terrain Level → fixed (no default buttons) |
+| Parallax: "orange sunset sky with clouds" + "dark stone castle on a hill" | ✅ 43 s and 42 s. ❌ The first layer was named after the second prompt → fixed. ❌ Follow gradient at tolerance 24 cleared most of the castle and there was no undo → fixed: tolerance 6 for gradients, Undo |
+| Parallax › Remove Background (AI) on a castle layer | ✅ BiRefNet on CUDA in 9.6 s, sky behind shows through. The cut-out no longer wraps, and the check says so (38%) |
+| Return in the tile size box (fixed build) | ✅ no level added |
+| Grass prompt: "lush green grass" (with the paving negative) vs "dense short green grass lawn, solid green" | bushes on pale stone again vs ✅ a plain grass texture → the second is now the default |
+| Slicer on 4 knights over a noisy gradient (test sheet in the samples folder) | ✅ before: 1 sprite (no uniform background). Remove Background (AI): 11.4 s, 4 sprites, opened as a 54×78 4-frame animation. One knight lost part of a leg to the cut-out |
+
 ### 2026-10-31 — Phase 6, version 0.7.0
 
 | Environment | Build | Result |

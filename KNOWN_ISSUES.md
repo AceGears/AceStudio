@@ -124,8 +124,12 @@ not been run.
   variants (most autotile rule systems) use phase variant 0 or need the documented
   `x mod phases, y mod phases` rule.
 - AI background removal (slicer, parallax) uses BiRefNet, which picks out the main objects in
-  an image; on a sheet of many small sprites it may miss some. Picking the background colour
-  by clicking is the exact method when the background is one colour.
+  an image. On the test sheet it found all four knights but cut away part of one leg, and a
+  cut-out parallax layer no longer wraps (Make Seamless fixes that). Picking the background
+  colour by clicking is exact when the background is one colour.
+- Texture results depend on the prompt: SDXL with Pixel Art XL drew "lush green grass" as bushes
+  on pale stone in three PC runs, while "dense short green grass lawn, solid green" gave a plain
+  grass texture, so that is now the default.
 - The atlas packer rotates only by 90° clockwise (TexturePacker's convention), never flips.
 
 ## Planned in later phases
