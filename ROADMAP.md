@@ -5,7 +5,7 @@ integration or recorded manual check on Windows). Status is updated as work land
 
 Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 blocked
 
-## Phase 1 — Architecture & Foundation · 🟡 (done except real-Windows verification)
+## Phase 1 — Architecture & Foundation · ✅
 
 | Criterion | Status |
 |---|---|
@@ -17,13 +17,14 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | Versioned `.acestudio` format, atomic save with backup, corruption detection | ✅ |
 | Qt desktop shell: docks, menus, themes, welcome page, recent files, layout persistence | ✅ (Linux/Xvfb) |
 | `acestudio-cli` (version/new/info/validate/render) with JSON output and exit codes | ✅ |
-| CI: Linux core job and Windows MSVC + Qt job, green on GitHub Actions | ✅ (Windows built against Qt 6.8.3; see KNOWN_ISSUES) |
+| CI: Linux core job and Windows MSVC + Qt job, green on GitHub Actions | ✅ Windows built against Qt 6.12.0 (since 2026-10-31) |
+| Windows package runs without the VC++ redistributable | ✅ CRT DLLs shipped app-local; CI fails if any shipped binary imports a runtime DLL that is not packaged (a clean-PC launch is not yet tried) |
 | Core/CLI/tests build for Windows and pass (MinGW cross-compile, run under Wine) | ✅ |
 | App builds with MSVC on Windows, tests pass, packaged with windeployqt | ✅ CI |
 | App launched and used interactively on a Windows desktop | ✅ Windows 11 PC, 2026-10-30/31: open, draw, undo, import, layers, AI setup, downloads, generation, background removal and upscaling driven through the UI (TESTING.md) |
-| High-DPI check at 150%/200% scaling on Windows | ⬜ |
+| High-DPI check at 150%/200% scaling | ✅ 150% and 200% via `QT_SCALE_FACTOR` (Xvfb): icons crisp, no clipped or overlapping controls; the Windows PC runs it at its own scaling (TESTING.md) |
 
-## Phase 2 — Core Editor · 🟡 (2a and 2b done; 2c remaining)
+## Phase 2 — Core Editor · ✅
 
 ### 2a — delivered in 0.2.0
 | Criterion | Status |
@@ -54,26 +55,37 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | Colour-mode conversion RGBA / indexed (nearest or ordered dither) / grayscale | ✅ |
 | Customisable keyboard shortcuts with conflict detection, persisted in settings | ✅ driven in the app |
 
-### 2c — remaining
-Curve and polygon tools; clone tool; custom brushes (create/import/export); shading mode;
-tiled drawing and seamless preview; layer masks, clipping masks and adjustment layers; Adobe
-.ase palettes; moving/transforming a floating selection interactively; GPU compositing for
-large HD canvases.
+### 2c — delivered in 0.5.1
+| Criterion | Status |
+|---|---|
+| Curve (cubic Bézier) and polygon tools with live preview | ✅ unit-tested; driven in the app |
+| Clone stamp (aligned source, Alt-click) | ✅ unit-tested; driven in the app |
+| Custom brushes: create from selection, import/export PNG, optional tip colours | ✅ unit-tested; created from a selection in the app |
+| Inks: simple, blend (src-over), shading along the palette ramp (once per pixel per stroke) | ✅ unit-tested |
+| Tiled drawing (wrap H/V/both) and seamless 3×3 preview | ✅ unit-tested; preview checked in the app |
+| Layer masks (add/from selection/edit/disable/apply/delete), clipping masks, adjustment layers (5 types) with live preview; merge bakes them | ✅ compositor and undo unit-tested; every action driven in the app under AddressSanitizer |
+| Selection in undo history, carried by canvas transforms; Move tool with Alt-copy and arrow nudge | ✅ unit-tested; driven in the app |
+| Adobe .ase palettes (RGB/CMYK/LAB/Gray read, RGB write) | ✅ unit-tested with hand-built files |
+| Project schema 2 (backwards compatible: schema 1 written when no new feature is used) | ✅ round-trip tests |
+| Group duplication (whole subtree) | ✅ unit-tested |
+| Large-canvas compositing | ✅ multi-threaded bands with identical output, 1024²×20 layers: 115 → 67 ms on 2 vCPUs. GPU compositing is not implemented (KNOWN_ISSUES) |
 
-## Phase 3 — Animation · ✅ (delivered in 0.4.0; real-Windows use pending as for Phase 1)
+## Phase 3 — Animation · ✅ (delivered in 0.4.0; extended in 0.5.1)
 
 | Criterion | Status |
 |---|---|
 | Frame insert / delete / duplicate / reorder (drag, Alt+←/→, context menu) with exact undo; durations travel with frames | ✅ unit-tested; drag and undo driven in the app |
+| Multi-frame selection: duplicate, delete, move, drag and durations for a block, one undo step each | ✅ unit-tested; Shift-click, drag and undo driven in the app (0.5.1) |
 | Per-frame durations; set all durations at once | ✅ |
 | Tags: name, range, colour, forward/reverse/ping-pong, repeat count; validated and undoable; shown tinted in the timeline | ✅ tag created through the dialog in the app |
 | Playback honours the tag under the playhead (direction, repeats) and per-frame durations | ✅ `AnimationPlayer` unit-tested; driven in the app |
-| Onion skin: frames before/after (0–8), opacity, tint, wrap; persisted in settings | ✅ unit-tested; checked visually |
-| Preview dock (floatable) looping independently of the editing playhead, zoom 1–32× | ✅ |
+| Onion skin: frames before/after (0–8), opacity, tint, wrap; persisted in settings; ghosts cached | ✅ unit-tested; checked visually |
+| Preview dock (floatable) looping independently of the editing playhead, zoom 1–32×, checkerboard | ✅ |
 | Sprite sheet export: horizontal, vertical, grid, packed; padding/spacing; trim; merge duplicates; power-of-two; scale; Aseprite JSON hash/array | ✅ every frame region compared to the composite; 2× trimmed grid exported from the app and checked |
 | GIF, APNG, WebP export verified by re-decoding | ✅ exact round trip (APNG/WebP lossless incl. partial alpha; GIF exact for ≤255 colours); GIF also checked with Pillow |
 | PNG sequence export | ✅ |
 | CLI `export` for all formats | ✅ cli_smoke on Linux and the Windows build (Wine) |
+| Export options remembered per kind | ✅ (0.5.1) |
 
 ## Phase 4 — AI Infrastructure · ✅ (verified on a Windows 11 PC with an RTX 4070 Laptop GPU, 2026-10-31)
 
@@ -87,6 +99,7 @@ large HD canvases.
 | BiRefNet background removal | ✅ CUDA provider on the RTX 4070 Laptop: 2.6 s per warm job (session cached), 7.6 s cold; DirectML failure falls back automatically (CPU ~16 s) |
 | Real-ESRGAN upscaling | ✅ CPU (64→256 px in 6 s) and CUDA on the RTX 4070 Laptop: 512→2048 px in 3.1 s per job including model load |
 | Nearest-neighbour upscaling | ✅ Image › Scale (core, since 0.3.0) |
+| AI results: one undo step, placed on the frame the job started from; status shows where it ran and how long it took; LoRA strength and subject framing | ✅ (0.5.1) worker tests for framing and strength validation |
 | Benchmarks recorded from real runs | ✅ CPU and RTX 4070 Laptop numbers for every model (TESTING.md); other GPUs are Phase 9's GPU matrix |
 
 ## Phase 5 — Advanced AI Generation · ⬜

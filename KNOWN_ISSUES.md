@@ -1,101 +1,90 @@
 # Known Issues and Limitations
 
-Current as of 0.5.0 (Phase 4).
+Current as of 0.5.1 (Phases 1–4 complete). Items here are known; nothing is listed as done
+that has not been run.
 
 ## Not yet verified
-- **Windows desktop app only launched so far.** CI builds everything with MSVC and `/W4 /WX`,
-  runs all tests on Windows and packages the app; the packaged build opened on a Windows 11 PC,
-  but drawing, saving, export and AI on that desktop have not been recorded yet.
-- The CI package includes `vc_redist.x64.exe` but does not run it: on a PC without the Visual
-  C++ 2015-2022 runtime the app will not start until it is installed (the installer, Phase 8,
-  will handle this).
-- **CI builds against Qt 6.8.3, not 6.12.** As of 2026-10-29 the aqtinstall package index used by
-  CI lists Qt up to 6.11.3, and 6.11/6.12 metadata downloads fail checksum verification; CI tries
-  6.12 → 6.11 → 6.8 and reports which it used. Building locally against a Qt 6.12 install from
-  the official Qt installer is expected to work (code targets Qt ≥ 6.4) but is unverified.
-- **High-DPI** behaviour has not been checked at 150%/200% Windows scaling.
+- **High-DPI on Windows:** the UI was checked at 150% and 200% with `QT_SCALE_FACTOR` on Linux
+  (crisp icons, no overlapping or clipped controls). The packaged app has been used on the
+  test PC at its own display scaling, but per-monitor DPI changes (dragging the window between
+  monitors with different scaling) have not been tried.
+- **PCs without the Visual C++ runtime:** the package now ships the runtime DLLs next to the
+  executables, and CI checks that every runtime DLL any binary imports is present. Starting
+  the app on a clean Windows install without the redistributable has not been tried.
+- **Real-display frame rate** on Windows is not measured (only compositing times; see below).
 
-## Functional limitations (by design for this phase)
-- Phase 2c tools are not implemented yet: curve, polygon, clone, custom brushes, shading,
-  tiled drawing, layer masks/clipping/adjustment layers, .ase palettes. See ROADMAP.md.
-- Selections are not part of undo history, and a selection cannot yet be moved as a floating
-  piece (transforms apply in place, re-centred on the selection bounds).
-- Changing the canvas size clears the selection.
+## Editor limitations
+- No interactive free-transform handles (scale/rotate by dragging). The Move tool drags and
+  nudges selections. Flip, rotate, RotSprite and scale are in the Image menu and apply to the
+  selection or layer.
 - Layer transforms skip frames where the layer has no pixels; transforming an empty layer
   reports "The layer is empty".
-- RotSprite keeps the canvas size, so corners of rotated content can be clipped at the canvas
-  edge.
-- Pencil writes colours exactly (no alpha blending). Painting a translucent colour replaces
-  the pixel rather than blending over it.
-- Duplicating group layers is not supported yet (raster layers only).
-- Imported PNGs larger than the canvas are cropped to the canvas.
-- A full recomposite of very large documents is CPU-bound (1024×1024 × 20 layers ≈ 109 ms on
-  the 2-vCPU test VM). Strokes stay fast because only the dirty region is recomposited, but
-  undo, frame changes and layer property changes on huge documents will feel slow until GPU
-  compositing lands.
-- No AI, tileset, MCP, Lua or plugin functionality yet; those menus show one disabled entry
-  naming the planned phase.
+- Compositing runs on the CPU. Large areas are split across threads, giving identical output.
+  On the 2-vCPU test VM, a full 1024×1024 × 20-layer composite takes 67 ms (115 ms before
+  threading), and the time drops further with more cores. Strokes recomposite only the dirty region. GPU
+  compositing is not implemented.
+- Pixels outside the canvas (from Keep Canvas Size, RotSprite Expand to fit or canvas
+  resizes) stay on the layer but are not shown or exported until the canvas grows. There is
+  no "fit canvas to content" command yet.
+- Masks are edited with the same brushes as pixels; there is no mask-only overlay colour (the
+  layer shows through the mask as it composites).
+- Adjustment layers offer Brightness/Contrast, Hue/Saturation, Invert, Posterize and Threshold
+  only (no Curves/Levels).
+- Tileset, MCP, Lua and plugin features are not implemented yet (Phases 6–7); their menus
+  show a disabled entry naming the planned phase.
 - Workspace presets are not implemented; layout persistence and Reset Layout are.
 
-## AI limitations (0.5.0)
-- **Not yet run on a GPU.** SDXL generation was verified only with a tiny randomly initialised
-  model (real Diffusers code path, meaningless images). Speed, quality and VRAM use on a 12 GB
-  NVIDIA GPU are unmeasured; the VRAM figures in the Models dialog are estimates and say so.
-- **BiRefNet needs a lot of memory on CPU:** BiRefNet Lite exceeded 6 GB RAM at its fixed
-  1024×1024 input and was killed on the 7 GB test VM. On a machine without a suitable GPU,
-  background removal may fail the same way (the app reports it and recovers).
-- **Unverified download details:** the SDXL and Pixel Art XL file lists could not be checked
-  against Hugging Face from the build environment, so their hashes are recorded at first
-  download rather than pinned. The PyTorch `cu128`/`cpu` index pins are also unchecked. If a
-  file or wheel is missing, the download or install fails with the server's message.
-- **Python version for AI:** the pinned AI packages publish Windows wheels for Python 3.10–3.14
-  (checked 2026-10-30); ONNX Runtime has none for 3.15 yet. AceStudio prefers 3.14…3.10 and
-  warns when only a newer Python is installed (background removal cannot be set up then).
-  It must also be a **64-bit** Python: ONNX Runtime and PyTorch publish no 32-bit Windows
-  wheels, so a 32-bit Python is skipped, or refused when it is the only one.
-- **SDXL pixel-art quality at small canvases:** generation runs near 1024² and is reduced to the
-  canvas with nearest neighbour; for a 64×64 canvas that is a 16× reduction, twice Pixel Art
-  XL's natural ~8× pixel size, and SDXL often draws the subject small. Results at 64×64 are
-  coarse; 128×128 canvases fit the LoRA better. Cropping to the subject before reduction is
-  planned with Phase 5's consistency tools.
-- **8 GB GPUs:** SDXL runs with model CPU offload (~34 s per 1024² image at 30 steps on an RTX
-  4070 Laptop); 12 GB+ keeps the model resident and is faster.
-- **ONNX on non-NVIDIA GPUs:** onnxruntime-directml 1.24.4 failed inside a fused DirectML node
-  when running BiRefNet on the tested PC; AceStudio falls back (fewer fusions, then the CPU,
-  ~16 s per image). NVIDIA GPUs with driver R580+ use the CUDA provider instead (2.6 s warm on
-  an RTX 4070 Laptop). DirectML has not been tried on AMD or Intel GPUs.
-- **BiRefNet on CUDA is slower than it should be:** 2.6 s per warm run includes CPU pre- and
-  post-processing and host↔device copies; I/O binding and GPU-side resizing are left for the
-  Phase 8 profiling pass.
-- **NVIDIA drivers older than R580** get the CUDA 12.6 PyTorch and keep ONNX models on
-  DirectML/CPU (current onnxruntime-gpu builds need CUDA 12.8+ or 13).
-- **Python is not bundled yet:** AI features need Python 3.10+ installed (or configured in Set
-  Up AI Runtime). Bundling an embeddable Python is planned for packaging (Phase 8). Choosing a
-  specific Python installs packages into that environment.
-- Generation shows no live preview while it runs; the LoRA strength is fixed at 1.0 in the UI.
-- Remove Background adds its layer on the frame that is current when the job finishes.
-- Inserting an AI result as a layer is two undo steps (new layer, then pixels).
-- Upscaling works on the visible frame only; only ×4 models are catalogued.
-- Real-ESRGAN smears small pixel art (expected for that model); use Image › Scale instead.
-
-## Animation limitations (0.4.0)
-- Onion skin recomposites the ghost frames on every frame change: about 14 ms for one ghost
-  each side at 256×256 with 20 layers, but about 240 ms at 1024×1024 (2-vCPU test VM), so
-  playback with onion skin on large HD canvases stutters. Ghosts are not cached yet.
-- Tags may overlap; playback, export defaults and the timeline tint use the first tag that
+## Animation limitations
+- **Linked cels** (one image shared by several frames) are not implemented. Duplicated frames
+  are independent copies.
+- Multi-frame selection in the timeline is one contiguous block (a Ctrl-click with gaps
+  selects the whole span).
+- Onion-skin ghosts are cached. The first display after a structural change still composites
+  every ghost frame: about 240 ms for one ghost each side at 1024×1024 with 20 layers on the
+  2-vCPU VM.
+- Tags may overlap. Playback, export defaults and the timeline tint use the first tag that
   contains the frame.
 - GIF export: at most 256 colours per frame (median-cut reduction beyond 255), 1-bit
   transparency (alpha < 128 becomes transparent) and 10 ms duration steps (minimum 20 ms, as
   browsers treat shorter delays as 100 ms). Use APNG or WebP for exact output.
-- Frames can be reordered one at a time; multi-frame selection and cel-level linking are not
-  implemented.
-- The Preview dock shows the whole canvas; it has no checkerboard behind transparent pixels.
-- Export presets are not remembered between exports yet.
+
+## AI limitations
+- **GPU coverage:** everything was verified on one PC, an RTX 4070 Laptop (8 GB, driver 621.01).
+  - SDXL at 1024², 30 steps, with model CPU offload: ~34 s warm, 50–56 s cold.
+  - BiRefNet on CUDA: 2.6 s warm.
+  - Real-ESRGAN 512→2048: 3.1 s.
+
+  12 GB+ NVIDIA GPUs, which keep SDXL resident, and AMD/Intel GPUs on DirectML have not been tried.
+  The Models dialog's VRAM figures are estimates and say so.
+- **BiRefNet needs a lot of memory on CPU:** BiRefNet Lite exceeded 6 GB RAM at its fixed
+  1024×1024 input and was killed on a 7 GB VM. Without a suitable GPU, background removal may
+  fail the same way (the app reports it and recovers).
+- **ONNX on DirectML:** onnxruntime-directml 1.24.4 failed inside a fused node when running
+  BiRefNet on the test PC. AceStudio falls back to fewer fusions and then the CPU (~16 s per
+  image). NVIDIA GPUs with driver R580+ use CUDA instead.
+- **BiRefNet on CUDA** spends much of its 2.6 s on CPU pre/post-processing and host↔device
+  copies. I/O binding and GPU-side resizing are left for the Phase 8 profiling pass.
+- **NVIDIA drivers older than R580** get PyTorch cu126 and keep ONNX models on DirectML or the CPU
+  (current onnxruntime-gpu builds need CUDA 12.8+ or 13). This path and the CPU-only PyTorch
+  profile have not been installed on a Windows PC yet; the cu130 profile has.
+- **Python:**
+  - The AI features need a 64-bit Python 3.10–3.14 installed. ONNX Runtime publishes no Windows
+    wheels for 3.15 yet, and no 32-bit wheels exist, so a 32-bit Python is skipped or refused.
+  - Python is not bundled; an embeddable Python is planned for packaging (Phase 8).
+  - Choosing a specific Python installs packages into that environment.
+- **Small canvases:** generation runs near 1024² and is reduced with nearest neighbour.
+  - At 64×64 that is a 16× reduction, twice Pixel Art XL's natural ~8× pixel size.
+  - "Frame the subject" crops to the subject first, which helps when the background is plain;
+    busy backgrounds are left uncropped.
+  - 128×128 canvases fit the LoRA best.
+- Generation shows no live preview while it runs.
+- Upscaling works on the visible frame only; only ×4 models are catalogued. Real-ESRGAN smears
+  small pixel art (expected for that model); use Image › Scale instead.
+- SDXL Base 1.0 has pinned SHA-256 hashes for its 4 weight files only. Its other 14 small files
+  (configs, tokenizers) are pinned to the Hugging Face commit and checked by size; their hashes
+  are recorded on first download.
 
 ## Cosmetic
-- The layer action buttons wrap tightly when the Layers dock is narrow.
-- Clicking the opacity slider track moves it by a page step rather than jumping to the click
-  point (standard Qt behaviour).
-- On a short screen (about 820 px tall) with no document open, the Palette panel's buttons are
-  clipped vertically; they display fully once a document is open.
-- The Log panel requests the Consolas font; other platforms fall back to a default monospace.
+- The Layers panel's Merge button stays enabled when there is nothing to merge into. It reports
+  why instead of acting; the Layer menu item is disabled correctly.
+- On a short screen (about 820 px tall) the Palette dock needs scrolling to reach its buttons.

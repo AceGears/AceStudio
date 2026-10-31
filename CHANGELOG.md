@@ -2,6 +2,70 @@
 
 All notable changes are documented here. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.5.1] — 2026-10-31 — Phases 1–4 completed (unreleased)
+
+### Added — Phase 2c editor
+- **Tools:** Curve (C; line, then two control points), Polygon (P; click points, close on the
+  first point, double-click or Enter), Clone Stamp (S; Alt-click sets an aligned source),
+  Move (V; drag the selection, Alt copies, arrow keys nudge, Shift = 10 px).
+- **Brushes and inks:** custom brush tips (Edit › Brush Tips: new from selection, import and
+  export PNG up to 256 px, optional tip colours); Simple / Blend (src-over) / Shading ink. Shading steps
+  each pixel once per stroke along the palette ramp between the primary and secondary colours.
+- **Layer masks** (Layer › Layer Mask: add, add from selection, edit with Ctrl+\, disable,
+  apply, delete); **clipping masks** (Ctrl+Alt+G); **adjustment layers** (Brightness/Contrast,
+  Hue/Saturation, Invert, Posterize, Threshold) with a live preview dialog.
+- **Tiled mode** (View › Tiled Mode): painting wraps around the chosen edges, and the canvas
+  shows dimmed neighbouring tiles.
+- **Adobe .ase palettes:** read RGB, CMYK, LAB and Gray swatches and groups; write RGB.
+- Selections are part of the undo history and follow canvas transforms.
+- Duplicating a group copies its whole subtree; Merge Down bakes masks, clipping and
+  adjustments.
+- Project schema 2 (masks, clipping, adjustment layers, tile mode). Files that use none of
+  these features are still written as schema 1.
+
+### Added — editor, animation and AI
+- **Timeline multi-frame selection** (Shift/Ctrl-click): duplicate, delete, move (Alt+←/→ or
+  drag) and set durations for a block of frames, each as one undo step.
+- Export dialogs remember their options per export kind, and the last folder for unsaved
+  documents.
+- Preview dock draws the canvas checkerboard behind transparent pixels.
+- Rotate Layer (RotSprite) **Expand to fit** (on by default): corners are no longer clipped.
+- Inserting an image larger than the canvas offers **Expand Canvas** or **Keep Canvas Size**.
+  Pixels outside the canvas stay on the layer, and the whole insertion is one undo step.
+- Generate: Pixel Art XL **strength** (0–200 %) and on/off are remembered. Changing the
+  strength does not reload SDXL.
+- Generate: **Frame the subject** (on by default) crops to the subject before reducing to the
+  canvas, so small subjects keep more detail (plain backgrounds only).
+- AI status messages say where a job ran (CUDA / DirectML / CPU) and how long it took.
+- Core: `UndoStack::mark/squash` (group commands into one step), `Editor::addImageLayer`,
+  `Editor::removeFrames/duplicateFrames/moveFrames`, `renderOnionSkin` with a composite
+  provider.
+
+### Changed
+- Compositing of large areas runs on several threads (horizontal bands). The output is identical; on
+  a 2-vCPU VM, 1024²×20 layers takes 67 ms instead of 115 ms, and the speed-up grows with cores.
+- Onion-skin ghosts are cached; painting on the current frame no longer recomposites them.
+- The Preview dock no longer composites while hidden behind another tab.
+- Windows package: the Visual C++ runtime DLLs ship next to the executables (app-local), so
+  the app starts on PCs without the VC++ redistributable. CI fails if a shipped binary
+  imports a runtime DLL that is not packaged.
+- CI builds Windows against **Qt 6.12.0** (aqtinstall pinned to the commit that supports the
+  Qt 6.11+ repository layout).
+- Layer actions are compact icon buttons; clicking a slider track jumps to the click point;
+  the Log uses the platform fixed-width font. Tools, Palette and Properties docks scroll on
+  short screens instead of clipping their controls.
+
+### Fixed
+- Intermittent crash when a layer row was edited (the Layers panel rebuilt itself inside the
+  tree's own signal handler); rebuilds are now deferred.
+- Layer transforms dropped pixels that lay outside the canvas.
+- Delete in mask-edit mode cleared layer pixels instead of hiding them through the mask.
+- AI results were added on the frame that was current when the job finished instead of the
+  frame it was started from, and took two undo steps.
+- Mask, Merge Down and Adjustment Settings menu items were enabled when they could not apply.
+- Tool option drop-downs widened the Tools dock when switching tools.
+- MSVC build of the shading ink (C4244 on Windows' 32-bit `long`).
+
 ## [0.5.0] — 2026-10-30 — Phase 4 AI infrastructure (unreleased)
 
 ### Added
