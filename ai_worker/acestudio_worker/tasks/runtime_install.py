@@ -22,6 +22,8 @@ REQ_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.a
 PROFILES = {
     "onnx-windows": ["onnx-windows.txt"],
     "onnx-cpu": ["onnx-cpu.txt"],
+    # torch-cuda.txt is replaced by torch-cuda13.txt when the driver supports
+    # CUDA 13; then onnx-cuda.txt also swaps ONNX Runtime to its CUDA build.
     "diffusion-cuda": ["torch-cuda.txt", "diffusion.txt"],
     "diffusion-cpu": ["torch-cpu.txt", "diffusion.txt"],
     "base": ["base.txt"],
@@ -98,6 +100,14 @@ def run(ctx):
         raise JobError("This is a 32-bit Python (%s). ONNX Runtime and PyTorch only publish 64-bit "
                        "packages; install the 64-bit Python from python.org." % platform.python_version(),
                        kind="missing_dependency")
+    files = list(files)
+    driver = None
+    if profile == "diffusion-cuda":
+        from ..gpu import nvidia_driver, supports_cuda13
+        driver = nvidia_driver()
+        ctx.log("NVIDIA driver: %s" % (driver or "not found"))
+        if supports_cuda13(driver):
+            files[files.index("torch-cuda.txt")] = "torch-cuda13.txt"
     for i, name in enumerate(files):
         path = os.path.join(REQ_DIR, name)
         if not os.path.exists(path):
@@ -106,9 +116,26 @@ def run(ctx):
         _pip(ctx, ["-r", path], name)
     info = {"profile": profile, "restartRequired": True}
     if profile == "diffusion-cuda":
-        info["torchCuda"] = _check_torch_cuda(ctx)
+        cuda = _check_torch_cuda(ctx)
+        info["torchCuda"] = cuda
+        info["nvidiaDriver"] = driver
+        if cuda.split(".")[0] == "13":
+            # ONNX Runtime's CUDA build matches CUDA 13 and reuses torch's DLLs.
+            _uninstall(ctx, ["onnxruntime-directml", "onnxruntime"])
+            _pip(ctx, ["-r", os.path.join(REQ_DIR, "onnx-cuda.txt")], "onnx-cuda.txt")
+            info["onnxRuntime"] = "onnxruntime-gpu"
     ctx.progress(1.0, "Installed %s" % profile, force=True)
     return {"outputs": {}, "info": info}
+
+
+def _uninstall(ctx, packages):
+    """pip uninstall (quiet about packages that are not installed)."""
+    cmd = [sys.executable, "-m", "pip", "uninstall", "-y", "--disable-pip-version-check"] + packages
+    ctx.log("Running: " + " ".join(cmd))
+    out = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600)
+    for line in (out.stdout + out.stderr).splitlines():
+        if line.strip():
+            ctx.log("pip: " + line[:500])
 
 
 def _check_torch_cuda(ctx):

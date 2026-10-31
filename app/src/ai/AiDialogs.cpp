@@ -167,9 +167,17 @@ LicenseDialog::LicenseDialog(const ModelEntry& m, QWidget* parent) : QDialog(par
                      m.license.commercialUse ? tr("allowed") : tr("<b>not allowed</b>"), formatBytes(m.knownSize()),
                      qs(m.source).toHtmlEscaped(), qs(m.copyright).toHtmlEscaped());
     html += tr("<p>%1</p><p><b>Your obligations:</b> %2</p>").arg(qs(m.license.summary).toHtmlEscaped(), qs(m.license.obligations).toHtmlEscaped());
-    if (!m.pinned)
-        html += tr("<p><i>AceStudio could not pre-verify these files. Their SHA-256 checksums are recorded on this "
-                   "first download and checked on every later download.</i></p>");
+    if (!m.pinned) {
+        std::size_t withHash = 0;
+        for (const auto& f : m.files) if (f.sha256.size() == 64) ++withHash;
+        if (withHash > 0)
+            html += tr("<p><i>%1 of %2 files (the large weight files) are verified against published SHA-256 "
+                       "checksums. The rest (small configuration files) are recorded on this first download and "
+                       "checked on every later download.</i></p>").arg(withHash).arg(m.files.size());
+        else
+            html += tr("<p><i>AceStudio could not pre-verify these files. Their SHA-256 checksums are recorded on this "
+                       "first download and checked on every later download.</i></p>");
+    }
     if (!m.fileListVerified)
         html += tr("<p><i>The file list for this model has not yet been confirmed against the repository; if a file "
                    "is missing, the download reports it.</i></p>");

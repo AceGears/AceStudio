@@ -91,6 +91,10 @@ def capabilities(probe=True):
     }
     if not probe:
         return caps
+    from ..gpu import nvidia_driver
+    driver = nvidia_driver()
+    if driver:
+        caps["nvidiaDriver"] = driver
     if caps["torch"]:
         try:
             import torch

@@ -66,36 +66,70 @@ def onnx_session(model_path, device="auto", provider=None, optimization="all"):
         # memory-pattern optimisation and sequential execution.
         opts.enable_mem_pattern = False
         opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    if providers[0] == "CUDAExecutionProvider" and hasattr(ort, "preload_dlls"):
+        # Load CUDA/cuDNN (from torch's lib folder first, per the ONNX Runtime
+        # docs) before the session; failures surface as a session error and
+        # run_onnx falls back.
+        try:
+            ort.preload_dlls()
+        except Exception:   # noqa: BLE001 - the session creation below reports it
+            pass
     sess = ort.InferenceSession(model_path, sess_options=opts, providers=providers)
     return sess, sess.get_providers()[0]
 
 
+def _next_gpu_provider():
+    """The second GPU provider in preference order, if one is installed."""
+    import onnxruntime as ort
+    gpus = [p for p in _GPU_PROVIDERS if p in ort.get_available_providers()]
+    return gpus[1] if len(gpus) > 1 else None
+
+
 def run_onnx(ctx, model_path, device, fn):
-    """Runs fn(session) on the best provider. If the GPU provider fails while
-    running (some DirectML/driver combinations reject fused nodes), retries
-    with fewer graph fusions, then on the CPU. Returns (result, provider)."""
-    attempts = []
+    """Runs fn(session, provider) on the best provider. A GPU provider that
+    cannot create a session (e.g. CUDA DLLs missing) or fails while running
+    (some DirectML/driver combinations reject fused nodes) is retried with
+    fewer graph fusions, then the next GPU provider, then the CPU. What worked
+    is remembered for the worker's lifetime. Returns (result, provider)."""
+    from collections import deque
+    queue = deque()
     if model_path in _working and device != "cpu":
-        attempts.append(_working[model_path])
-    attempts += [(None, "all"), ("gpu", "basic"), ("gpu", "none"), ("CPUExecutionProvider", "all")]
+        queue.append(_working[model_path])
+    queue += [(None, "all"), ("gpu", "basic"), ("gpu", "none"), ("CPUExecutionProvider", "all")]
     tried = set()
     last_error = None
     first_gpu = None
-    for prov, opt in attempts:
+    while queue:
+        prov, opt = queue.popleft()
+        if prov == "next-gpu":
+            prov = _next_gpu_provider()
+            if prov is None:
+                continue
         if prov == "gpu":
             if first_gpu is None:
-                continue   # the default attempt already ran on the CPU
+                continue   # no GPU session worked; the CPU attempt follows
             prov = first_gpu
-        key = (prov, opt)
-        if key in tried:
+        if (prov, opt) in tried:
             continue
-        tried.add(key)
-        sess, used = onnx_session(model_path, device, provider=prov, optimization=opt)
-        if first_gpu is None and used != "CPUExecutionProvider" and prov is None:
+        tried.add((prov, opt))
+        try:
+            sess, used = onnx_session(model_path, device, provider=prov, optimization=opt)
+        except JobError:
+            raise
+        except Exception as e:   # onnxruntime raises its own exception types
+            if prov == "CPUExecutionProvider" or device == "cpu":
+                raise
+            last_error = e
+            ctx.log("Could not create a session on %s: %s" % (prov or "the preferred GPU provider",
+                                                               str(e).splitlines()[0][:300]), level="warning")
+            if prov is None:
+                queue.appendleft(("next-gpu", "all"))
+            continue
+        if first_gpu is None and used != "CPUExecutionProvider":
             first_gpu = used
         try:
             result = fn(sess, used)
-        except Exception as e:   # onnxruntime raises its own exception types
+        except Exception as e:
             if used == "CPUExecutionProvider":
                 raise
             last_error = e

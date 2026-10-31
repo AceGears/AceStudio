@@ -1,0 +1,7 @@
+# PyTorch with CUDA 13.0 (NVIDIA driver R580 or newer). Chosen automatically for the
+# diffusion-cuda profile when the installed driver supports it; otherwise torch-cuda.txt
+# (CUDA 12.6) is used. Checked 2026-10-31: download.pytorch.org/whl/cu130/torch/ lists
+# torch-2.14.1+cu130-cp314-cp314-win_amd64.whl.
+--index-url https://download.pytorch.org/whl/cu130
+--extra-index-url https://pypi.org/simple
+torch==2.14.1+cu130

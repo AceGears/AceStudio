@@ -1,0 +1,8 @@
+# ONNX Runtime with the CUDA execution provider (BiRefNet, ONNX upscalers on NVIDIA GPUs).
+# Installed by the diffusion-cuda profile after a CUDA 13 PyTorch, whose bundled CUDA and
+# cuDNN DLLs it loads (onnxruntime.preload_dlls searches torch's lib folder first). It
+# replaces onnxruntime-directml: both provide the same "onnxruntime" module.
+# Checked 2026-10-31: 1.31.1 has cp310-cp314 win_amd64 wheels on PyPI; ONNX Runtime 1.27+
+# GPU packages on PyPI target CUDA 13.0 and cuDNN 9 (onnxruntime.ai CUDA EP docs).
+-r base.txt
+onnxruntime-gpu==1.31.1

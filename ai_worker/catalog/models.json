@@ -45,10 +45,12 @@
       "vramMb": 1500,
       "verification": "pinned",
       "files": [
-        {"path": "BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
-         "url": "https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
-         "size": 224005088,
-         "sha256": "5600024376f572a557870a5eb0afb1e5961636bef4e1e22132025467d0f03333"}
+        {
+          "path": "BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
+          "url": "https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
+          "size": 224005088,
+          "sha256": "5600024376f572a557870a5eb0afb1e5961636bef4e1e22132025467d0f03333"
+        }
       ]
     },
     {
@@ -64,10 +66,12 @@
       "vramMb": 4000,
       "verification": "pinned",
       "files": [
-        {"path": "BiRefNet-general-epoch_244.onnx",
-         "url": "https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-general-epoch_244.onnx",
-         "size": 972666916,
-         "sha256": "58f621f00f5d756097615970a88a791584600dcf7c45b18a0a6267535a1ebd3c"}
+        {
+          "path": "BiRefNet-general-epoch_244.onnx",
+          "url": "https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-general-epoch_244.onnx",
+          "size": 972666916,
+          "sha256": "58f621f00f5d756097615970a88a791584600dcf7c45b18a0a6267535a1ebd3c"
+        }
       ]
     },
     {
@@ -83,10 +87,12 @@
       "vramMb": 1500,
       "verification": "pinned",
       "files": [
-        {"path": "RealESRGAN_x4plus.pth",
-         "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
-         "size": 67040989,
-         "sha256": "4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1"}
+        {
+          "path": "RealESRGAN_x4plus.pth",
+          "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
+          "size": 67040989,
+          "sha256": "4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1"
+        }
       ]
     },
     {
@@ -102,17 +108,19 @@
       "vramMb": 800,
       "verification": "pinned",
       "files": [
-        {"path": "RealESRGAN_x4plus_anime_6B.pth",
-         "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
-         "size": 17938799,
-         "sha256": "f872d837d3c90ed2e05227bed711af5671a6fd1c9f7d7e91c911a61f155e99da"}
+        {
+          "path": "RealESRGAN_x4plus_anime_6B.pth",
+          "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
+          "size": 17938799,
+          "sha256": "f872d837d3c90ed2e05227bed711af5671a6fd1c9f7d7e91c911a61f155e99da"
+        }
       ]
     },
     {
       "id": "sdxl-base-1.0",
       "name": "Stable Diffusion XL Base 1.0 (text-to-image)",
       "task": "image.generate",
-      "description": "Text-to-image and image-to-image at up to 1024x1024. Needs an NVIDIA GPU with 8 GB+ VRAM (12 GB recommended). About 7 GB download (fp16).",
+      "description": "Text-to-image and image-to-image at up to 1024x1024. Needs an NVIDIA GPU with 8 GB+ VRAM (12 GB recommended). 6.9 GB download (fp16).",
       "license": "CreativeML-OpenRAIL++-M",
       "copyright": "Stability AI",
       "source": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0",
@@ -120,27 +128,105 @@
       "runtime": "diffusion",
       "vramMb": 9000,
       "verification": "first-download",
-      "fileListVerified": false,
+      "fileListVerified": true,
       "files": [
-        {"path": "model_index.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/model_index.json"},
-        {"path": "scheduler/scheduler_config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/scheduler/scheduler_config.json"},
-        {"path": "text_encoder/config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/text_encoder/config.json"},
-        {"path": "text_encoder/model.fp16.safetensors", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/text_encoder/model.fp16.safetensors"},
-        {"path": "text_encoder_2/config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/text_encoder_2/config.json"},
-        {"path": "text_encoder_2/model.fp16.safetensors", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/text_encoder_2/model.fp16.safetensors"},
-        {"path": "tokenizer/merges.txt", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer/merges.txt"},
-        {"path": "tokenizer/special_tokens_map.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer/special_tokens_map.json"},
-        {"path": "tokenizer/tokenizer_config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer/tokenizer_config.json"},
-        {"path": "tokenizer/vocab.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer/vocab.json"},
-        {"path": "tokenizer_2/merges.txt", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer_2/merges.txt"},
-        {"path": "tokenizer_2/special_tokens_map.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer_2/special_tokens_map.json"},
-        {"path": "tokenizer_2/tokenizer_config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer_2/tokenizer_config.json"},
-        {"path": "tokenizer_2/vocab.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/tokenizer_2/vocab.json"},
-        {"path": "unet/config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/unet/config.json"},
-        {"path": "unet/diffusion_pytorch_model.fp16.safetensors", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/unet/diffusion_pytorch_model.fp16.safetensors"},
-        {"path": "vae/config.json", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/vae/config.json"},
-        {"path": "vae/diffusion_pytorch_model.fp16.safetensors", "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/vae/diffusion_pytorch_model.fp16.safetensors"}
-      ]
+        {
+          "path": "model_index.json",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/model_index.json",
+          "size": 609
+        },
+        {
+          "path": "scheduler/scheduler_config.json",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/scheduler/scheduler_config.json",
+          "size": 479
+        },
+        {
+          "path": "text_encoder/config.json",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/text_encoder/config.json",
+          "size": 565
+        },
+        {
+          "path": "text_encoder/model.fp16.safetensors",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/text_encoder/model.fp16.safetensors",
+          "size": 246144152,
+          "sha256": "660c6f5b1abae9dc498ac2d21e1347d2abdb0cf6c0c0c8576cd796491d9a6cdd"
+        },
+        {
+          "path": "text_encoder_2/config.json",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/text_encoder_2/config.json",
+          "size": 575
+        },
+        {
+          "path": "text_encoder_2/model.fp16.safetensors",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/text_encoder_2/model.fp16.safetensors",
+          "size": 1389382176,
+          "sha256": "ec310df2af79c318e24d20511b601a591ca8cd4f1fce1d8dff822a356bcdb1f4"
+        },
+        {
+          "path": "tokenizer/merges.txt",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/tokenizer/merges.txt",
+          "size": 524619
+        },
+        {
+          "path": "tokenizer/special_tokens_map.json",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/tokenizer/special_tokens_map.json",
+          "size": 472
+        },
+        {
+          "path": "tokenizer/tokenizer_config.json",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/tokenizer/tokenizer_config.json",
+          "size": 737
+        },
+        {
+          "path": "tokenizer/vocab.json",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/tokenizer/vocab.json",
+          "size": 1059962
+        },
+        {
+          "path": "tokenizer_2/merges.txt",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/tokenizer_2/merges.txt",
+          "size": 524619
+        },
+        {
+          "path": "tokenizer_2/special_tokens_map.json",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/tokenizer_2/special_tokens_map.json",
+          "size": 460
+        },
+        {
+          "path": "tokenizer_2/tokenizer_config.json",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/tokenizer_2/tokenizer_config.json",
+          "size": 725
+        },
+        {
+          "path": "tokenizer_2/vocab.json",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/tokenizer_2/vocab.json",
+          "size": 1059962
+        },
+        {
+          "path": "unet/config.json",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/unet/config.json",
+          "size": 1680
+        },
+        {
+          "path": "unet/diffusion_pytorch_model.fp16.safetensors",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/unet/diffusion_pytorch_model.fp16.safetensors",
+          "size": 5135149760,
+          "sha256": "83e012a805b84c7ca28e5646747c90a243c65c8ba4f070e2d7ddc9d74661e139"
+        },
+        {
+          "path": "vae/config.json",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/vae/config.json",
+          "size": 642
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.fp16.safetensors",
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/vae/diffusion_pytorch_model.fp16.safetensors",
+          "size": 167335342,
+          "sha256": "bcb60880a46b63dea58e9bc591abe15f8350bde47b405f9c38f4be70c6161e68"
+        }
+      ],
+      "revision": "462165984030d82259a11f4367a4eed129e94a7b",
+      "verificationNote": "large files pinned by SHA-256 (checked 2026-10-31 against the Hugging Face API, commit 462165984030); small config files are hashed on first download"
     },
     {
       "id": "pixel-art-xl",
@@ -155,11 +241,17 @@
       "entry": "pixel-art-xl.safetensors",
       "runtime": "diffusion",
       "vramMb": 200,
-      "verification": "first-download",
-      "fileListVerified": false,
+      "verification": "pinned",
+      "fileListVerified": true,
       "files": [
-        {"path": "pixel-art-xl.safetensors", "url": "https://huggingface.co/nerijs/pixel-art-xl/resolve/main/pixel-art-xl.safetensors"}
-      ]
+        {
+          "path": "pixel-art-xl.safetensors",
+          "url": "https://huggingface.co/nerijs/pixel-art-xl/resolve/8bf4a4d9ea283e00a51fafda8e0539f8248ea037/pixel-art-xl.safetensors",
+          "size": 170543052,
+          "sha256": "4234637cb80c998f41e348e6a6cb6bc20d8d038b2b0f256b6129b3b5e353eef7"
+        }
+      ],
+      "revision": "8bf4a4d9ea283e00a51fafda8e0539f8248ea037"
     }
   ]
 }

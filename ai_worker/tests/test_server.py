@@ -378,3 +378,45 @@ class OnnxFallbackTests(unittest.TestCase):
                 imaging.run_onnx(None, "m.onnx", "cpu", lambda s, u: (_ for _ in ()).throw(ValueError("bad")))
         finally:
             imaging.onnx_session = real
+
+
+class OnnxSessionFallbackTests(unittest.TestCase):
+    def test_session_creation_failure_falls_back_to_next_provider(self):
+        sys.path.insert(0, ROOT)
+        from acestudio_worker import imaging
+
+        calls = []
+
+        def fake_session(path, device="auto", provider=None, optimization="all"):
+            calls.append((provider, optimization))
+            if provider in (None, "CUDAExecutionProvider"):
+                raise RuntimeError("LoadLibrary failed with error 126 for onnxruntime_providers_cuda.dll")
+            return object(), provider
+
+        class Ctx:
+            logs = []
+
+            def log(self, m, level="info"):
+                self.logs.append((level, m))
+
+        real_s, real_n = imaging.onnx_session, imaging._next_gpu_provider
+        imaging.onnx_session = fake_session
+        imaging._next_gpu_provider = lambda: "DmlExecutionProvider"
+        imaging._working.clear()
+        try:
+            result, used = imaging.run_onnx(Ctx(), "m.onnx", "auto", lambda s, u: u)
+            self.assertEqual(used, "DmlExecutionProvider")
+            self.assertEqual(calls[:2], [(None, "all"), ("DmlExecutionProvider", "all")])
+        finally:
+            imaging.onnx_session, imaging._next_gpu_provider = real_s, real_n
+            imaging._working.clear()
+
+
+class DriverTests(unittest.TestCase):
+    def test_cuda13_threshold(self):
+        sys.path.insert(0, ROOT)
+        from acestudio_worker import gpu
+        self.assertTrue(gpu.supports_cuda13("591.44"))
+        self.assertTrue(gpu.supports_cuda13("580.97"))
+        self.assertFalse(gpu.supports_cuda13("566.36"))
+        self.assertFalse(gpu.supports_cuda13(None))
