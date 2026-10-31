@@ -130,6 +130,10 @@ not been run.
 - Texture results depend on the prompt: SDXL with Pixel Art XL drew "lush green grass" as bushes
   on pale stone in three PC runs, while "dense short green grass lawn, solid green" gave a plain
   grass texture, so that is now the default.
+- Clear Sky's "Follow gradient" handles smooth skies. SDXL layers reduced to a palette have
+  banded skies with clouds and distant hills: on the PC castle layer it stopped at the first
+  band (tolerance 6 and 14) or ran into the castle (24). Use Remove Background (AI) there; Undo
+  restores the layer.
 - The atlas packer rotates only by 90° clockwise (TexturePacker's convention), never flips.
 
 ## Planned in later phases

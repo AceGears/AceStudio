@@ -62,6 +62,7 @@ Real models on the Windows 11 test PC (RTX 4070 Laptop, 8 GB):
 | Parallax › Remove Background (AI) on a castle layer | ✅ BiRefNet on CUDA in 9.6 s, sky behind shows through. The cut-out no longer wraps, and the check says so (38%) |
 | Return in the tile size box (fixed build) | ✅ no level added |
 | Grass prompt: "lush green grass" (with the paving negative) vs "dense short green grass lawn, solid green" | bushes on pale stone again vs ✅ a plain grass texture → the second is now the default |
+| Parallax (fixed build): Follow gradient on a castle layer, tolerance 6 then 14, Undo between | Undo restores the layer ✅. Both tolerances cleared only the top band of the banded sky: Follow gradient suits smooth skies; Remove Background (AI) is the tool for these (KNOWN_ISSUES) |
 | Slicer on 4 knights over a noisy gradient (test sheet in the samples folder) | ✅ before: 1 sprite (no uniform background). Remove Background (AI): 11.4 s, 4 sprites, opened as a 54×78 4-frame animation. One knight lost part of a leg to the cut-out |
 
 ### 2026-10-31 — Phase 6, version 0.7.0
