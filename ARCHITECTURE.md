@@ -170,6 +170,19 @@ duplicate implementation of document logic, file formats or export in any front 
 - Default model set and exclusions: `docs/research/ai-models.md`. No model is downloaded
   without explicit user approval.
 
+- **Phase 5 (0.6.0)** adds three Qt-free core modules:
+  - `Pose`: an 18-point skeleton in normalised coordinates, the conditioning renderer,
+    procedural cycles, and `poseFramingBox`, one crop box shared by all frames.
+  - `AnimationQA`: per-frame scores against frame 1 (ground line, height, palette, colour
+    mix, silhouette IoU aligned at the bottom centre) and `correctFrames`.
+  - `Character`: `.acechar` zip profiles.
+
+  The app's `AnimationDialog` sends one `image.generate` job per frame with `controlnet`,
+  `ip_adapter` and `pixel.box` parameters, and commits through `Editor::addAnimationLayer`
+  (one undo step). On GPUs under 10 GB the worker stores the UNet and ControlNet weights in
+  FP8, because Diffusers keeps the ControlNet resident outside the model-offload chain.
+- Job folders are pruned at start-up after 7 days (`pruneJobFolders`).
+
 ### ADR-005 — MCP server (planned, Phase 7)
 - No official C++ MCP SDK exists. AceStudio will implement the MCP JSON-RPC surface in C++ on
   top of the core (nlohmann/json), exposed via a thin `acestudio-mcp` stdio executable that

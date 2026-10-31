@@ -35,6 +35,11 @@ AI-assisted game asset creation and 2D animation studio for Windows.
   editor down. Setup installs pinned packages into a private environment; models download only
   after you accept their licence, and are verified with SHA-256. See
   [docs/ai-worker-protocol.md](docs/ai-worker-protocol.md).
+- **Characters and animation (AI):** character profiles with reference images and palette;
+  pose skeletons with an editor and idle/walk/run/jump cycles; Generate Animation produces
+  one pose-guided frame per pose (OpenPose ControlNet, IP-Adapter references), scores them
+  for consistency, corrects or regenerates the outliers and commits them as a tagged layer in
+  one undo step. Optional live preview while generating.
 - **Safety:** atomic saves with `.bak`, autosave to recovery files, crash-recovery prompt.
 - **Desktop app:** multi-document tabs; dockable Tools, Layers, Properties, Palette, Timeline
   Preview and Log panels; dark and light themes; pixel-exact canvas (nearest-neighbour,
