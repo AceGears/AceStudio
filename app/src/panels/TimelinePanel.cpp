@@ -133,6 +133,15 @@ TimelinePanel::TimelinePanel(QWidget* parent) : QWidget(parent) {
     connect(m_frames->model(), &QAbstractItemModel::rowsMoved, this,
             [this](const QModelIndex&, int start, int end, const QModelIndex&, int row) {
                 if (m_syncing || !m_view || m_dropPending) return;
+                if (!isBlock()) {   // a selection with gaps cannot be dragged as one block
+                    m_dropPending = true;
+                    QTimer::singleShot(0, this, [this] {
+                        m_dropPending = false;
+                        rebuild();
+                        if (m_view) Q_EMIT m_view->statusMessage(tr("Select a continuous block of frames to drag them"));
+                    });
+                    return;
+                }
                 const auto [a, b] = selectedRange();
                 const int n = b - a + 1;
                 if (n > 1 && start >= a && start <= b) {
@@ -186,6 +195,7 @@ void TimelinePanel::setView(DocumentView* view) {
     if (m_view) {
         connect(m_view, &DocumentView::documentChanged, this, &TimelinePanel::rebuild);
         connect(m_view, &DocumentView::currentFrameChanged, this, &TimelinePanel::syncSelection);
+        connect(m_view, &DocumentView::currentLayerChanged, this, &TimelinePanel::rebuild);   // link markers are per layer
     }
     rebuild();
 }
@@ -196,7 +206,9 @@ void TimelinePanel::rebuild() {
     if (m_view) {
         const Document& d = m_view->document();
         for (int i = 0; i < d.frameCount(); ++i) {
-            auto* item = new QListWidgetItem(QStringLiteral("%1\n%2 ms").arg(i + 1).arg(d.frames()[static_cast<std::size_t>(i)].durationMs));
+            const bool linked = d.celLink(m_view->currentLayer(), i) != 0;
+            auto* item = new QListWidgetItem(QStringLiteral("%1%3\n%2 ms").arg(i + 1).arg(d.frames()[static_cast<std::size_t>(i)].durationMs)
+                                                 .arg(linked ? QStringLiteral(" ∞") : QString()));
             item->setTextAlignment(Qt::AlignCenter);
             item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
             if (auto t = tagAt(d, i)) {
@@ -205,6 +217,12 @@ void TimelinePanel::rebuild() {
                 c.setAlpha(70);
                 item->setBackground(c);
                 item->setToolTip(tr("Frame %1 · tag “%2”").arg(i + 1).arg(qs(tag.name)));
+            }
+            if (linked) {
+                QStringList others;
+                for (int o : d.linkedFrames(m_view->currentLayer(), i)) if (o != i) others << QString::number(o + 1);
+                const QString t = tr("Cel linked with frame(s) %1 on this layer").arg(others.join(QStringLiteral(", ")));
+                item->setToolTip(item->toolTip().isEmpty() ? t : item->toolTip() + QStringLiteral("\n") + t);
             }
             m_frames->addItem(item);
         }
@@ -221,53 +239,68 @@ void TimelinePanel::rebuild() {
     setEnabled(m_view != nullptr);
 }
 
-std::pair<int, int> TimelinePanel::selectedRange() const {
-    if (!m_view) return {-1, -1};
+std::vector<int> TimelinePanel::selectedFrames() const {
+    if (!m_view) return {};
     const int cur = m_view->currentFrame();
     const int n = m_view->document().frameCount();
-    if (m_rangeFirst >= 0 && m_rangeLast < n && m_rangeFirst <= cur && cur <= m_rangeLast) return {m_rangeFirst, m_rangeLast};
+    std::vector<int> out;
+    for (int f : m_selected) if (f >= 0 && f < n) out.push_back(f);
+    if (std::find(out.begin(), out.end(), cur) == out.end()) return {cur};
+    return out;
+}
+
+bool TimelinePanel::isBlock() const {
+    const auto v = selectedFrames();
+    return !v.empty() && v.back() - v.front() + 1 == static_cast<int>(v.size());
+}
+
+std::pair<int, int> TimelinePanel::selectedRange() const {
+    if (!m_view) return {-1, -1};
+    const auto v = selectedFrames();
+    if (isBlock()) return {v.front(), v.back()};
+    const int cur = m_view->currentFrame();
     return {cur, cur};
 }
 
 void TimelinePanel::setRange(int first, int last, int current) {
-    m_rangeFirst = first;
-    m_rangeLast = last;
+    std::vector<int> v;
+    for (int f = first; f <= last; ++f) v.push_back(f);
+    setSelectedFrames(std::move(v), current);
+}
+
+void TimelinePanel::setSelectedFrames(std::vector<int> frames, int current) {
+    std::sort(frames.begin(), frames.end());
+    m_selected = std::move(frames);
     if (m_view) m_view->setCurrentFrame(current);
     syncSelection(m_view ? m_view->currentFrame() : -1);
 }
 
 void TimelinePanel::onSelectionChanged() {
     if (m_syncing || !m_view) return;
-    int lo = INT_MAX, hi = -1;
-    for (QListWidgetItem* it : m_frames->selectedItems()) {
-        const int r = m_frames->row(it);
-        lo = std::min(lo, r);
-        hi = std::max(hi, r);
-    }
-    if (hi < 0) return;
-    m_rangeFirst = lo;
-    m_rangeLast = hi;
-    // Frame operations work on blocks: fill gaps in a Ctrl-click selection.
-    if (m_frames->selectedItems().size() != hi - lo + 1) syncSelection(m_view->currentFrame());
+    std::vector<int> rows;
+    for (QListWidgetItem* it : m_frames->selectedItems()) rows.push_back(m_frames->row(it));
+    if (rows.empty()) return;
+    std::sort(rows.begin(), rows.end());
+    m_selected = std::move(rows);
 }
 
 void TimelinePanel::syncSelection(int frame) {
     m_syncing = true;
-    const auto [a, b] = selectedRange();
-    if (frame >= 0 && a != b) {
+    const auto sel = selectedFrames();
+    if (frame >= 0 && sel.size() > 1) {
         m_frames->clearSelection();
-        for (int r = a; r <= b && r < m_frames->count(); ++r) m_frames->item(r)->setSelected(true);
+        for (int r : sel) if (r < m_frames->count()) m_frames->item(r)->setSelected(true);
         m_frames->setCurrentRow(frame, QItemSelectionModel::NoUpdate);
     } else {
-        m_rangeFirst = m_rangeLast = frame;
+        m_selected = frame >= 0 ? std::vector<int>{frame} : std::vector<int>{};
         m_frames->setCurrentRow(frame);
     }
     m_syncing = false;
-    if (m_view)
-        m_info->setText(a != b ? tr("Frames %1–%2 of %3").arg(a + 1).arg(b + 1).arg(m_view->document().frameCount())
-                               : tr("Frame %1 of %2").arg(frame + 1).arg(m_view->document().frameCount()));
-    else
-        m_info->setText(tr("No document"));
+    if (!m_view) { m_info->setText(tr("No document")); return; }
+    const int n = m_view->document().frameCount();
+    if (sel.size() <= 1) m_info->setText(tr("Frame %1 of %2").arg(frame + 1).arg(n));
+    else if (isBlock()) m_info->setText(tr("Frames %1–%2 of %3").arg(sel.front() + 1).arg(sel.back() + 1).arg(n));
+    else m_info->setText(tr("%n frame(s) selected of %1", nullptr, static_cast<int>(sel.size())).arg(n));
 }
 
 void TimelinePanel::addActionButton(QAction* action) {
@@ -281,6 +314,7 @@ bool TimelinePanel::isPlaying() const { return m_timer->isActive(); }
 
 void TimelinePanel::moveCurrentFrame(int delta) {
     if (!m_view) return;
+    if (!isBlock()) return void(Q_EMIT m_view->statusMessage(tr("Select a continuous block of frames to move them")));
     const auto [a, b] = selectedRange();
     const int to = a + delta;
     if (to < 0 || b + delta >= m_view->document().frameCount()) return;
@@ -291,6 +325,7 @@ void TimelinePanel::moveCurrentFrame(int delta) {
 
 void TimelinePanel::duplicateSelected() {
     if (!m_view) return;
+    if (!isBlock()) return void(Q_EMIT m_view->statusMessage(tr("Select a continuous block of frames to duplicate them")));
     const auto [a, b] = selectedRange();
     auto r = m_view->editor().duplicateFrames(a, b);
     if (!r) return void(Q_EMIT m_view->statusMessage(qs(r.error().message)));
@@ -299,23 +334,43 @@ void TimelinePanel::duplicateSelected() {
 
 void TimelinePanel::deleteSelected() {
     if (!m_view) return;
-    const auto [a, b] = selectedRange();
-    auto st = m_view->editor().removeFrames(a, b);
+    const auto sel = selectedFrames();
+    auto st = m_view->editor().removeFrames(sel);
     if (!st) return void(Q_EMIT m_view->statusMessage(qs(st.error().message)));
-    const int f = std::min(a, m_view->document().frameCount() - 1);
+    const int f = std::min(sel.front(), m_view->document().frameCount() - 1);
     setRange(f, f, f);
+}
+
+void TimelinePanel::linkSelected() {
+    if (!m_view) return;
+    // The current frame's pixels become the shared cel.
+    std::vector<int> frames{m_view->currentFrame()};
+    for (int f : selectedFrames()) if (f != frames.front()) frames.push_back(f);
+    const auto sel = selectedFrames();
+    auto st = m_view->editor().linkCels(m_view->currentLayer(), frames);
+    if (!st) return void(Q_EMIT m_view->statusMessage(qs(st.error().message)));
+    setSelectedFrames(sel, m_view->currentFrame());
+}
+
+void TimelinePanel::unlinkSelected() {
+    if (!m_view) return;
+    const auto sel = selectedFrames();
+    auto st = m_view->editor().unlinkCels(m_view->currentLayer(), sel);
+    if (!st) return void(Q_EMIT m_view->statusMessage(qs(st.error().message)));
+    setSelectedFrames(sel, m_view->currentFrame());
 }
 
 void TimelinePanel::editSelectedDurations() {
     if (!m_view) return;
-    const auto [a, b] = selectedRange();
+    const auto sel = selectedFrames();
     bool ok = false;
-    const int ms = QInputDialog::getInt(this, tr("Frame Duration"), tr("Duration of frames %1–%2 (ms):").arg(a + 1).arg(b + 1),
-                                        m_view->document().frames()[static_cast<std::size_t>(a)].durationMs, 1, 65535, 10, &ok);
+    const int ms = QInputDialog::getInt(this, tr("Frame Duration"), tr("Duration of the %n selected frame(s) (ms):", nullptr,
+                                                                       static_cast<int>(sel.size())),
+                                        m_view->document().frames()[static_cast<std::size_t>(sel.front())].durationMs, 1, 65535, 10, &ok);
     if (!ok) return;
-    auto st = m_view->editor().setFrameDurations(a, b, ms);
+    auto st = m_view->editor().setFrameDurations(sel, ms);
     if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
-    else setRange(a, b, m_view->currentFrame());
+    else setSelectedFrames(sel, m_view->currentFrame());
 }
 
 void TimelinePanel::editDuration(int f) {
@@ -344,22 +399,33 @@ void TimelinePanel::showContextMenu(const QPoint& pos) {
     QListWidgetItem* item = m_frames->itemAt(pos);
     if (item) {
         const int row = m_frames->row(item);
-        const auto [a0, b0] = selectedRange();
-        if (row < a0 || row > b0) setRange(row, row, row);   // right-click outside the selection selects that frame
+        const auto sel0 = selectedFrames();
+        if (std::find(sel0.begin(), sel0.end(), row) == sel0.end()) setRange(row, row, row);   // outside the selection: select it
         else m_view->setCurrentFrame(row);
     }
     QMenu menu(this);
+    const auto sel = selectedFrames();
+    const bool block = isBlock();
     const auto [a, b] = selectedRange();
     const int f = m_view->currentFrame();
     const int n = m_view->document().frameCount();
-    if (a == b) menu.addAction(tr("Frame &Duration…"), this, [this, f] { editDuration(f); });
-    else menu.addAction(tr("&Duration of %n Selected Frame(s)…", nullptr, b - a + 1), this, [this] { editSelectedDurations(); });
+    if (sel.size() == 1) menu.addAction(tr("Frame &Duration…"), this, [this, f] { editDuration(f); });
+    else menu.addAction(tr("&Duration of %n Selected Frame(s)…", nullptr, static_cast<int>(sel.size())), this, [this] { editSelectedDurations(); });
     menu.addAction(tr("Duration of &All Frames…"), this, [this] { editAllDurations(); });
     menu.addSeparator();
-    menu.addAction(tr("D&uplicate"), this, [this] { duplicateSelected(); });
-    menu.addAction(tr("De&lete"), this, [this] { deleteSelected(); })->setEnabled(b - a + 1 < n);
-    menu.addAction(tr("Move &Left"), this, [this] { moveCurrentFrame(-1); })->setEnabled(a > 0);
-    menu.addAction(tr("Move &Right"), this, [this] { moveCurrentFrame(1); })->setEnabled(b + 1 < n);
+    menu.addAction(tr("D&uplicate"), this, [this] { duplicateSelected(); })->setEnabled(block);
+    menu.addAction(tr("De&lete"), this, [this] { deleteSelected(); })->setEnabled(static_cast<int>(sel.size()) < n);
+    menu.addAction(tr("Move &Left"), this, [this] { moveCurrentFrame(-1); })->setEnabled(block && a > 0);
+    menu.addAction(tr("Move &Right"), this, [this] { moveCurrentFrame(1); })->setEnabled(block && b + 1 < n);
+    menu.addSeparator();
+    const Layer* layer = m_view->document().layer(m_view->currentLayer());
+    const QString lname = layer ? qs(layer->name) : QString();
+    const bool raster = layer && layer->kind == LayerKind::Raster;
+    bool anyLinked = false;
+    for (int fr : sel) anyLinked = anyLinked || m_view->document().celLink(m_view->currentLayer(), fr) != 0;
+    menu.addAction(tr("&Link Cels on “%1”").arg(lname), this, [this] { linkSelected(); })
+        ->setEnabled(raster && sel.size() >= 2);
+    menu.addAction(tr("U&nlink Cels on “%1”").arg(lname), this, [this] { unlinkSelected(); })->setEnabled(anyLinked);
     menu.addSeparator();
     menu.addAction(tr("&Tags…"), this, [this] { Q_EMIT tagsRequested(); });
     menu.exec(m_frames->viewport()->mapToGlobal(pos));

@@ -2,6 +2,7 @@
 
 #include "acestudio/core/Animation.h"
 #include "acestudio/core/Editor.h"
+#include "acestudio/core/Paint.h"
 #include "acestudio/core/ProjectIO.h"
 
 #include <map>
@@ -199,4 +200,90 @@ TEST_CASE("Frame range operations are single undo steps", "[animation][frames]")
     CHECK_FALSE(e.removeFrames(0, 2));          // would remove every frame
     CHECK_FALSE(e.moveFrames(0, 1, 2));         // past the end
     CHECK_FALSE(e.duplicateFrames(2, 1));
+}
+
+TEST_CASE("Linked cels share pixels through painting, frame edits and undo", "[animation][links]") {
+    Editor e = framesEditor(4);
+    const LayerId l = e.document().layers()[0].id;
+    const Rgba8 red1 = e.document().cel(l, 1)->image.pixel(0, 0);
+    REQUIRE(e.linkCels(l, {1, 2, 3}));
+    CHECK(e.document().linkedFrames(l, 2) == std::vector<int>{1, 2, 3});
+    CHECK(e.document().cel(l, 3)->image.pixel(0, 0) == red1);    // frame 1's cel is shared
+    CHECK(e.document().validate());
+
+    // Painting on frame 2 shows on 1 and 3, not on 0; undo restores all.
+    {
+        auto s = PaintSession::begin(e, l, 2, "Dot");
+        REQUIRE(s);
+        s.value()->writePixel(1, 1, Rgba8::opaque(9, 9, 9));
+        REQUIRE(s.value()->commit());
+    }
+    for (int f : {1, 2, 3}) CHECK(e.document().composite(f).pixel(1, 1) == Rgba8::opaque(9, 9, 9));
+    CHECK(e.document().composite(0).pixel(1, 1).a == 0);
+    CHECK(e.document().validate());
+    REQUIRE(e.undo());
+    for (int f : {1, 2, 3}) CHECK(e.document().composite(f).pixel(1, 1).a == 0);
+    REQUIRE(e.redo());
+    CHECK(e.document().composite(3).pixel(1, 1) == Rgba8::opaque(9, 9, 9));
+
+    // Moving and deleting frames keeps the links; deleting down to one member dissolves the group.
+    REQUIRE(e.moveFrame(3, 0));
+    CHECK(e.document().linkedFrames(l, 0) == std::vector<int>{0, 2, 3});
+    REQUIRE(e.removeFrame(2));
+    CHECK(e.document().linkedFrames(l, 0) == std::vector<int>{0, 2});
+    REQUIRE(e.undo());
+    CHECK(e.document().linkedFrames(l, 0) == std::vector<int>{0, 2, 3});
+    CHECK(e.document().validate());
+
+    // Duplicated frames are independent copies.
+    REQUIRE(e.duplicateFrame(0));
+    CHECK(e.document().celLink(l, 1) == 0);
+    REQUIRE(e.undo());
+
+    // Unlink: each frame keeps its own copy; undo relinks.
+    REQUIRE(e.unlinkCels(l, {0, 2, 3}));
+    CHECK(e.document().celLink(l, 0) == 0);
+    CHECK(e.document().cel(l, 2)->image == e.document().cel(l, 3)->image);
+    REQUIRE(e.undo());
+    CHECK(e.document().celLink(l, 3) != 0);
+
+    // Undo of the link restores each frame's own pixels.
+    while (e.history().canUndo()) REQUIRE(e.undo());
+    CHECK(e.document().links().empty());
+    CHECK(e.document().cel(l, 3)->image.pixel(0, 0).r == 3);
+    CHECK_FALSE(e.linkCels(l, {1}));
+}
+
+TEST_CASE("Linked cels survive layer delete, duplicate and merge", "[animation][links]") {
+    Editor e = framesEditor(3);
+    const LayerId l = e.document().layers()[0].id;
+    REQUIRE(e.linkCels(l, {0, 1}));
+    const LayerId copy = e.duplicateLayer(l).value();
+    CHECK(e.document().linkedFrames(copy, 1) == std::vector<int>{0, 1});
+    REQUIRE(e.removeLayer(l));
+    CHECK(e.document().celLink(l, 0) == 0);
+    REQUIRE(e.undo());
+    CHECK(e.document().linkedFrames(l, 0) == std::vector<int>{0, 1});
+    CHECK(e.document().validate());
+    // Merging an empty layer down keeps the links (results stay identical).
+    const LayerId top = e.addLayer("Empty", LayerKind::Raster, l).value();
+    REQUIRE(e.mergeDown(top));
+    CHECK(e.document().linkedFrames(l, 0) == std::vector<int>{0, 1});
+    CHECK(e.document().validate());
+}
+
+TEST_CASE("Non-contiguous frame sets: delete and durations in one step", "[animation][frames]") {
+    Editor e = framesEditor(6);
+    REQUIRE(e.removeFrames(std::vector<int>{4, 1, 2}));
+    CHECK(order(e) == std::vector<int>{0, 3, 5});
+    CHECK(e.history().undoLabel() == "Delete 3 Frames");
+    REQUIRE(e.undo());
+    CHECK(order(e) == std::vector<int>{0, 1, 2, 3, 4, 5});
+    REQUIRE(e.setFrameDurations(std::vector<int>{0, 5}, 250));
+    CHECK(e.document().frames()[0].durationMs == 250);
+    CHECK(e.document().frames()[5].durationMs == 250);
+    CHECK(e.document().frames()[1].durationMs == 101);
+    REQUIRE(e.undo());
+    CHECK(e.document().frames()[5].durationMs == 105);
+    CHECK_FALSE(e.removeFrames(std::vector<int>{0, 1, 2, 3, 4, 5}));
 }

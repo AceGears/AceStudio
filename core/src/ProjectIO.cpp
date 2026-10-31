@@ -185,20 +185,37 @@ Result<Document> documentFromJson(const json& j, ZipReader& zip) {
         return corrupt("Invalid frame count");
     doc.restoreFrames(std::move(frames));
 
-    // Cels
+    // Cels. Linked cels (schema 3) carry a "link" id and may share one PNG.
+    std::map<std::string, Image> decoded;
+    std::map<CelKey, std::uint32_t> links;
     for (const auto& jc : j.at("cels")) {
         const auto layerId = jc.at("layer").get<LayerId>();
         const int frame = jc.at("frame").get<int>();
         const std::string file = jc.at("file").get<std::string>();
-        if (file != celFileName(layerId, frame)) return corrupt("Unexpected cel file name: " + file);
-        auto png = zip.read(file);
-        if (!png) return png.error();
-        auto img = decodePng(png.value());
-        if (!img) return corrupt(file + ": " + img.error().message);
-        Cel cel{std::move(img).value(), jc.value("x", 0), jc.value("y", 0)};
+        std::uint32_t link = 0;
+        if (jc.contains("link")) {
+            if (!jc["link"].is_number_unsigned() || jc["link"].get<std::uint64_t>() == 0 || jc["link"].get<std::uint64_t>() > 0xFFFFFFFFull)
+                return corrupt("Invalid cel link");
+            link = jc["link"].get<std::uint32_t>();
+        }
+        bool nameOk = file == celFileName(layerId, frame);
+        if (!nameOk && link)   // a linked cel may name another frame's file of the same layer
+            for (int f = 0; f < doc.frameCount() && !nameOk; ++f) nameOk = file == celFileName(layerId, f);
+        if (!nameOk) return corrupt("Unexpected cel file name: " + file);
+        auto it = decoded.find(file);
+        if (it == decoded.end()) {
+            auto png = zip.read(file);
+            if (!png) return png.error();
+            auto img = decodePng(png.value());
+            if (!img) return corrupt(file + ": " + img.error().message);
+            it = decoded.emplace(file, std::move(img).value()).first;
+        }
+        Cel cel{it->second, jc.value("x", 0), jc.value("y", 0)};
         if (auto st = doc.setCel(layerId, frame, std::move(cel)); !st)
             return corrupt("Invalid cel " + file + ": " + st.error().message);
+        if (link) links[CelKey{layerId, frame}] = link;
     }
+    doc.restoreLinks(std::move(links));   // checked by validate()
 
     // Layer masks (schema 2)
     if (j.contains("masks")) {
@@ -256,6 +273,7 @@ int requiredSchemaVersion(const Document& doc) {
             (l.adjustment.type == AdjustmentType::Levels || l.adjustment.type == AdjustmentType::Curves))
             v = std::max(v, 3);   // schema 3: Levels and Curves
     }
+    if (!doc.links().empty()) v = std::max(v, 3);   // schema 3: linked cels
     return v;
 }
 
@@ -301,9 +319,14 @@ json documentToJson(const Document& doc) {
     j["frames"] = frames;
 
     json cels = json::array();
-    for (const auto& [k, c] : doc.cels())
-        cels.push_back({{"layer", k.layer}, {"frame", k.frame}, {"x", c.x}, {"y", c.y},
-                        {"file", celFileName(k.layer, k.frame)}});
+    for (const auto& [k, c] : doc.cels()) {
+        const std::uint32_t link = doc.celLink(k.layer, k.frame);
+        // Linked cels share the PNG of their group's first frame.
+        const int fileFrame = link ? doc.linkedFrames(k.layer, k.frame).front() : k.frame;
+        json jc = {{"layer", k.layer}, {"frame", k.frame}, {"x", c.x}, {"y", c.y}, {"file", celFileName(k.layer, fileFrame)}};
+        if (link) jc["link"] = link;
+        cels.push_back(std::move(jc));
+    }
     j["cels"] = cels;
     if (!doc.maskCels().empty()) {
         json masks = json::array();
@@ -341,6 +364,8 @@ Result<std::vector<std::uint8_t>> serializeProject(const Document& doc, const Sa
     if (auto st = zip.add(kDocumentName, asBytes(docText), true); !st) return st.error();
 
     for (const auto& [k, c] : doc.cels()) {
+        // A linked group's pixels are stored once, under its first frame.
+        if (doc.celLink(k.layer, k.frame) && doc.linkedFrames(k.layer, k.frame).front() != k.frame) continue;
         auto png = encodePng(c.image);
         if (!png) return png.error();
         if (auto st = zip.add(celFileName(k.layer, k.frame), png.value(), false); !st) return st.error();

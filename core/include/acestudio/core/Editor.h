@@ -13,6 +13,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace acestudio {
 
@@ -83,10 +84,16 @@ public:
     Status moveFrame(int from, int to);
     // Range operations on frames [first, last], each a single undo step.
     Status removeFrames(int first, int last);
+    // Any set of frames (need not be contiguous), one undo step each.
+    Status removeFrames(const std::vector<int>& frames);
+    Status setFrameDurations(const std::vector<int>& frames, int durationMs);
     // Copies the block and inserts it right after `last`; returns the first copy.
     Result<int> duplicateFrames(int first, int last);
     // Moves the block so it starts at `to` (0 <= to <= frameCount - block size).
     Status moveFrames(int first, int last, int to);
+    // Frames of one layer share a cel (the first frame's) / stop sharing it.
+    Status linkCels(LayerId layer, const std::vector<int>& frames);
+    Status unlinkCels(LayerId layer, const std::vector<int>& frames);
     // Sets the duration of every frame in [first, last].
     Status setFrameDurations(int first, int last, int durationMs);
 

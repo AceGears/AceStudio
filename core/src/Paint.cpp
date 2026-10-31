@@ -43,6 +43,7 @@ public:
         Cel* c = m_target == PaintTarget::Mask ? d.maskCel(m_layer, m_frame) : d.cel(m_layer, m_frame);
         if (!c) return Error{ErrorCode::Internal, "Cel missing on redo"};
         c->image.blit(m_after, m_rect.x - c->x, m_rect.y - c->y);
+        if (m_target == PaintTarget::Pixels) d.syncLinked(m_layer, m_frame);   // linked frames share the edit
         return {};
     }
 
@@ -56,6 +57,7 @@ public:
         }
         if (Cel* c = mask ? d.maskCel(m_layer, m_frame) : d.cel(m_layer, m_frame))
             c->image.blit(m_before, m_rect.x - c->x, m_rect.y - c->y);
+        if (!mask) d.syncLinked(m_layer, m_frame);
     }
 
     std::size_t memoryBytes() const override {
@@ -342,6 +344,7 @@ bool PaintSession::commit() {
     // While painting, the cel was canvas-sized; the committed state also
     // keeps any of the original's pixels beyond the canvas.
     if (normalized && m_originalCel) (void)cmd->redo(d);
+    else if (!mask) d.syncLinked(m_layer, m_frame);   // in-place strokes reach the other linked frames
     m_editor.recordApplied(std::move(cmd));
     return true;
 }

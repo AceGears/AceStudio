@@ -177,9 +177,24 @@ public:
     // ---- Cels ----
     const Cel* cel(LayerId layer, int frame) const noexcept;
     Cel* cel(LayerId layer, int frame) noexcept;
+    // Setting or clearing a linked cel changes every frame in its link group.
     Status setCel(LayerId layer, int frame, Cel cel);
     void clearCel(LayerId layer, int frame) noexcept;
     const std::map<CelKey, Cel>& cels() const noexcept { return m_cels; }
+
+    // ---- Linked cels ----
+    // Frames of one raster layer can share a cel: they always hold identical
+    // pixels and position. Group ids are opaque (0 = not linked).
+    std::uint32_t celLink(LayerId layer, int frame) const noexcept;
+    std::vector<int> linkedFrames(LayerId layer, int frame) const;   // the group, sorted (just `frame` if unlinked)
+    // Links the frames (at least two, in range) to share the cel of the first one.
+    Status linkCels(LayerId layer, const std::vector<int>& frames);
+    void unlinkCels(LayerId layer, const std::vector<int>& frames);
+    // After editing a linked cel in place, copies it to the rest of its group.
+    void syncLinked(LayerId layer, int frame);
+    const std::map<CelKey, std::uint32_t>& links() const noexcept { return m_links; }
+    // Restores a link table exactly (undo, file loading); no cel copying.
+    void restoreLinks(std::map<CelKey, std::uint32_t> links);
 
     // ---- Layer masks ----
     // Mask cels store the mask value in the red channel (R = G = B, A = 255).
@@ -251,6 +266,8 @@ private:
     LayerId m_nextLayerId = 1;
     std::vector<Frame> m_frames;
     std::map<CelKey, Cel> m_cels;
+    std::map<CelKey, std::uint32_t> m_links;
+    void dropSingletonLinks();
     std::map<CelKey, Cel> m_maskCels;
     TileMode m_tileMode = TileMode::None;
     Mask m_selection;

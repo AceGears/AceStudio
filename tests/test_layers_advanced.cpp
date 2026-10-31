@@ -309,3 +309,26 @@ TEST_CASE("Adjustment layers are named after their type", "[layers][adjust]") {
     const LayerId lv = ed.addAdjustmentLayer(Adjustment{AdjustmentType::Levels, 0, 255, 100}, kNoLayer).value();
     CHECK(ed.document().layer(lv)->name == "Levels");
 }
+
+TEST_CASE("Linked cels round-trip with one PNG per group", "[project][links]") {
+    Document d = makeDoc(4, 4);
+    const LayerId l = d.addLayer("L").value();
+    for (int f = 1; f < 4; ++f) REQUIRE(d.insertFrame(f));
+    for (int f = 0; f < 4; ++f) REQUIRE(d.setCel(l, f, Cel{Image(2, 2, Rgba8{std::uint8_t(f * 50), 0, 0, 255}), f, 0}));
+    REQUIRE(d.linkCels(l, {1, 3}));
+    CHECK(requiredSchemaVersion(d) == 3);
+    auto bytes = serializeProject(d);
+    REQUIRE(bytes);
+    ProjectInfo info;
+    auto back = deserializeProject(bytes.value(), &info);
+    REQUIRE(back);
+    CHECK(info.schemaVersion == 3);
+    const Document& r = back.value();
+    CHECK(r.linkedFrames(l, 3) == std::vector<int>{1, 3});
+    CHECK(r.cel(l, 3)->image.pixel(0, 0).r == 50);
+    CHECK(r.cel(l, 3)->x == 1);
+    for (int f = 0; f < 4; ++f) CHECK(r.composite(f) == d.composite(f));
+    // Only 3 cel PNGs are stored (frame 3 reuses frame 1's).
+    const std::string text(bytes.value().begin(), bytes.value().end());
+    CHECK(text.find("cels/L" + std::to_string(l) + "_F3.png") == std::string::npos);
+}

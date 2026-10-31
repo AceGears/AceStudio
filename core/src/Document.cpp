@@ -133,7 +133,7 @@ void Document::offsetCels(int dx, int dy) noexcept {
 }
 
 template <typename Fn> void Document::remapFrames(Fn fn) {
-    // fn(frame) -> new frame, or -1 to drop the cel. Applied to pixels and masks.
+    // fn(frame) -> new frame, or -1 to drop the cel. Applied to pixels, masks and links.
     for (auto* map : {&m_cels, &m_maskCels}) {
         std::map<CelKey, Cel> out;
         for (auto& [k, c] : *map) {
@@ -142,6 +142,13 @@ template <typename Fn> void Document::remapFrames(Fn fn) {
         }
         *map = std::move(out);
     }
+    std::map<CelKey, std::uint32_t> links;
+    for (const auto& [k, id] : m_links) {
+        const int f = fn(k.frame);
+        if (f >= 0) links.emplace(CelKey{k.layer, f}, id);
+    }
+    m_links = std::move(links);
+    dropSingletonLinks();
 }
 
 Status Document::setPixelAspect(double x, double y) {
@@ -204,6 +211,7 @@ Status Document::removeLayer(LayerId id) {
     std::erase_if(m_layers, [&](const Layer& l) { return doomed.count(l.id) > 0; });
     std::erase_if(m_cels, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
     std::erase_if(m_maskCels, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
+    std::erase_if(m_links, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
     return {};
 }
 
@@ -343,10 +351,74 @@ Status Document::setCel(LayerId l, int frame, Cel c) {
     if (frame < 0 || frame >= frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
     if (c.image.isNull()) return Error{ErrorCode::InvalidArgument, "Cel image is empty"};
     m_cels[CelKey{l, frame}] = std::move(c);
+    syncLinked(l, frame);
     return {};
 }
 
-void Document::clearCel(LayerId l, int frame) noexcept { m_cels.erase(CelKey{l, frame}); }
+void Document::clearCel(LayerId l, int frame) noexcept {
+    m_cels.erase(CelKey{l, frame});
+    syncLinked(l, frame);
+}
+
+// ---------------------------------------------------------------- linked cels
+
+std::uint32_t Document::celLink(LayerId l, int frame) const noexcept {
+    auto it = m_links.find(CelKey{l, frame});
+    return it == m_links.end() ? 0 : it->second;
+}
+
+std::vector<int> Document::linkedFrames(LayerId l, int frame) const {
+    const std::uint32_t id = celLink(l, frame);
+    if (!id) return {frame};
+    std::vector<int> out;
+    for (const auto& [k, g] : m_links)
+        if (k.layer == l && g == id) out.push_back(k.frame);   // map order: sorted by frame
+    return out;
+}
+
+void Document::syncLinked(LayerId l, int frame) {
+    const std::uint32_t id = celLink(l, frame);
+    if (!id) return;
+    auto src = m_cels.find(CelKey{l, frame});
+    for (const auto& [k, g] : m_links) {
+        if (k.layer != l || g != id || k.frame == frame) continue;
+        if (src == m_cels.end()) m_cels.erase(k);
+        else m_cels[k] = src->second;
+    }
+}
+
+void Document::dropSingletonLinks() {
+    std::map<std::pair<LayerId, std::uint32_t>, int> count;
+    for (const auto& [k, id] : m_links) ++count[{k.layer, id}];
+    std::erase_if(m_links, [&](const auto& kv) { return count[{kv.first.layer, kv.second}] < 2; });
+}
+
+Status Document::linkCels(LayerId l, const std::vector<int>& framesIn) {
+    const Layer* lay = layer(l);
+    if (!lay || lay->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Only raster layers have cels to link"};
+    std::vector<int> frames = framesIn;
+    std::sort(frames.begin(), frames.end());
+    frames.erase(std::unique(frames.begin(), frames.end()), frames.end());
+    if (frames.size() < 2) return Error{ErrorCode::InvalidArgument, "Select at least two frames to link"};
+    for (int f : frames)
+        if (f < 0 || f >= frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
+    // The first frame (in the caller's order) provides the shared cel.
+    const int sourceFrame = framesIn.front();
+    std::uint32_t id = 1;
+    for (const auto& [k, g] : m_links) id = std::max(id, g + 1);
+    for (int f : frames) m_links.erase(CelKey{l, f});
+    dropSingletonLinks();   // groups the frames left behind
+    for (int f : frames) m_links[CelKey{l, f}] = id;
+    syncLinked(l, sourceFrame);
+    return {};
+}
+
+void Document::unlinkCels(LayerId l, const std::vector<int>& frames) {
+    for (int f : frames) m_links.erase(CelKey{l, f});   // each keeps its own copy of the pixels
+    dropSingletonLinks();
+}
+
+void Document::restoreLinks(std::map<CelKey, std::uint32_t> links) { m_links = std::move(links); }
 
 const Cel* Document::maskCel(LayerId l, int frame) const noexcept {
     auto it = m_maskCels.find(CelKey{l, frame});
@@ -649,6 +721,24 @@ Status Document::validate() const {
     for (const auto& t : m_tags)
         if (t.fromFrame < 0 || t.toFrame >= frameCount() || t.fromFrame > t.toFrame || t.repeat < 0)
             return corrupt("Animation tag '" + t.name + "' has an invalid range");
+    // Links: raster layers, valid frames, groups of two or more with identical cels.
+    std::map<std::pair<LayerId, std::uint32_t>, const Cel*> firstCel;
+    std::map<std::pair<LayerId, std::uint32_t>, int> members;
+    for (const auto& [k, id] : m_links) {
+        const Layer* l = layer(k.layer);
+        if (!l || l->kind != LayerKind::Raster) return corrupt("A cel link refers to a missing or non-raster layer");
+        if (k.frame < 0 || k.frame >= frameCount() || id == 0) return corrupt("Invalid cel link");
+        const auto key = std::make_pair(k.layer, id);
+        const Cel* c = cel(k.layer, k.frame);
+        if (members[key]++ == 0) firstCel[key] = c;
+        else {
+            const Cel* f = firstCel[key];
+            if ((f == nullptr) != (c == nullptr) || (f && (f->x != c->x || f->y != c->y || !(f->image == c->image))))
+                return corrupt("Linked cels differ");
+        }
+    }
+    for (const auto& [key, n] : members)
+        if (n < 2) return corrupt("A cel link group has only one frame");
     return {};
 }
 

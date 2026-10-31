@@ -6,6 +6,7 @@
 #include <QWidget>
 
 #include <utility>
+#include <vector>
 
 class QAction;
 class QLabel;
@@ -37,6 +38,9 @@ public Q_SLOTS:
     void moveCurrentFrame(int delta);
     void duplicateSelected();
     void deleteSelected();
+    // Linked cels of the current layer across the selected frames.
+    void linkSelected();
+    void unlinkSelected();
 
 Q_SIGNALS:
     void tagsRequested();
@@ -50,10 +54,14 @@ private:
     void editDuration(int frame);
     void editAllDurations();
     void editSelectedDurations();
-    // Selected frame block [first, last]; the current frame alone when
-    // nothing else is selected.
+    // Selected frames, sorted; always contains the current frame.
+    std::vector<int> selectedFrames() const;
+    // The selection as a block [first, last]; the current frame alone when the
+    // selection has gaps (callers that need a block check isBlock()).
     std::pair<int, int> selectedRange() const;
+    bool isBlock() const;
     void setRange(int first, int last, int current);
+    void setSelectedFrames(std::vector<int> frames, int current);
     void onSelectionChanged();
 
     QPointer<DocumentView> m_view;
@@ -66,7 +74,7 @@ private:
     AnimationPlayer m_player;
     QTimer* m_timer = nullptr;
     bool m_syncing = false;
-    int m_rangeFirst = -1, m_rangeLast = -1;   // contiguous multi-frame selection
+    std::vector<int> m_selected;                // multi-frame selection (sorted)
     bool m_dropPending = false;                 // a drag of several frames is being applied
 };
 

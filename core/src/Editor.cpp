@@ -87,6 +87,7 @@ struct LayerSnapshot {
     std::vector<SavedLayer> layers;   // ascending index
     std::vector<SavedCel> cels;
     std::vector<SavedCel> masks;
+    std::vector<std::pair<CelKey, std::uint32_t>> links;
     std::size_t bytes = 0;
 
     static LayerSnapshot capture(const Document& d, LayerId root) {
@@ -103,6 +104,8 @@ struct LayerSnapshot {
                     s.masks.push_back({k.layer, k.frame, c});
                     s.bytes += celBytes(c);
                 }
+            for (const auto& [k, g] : d.links())
+                if (k.layer == id) s.links.emplace_back(k, g);
         }
         std::sort(s.layers.begin(), s.layers.end(), [](auto& a, auto& b) { return a.index < b.index; });
         return s;
@@ -112,6 +115,11 @@ struct LayerSnapshot {
         for (const auto& sl : layers) (void)d.insertLayerAt(sl.layer, sl.index);
         for (const auto& sc : cels) (void)d.setCel(sc.layer, sc.frame, sc.cel);
         for (const auto& sc : masks) (void)d.setMaskCel(sc.layer, sc.frame, sc.cel);
+        if (!links.empty()) {
+            auto all = d.links();
+            for (const auto& [k, g] : links) all[k] = g;
+            d.restoreLinks(std::move(all));
+        }
     }
 };
 
@@ -319,11 +327,18 @@ Result<LayerId> Editor::duplicateLayer(LayerId id) {
                 }
                 for (const auto& sc : snap->cels) copies->cels.push_back({idMap[sc.layer], sc.frame, sc.cel});
                 for (const auto& sc : snap->masks) copies->masks.push_back({idMap[sc.layer], sc.frame, sc.cel});
+                // The copy keeps the original's link structure (groups are per layer).
+                for (const auto& [k, g] : snap->links) copies->links.emplace_back(CelKey{idMap[k.layer], k.frame}, g);
             }
             for (const auto& sl : copies->layers)
                 if (auto st = d.insertLayerAt(sl.layer, sl.index); !st) return st;
             for (const auto& sc : copies->cels) (void)d.setCel(sc.layer, sc.frame, sc.cel);
             for (const auto& sc : copies->masks) (void)d.setMaskCel(sc.layer, sc.frame, sc.cel);
+            if (!copies->links.empty()) {
+                auto all = d.links();
+                for (const auto& [k, g] : copies->links) all[k] = g;
+                d.restoreLinks(std::move(all));
+            }
             return {};
         },
         [copies](Document& d) { (void)d.removeLayer(copies->layers.front().layer.id); }, snap->bytes);
@@ -382,9 +397,24 @@ Status Editor::mergeDown(LayerId id) {
             if (!d.layer(id) || !d.layer(belowId)) return Error{ErrorCode::NotFound, "Layer no longer exists"};
             for (int f = 0; f < d.frameCount(); ++f) d.clearMaskCel(belowId, f);
             d.layer(belowId)->hasMask = false;
+            // Merged frames can differ even where the layer below was linked:
+            // unlink, write, then relink the groups whose results are identical.
+            std::map<std::uint32_t, std::vector<int>> groups;
+            for (const auto& [k, g] : d.links()) if (k.layer == belowId) groups[g].push_back(k.frame);
+            for (const auto& [g, fs] : groups) d.unlinkCels(belowId, fs);
             for (const auto& [f, c] : *merged) {
                 if (c) (void)d.setCel(belowId, f, *c);
                 else d.clearCel(belowId, f);
+            }
+            for (const auto& [g, fs] : groups) {
+                const Cel* first = d.cel(belowId, fs.front());
+                bool same = true;
+                for (int f : fs) {
+                    const Cel* c = d.cel(belowId, f);
+                    same = same && (first == nullptr) == (c == nullptr) &&
+                           (!first || (first->x == c->x && first->y == c->y && first->image == c->image));
+                }
+                if (same) (void)d.linkCels(belowId, fs);
             }
             return d.removeLayer(id);
         },
@@ -615,6 +645,34 @@ Status Editor::removeFrames(int first, int last) {
     });
 }
 
+Status Editor::removeFrames(const std::vector<int>& framesIn) {
+    std::vector<int> frames = framesIn;
+    std::sort(frames.begin(), frames.end());
+    frames.erase(std::unique(frames.begin(), frames.end()), frames.end());
+    if (frames.empty()) return {};
+    if (frames.front() < 0 || frames.back() >= m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
+    if (static_cast<int>(frames.size()) >= m_doc.frameCount())
+        return Error{ErrorCode::InvalidArgument, "A document must keep at least one frame"};
+    if (frames.size() == 1) return removeFrame(frames.front());
+    return grouped("Delete " + std::to_string(frames.size()) + " Frames", [&]() -> Status {
+        for (auto it = frames.rbegin(); it != frames.rend(); ++it)   // last first, so indices stay valid
+            if (auto st = removeFrame(*it); !st) return st;
+        return {};
+    });
+}
+
+Status Editor::setFrameDurations(const std::vector<int>& frames, int durationMs) {
+    if (frames.empty()) return {};
+    for (int f : frames)
+        if (f < 0 || f >= m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
+    if (frames.size() == 1) return setFrameDuration(frames.front(), durationMs);
+    return grouped("Frame Durations", [&]() -> Status {
+        for (int f : frames)
+            if (auto st = setFrameDuration(f, durationMs); !st) return st;
+        return {};
+    });
+}
+
 Result<int> Editor::duplicateFrames(int first, int last) {
     if (auto st = checkRange(m_doc, first, last); !st) return st.error();
     const int n = last - first + 1;
@@ -658,6 +716,7 @@ Status Editor::removeFrame(int frame) {
     auto cels = std::make_shared<std::vector<SavedCel>>(celsAtFrame(m_doc, frame, bytes));
     auto masks = std::make_shared<std::vector<SavedCel>>(celsAtFrame(m_doc, frame, bytes, true));
     const int duration = m_doc.frames()[static_cast<std::size_t>(frame)].durationMs;
+    auto links = std::make_shared<std::map<CelKey, std::uint32_t>>(m_doc.links());
     return apply(std::make_unique<FnCommand>(
         "Delete Frame", [=](Document& d) { return d.removeFrame(frame); },
         [=](Document& d) {
@@ -665,8 +724,46 @@ Status Editor::removeFrame(int frame) {
             for (const auto& sc : *cels) (void)d.setCel(sc.layer, frame, sc.cel);
             for (const auto& sc : *masks) (void)d.setMaskCel(sc.layer, frame, sc.cel);
             (void)d.replaceTags(*tags);
+            d.restoreLinks(*links);   // frame keys are back where they were
         },
         bytes));
+}
+
+Status Editor::linkCels(LayerId layer, const std::vector<int>& frames) {
+    const Layer* l = m_doc.layer(layer);
+    if (!l || l->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Select a raster layer to link its cels"};
+    if (!m_doc.isLayerEditable(layer)) return Error{ErrorCode::PermissionDenied, "The layer is locked"};
+    {   // the same checks Document::linkCels makes, before recording anything
+        std::vector<int> u = frames;
+        std::sort(u.begin(), u.end());
+        u.erase(std::unique(u.begin(), u.end()), u.end());
+        if (u.size() < 2) return Error{ErrorCode::InvalidArgument, "Select at least two frames to link"};
+        if (u.front() < 0 || u.back() >= m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
+    }
+    auto beforeLinks = std::make_shared<std::map<CelKey, std::uint32_t>>(m_doc.links());
+    auto beforeCels = std::make_shared<std::vector<SavedCel>>();
+    std::size_t bytes = 0;
+    for (const auto& [k, c] : m_doc.cels())
+        if (k.layer == layer) { beforeCels->push_back({k.layer, k.frame, c}); bytes += celBytes(c); }
+    return apply(std::make_unique<FnCommand>(
+        "Link Cels", [=](Document& d) { return d.linkCels(layer, frames); },
+        [=](Document& d) {
+            d.restoreLinks({});   // no propagation while the cels are put back
+            for (int f = 0; f < d.frameCount(); ++f) d.clearCel(layer, f);
+            for (const auto& sc : *beforeCels) (void)d.setCel(sc.layer, sc.frame, sc.cel);
+            d.restoreLinks(*beforeLinks);
+        },
+        bytes));
+}
+
+Status Editor::unlinkCels(LayerId layer, const std::vector<int>& frames) {
+    bool any = false;
+    for (int f : frames) any = any || m_doc.celLink(layer, f) != 0;
+    if (!any) return Error{ErrorCode::InvalidArgument, "Those cels are not linked"};
+    auto before = std::make_shared<std::map<CelKey, std::uint32_t>>(m_doc.links());
+    return apply(std::make_unique<FnCommand>(
+        "Unlink Cels", [=](Document& d) -> Status { d.unlinkCels(layer, frames); return {}; },
+        [=](Document& d) { d.restoreLinks(*before); }));
 }
 
 Status Editor::setFrameDuration(int frame, int durationMs) {
