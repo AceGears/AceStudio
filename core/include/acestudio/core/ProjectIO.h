@@ -27,7 +27,7 @@ namespace acestudio {
 
 // Schema 2 (0.6.0) adds layer masks, clipping, adjustment layers and tile
 // mode. Files that use none of them are still written as schema 1.
-inline constexpr int kProjectSchemaVersion = 2;
+inline constexpr int kProjectSchemaVersion = 3;
 inline constexpr const char* kProjectFormatId = "acestudio.project";
 inline constexpr const char* kProjectExtension = ".acestudio";
 

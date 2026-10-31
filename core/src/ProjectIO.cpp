@@ -154,6 +154,16 @@ Result<Document> documentFromJson(const json& j, ZipReader& zip) {
             const auto t = adjustmentTypeFromString(ja.at("type").get<std::string>());
             if (!t) return corrupt("Unknown adjustment type");
             l.adjustment = Adjustment{*t, ja.value("a", 0), ja.value("b", 0), ja.value("c", 0)};
+            if (ja.contains("points")) {
+                if (!ja["points"].is_array() || ja["points"].size() > 16) return corrupt("Invalid curve points");
+                for (const auto& pt : ja["points"]) {
+                    if (!pt.is_array() || pt.size() != 2 || !pt[0].is_number_integer() || !pt[1].is_number_integer())
+                        return corrupt("Invalid curve point");
+                    const int px = pt[0].get<int>(), py = pt[1].get<int>();
+                    if (px < 0 || px > 255 || py < 0 || py > 255) return corrupt("Curve point out of range");
+                    l.adjustment.points.push_back({static_cast<std::uint8_t>(px), static_cast<std::uint8_t>(py)});
+                }
+            }
         }
         l.name = jl.value("name", std::string());
         l.visible = jl.value("visible", true);
@@ -236,10 +246,17 @@ Result<Document> documentFromJson(const json& j, ZipReader& zip) {
 } // namespace
 
 int requiredSchemaVersion(const Document& doc) {
-    if (doc.tileMode() != TileMode::None || !doc.maskCels().empty()) return 2;
-    for (const auto& l : doc.layers())
-        if (l.clipped || l.hasMask || l.kind == LayerKind::Adjustment) return 2;
-    return 1;   // nothing schema 2 adds: stay readable by 0.5 and older
+    // The lowest schema that can hold this document, so files that use no new
+    // feature stay readable by older builds.
+    int v = 1;
+    if (doc.tileMode() != TileMode::None || !doc.maskCels().empty()) v = 2;
+    for (const auto& l : doc.layers()) {
+        if (l.clipped || l.hasMask || l.kind == LayerKind::Adjustment) v = std::max(v, 2);
+        if (l.kind == LayerKind::Adjustment &&
+            (l.adjustment.type == AdjustmentType::Levels || l.adjustment.type == AdjustmentType::Curves))
+            v = std::max(v, 3);   // schema 3: Levels and Curves
+    }
+    return v;
 }
 
 json documentToJson(const Document& doc) {
@@ -267,8 +284,14 @@ json documentToJson(const Document& doc) {
                    {"blend", toString(l.blend)}};
         if (l.clipped) jl["clipped"] = true;
         if (l.hasMask) jl["mask"] = {{"enabled", l.maskEnabled}};
-        if (l.kind == LayerKind::Adjustment)
+        if (l.kind == LayerKind::Adjustment) {
             jl["adjustment"] = {{"type", toString(l.adjustment.type)}, {"a", l.adjustment.a}, {"b", l.adjustment.b}, {"c", l.adjustment.c}};
+            if (!l.adjustment.points.empty()) {
+                json pts = json::array();
+                for (const auto& pt : l.adjustment.points) pts.push_back({pt.x, pt.y});
+                jl["adjustment"]["points"] = pts;
+            }
+        }
         layers.push_back(std::move(jl));
     }
     j["layers"] = layers;

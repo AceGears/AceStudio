@@ -54,13 +54,15 @@ std::string_view toString(AdjustmentType t) noexcept {
     case AdjustmentType::Invert: return "invert";
     case AdjustmentType::Posterize: return "posterize";
     case AdjustmentType::Threshold: return "threshold";
+    case AdjustmentType::Levels: return "levels";
+    case AdjustmentType::Curves: return "curves";
     }
     return "brightnessContrast";
 }
 
 std::optional<AdjustmentType> adjustmentTypeFromString(std::string_view s) noexcept {
     for (auto t : {AdjustmentType::BrightnessContrast, AdjustmentType::HueSaturation, AdjustmentType::Invert,
-                   AdjustmentType::Posterize, AdjustmentType::Threshold})
+                   AdjustmentType::Posterize, AdjustmentType::Threshold, AdjustmentType::Levels, AdjustmentType::Curves})
         if (toString(t) == s) return t;
     return std::nullopt;
 }
@@ -74,7 +76,13 @@ Status validateAdjustment(const Adjustment& a) {
     case AdjustmentType::Invert: break;
     case AdjustmentType::Posterize: ok = in(a.a, 2, 64); break;
     case AdjustmentType::Threshold: ok = in(a.a, 0, 255); break;
+    case AdjustmentType::Levels: ok = in(a.a, 0, 254) && in(a.b, a.a + 1, 255) && in(a.c, 10, 999); break;
+    case AdjustmentType::Curves:
+        ok = a.points.size() >= 2 && a.points.size() <= 16;
+        for (std::size_t i = 1; ok && i < a.points.size(); ++i) ok = a.points[i].x > a.points[i - 1].x;
+        break;
     }
+    if (a.type != AdjustmentType::Curves && !a.points.empty()) ok = false;
     return ok ? Status{} : Status{Error{ErrorCode::InvalidArgument, "Adjustment parameters out of range"}};
 }
 
@@ -494,6 +502,7 @@ void Document::compositeChildren(LayerId parent, int frame, Image& out, int ox, 
             if (!clip && nextClipped) baseAlpha = w;          // clipped layers follow the adjustment's mask
             if (clipActive)
                 for (std::size_t k = 0; k < npx; ++k) w[k] = static_cast<std::uint8_t>((w[k] * baseAlpha[k] + 127) / 255);
+            const PreparedAdjustment prep(l.adjustment);
             std::size_t k = 0;
             for (int y = 0; y < out.height(); ++y)
                 for (int x = 0; x < out.width(); ++x, ++k) {
@@ -501,7 +510,7 @@ void Document::compositeChildren(LayerId parent, int frame, Image& out, int ox, 
                     if (c.a == 0) continue;
                     const unsigned t = (static_cast<unsigned>(w[k]) * l.opacity + 127) / 255;
                     if (t == 0) continue;
-                    const Rgba8 a = adjustPixel(c, l.adjustment);
+                    const Rgba8 a = prep.apply(c);
                     auto mix = [t](std::uint8_t p, std::uint8_t q) {
                         return static_cast<std::uint8_t>((p * (255 - t) + q * t + 127) / 255);
                     };

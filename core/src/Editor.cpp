@@ -504,7 +504,8 @@ Status Editor::setLayerAdjustment(LayerId id, Adjustment adj, bool mergeable) {
 
 Result<LayerId> Editor::addAdjustmentLayer(Adjustment adj, LayerId above) {
     if (auto st = validateAdjustment(adj); !st) return st.error();
-    static const char* names[] = {"Brightness/Contrast", "Hue/Saturation", "Invert", "Posterize", "Threshold"};
+    static const char* names[] = {"Brightness/Contrast", "Hue/Saturation", "Invert", "Posterize", "Threshold", "Levels", "Curves"};
+    static_assert(std::size(names) == static_cast<std::size_t>(AdjustmentType::Curves) + 1, "name every adjustment type");
     const std::string name = names[static_cast<int>(adj.type)];
     return addLayerWith(name, LayerKind::Adjustment, above, [adj](Layer& l) { l.adjustment = adj; },
                         "New Adjustment Layer");

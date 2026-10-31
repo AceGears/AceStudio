@@ -3,6 +3,7 @@
 
 #include "acestudio/core/Adjust.h"
 #include "acestudio/core/Document.h"
+#include "acestudio/core/Editor.h"
 #include "acestudio/core/ProjectIO.h"
 
 using namespace acestudio;
@@ -245,4 +246,66 @@ TEST_CASE("Banded multi-threaded compositing matches row-by-row compositing", "[
         for (int x = 13; x < 293; ++x) same = same && region.pixel(x, y) == full.pixel(x, y);
     CHECK(same);
     CHECK(region.pixel(5, 5).a == 0);   // outside the region stays untouched
+}
+
+TEST_CASE("Levels and Curves adjustments", "[layers][adjust]") {
+    // Levels: black 50, white 200, gamma 1.0 stretches linearly.
+    const Adjustment lv{AdjustmentType::Levels, 50, 200, 100};
+    CHECK(validateAdjustment(lv));
+    CHECK(adjustPixel(Rgba8{50, 200, 125, 9}, lv) == Rgba8{0, 255, 128, 9});
+    CHECK(adjustPixel(Rgba8{10, 250, 0, 255}, lv).r == 0);
+    // Gamma 2.0 brightens midtones.
+    CHECK(adjustPixel(Rgba8{64, 64, 64, 255}, Adjustment{AdjustmentType::Levels, 0, 255, 200}).r > 100);
+    CHECK_FALSE(validateAdjustment(Adjustment{AdjustmentType::Levels, 100, 100, 100}));   // white must exceed black
+    CHECK_FALSE(validateAdjustment(Adjustment{AdjustmentType::Levels, 0, 255, 5}));
+
+    // Curves: identity through the corners, exact at control points, monotone between.
+    const Adjustment id{AdjustmentType::Curves, {{0, 0}, {255, 255}}};
+    for (int v : {0, 1, 77, 128, 254, 255}) CHECK(adjustPixel(Rgba8{std::uint8_t(v), 0, 0, 255}, id).r == v);
+    const Adjustment s{AdjustmentType::Curves, {{0, 0}, {64, 32}, {192, 224}, {255, 255}}};
+    CHECK(validateAdjustment(s));
+    const auto t = curveTable(s.points);
+    CHECK(t[64] == 32);
+    CHECK(t[192] == 224);
+    for (int i = 1; i < 256; ++i) CHECK(t[static_cast<std::size_t>(i)] >= t[static_cast<std::size_t>(i - 1)]);   // no overshoot
+    CHECK(PreparedAdjustment(s).apply(Rgba8{64, 192, 0, 7}) == Rgba8{32, 224, 0, 7});
+    CHECK_FALSE(validateAdjustment(Adjustment{AdjustmentType::Curves, {{10, 0}, {10, 5}}}));   // x not increasing
+    CHECK_FALSE(validateAdjustment(Adjustment{AdjustmentType::Curves, {{10, 0}}}));
+    CHECK_FALSE(validateAdjustment(Adjustment{AdjustmentType::Invert, {{0, 0}, {255, 255}}}));  // points only for curves
+    // Prepared tables match the per-pixel path for every LUT type.
+    for (const Adjustment& a : {Adjustment{AdjustmentType::BrightnessContrast, 30, -20}, Adjustment{AdjustmentType::Invert},
+                                Adjustment{AdjustmentType::Posterize, 5}, lv, s}) {
+        const PreparedAdjustment p(a);
+        for (int v = 0; v < 256; v += 17) {
+            const Rgba8 c{std::uint8_t(v), std::uint8_t(255 - v), std::uint8_t(v / 2), 200};
+            CHECK(p.apply(c) == adjustPixel(c, a));
+        }
+    }
+}
+
+TEST_CASE("Schema 3 for Levels and Curves round-trips", "[layers][project]") {
+    Document d = makeDoc(4, 4);
+    const LayerId base = d.addLayer("Base").value();
+    REQUIRE(d.setCel(base, 0, Cel{Image(4, 4, Rgba8{90, 140, 200, 255}), 0, 0}));
+    const LayerId c = d.addLayer("Curve", LayerKind::Adjustment).value();
+    d.layer(c)->adjustment = Adjustment{AdjustmentType::Curves, {{0, 10}, {128, 100}, {255, 240}}};
+    CHECK(requiredSchemaVersion(d) == 3);
+    auto bytes = serializeProject(d);
+    REQUIRE(bytes);
+    ProjectInfo info;
+    auto back = deserializeProject(bytes.value(), &info);
+    REQUIRE(back);
+    CHECK(info.schemaVersion == 3);
+    CHECK(back.value().layer(c)->adjustment == d.layer(c)->adjustment);
+    CHECK(back.value().composite(0) == d.composite(0));
+    d.layer(c)->adjustment = Adjustment{AdjustmentType::Invert};
+    CHECK(requiredSchemaVersion(d) == 2);
+}
+
+TEST_CASE("Adjustment layers are named after their type", "[layers][adjust]") {
+    Editor ed(makeDoc());
+    const LayerId c = ed.addAdjustmentLayer(Adjustment{AdjustmentType::Curves, {{0, 0}, {255, 255}}}, kNoLayer).value();
+    CHECK(ed.document().layer(c)->name == "Curves");
+    const LayerId lv = ed.addAdjustmentLayer(Adjustment{AdjustmentType::Levels, 0, 255, 100}, kNoLayer).value();
+    CHECK(ed.document().layer(lv)->name == "Levels");
 }

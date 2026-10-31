@@ -32,13 +32,29 @@ enum class LayerKind { Raster, Group, Adjustment };
 //   Invert              (none)
 //   Posterize           a = levels 2..64
 //   Threshold           a = level 0..255 (luma at or above becomes white)
-enum class AdjustmentType { BrightnessContrast, HueSaturation, Invert, Posterize, Threshold };
+enum class AdjustmentType { BrightnessContrast, HueSaturation, Invert, Posterize, Threshold, Levels, Curves };
 std::string_view toString(AdjustmentType t) noexcept;
 std::optional<AdjustmentType> adjustmentTypeFromString(std::string_view s) noexcept;
 
+struct CurvePoint {
+    std::uint8_t x = 0, y = 0;
+    bool operator==(const CurvePoint&) const = default;
+};
+
+// Parameters by type:
+//   BrightnessContrast  a = brightness -100..100, b = contrast -100..100
+//   HueSaturation       a = hue -180..180, b = saturation -100..100, c = lightness -100..100
+//   Posterize           a = levels 2..64;   Threshold  a = level 0..255
+//   Levels              a = input black 0..254, b = input white (a+1)..255, c = gamma x100 (10..999)
+//   Curves              points: 2..16 control points, x strictly increasing (RGB together)
 struct Adjustment {
+    Adjustment() = default;
+    Adjustment(AdjustmentType t, int pa = 0, int pb = 0, int pc = 0) : type(t), a(pa), b(pb), c(pc) {}
+    Adjustment(AdjustmentType t, std::vector<CurvePoint> pts) : type(t), points(std::move(pts)) {}
+
     AdjustmentType type = AdjustmentType::BrightnessContrast;
     int a = 0, b = 0, c = 0;
+    std::vector<CurvePoint> points;
     bool operator==(const Adjustment&) const = default;
 };
 Status validateAdjustment(const Adjustment& adj);

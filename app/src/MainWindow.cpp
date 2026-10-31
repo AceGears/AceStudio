@@ -514,6 +514,7 @@ void MainWindow::buildMenus() {
     QMenu* adjMenu = layer->addMenu(tr("New &Adjustment Layer"));
     const std::pair<AdjustmentType, QString> adjTypes[] = {
         {AdjustmentType::BrightnessContrast, tr("&Brightness / Contrast…")}, {AdjustmentType::HueSaturation, tr("&Hue / Saturation…")},
+        {AdjustmentType::Levels, tr("&Levels…")}, {AdjustmentType::Curves, tr("&Curves…")},
         {AdjustmentType::Invert, tr("&Invert")}, {AdjustmentType::Posterize, tr("&Posterize…")}, {AdjustmentType::Threshold, tr("&Threshold…")}};
     for (const auto& [type, label] : adjTypes) {
         docAction(adjMenu, label, QKeySequence(), [this, type = type] {
@@ -522,6 +523,8 @@ void MainWindow::buildMenus() {
             Adjustment adj{type};
             if (type == AdjustmentType::Posterize) adj.a = 4;
             if (type == AdjustmentType::Threshold) adj.a = 128;
+            if (type == AdjustmentType::Levels) { adj.b = 255; adj.c = 100; }
+            if (type == AdjustmentType::Curves) adj.points = {{0, 0}, {255, 255}};
             auto id = v->editor().addAdjustmentLayer(adj, v->currentLayer());
             if (!id) { report(id.error()); return; }
             v->setCurrentLayer(id.value());
