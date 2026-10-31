@@ -116,8 +116,20 @@ not been run.
 - Onion-skin ghosts are cached. The first display after a structural change composites each
   ghost frame once (about 240 ms for one ghost each side at 1024² × 20 layers on the VM).
 
+## Phase 6 asset tools (design limits)
+- A generated tileset has one terrain over one base. Transitions between three or more
+  terrains need one set per pair.
+- Textures are tile-sized (one tile repeats), so a 16 px tile can hold only small detail. SDXL
+  textures are reduced from 1024² to the tile size; what reads well at 16 px depends on the
+  prompt. Larger tiles keep more detail.
+- The smart slicer needs a uniform background (transparent or one colour). Sprites packed
+  edge to edge on a busy background are not separated; use the grid mode.
+- The atlas packer does not rotate sprites.
+- Clear Sky removes one colour (with a tolerance) touching the top edge, or everywhere. Skies
+  with gradients or clouds behind a silhouette need manual cleanup or a plainer prompt.
+
 ## Planned in later phases
-- Tileset, MCP, Lua and plugin features (Phases 6–7). Their menus show a disabled entry naming
-  the phase.
+- MCP, Lua and plugin features, and Godot/Tiled/Unity exporters for tilesets, atlases and UI
+  kits (Phase 7). Phase 6 writes TexturePacker-style JSON and its own tileset/parallax JSON.
 - BiRefNet on CUDA spends part of its 2.6 s on CPU pre/post-processing. FP16 weights, I/O binding
   and GPU-side resizing are to be measured in the Phase 8 profiling pass.

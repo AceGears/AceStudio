@@ -62,6 +62,8 @@ private:
     QSpinBox* m_y = nullptr;
     QCheckBox* m_repeat = nullptr;
     QSpinBox* m_overlap = nullptr;
+    QSpinBox* m_skyTolerance = nullptr;
+    QCheckBox* m_skyEverywhere = nullptr;
     QLineEdit* m_prompt = nullptr;
     QPushButton* m_generate = nullptr;
     QLabel* m_genStatus = nullptr;

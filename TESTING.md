@@ -41,6 +41,28 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 
 ## Recorded results
 
+### 2026-10-31 — Phase 6, version 0.7.0
+
+| Environment | Build | Result |
+|---|---|---|
+| Linux, GCC 13.3, Qt 6.4.2 | everything, Release, and the app with `-Werror` | ✅ 207/207 CTest (new cases in the atlas, autotile and asset-tool suites) |
+| Python 3.13 + Diffusers 0.42.1 | worker suite + tiny-SDXL plumbing | ✅ 27 + 4. The tileable test checks the VAE is equivariant on the torus and that settings restore byte-identically |
+| GitHub Actions, Windows, MSVC `/W4 /WX`, Qt 6.12.0 | everything + package | ✅ |
+
+Desktop checks under Xvfb: every Assets dialog opened and used. Generator with file textures
+(0 seams in 1036 pairs for blob, 128 for Wang); sandbox paint and erase; template opened (it
+reports seams, as expected for a guide with grid lines); slicer grid mode found 47 tiles and
+opened them as a 47-frame animation; atlas packed those frames; UI kit exported (`nineSlice`
+per frame in the JSON); parallax flagged a 5 px outline step at the wrap, and Make Seamless
+cleared it.
+
+Real SDXL on the Windows 11 test PC (RTX 4070 Laptop, 8 GB):
+
+| Check | Result |
+|---|---|
+| Tileset Generator › Generate "lush green grass", then "brown dirt ground" (queued) | ✅ 72 s (cold, including PyTorch start) and 41 s; both "tiles seamlessly"; blob set with 0 seams in 1036 pairs. The grass came out as grass on pale stones: the prompt suffix said "game tile", which now reads "seamless repeating texture" |
+| Parallax › Generate "orange evening sky with soft clouds", then "dark green pine forest treeline silhouette" | ✅ 43 s and 42 s, 315×180, no wrap problems found. Clear Sky made the forest's sky transparent; gaps between trunks stayed (now an "Also enclosed gaps" option) |
+
 ### 2026-10-31 — Phase 5 review pass, version 0.6.0
 
 | Environment | Build | Result |

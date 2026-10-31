@@ -2,13 +2,14 @@
 
 AI-assisted game asset creation and 2D animation studio for Windows.
 
-> **Status: Phase 4 (AI infrastructure), version 0.5.0.** You can draw and animate pixel art
-> with layers, frames, tags and onion skin, export sprite sheets (Aseprite-compatible JSON),
-> GIF, APNG, WebP and PNG sequences, undo anything, and recover work after a crash. AI Studio
-> runs models locally in a supervised worker: background removal, upscaling and SDXL
-> generation, with licence-gated model downloads. Real SDXL and BiRefNet runs still need
-> verifying on a GPU machine. Tilesets and engine-specific export are planned — see [ROADMAP.md](ROADMAP.md). Nothing in the app pretends to
-> work when it doesn't; unavailable menus are disabled and name the phase that delivers them.
+> **Status: Phase 6 (environment and asset tools), version 0.7.0.** You can draw and animate
+> pixel art with layers, frames, tags and onion skin, export sprite sheets (Aseprite-compatible
+> JSON), GIF, APNG, WebP and PNG sequences, undo anything, and recover work after a crash. AI
+> Studio runs SDXL, BiRefNet and Real-ESRGAN locally in a supervised worker, generates
+> character animations from pose skeletons, and makes seamless textures. The Assets menu builds
+> autotile sets (blob 47, Wang, 4-neighbour) with seam checks, parallax backgrounds, UI kits
+> with 9-slice data, sliced sheets and packed atlases. Engine-specific export, MCP and Lua are
+> Phase 7 — see [ROADMAP.md](ROADMAP.md). Nothing in the app pretends to work when it doesn't.
 
 ## What works today
 

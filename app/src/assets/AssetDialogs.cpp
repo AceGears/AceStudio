@@ -68,11 +68,16 @@ int colourDistance(Rgba8 a, Rgba8 b) {
 
 // Makes the region connected to the top edge that matches the top-left
 // colour transparent: removes a flat sky behind a generated silhouette.
-Image clearSky(const Image& src, int tolerance) {
+Image clearSky(const Image& src, int tolerance, bool connectedOnly) {
     Image img = src;
     if (img.isNull()) return img;
     const Rgba8 key = img.pixel(0, 0);
     std::vector<std::uint8_t> seen(static_cast<std::size_t>(img.width()) * static_cast<std::size_t>(img.height()), 0);
+    if (!connectedOnly) {   // every matching pixel, also gaps enclosed by the silhouette
+        for (auto& p : img.pixels())
+            if (colourDistance(p, key) <= tolerance) p = Rgba8::transparent();
+        return img;
+    }
     std::deque<std::pair<int, int>> q;
     for (int x = 0; x < img.width(); ++x) q.emplace_back(x, 0);
     while (!q.empty()) {
@@ -134,7 +139,13 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
     m_overlap->setToolTip(tr("Width of the dithered blend made over the wrap"));
     auto* seamless = new QPushButton(tr("Make Seamless"), this);
     auto* sky = new QPushButton(tr("Clear Sky"), this);
-    sky->setToolTip(tr("Make the flat colour connected to the top edge transparent (for layers in front)"));
+    sky->setToolTip(tr("Make the flat colour at the top-left, where it touches the top edge, transparent (for layers in front)"));
+    m_skyTolerance = new QSpinBox(this);
+    m_skyTolerance->setRange(0, 255);
+    m_skyTolerance->setValue(24);
+    m_skyTolerance->setToolTip(tr("How far from the sky colour a pixel may be and still be cleared"));
+    m_skyEverywhere = new QCheckBox(tr("Also enclosed gaps"), this);
+    m_skyEverywhere->setToolTip(tr("Clear every pixel of the sky colour, also between trees or inside the silhouette"));
     m_prompt = new QLineEdit(tr("distant purple mountains at dusk"), this);
     m_generate = new QPushButton(tr("Generate Layer"), this);
     m_generate->setToolTip(tr("A horizontally seamless layer from Stable Diffusion XL, reduced to the view width"));
@@ -150,6 +161,10 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
     seamRow->addWidget(seamless);
     seamRow->addWidget(sky);
     layerForm->addRow(tr("Blend width:"), seamRow);
+    auto* skyRow = new QHBoxLayout;
+    skyRow->addWidget(m_skyTolerance);
+    skyRow->addWidget(m_skyEverywhere);
+    layerForm->addRow(tr("Sky tolerance:"), skyRow);
     auto* listButtons = new QHBoxLayout;
     for (auto* b : {fromDoc, fromFile, remove}) listButtons->addWidget(b);
     auto* orderButtons = new QHBoxLayout;
@@ -245,7 +260,7 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
         const int i = current();
         if (i < 0) return;
         auto& l = m_set.layers[static_cast<std::size_t>(i)];
-        l.image = clearSky(l.image, 24);
+        l.image = clearSky(l.image, m_skyTolerance->value(), !m_skyEverywhere->isChecked());
         redraw();
     });
     connect(m_generate, &QPushButton::clicked, this, &ParallaxDialog::generate);

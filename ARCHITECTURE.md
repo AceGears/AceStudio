@@ -182,6 +182,17 @@ duplicate implementation of document logic, file formats or export in any front 
   (one undo step). On GPUs under 10 GB the worker stores the UNet and ControlNet weights in
   FP8, because Diffusers keeps the ControlNet resident outside the model-offload chain.
 - Job folders are pruned at start-up after 7 days (`pruneJobFolders`).
+- **Phase 6 (0.7.0)** adds three Qt-free core modules:
+  - `Atlas`: MaxRects packing (best short side fit, fixed ordering, so output is
+    byte-identical), trim, duplicates, extrusion, pages, TexturePacker-style JSON.
+  - `Autotile`: terrain samples (3×3 coverage per tile), Cardinal16 / Blob47 / Wang16
+    placement, a generator that interpolates coverage with tile-periodic noise (so legal
+    neighbours match by construction), `checkSeams` and `checkWrap`.
+  - `AssetTools`: sprite and grid detection, 9-slice detection and rendering, the UI kit
+    generator, and parallax rendering, checks and `makeSeamlessX`.
+
+  The app's `assets/` dialogs are thin views over these; `AiImageJob` wraps one SDXL job with
+  the worker's `tileable` mode (circular padding patched into the UNet and VAE convolutions).
 
 ### ADR-005 — MCP server (planned, Phase 7)
 - No official C++ MCP SDK exists. AceStudio will implement the MCP JSON-RPC surface in C++ on

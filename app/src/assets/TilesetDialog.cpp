@@ -169,7 +169,7 @@ TilesetDialog::TilesetDialog(AiService& ai, DocumentView* view, OpenImageFn open
         for (Source* s : {&m_terrain, &m_base})
             if (!s->texture.isNull() && s->texture.width() != t) setTexture(*s, s->texture);
     });
-    resize(980, 640);
+    resize(1120, 700);
     rebuild();
 }
 
@@ -255,7 +255,7 @@ void TilesetDialog::generateTexture(Source& s) {
         });
     }
     AiImageJob::Request r;
-    r.prompt = s.prompt->text().trimmed() + tr(", seamless tileable texture, top-down view, flat even lighting, pixel art game tile");
+    r.prompt = s.prompt->text().trimmed() + tr(", seamless repeating texture filling the whole image, top-down view, flat even lighting, pixel art");
     r.negative = tr("objects, border, frame, perspective, horizon, shadow, vignette, text, watermark");
     r.tileable = QStringLiteral("xy");
     r.pixelWidth = r.pixelHeight = tileSize();

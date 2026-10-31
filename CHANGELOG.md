@@ -2,6 +2,31 @@
 
 All notable changes are documented here. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.7.0] — 2026-10-31 — Phase 6: environment and asset tools (unreleased)
+
+### Added
+- **Assets menu** (replaces the disabled Tilesets menu).
+- **Tileset Generator:** two textures (from the document, a file, or SDXL with tileable
+  generation) become a complete autotile set: 8-neighbour blob (47), Wang corners / dual grid
+  (16) or 4-neighbour (16). Roundness, edge noise, outline and seed controls; live preview map,
+  tileset view and seam check; export PNG + base PNG + JSON.
+- **Terrain Sandbox:** paint terrain with the generated set and see the autotiled map live;
+  export the map image.
+- **New Tileset Template** and **Check Tileset Seams** for hand-drawn sets.
+- **Parallax Background:** layers with scroll factors, animated preview, seam/gap checks, Make
+  Seamless, Clear Sky, SDXL layers with horizontal wrap, PNG + JSON export.
+- **UI Kit Generator:** 19 themed elements with 9-slice metadata, a stretch test, colours from
+  the document palette, atlas + JSON export.
+- **Smart Slicer:** sprites by connected regions or grid; JSON, PNGs or a new animation.
+- **Pack Sprite Atlas:** deterministic MaxRects packing of files or document frames with trim,
+  duplicate merging, extrusion, power-of-two and multiple pages; TexturePacker-style JSON.
+- **Worker:** `tileable` parameter (`none`/`x`/`xy`) for SDXL generation using circular padding
+  in the UNet and VAE.
+
+### Verified
+- Real SDXL on the RTX 4070 Laptop: seamless grass and dirt textures (72 s cold, 41 s warm),
+  a 47-tile set with 0 seams, and two parallax layers (43 s and 42 s).
+
 ## [0.6.0] — 2026-10-31 — Phase 5: advanced AI generation (unreleased)
 
 ### Added

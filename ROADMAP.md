@@ -120,10 +120,18 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | Review pass (2026-10-31) | ✅ cancel crash fixed. Cancel during loads, slow steps and mid-step verified. Run and jump on SDXL, FP8 vs Full measured, single instance, live preview in the dialog, duplicate poses share a job. See TESTING.md |
 | Live generation preview | ✅ real TAESD-XL (MIT, 9.8 MB): a preview every 5 steps, ~0.9 s per step with previews on |
 
-## Phase 6 — Environment & Asset Tools · ⬜
-Tileset generator; 4/8-neighbour, bitmask and Wang autotiling with automated seam tests;
-terrain sandbox; parallax backgrounds; UI kit generator with 9-slice metadata; smart slicer;
-deterministic atlas packer.
+## Phase 6 — Environment & Asset Tools · ✅ (verified with real SDXL on the RTX 4070 Laptop PC, 2026-10-31)
+
+| Criterion | Status |
+|---|---|
+| Tileset generator | ✅ Assets › Tileset Generator: terrain and base textures from the document, a file or SDXL with circular padding (tileable on both axes, verified by VAE torus equivariance and on the PC). Real run: "lush green grass" 72 s cold and "brown dirt ground" 41 s → both report "tiles seamlessly", 47-tile blob set with 0 seams in 1036 pairs that can touch |
+| 4/8-neighbour, bitmask and Wang autotiling | ✅ Cardinal16 (4-bit), Blob47 (8-neighbour bitmask, 47 tiles) and Wang16 (corner/dual grid); exhaustive unit tests of masks and placement for every neighbourhood |
+| Automated seam tests | ✅ `checkSeams` compares every legal pair of touching tiles, including the base fill; generated sets pass by construction (tested for all schemes, sizes and styles), broken sets are caught; Assets › Check Tileset Seams on any document |
+| Terrain sandbox | ✅ paint/erase cells, brush size, map size, random terrain, live autotiling, map export |
+| Parallax backgrounds | ✅ layers with scroll factor, position and repeat; animated preview; checks for seams (also outline steps in silhouettes), gaps and off-view layers; Make Seamless (dithered); Clear Sky; SDXL layers with horizontal wrap (43 s each on the PC); PNG + JSON export |
+| UI kit generator with 9-slice metadata | ✅ 19 themed elements with exact 9-slice borders (unit-tested to be uniform), colours from the document palette, stretch test, atlas + JSON export |
+| Smart slicer | ✅ connected sprites with merge distance and noise filter, or a detected / manual grid; JSON, PNG files, or a new animation document |
+| Deterministic atlas packer | ✅ MaxRects, byte-identical output across runs, trim, duplicates, extrusion, padding, border, power of two, several pages, TexturePacker-compatible JSON; squarer pages preferred within 25% of the minimum area |
 
 ## Phase 7 — Developer Integrations · ⬜
 CLI generation/export commands; Lua 5.4 API (sandboxed); MCP server (spec 2026-07-28 with
