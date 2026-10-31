@@ -72,6 +72,20 @@ First desktop launch: the CI build started and opened its window on a Windows 11
 (NVIDIA GPU, VC++ runtime already installed), copied without the software-OpenGL, DirectX
 shader compiler, network and TLS files windeployqt adds, which a Widgets app does not need.
 
+Hands-on checks on that PC (Windows 11, 1456×819 logical desktop, NVIDIA GPU), through
+computer use on 2026-10-30 with build 8955520:
+
+| Check | Result |
+|---|---|
+| Launch; welcome page; Open Project through the native file dialog; knight renders correctly | ✅ |
+| Pencil draws, unsaved marker appears; Ctrl+Z twice restores the file and clears the marker | ✅ |
+| AI Studio: "AI runtime not set up"; Set Up found Python 3.15.0 through the `py` launcher | ✅ |
+| Set Up created the private venv in `%LOCALAPPDATA%\AceStudio\ai\python`; worker started (hello in 0.2 s) and began installing `onnx-windows` | ✅ |
+| Cancel Job on the running install: job Cancelled, worker idle and ready | ✅ |
+| Install `onnx-windows` on Python 3.15 | ❌ cannot work: onnxruntime-directml has no 3.15 wheels; pip ran for 5+ minutes with no output in the app. Fixed in 53256f7 (version preference, warning, pip output in the log, binary-only installs) |
+| Maximised window at 1456×819 | ❌ four stacked right-hand docks needed ~850 px, so the window grew past the screen and hid the timeline; layer buttons and Properties text overlapped. Fixed in 53256f7 (tab groups, smaller minimums; verified at 1456×740 in Xvfb) |
+| Properties "File" row | ❌ showed "C:" only; fixed (file name, full path in the tooltip) |
+
 **Not yet verified:** anything on an NVIDIA GPU (SDXL quality and speed, CUDA wheels from the
 PyTorch index, DirectML), BiRefNet output quality, the `onnx-windows` and `diffusion-cuda`
 profiles, and the SDXL/Pixel Art XL file lists against Hugging Face (not reachable from the

@@ -48,6 +48,9 @@ Current as of 0.5.0 (Phase 4).
   against Hugging Face from the build environment, so their hashes are recorded at first
   download rather than pinned. The PyTorch `cu128`/`cpu` index pins are also unchecked. If a
   file or wheel is missing, the download or install fails with the server's message.
+- **Python version for AI:** the pinned AI packages publish Windows wheels for Python 3.10–3.14
+  (checked 2026-10-30); ONNX Runtime has none for 3.15 yet. AceStudio prefers 3.14…3.10 and
+  warns when only a newer Python is installed (background removal cannot be set up then).
 - **Python is not bundled yet:** AI features need Python 3.10+ installed (or configured in Set
   Up AI Runtime). Bundling an embeddable Python is planned for packaging (Phase 8). Choosing a
   specific Python installs packages into that environment.
