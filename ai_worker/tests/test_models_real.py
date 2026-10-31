@@ -278,6 +278,59 @@ class TinySdxlPlumbingTest(unittest.TestCase):
         finally:
             w_.close()
 
+    def test_tileable_generation_wraps(self):
+        import numpy as np
+        import torch
+        from diffusers import AutoencoderKL
+        from PIL import Image
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+        from acestudio_worker.tasks import generate as gen
+        # Exact property: with circular padding the VAE decoder is
+        # shift-equivariant on the torus (latent roll by 1 = image roll by 8).
+        vae = AutoencoderKL.from_pretrained(os.path.join(self.model, "vae")).eval()
+
+        class P:
+            pass
+        p = P()
+        p.unet, p.vae = None, vae
+        z = torch.randn(1, 4, 8, 8, generator=torch.Generator().manual_seed(3))
+        f = 2 ** (len(vae.config.block_out_channels) - 1)
+        with torch.no_grad():
+            self.assertGreater(gen.set_tiling(p, "xy"), 0)
+            a = vae.decode(torch.roll(z, 1, dims=3)).sample
+            b = torch.roll(vae.decode(z).sample, f, dims=3)
+            self.assertLess((a - b).abs().max().item(), 1e-4)
+            ay = vae.decode(torch.roll(z, 1, dims=2)).sample
+            by = torch.roll(vae.decode(z).sample, f, dims=2)
+            self.assertLess((ay - by).abs().max().item(), 1e-4)
+            gen.set_tiling(p, "x")                       # x only: rows are not wrapped
+            ax = vae.decode(torch.roll(z, 1, dims=3)).sample
+            self.assertLess((ax - torch.roll(vae.decode(z).sample, f, dims=3)).abs().max().item(), 1e-4)
+            ay = vae.decode(torch.roll(z, 1, dims=2)).sample
+            self.assertGreater((ay - torch.roll(vae.decode(z).sample, f, dims=2)).abs().max().item(), 1e-3)
+            gen.set_tiling(p, "none")                    # restored: not equivariant any more
+            a = vae.decode(torch.roll(z, 1, dims=3)).sample
+            b = torch.roll(vae.decode(z).sample, f, dims=3)
+            self.assertGreater((a - b).abs().max().item(), 1e-3)
+        # Through the job: runs, reports the mode, and a normal job after it
+        # gives the same image as before (the cached pipeline is restored).
+        w_ = Worker()
+        try:
+            base = {"model_dir": self.model, "prompt": "grass texture", "width": 64, "height": 64, "steps": 3,
+                    "device": "cpu", "guidance": 5.0, "seed": 9}
+            before = run_job(w_, self.tmp, "t0", "image.generate", base)
+            t = run_job(w_, self.tmp, "t1", "image.generate", dict(base, tileable="xy", pixel={"width": 16, "height": 16, "crop": True}))
+            self.assertEqual(t["method"], "job.done", t)
+            self.assertEqual(t["params"]["info"]["tileable"], "xy")
+            self.assertEqual(Image.open(t["params"]["outputs"]["image0"]).size, (16, 16))   # no crop when tileable
+            after = run_job(w_, self.tmp, "t2", "image.generate", base)
+            with open(before["params"]["outputs"]["image0"], "rb") as fa, open(after["params"]["outputs"]["image0"], "rb") as fb:
+                self.assertEqual(fa.read(), fb.read())
+            bad = run_job(w_, self.tmp, "t3", "image.generate", dict(base, tileable="z"))
+            self.assertEqual(bad["params"]["kind"], "invalid_input")
+        finally:
+            w_.close()
+
     def test_pose_controlnet_and_reference_adapter(self):
         from PIL import Image
         cn = os.path.join(self.tmp, "tiny-controlnet")

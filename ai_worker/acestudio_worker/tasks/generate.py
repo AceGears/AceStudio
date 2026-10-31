@@ -15,6 +15,8 @@ params:
   strength          img2img strength 0..1 (default 0.6)
   device            auto | cuda | cpu
   offload           auto | none | model   (model = enable_model_cpu_offload, for <10 GB VRAM)
+  tileable          none | x | xy: seamless output (circular padding in the UNet and VAE
+                    convolutions); x for parallax layers, xy for terrain textures
   weights           auto | fp8 | full: with a ControlNet on a <10 GB GPU (auto), the UNet and ControlNet
                     weights are stored in FP8 and computed in FP16 so both fit in VRAM
   preview           optional {"dir": TAESD-XL folder, "every": n}: a small preview PNG every n steps
@@ -172,6 +174,54 @@ def _pipelines(ctx, model_dir, vae_dir, lora, device, offload, controlnet=None, 
     return pipe, img2img
 
 
+def _tile_forward(self, x):
+    """Conv2d forward with circular padding on x (and y for "xy")."""
+    import torch.nn.functional as F
+    mode = getattr(self, "_ace_tile", "none")
+    if mode == "none":
+        return self._ace_forward(x)
+    ph, pw = self._ace_pad
+    if pw:
+        x = F.pad(x, (pw, pw, 0, 0), mode="circular")
+    if ph:
+        x = F.pad(x, (0, 0, ph, ph), mode="circular" if mode == "xy" else "constant")
+    return F.conv2d(x, self.weight, self.bias, self.stride, 0, self.dilation, self.groups)
+
+
+def set_tiling(pipe, mode):
+    """Seamless generation: every zero-padded Conv2d of the UNet and VAE pads
+    circularly instead (x only, or x and y). Applied per job on the cached
+    pipeline; mode "none" restores normal padding."""
+    import types
+    import torch
+    if mode not in ("none", "x", "xy"):
+        raise JobError("tileable must be none, x or xy", kind="invalid_input")
+    count = 0
+    for model in (getattr(pipe, "unet", None), getattr(pipe, "vae", None)):
+        if model is None:
+            continue
+        for m in model.modules():
+            if not isinstance(m, torch.nn.Conv2d):
+                continue
+            if not hasattr(m, "_ace_forward"):
+                pad = m.padding if isinstance(m.padding, tuple) else (m.padding, m.padding)
+                if m.padding_mode != "zeros" or not isinstance(pad[0], int) or (pad[0] == 0 and pad[1] == 0):
+                    continue
+                m._ace_pad = (int(pad[0]), int(pad[1]))
+                m._ace_forward = m.forward
+                m.forward = types.MethodType(_tile_forward, m)
+            m._ace_tile = mode
+            count += 1
+    vae = getattr(pipe, "vae", None)
+    if vae is not None:
+        # Tiled VAE decoding would break the wrap; full-image decode instead.
+        if mode != "none" and hasattr(vae, "disable_tiling"):
+            vae.disable_tiling()
+        elif mode == "none" and hasattr(vae, "enable_tiling"):
+            vae.enable_tiling()
+    return count
+
+
 def subject_box(img, width, height, threshold=40, pad=0.08):
     """Box (left, top, right, bottom) around the subject of a generation, grown
     to the target aspect ratio, or None when the subject fills the image or
@@ -304,6 +354,9 @@ def run(ctx):
         if device == "cuda":
             vram = torch.cuda.get_device_properties(0).total_memory / 2**30
             offload = "model" if vram < 10 else "none"
+    tileable = ctx.param("tileable", "none")
+    if tileable not in ("none", "x", "xy"):
+        raise JobError("tileable must be none, x or xy", kind="invalid_input")
     weights = ctx.param("weights", "auto")
     if weights not in ("auto", "fp8", "full"):
         raise JobError("weights must be auto, fp8 or full", kind="invalid_input")
@@ -338,6 +391,7 @@ def run(ctx):
     slow_start = bool(controlnet) and device == "cuda" and offload == "model" and not getattr(pipe, "_acestudio_fp8", False)
     ctx.progress(0.05, "Generating", force=True, uninterruptible=slow_start)
     ctx.check_cancel()
+    set_tiling(pipe, tileable)
     if ip is not None:
         pipe.set_ip_adapter_scale(ip_scale)
     init_path = ctx.param("init_image")
@@ -406,7 +460,7 @@ def run(ctx):
             if pixel:
                 outputs["raw%d" % i] = save_png(img, ctx.path("raw%d.png" % i))
                 img = pixelate(img, int(pixel["width"]), int(pixel["height"]), pixel.get("colors"), pixel.get("palette"),
-                               crop=bool(pixel.get("crop", False)), box=pixel.get("box"))
+                               crop=bool(pixel.get("crop", False)) and tileable == "none", box=pixel.get("box"))
             outputs["image%d" % i] = save_png(img, ctx.path("image%d.png" % i))
     except Cancelled:
         raise
@@ -420,4 +474,5 @@ def run(ctx):
             "info": {"seed": seed, "device": device, "offload": offload, "steps": steps, "width": width,
                      "height": height, "img2img": bool(init_path), "controlnet": cn_image is not None,
                      "ip_adapter": bool(ip_images),
+                     "tileable": tileable,
                      "weights": "fp8-storage" if getattr(pipe, "_acestudio_fp8", False) else "fp16" if device == "cuda" else "fp32"}}
