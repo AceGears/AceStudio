@@ -183,9 +183,13 @@ struct PythonInfo {
     std::vector<std::string> prefixArgs;   // e.g. {"-3.13"} for the Windows py launcher
     std::string version;                   // "3.12.4"
     int minor = 0;                         // 12 for 3.12
+    int bits = 64;                         // pointer size: 32 for a 32-bit (x86) build
     // Newer than the AI packages support (see kNewestAiPythonMinor): the
     // worker runs, but some runtime profiles cannot be installed.
     bool newerThanAiPackages() const noexcept;
+    // A 32-bit Python: ONNX Runtime and PyTorch publish 64-bit wheels only,
+    // so no AI runtime profile can be installed.
+    bool is32Bit() const noexcept { return bits == 32; }
 };
 
 // Newest Python minor version every pinned AI package publishes Windows
@@ -193,10 +197,10 @@ struct PythonInfo {
 // onnxruntime-directml 1.24.4 stop at 3.14; torch 2.15.0 has 3.15).
 inline constexpr int kNewestAiPythonMinor = 14;
 
-// Runs `python -c` to read the version; requires >= 3.10.
+// Runs `python -c` to read the version and pointer size; requires >= 3.10.
 Result<PythonInfo> probePython(const std::filesystem::path& exe, const std::vector<std::string>& prefixArgs = {});
-// Configured path first. Otherwise prefers the newest version the AI
-// packages support (3.14 down to 3.10: "py -3.14" ... on Windows,
+// Configured path first. Otherwise prefers the newest 64-bit version the
+// AI packages support (3.14 down to 3.10: "py -3.14" ... on Windows,
 // python3.14 ... on POSIX), then any Python 3.10+ (py -3, python, python3).
 Result<PythonInfo> findPython(const std::filesystem::path& configured = {});
 // The interpreter inside a virtual environment folder.

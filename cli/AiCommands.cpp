@@ -141,7 +141,7 @@ int cmdStatus(const Args&, Output& out, const AiContext& c) {
         auto py = findPython(c.pythonPath);
         r["runtime"] = "not set up";
         r["python"] = py ? py.value().version : std::string();
-        human += "Runtime:      not set up" + std::string(py ? " (Python " + py.value().version + " found)" : " (no Python 3.10+ found)") +
+        human += "Runtime:      not set up" + std::string(py ? " (Python " + py.value().version + (py.value().is32Bit() ? ", 32-bit: AI packages need 64-bit" : "") + " found)" : " (no Python 3.10+ found)") +
                  "\n  Set up with: acestudio-cli ai setup --profile onnx-windows|onnx-cpu|diffusion-cuda|diffusion-cpu --yes\n";
         return out.success(r, human);
     }
@@ -177,6 +177,9 @@ int cmdSetup(const Args& a, Output& out, const AiContext& c) {
         return out.fail(kUsage, "ai setup downloads Python packages (diffusion profiles: several GB). Re-run with --yes to agree.");
     auto py = findPython(c.pythonPath);
     if (!py) return out.fail(py.error());
+    if (py.value().is32Bit())
+        return out.fail(kUsage, "Python " + py.value().version + " at " + py.value().executable.string() +
+                                    " is 32-bit; the AI packages need a 64-bit Python. Install the 64-bit build from python.org.");
     if (!a.json) std::fprintf(stderr, "Creating the AI Python environment with Python %s...\n", py.value().version.c_str());
     auto venv = ensureVenv(py.value(), c.env.venvDir);
     if (!venv) return out.fail(venv.error());

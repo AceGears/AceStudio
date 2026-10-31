@@ -7,7 +7,9 @@ installed packages are picked up.
 """
 
 import os
+import platform
 import re
+import struct
 import subprocess
 import sys
 import threading
@@ -41,8 +43,12 @@ def _pip(ctx, args, label):
            "--progress-bar", "off", "--only-binary", ":all:"] + args
     ctx.log("Running: " + " ".join(cmd))
     env = dict(os.environ, PYTHONUNBUFFERED="1")
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
-                            text=True, encoding="utf-8", errors="replace")
+    # stdin=DEVNULL: the worker's stdin is the protocol pipe, and the main
+    # thread is blocked reading it. On Windows a child that inherits that
+    # handle stalls at startup (CPython queries its stdin, and a query on a
+    # synchronous pipe waits for the pending read), so pip never ran.
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            env=env, text=True, encoding="utf-8", errors="replace")
     tail = []
     stop = threading.Event()
     started = time.monotonic()
@@ -88,6 +94,10 @@ def run(ctx):
     files = PROFILES.get(profile)
     if files is None:
         raise JobError("Unknown runtime profile '%s'" % profile, kind="invalid_input")
+    if profile != "base" and struct.calcsize("P") == 4:
+        raise JobError("This is a 32-bit Python (%s). ONNX Runtime and PyTorch only publish 64-bit "
+                       "packages; install the 64-bit Python from python.org." % platform.python_version(),
+                       kind="missing_dependency")
     for i, name in enumerate(files):
         path = os.path.join(REQ_DIR, name)
         if not os.path.exists(path):

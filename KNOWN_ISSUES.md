@@ -51,6 +51,8 @@ Current as of 0.5.0 (Phase 4).
 - **Python version for AI:** the pinned AI packages publish Windows wheels for Python 3.10–3.14
   (checked 2026-10-30); ONNX Runtime has none for 3.15 yet. AceStudio prefers 3.14…3.10 and
   warns when only a newer Python is installed (background removal cannot be set up then).
+  It must also be a **64-bit** Python: ONNX Runtime and PyTorch publish no 32-bit Windows
+  wheels, so a 32-bit Python is skipped, or refused when it is the only one.
 - **Python is not bundled yet:** AI features need Python 3.10+ installed (or configured in Set
   Up AI Runtime). Bundling an embeddable Python is planned for packaging (Phase 8). Choosing a
   specific Python installs packages into that environment.

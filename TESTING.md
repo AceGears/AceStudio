@@ -94,6 +94,8 @@ Re-check on the same PC with nightly build c57e5c2 (portable mode, data in `<exe
 | Set Up AI Runtime with only Python 3.15 installed: warns it is newer than the AI packages support, links python.org, background-removal option disabled; destination shows the portable data folder | ✅ |
 | Properties "File" row shows `knight.acestudio` | ✅ |
 | Palette buttons with no document open are clipped vertically (cosmetic) | ⚠️ known issue |
+| Python 3.14.10 installed by the user: found and accepted, but it was the **32-bit** build (win32 wheels; no ONNX Runtime or PyTorch builds exist) | ❌ fixed: 32-bit detection |
+| Install `onnx-windows`: no pip output for 4+ minutes. Same pip from a console (PIP-CHECK.cmd) reached PyPI in 0.8 s and downloaded numpy in under a second | ❌ fixed: pip inherited the worker's protocol stdin and stalled at startup; it now gets DEVNULL (unit-tested; Windows re-check pending) |
 
 **Not yet verified:** anything on an NVIDIA GPU (SDXL quality and speed, CUDA wheels from the
 PyTorch index, DirectML), BiRefNet output quality, the `onnx-windows` and `diffusion-cuda`

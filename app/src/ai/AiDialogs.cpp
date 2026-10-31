@@ -120,16 +120,26 @@ void AiSetupDialog::detectPython() {
     auto py = findPython(configured.isEmpty() ? std::filesystem::path() : toPath(configured));
     if (py) {
         QString text = tr("Found Python %1 at %2").arg(qs(py.value().version), QDir::toNativeSeparators(fromPath(py.value().executable)));
-        if (py.value().newerThanAiPackages())
+        const bool x86 = py.value().is32Bit();
+        if (x86)
+            text += tr("<br><b>This is a 32-bit Python.</b> The AI packages (ONNX Runtime, PyTorch) are only "
+                       "published for 64-bit Windows. Install the <b>64-bit</b> Python 3.%1 (“Windows installer "
+                       "(64-bit)”) from <a href=\"https://www.python.org/downloads/\">python.org</a>; AceStudio "
+                       "picks it automatically.")
+                        .arg(kNewestAiPythonMinor);
+        else if (py.value().newerThanAiPackages())
             text += tr("<br><b>This Python is newer than the AI packages support</b> (ONNX Runtime has no build for it "
                        "yet, so background removal cannot be installed). Install Python 3.%1 from "
                        "<a href=\"https://www.python.org/downloads/\">python.org</a>; AceStudio picks it automatically.")
                         .arg(kNewestAiPythonMinor);
         m_python->setText(text);
         m_python->setOpenExternalLinks(true);
-        m_onnx->setEnabled(!py.value().newerThanAiPackages());
-        if (py.value().newerThanAiPackages()) m_onnx->setChecked(false);
-        m_install->setEnabled(true);
+        const bool onnxOk = !x86 && !py.value().newerThanAiPackages();
+        m_onnx->setEnabled(onnxOk);
+        if (!onnxOk) m_onnx->setChecked(false);
+        m_diffusion->setEnabled(!x86);
+        if (x86) m_diffusion->setChecked(false);
+        m_install->setEnabled(!x86);
     } else {
         m_python->setText(tr("<b>No Python 3.10+ found.</b> Install Python from "
                              "<a href=\"https://www.python.org/downloads/\">python.org</a> (tick “Add to PATH”), "

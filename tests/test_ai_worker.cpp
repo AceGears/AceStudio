@@ -59,6 +59,15 @@ struct Fixture {
 
 } // namespace
 
+TEST_CASE("probePython reports version and pointer size", "[ai]") {
+    REQUIRE_PYTHON();
+    auto p = probePython(python()->executable, python()->prefixArgs);
+    REQUIRE(p);
+    CHECK(p.value().version == python()->version);
+    CHECK(p.value().version.find(' ') == std::string::npos);
+    CHECK((p.value().bits == 32 || p.value().bits == 64));
+}
+
 TEST_CASE("AI worker starts, reports tasks and runs a job with progress", "[ai]") {
     REQUIRE_PYTHON();
     Fixture f;

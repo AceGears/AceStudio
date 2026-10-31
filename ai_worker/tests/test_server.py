@@ -274,3 +274,49 @@ class DownloadTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RuntimeInstallTests(unittest.TestCase):
+    """pip must not inherit the protocol stdin: on Windows a child sharing the
+    pipe the worker's main thread is reading stalls at startup."""
+
+    def test_pip_gets_no_stdin(self):
+        sys.path.insert(0, ROOT)
+        from acestudio_worker.tasks import runtime_install as ri
+
+        seen = {}
+
+        class FakeProc:
+            def __init__(self, cmd, **kw):
+                seen.update(kw)
+                seen["cmd"] = cmd
+                self.stdout = iter(["Collecting numpy==1.0\n", "Successfully installed numpy-1.0\n"])
+
+            def poll(self):
+                return 0
+
+            def wait(self):
+                return 0
+
+        class Ctx:
+            logs = []
+
+            def log(self, m, level="info"):
+                self.logs.append(m)
+
+            def progress(self, *a, **k):
+                pass
+
+            def cancelled(self):
+                return False
+
+        real = ri.subprocess.Popen
+        ri.subprocess.Popen = FakeProc
+        try:
+            ctx = Ctx()
+            ri._pip(ctx, ["-r", "x.txt"], "x.txt")
+        finally:
+            ri.subprocess.Popen = real
+        self.assertIs(seen.get("stdin"), subprocess.DEVNULL)
+        self.assertIn("--only-binary", seen["cmd"])
+        self.assertTrue(any(m.startswith("pip: Collecting") for m in ctx.logs))

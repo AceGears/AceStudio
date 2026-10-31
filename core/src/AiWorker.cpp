@@ -490,7 +490,7 @@ Result<PythonInfo> probePython(const fs::path& exe, const std::vector<std::strin
     ProcessSpec spec;
     spec.program = exe;
     spec.args = prefixArgs;
-    spec.args.insert(spec.args.end(), {"-c", "import sys; print('%d.%d.%d' % sys.version_info[:3])"});
+    spec.args.insert(spec.args.end(), {"-c", "import struct, sys; print('%d.%d.%d %d' % (sys.version_info[:3] + (struct.calcsize('P') * 8,)))"});
     spec.env = {{"PYTHONIOENCODING", "utf-8"}};
     auto p = Subprocess::start(spec);
     if (!p) return p.error();
@@ -498,7 +498,16 @@ Result<PythonInfo> probePython(const fs::path& exe, const std::vector<std::strin
     if (!code) return Error{ErrorCode::IoError, exe.string() + " did not respond"};
     auto lines = p.value()->takeLines(Subprocess::Stream::Stdout);
     if (*code != 0 || lines.empty()) return Error{ErrorCode::IoError, exe.string() + " is not a working Python"};
-    PythonInfo info{exe, prefixArgs, lines.back(), 0};
+    // "3.12.4 64"
+    std::string line = lines.back();
+    int bits = 64;
+    if (auto sp = line.find(' '); sp != std::string::npos) {
+        int b = 0;
+        if (std::from_chars(line.data() + sp + 1, line.data() + line.size(), b).ec == std::errc() && (b == 32 || b == 64))
+            bits = b;
+        line.resize(sp);
+    }
+    PythonInfo info{exe, prefixArgs, line, 0, bits};
     // "3.12.4" -> major 3, minor 12
     int major = 0, minor = 0;
     const char* b = info.version.data();
@@ -528,11 +537,11 @@ Result<PythonInfo> findPython(const fs::path& configured) {
         if (auto py = findExecutable("py")) {
             const std::string flag = "-3." + std::to_string(minor);
             auto r = probePython(*py, {flag});   // silently skip versions that are not installed
-            if (r) return r.value();
+            if (r && !r.value().is32Bit()) return r.value();
         }
 #else
         if (auto exe = findExecutable("python3." + std::to_string(minor)))
-            if (auto r = probePython(*exe, {})) return r.value();
+            if (auto r = probePython(*exe, {}); r && !r.value().is32Bit()) return r.value();
 #endif
     }
     // Otherwise any Python 3.10+, possibly newer than the AI packages support.
@@ -566,7 +575,7 @@ Result<fs::path> ensureVenv(const PythonInfo& base, const fs::path& venvDir) {
         // Reuse it only if it was made from the same Python minor version;
         // otherwise (e.g. it was built on a Python too new for the AI
         // packages) rebuild it. It is AceStudio's own folder: no user data.
-        if (existing && existing.value().minor == base.minor) return py;
+        if (existing && existing.value().minor == base.minor && existing.value().bits == base.bits) return py;
         ACE_LOG_INFO("ai", "Rebuilding the AI Python environment for Python " + base.version);
         fs::remove_all(venvDir, ec);
         if (ec) return Error{ErrorCode::IoError, "Cannot replace " + venvDir.string() + ": " + ec.message()};

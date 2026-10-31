@@ -22,6 +22,11 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   official Real-ESRGAN weights, test suite.
 
 ### Fixed
+- Windows: AI runtime installs hung with no output. pip inherited the worker's protocol stdin,
+  which the worker's main thread is blocked reading, and stalled at startup. pip now gets an
+  empty stdin.
+- 32-bit Python is detected: Set Up skips it in favour of a 64-bit interpreter and, if it is the
+  only one, says the 64-bit build is needed instead of starting an install that cannot succeed.
 - Log lines below warning level could stay in the buffer indefinitely; the log now flushes on
   warnings and at least once a second.
 
