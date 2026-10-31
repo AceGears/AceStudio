@@ -32,6 +32,12 @@ class Sleep:
         seconds = float(ctx.param("seconds", 1.0))
         steps = int(ctx.param("steps", 10))
         out = ctx.path("result.txt")
+        # Simulates loading a model: a stage that ignores cancellation.
+        hold = float(ctx.param("uninterruptible_seconds", 0.0))
+        if hold > 0:
+            ctx.progress(0.0, "loading", force=True, uninterruptible=True)
+            time.sleep(hold)
+            ctx.progress(0.0, "loaded", force=True)
         for i in range(steps):
             ctx.check_cancel()
             time.sleep(seconds / steps)

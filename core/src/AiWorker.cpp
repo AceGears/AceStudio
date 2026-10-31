@@ -201,8 +201,9 @@ Status WorkerSupervisor::cancel(const JobId& id) {
         return {};
     }
     if (!m_cancelDeadline) {
-        m_cancelDeadline = Clock::now() + m_opt.cancelGrace;
-        j->message = "Cancelling…";
+        m_cancelStarted = Clock::now();
+        m_cancelDeadline = m_cancelStarted + m_opt.cancelGrace;
+        j->message = j->uninterruptible ? "Cancelling after the model has loaded…" : "Cancelling…";
         (void)send("job.cancel", {{"job", id}}, Pending::Cancel, id);
     }
     return {};
@@ -236,12 +237,19 @@ std::vector<Event> WorkerSupervisor::poll() {
         onWorkerExit(-1, ev);
     }
     if (m_proc && m_cancelDeadline && now > *m_cancelDeadline) {
+        Job* r = runningJob();
+        if (r && r->uninterruptible && now < m_cancelStarted + m_opt.uninterruptibleGrace) {
+            // Still loading: wait for it (the cancel is honoured right after).
+            r->message = "Cancelling after the model has loaded…";
+            m_cancelDeadline = now + std::chrono::seconds(1);
+        } else {
         // The job ignored cancellation (stuck in native code): kill the
         // worker. The job ends Cancelled and the worker restarts.
         ACE_LOG_WARN("ai", "Job did not stop after cancel; restarting the AI worker");
         m_hardCancel = true;
         killWorker();
         if (auto code = m_proc->exitCode()) onWorkerExit(*code, ev);
+        }
     }
     if (!m_proc && m_state == WorkerState::Restarting && m_restartAt && now >= *m_restartAt) {
         launch(ev);
@@ -322,6 +330,10 @@ void WorkerSupervisor::handleNotification(const std::string& method, const json&
     if (method == "job.progress") {
         if (p.contains("progress") && p["progress"].is_number()) j->progress = p["progress"].get<double>();
         if (!j->cancelRequested) j->message = p.value("message", j->message);
+        const bool wasUninterruptible = j->uninterruptible;
+        j->uninterruptible = p.value("uninterruptible", false);
+        if (j->cancelRequested && m_cancelDeadline && wasUninterruptible && !j->uninterruptible && j->id == m_running)
+            m_cancelDeadline = Clock::now() + m_opt.cancelGrace;   // the stage ended: the usual grace from here
         j->step = p.value("step", j->step);
         j->steps = p.value("steps", j->steps);
         if (p.contains("preview") && p["preview"].is_string()) {

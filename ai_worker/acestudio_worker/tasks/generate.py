@@ -121,7 +121,7 @@ def _pipelines(ctx, model_dir, vae_dir, lora, device, offload, controlnet=None, 
         kwargs["variant"] = "fp16"
     if vae_dir:
         kwargs["vae"] = AutoencoderKL.from_pretrained(vae_dir, torch_dtype=dtype, use_safetensors=True)
-    ctx.progress(0.02, "Loading SDXL (first run takes a while)", force=True)
+    ctx.progress(0.02, "Loading SDXL (first run takes a while)", force=True, uninterruptible=True)
     pipe = StableDiffusionXLPipeline.from_pretrained(model_dir, **kwargs)
     pipe.set_progress_bar_config(disable=True)
     if lora:
@@ -139,14 +139,14 @@ def _pipelines(ctx, model_dir, vae_dir, lora, device, offload, controlnet=None, 
                            kind="missing_model")
         if not os.path.exists(os.path.join(ip_dir, encoder, "config.json")):
             raise JobError("IP-Adapter image encoder not found in %s" % os.path.join(ip_dir, encoder), kind="missing_model")
-        ctx.progress(0.03, "Loading the reference-image adapter", force=True)
+        ctx.progress(0.03, "Loading the reference-image adapter", force=True, uninterruptible=True)
         pipe.load_ip_adapter(ip_dir, subfolder="sdxl_models", weight_name=weight, image_encoder_folder=encoder)
     if controlnet:
         from diffusers import ControlNetModel, StableDiffusionXLControlNetPipeline
         cn_dir = controlnet.get("dir", "")
         if not os.path.exists(os.path.join(cn_dir, "config.json")):
             raise JobError("ControlNet not found in %s. Download it in AI Studio > Models." % cn_dir, kind="missing_model")
-        ctx.progress(0.04, "Loading the pose ControlNet", force=True)
+        ctx.progress(0.04, "Loading the pose ControlNet", force=True, uninterruptible=True)
         cn = ControlNetModel.from_pretrained(cn_dir, torch_dtype=dtype, use_safetensors=True)
         pipe = StableDiffusionXLControlNetPipeline(**pipe.components, controlnet=cn)
         pipe.set_progress_bar_config(disable=True)
@@ -328,6 +328,10 @@ def run(ctx):
         ip_images = [load_rgba(pth).convert("RGB") for pth in ip["images"][:4]]
     pipe, img2img = _pipelines(ctx, ctx.param("model_dir", required=True, kind=str), ctx.param("vae_dir"),
                                lora, device, offload, controlnet, ip, weights)
+    # Loading is over: a cancel that arrived meanwhile is honoured now, with
+    # the pipeline cached for the next job.
+    ctx.progress(0.05, "Generating", force=True)
+    ctx.check_cancel()
     if ip is not None:
         pipe.set_ip_adapter_scale(ip_scale)
     init_path = ctx.param("init_image")

@@ -18,11 +18,14 @@
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QIcon>
+#include <QImage>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPainter>
+#include <QPixmap>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QVBoxLayout>
@@ -40,6 +43,7 @@ constexpr const char* kSdxl = "sdxl-base-1.0";
 constexpr const char* kControlNet = "controlnet-openpose-sdxl";
 constexpr const char* kIpAdapter = "ip-adapter-plus-sdxl";
 constexpr const char* kLora = "pixel-art-xl";
+constexpr const char* kTaesd = "taesdxl";
 constexpr int kThumb = 96;
 
 std::string utf8(const fs::path& p) {
@@ -107,6 +111,12 @@ AnimationDialog::AnimationDialog(AppContext& ctx, AiService& ai, DocumentView* v
     m_poseStrength->setValue(85);
     m_poseStrength->setSuffix(QStringLiteral(" %"));
     m_poseStrength->setToolTip(tr("How strictly frames follow the skeleton"));
+    m_precision = new QComboBox(this);
+    m_precision->addItem(tr("Auto"), QStringLiteral("auto"));
+    m_precision->addItem(tr("Full"), QStringLiteral("full"));
+    m_precision->setToolTip(tr("Auto stores the model weights in FP8 on GPUs with less than 10 GB, so pose control fits in "
+                               "memory (~1 s per step on 8 GB). Full keeps FP16 weights: same quality reference, but on "
+                               "an 8 GB GPU it spills into shared memory and is ~30× slower."));
     m_useRefs = new QCheckBox(tr("Use the character's reference images"), this);
     m_useRefs->setChecked(true);
     m_removeBg = new QCheckBox(tr("Remove the background"), this);
@@ -129,6 +139,8 @@ AnimationDialog::AnimationDialog(AppContext& ctx, AiService& ai, DocumentView* v
     qRow->addWidget(m_steps);
     qRow->addWidget(new QLabel(tr("Pose strength"), this));
     qRow->addWidget(m_poseStrength);
+    qRow->addWidget(new QLabel(tr("Precision"), this));
+    qRow->addWidget(m_precision);
     qRow->addStretch();
     form->addRow(tr("Quality:"), qRow);
     form->addRow(QString(), m_useRefs);
@@ -211,8 +223,16 @@ AnimationDialog::AnimationDialog(AppContext& ctx, AiService& ai, DocumentView* v
     connect(&m_ai, &AiService::jobChanged, this, [this](const QString& qid) {
         if (!m_jobs.count(qid.toStdString())) return;
         const Job* j = m_ai.job(qid.toStdString());
-        if (j && j->state == JobState::Running)
-            m_status->setText(tr("Frame %1: %2").arg(m_jobs[qid.toStdString()] + 1).arg(qs(j->message)));
+        if (!j || j->state != JobState::Running) return;
+        const int f = m_jobs[qid.toStdString()];
+        m_status->setText(tr("Frame %1: %2").arg(f + 1).arg(qs(j->message)));
+        // Live preview (TAESD-XL) on the frame's tile while it generates.
+        if (j->previewSerial > 0 && j->previewSerial != m_previewSerial && f < m_strip->count()) {
+            m_previewSerial = j->previewSerial;
+            QImage img;
+            if (img.load(fromPath(j->preview)))
+                m_strip->item(f)->setIcon(QIcon(QPixmap::fromImage(img.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation))));
+        }
     });
 
     m_actionWords->setText(defaultWords(PoseCycle::Walk));
@@ -250,6 +270,7 @@ void AnimationDialog::resetPoses() {
     m_errors.assign(m_poses.size(), QString());
     m_attempts.assign(m_poses.size(), 0);
     m_report.reset();
+    m_box.reset();
     m_corrected = false;
     refreshStrip();
 }
@@ -331,7 +352,10 @@ void AnimationDialog::generate(const std::vector<int>& frames, bool newSeed) {
     const double aspect = static_cast<double>(c.width) / c.height;
     const int gw = std::max(512, static_cast<int>(1024 * std::min(1.0, aspect)) / 8 * 8);
     const int gh = std::max(512, static_cast<int>(1024 * std::min(1.0, 1.0 / aspect)) / 8 * 8);
-    const auto box = poseFramingBox(m_poses, aspect * gh / static_cast<double>(gw));
+    // One framing box for the whole animation: regenerated frames reuse it so
+    // they line up with the frames already made (even after a pose edit).
+    if (newSeed || !m_box) m_box = poseFramingBox(m_poses, aspect * gh / static_cast<double>(gw));
+    const auto box = *m_box;
     // Reference images (written once per session).
     json refs = json::array();
     const ModelEntry* ip = cat.find(kIpAdapter);
@@ -347,9 +371,10 @@ void AnimationDialog::generate(const std::vector<int>& frames, bool newSeed) {
     const QString words = m_actionWords->text().trimmed();
     std::string prompt = c.prompt;
     if (!words.isEmpty()) prompt += (prompt.empty() ? "" : ", ") + words.toStdString();
-    prompt += ", full body, side view, plain light background, game sprite";
+    prompt += c.facingRight ? ", full body, side view facing right" : ", full body, side view facing left";
+    prompt += ", single character, plain light background, game sprite";
     std::string negative = c.negative;
-    negative += std::string(negative.empty() ? "" : ", ") + "multiple characters, cropped, text, watermark";
+    negative += std::string(negative.empty() ? "" : ", ") + "multiple characters, sprite sheet, cropped, shadow, floor, text, watermark";
 
     for (int f : frames) {
         if (f < 0 || f >= static_cast<int>(m_poses.size())) continue;
@@ -365,6 +390,7 @@ void AnimationDialog::generate(const std::vector<int>& frames, bool newSeed) {
                   {"width", gw}, {"height", gh},
                   {"steps", m_steps->value()},
                   {"guidance", 6.0},
+                  {"weights", m_precision->currentData().toString().toStdString()},
                   // Same seed for every frame keeps the look; retries vary it.
                   {"seed", static_cast<std::int64_t>((m_seed + attempt * 7919) % 2147483000)},
                   {"controlnet", {{"dir", utf8(store.entryPath(*cat.find(kControlNet)))}, {"image", utf8(posePng)},
@@ -374,6 +400,8 @@ void AnimationDialog::generate(const std::vector<int>& frames, bool newSeed) {
         else p["pixel"]["colors"] = 32;
         if (const ModelEntry* l = cat.find(kLora); l && store.state(*l) == InstallState::Installed && c.loraStrength > 0)
             p["lora"] = {{"path", utf8(store.entryPath(*l))}, {"scale", c.loraStrength / 100.0}};
+        if (const ModelEntry* tae = cat.find(kTaesd); tae && store.state(*tae) == InstallState::Installed)
+            p["preview"] = {{"dir", utf8(store.entryPath(*tae))}, {"every", 4}};
         if (useRefs && !refs.empty())
             p["ip_adapter"] = {{"dir", utf8(store.entryPath(*ip))}, {"weight", "ip-adapter-plus_sdxl_vit-h.safetensors"},
                                {"encoder", "models/image_encoder"}, {"images", refs},
@@ -435,13 +463,21 @@ void AnimationDialog::onJobFinished(const QString& qid) {
     refreshStrip();
 }
 
+QAOptions AnimationDialog::qaOptions() const {
+    QAOptions o;
+    // Each frame is judged against what its pose asks for (a jump leaves the
+    // ground, a crouch is shorter), not against standing still.
+    if (m_profile && m_box) o.expected = expectationsFromPoses(m_poses, *m_box, m_profile->height);
+    return o;
+}
+
 void AnimationDialog::evaluate() {
     if (!m_profile) return;
     std::vector<Image> frames;
     for (const auto& r : m_results) frames.push_back(r ? *r : Image(m_profile->width, m_profile->height));
     if (frames.empty()) return;
     // The first frame is the reference for ground line, height and colours.
-    m_report = evaluateFrames(frames, frames.front(), m_profile->palette);
+    m_report = evaluateFrames(frames, frames.front(), m_profile->palette, qaOptions());
     const auto failing = m_report->failing(), regen = m_report->toRegenerate();
     QString text = tr("Consistency %1% (compared with frame 1).").arg(qRound(m_report->meanScore() * 100));
     if (failing.empty()) text += tr(" All frames pass.");
@@ -458,7 +494,7 @@ void AnimationDialog::autoCorrect() {
     if (!m_profile || !m_report) return;
     std::vector<Image> frames;
     for (const auto& r : m_results) frames.push_back(r ? *r : Image(m_profile->width, m_profile->height));
-    const auto fixed = correctFrames(frames, *m_report, m_profile->palette);
+    const auto fixed = correctFrames(frames, *m_report, m_profile->palette, qaOptions());
     for (std::size_t i = 0; i < fixed.size(); ++i) if (m_results[i]) m_results[i] = fixed[i];
     m_corrected = true;
     evaluate();

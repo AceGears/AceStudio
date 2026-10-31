@@ -55,6 +55,7 @@ Settings::Settings() {
     registerDefault("ai.generate.lora", true);                // use the Pixel Art XL LoRA when installed
     registerDefault("ai.generate.loraStrength", 100);         // percent, 0..200
     registerDefault("ai.generate.cropSubject", true);         // frame the subject before pixelizing
+    registerDefault("ai.generateOptionsOpen", false);          // Generate tab: Options section expanded
     // Export
     registerDefault("export.defaultEngine", "godot");
     // MCP

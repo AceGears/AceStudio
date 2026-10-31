@@ -42,9 +42,12 @@ class Context:
             raise Cancelled()
 
     # Reporting
-    def progress(self, fraction=None, message="", step=None, steps=None, force=False, preview=None):
+    def progress(self, fraction=None, message="", step=None, steps=None, force=False, preview=None,
+                 uninterruptible=False):
         """Report progress. Rate-limited to ~20/s unless forced, so tight loops
-        cannot flood the pipe."""
+        cannot flood the pipe. `uninterruptible` tells the app the job is in a
+        stage it cannot stop (loading a model): a cancel then waits for the
+        stage to end instead of restarting the worker and losing the model."""
         now = time.monotonic()
         if not force and now - self._last_progress < 0.05 and (fraction is None or fraction < 1.0):
             return
@@ -58,6 +61,8 @@ class Context:
             p["steps"] = int(steps)
         if preview is not None:
             p["preview"] = str(preview)   # a PNG inside the job folder
+        if uninterruptible:
+            p["uninterruptible"] = True
         self._server.notify("job.progress", p)
 
     def log(self, message, level="info"):

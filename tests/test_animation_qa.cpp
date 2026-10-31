@@ -106,3 +106,98 @@ TEST_CASE("Corrections fix ground and height, then the frames pass", "[qa]") {
     CHECK(after.frames[0].bounds.x + after.frames[0].bounds.w / 2 == 20);
     CHECK(paletteDistance(fixed[1], pal()) == 0.0);
 }
+
+namespace {
+const Rgba8 kCape{200, 30, 30, 255};
+// The figure with a cape on its back (left of the body when facing right).
+Image caped(int w, int h, int cx, int ground, bool facingRight = true) {
+    Image img = figure(w, h, cx, ground);
+    const int top = ground - 20 + 1;
+    img.fillRect({facingRight ? cx - 9 : cx + 5, top + 5, 4, 12}, kCape);
+    return img;
+}
+Palette capePal() {
+    Palette p = pal();
+    (void)p.add(kCape);
+    return p;
+}
+} // namespace
+
+TEST_CASE("Facing: a mirrored frame is flagged, and Auto-Correct flips it back", "[qa]") {
+    const Image ref = caped(64, 64, 32, 55);
+    CHECK(facingAgreement(ref, ref) == Approx(1.0));
+    CHECK(facingAgreement(caped(64, 64, 20, 50, false), ref) < -0.9);
+    CHECK(facingAgreement(figure(64, 64, 32, 55), figure(64, 64, 32, 55)) == 1.0);   // symmetric: undecidable
+    const std::vector<Image> frames = {ref, caped(64, 64, 30, 55, false), caped(64, 64, 34, 55)};
+    const QAReport r = evaluateFrames(frames, ref, capePal());
+    CHECK(r.frames[0].ok());
+    CHECK((r.frames[1].flags & QAFlipped));
+    CHECK_FALSE(r.frames[1].needsRegeneration());       // fixable
+    CHECK(describe(r.frames[1]).find("facing") != std::string::npos);
+    INFO(describe(r.frames[2]));
+    CHECK(r.frames[2].ok());                            // compared with the corrected shape of frame 1
+    const auto fixed = correctFrames(frames, r, capePal());
+    const QAReport after = evaluateFrames(fixed, ref, capePal());
+    for (const auto& q : after.frames) {
+        INFO(describe(q));
+        CHECK(q.ok());
+    }
+    CHECK(facingAgreement(fixed[1], ref) > 0.9);
+}
+
+TEST_CASE("Expectations from poses: jumps leave the ground and are not pulled back", "[qa]") {
+    const auto poses = cyclePoses(PoseCycle::Jump, 6);
+    const auto box = poseFramingBox(poses, 1.0);
+    const auto exp = expectationsFromPoses(poses, box, 64);
+    REQUIRE(exp.size() == 6);
+    CHECK(exp[0].groundOffset == 0);
+    CHECK(exp[0].heightRatio == Approx(1.0));
+    int highest = 0;
+    for (const auto& e : exp) highest = std::min(highest, e.groundOffset);
+    CHECK(highest < -2);                               // some frame is airborne
+    const auto stand = expectationsFromPoses({standingPose(), standingPose()}, poseFramingBox({standingPose()}, 1.0), 64);
+    CHECK(stand[1].groundOffset == 0);
+    CHECK(stand[1].heightRatio == Approx(1.0));
+
+    // A frame 8 px up passes when its pose is a jump, fails when it should stand,
+    // and Auto-Correct puts a mis-placed jump frame where its pose says.
+    const Image ref = figure(64, 64, 32, 55);
+    QAOptions o;
+    o.expected = {{0, 1.0}, {-8, 1.0}, {-8, 1.0}};
+    const std::vector<Image> frames = {ref, figure(64, 64, 32, 47), figure(64, 64, 32, 52)};
+    const QAReport withPose = evaluateFrames(frames, ref, pal(), o);
+    CHECK(withPose.frames[1].ok());
+    CHECK((withPose.frames[2].flags & QAGround));
+    CHECK(withPose.frames[2].groundOffset == 5);
+    CHECK((evaluateFrames(frames, ref, pal()).frames[1].flags & QAGround));
+    const auto fixed = correctFrames(frames, withPose, pal(), o);
+    const QAReport after = evaluateFrames(fixed, ref, pal(), o);
+    CHECK(after.frames[2].ok());
+    CHECK(after.frames[2].bounds.y + after.frames[2].bounds.h - 1 == 47);
+    // Expected height: a crouch at 80% passes when the pose crouches.
+    QAOptions crouch;
+    crouch.expected = {{0, 1.0}, {0, 0.8}};
+    const QAReport c = evaluateFrames({ref, figure(64, 64, 32, 55, 16)}, ref, pal(), crouch);
+    CHECK(c.frames[1].ok());
+}
+
+TEST_CASE("Colour checks work without a profile palette; identity catches an off-model frame 1", "[qa]") {
+    const Image ref = figure(64, 64, 32, 55);
+    const Image recoloured = figure(64, 64, 32, 55, 20, Rgba8{30, 160, 60, 255});   // green shirt
+    // No palette: colours come from the reference, so the drift is still seen.
+    const QAReport r = evaluateFrames({ref, recoloured}, ref, Palette());
+    CHECK((r.frames[1].flags & QAColorMix));
+    CHECK(r.frames[1].needsRegeneration());
+    CHECK_FALSE((r.frames[1].flags & QAPalette));    // no target palette: no off-palette check
+    // Identity: the character is the blue-shirted figure (a different pose,
+    // smaller); a green-shirted frame 1 is flagged, a blue one is not.
+    QAOptions o;
+    o.identity = {figure(24, 40, 12, 38, 18)};
+    const QAReport good = evaluateFrames({ref, ref}, ref, Palette(), o);
+    CHECK(good.frames[0].ok());
+    CHECK(good.frames[1].ok());
+    const QAReport bad = evaluateFrames({recoloured, recoloured}, recoloured, Palette(), o);
+    CHECK((bad.frames[0].flags & QAOffModel));
+    CHECK(bad.frames[0].needsRegeneration());
+    CHECK(describe(bad.frames[0]).find("reference images") != std::string::npos);
+}

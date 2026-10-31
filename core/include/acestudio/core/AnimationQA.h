@@ -16,8 +16,10 @@
 
 #include "acestudio/core/Image.h"
 #include "acestudio/core/Palette.h"
+#include "acestudio/core/Pose.h"
 #include "acestudio/core/Raster.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -32,6 +34,11 @@ Image removeBorderBackground(const Image& src, int tolerance = 24);
 // Alpha > 0 pixels.
 Mask silhouette(const Image& img);
 
+// Agreement (-1..1) between where colours sit left/right of the figure's
+// centre in `img` and in `reference`: +1 = same facing, -1 = mirror image.
+// Returns 1 when the reference is too symmetric to tell.
+double facingAgreement(const Image& img, const Image& reference);
+
 // Intersection over union of two silhouettes after aligning their bounding
 // boxes' bottom-centre points (so a figure that only moved is unchanged).
 // 1.0 when both are empty.
@@ -45,12 +52,40 @@ double paletteDistance(const Image& img, const Palette& palette);
 // opaque pixel counted at its nearest palette colour): 0 = same colour mix, 1 = disjoint.
 double colorMixDistance(const Image& a, const Image& b, const Palette& palette);
 
+// What a frame should look like relative to the reference, from its pose: a
+// jump leaves the ground, a crouch is shorter, a stride's bounds are lower.
+struct FrameExpectation {
+    int groundOffset = 0;      // px, + = lower than the reference ground (negative = airborne)
+    double heightRatio = 1.0;  // expected height / reference height
+};
+
+// Expectations for frames generated from `poses` and cropped with
+// `box` (normalised x0, y0, x1, y1, as from poseFramingBox) to `spriteHeight`
+// px. Frame 0 is the reference.
+std::vector<FrameExpectation> expectationsFromPoses(const std::vector<Pose>& poses, const std::array<double, 4>& box,
+                                                    int spriteHeight);
+
+// Perceptual colour-profile distance (0 = same, 1 = disjoint): half the L1
+// distance between histograms of opaque pixels over fixed bins (12 hues x 3
+// lightness levels for coloured pixels, 4 grey levels). Independent of any
+// palette and of image size. Calibrated on real SDXL frames of one character
+// (<= 0.31 to each other) against other subjects and recoloured copies
+// (>= 0.41).
+double colourProfileDistance(const Image& a, const Image& b);
+
 struct QAOptions {
     int groundTolerance = 1;          // px
     double heightTolerance = 0.08;    // relative to the reference height
     double paletteTolerance = 0.06;   // paletteDistance
-    double colorMixTolerance = 0.35;  // colorMixDistance vs the reference
+    double colorMixTolerance = 0.36;  // colourProfileDistance vs the reference frame
     double minIoU = 0.55;             // silhouette overlap with the previous frame
+    double flipThreshold = -0.35;     // facing agreement below this = drawn facing the wrong way
+    std::vector<FrameExpectation> expected;   // per frame; empty = every frame stands like the reference
+    // The character's reference images: every frame (frame 1 included) is
+    // compared with them for colour mix, so a frame 1 that is a different
+    // character is caught. Empty = no identity check.
+    std::vector<Image> identity;
+    double identityTolerance = 0.38;          // colourProfileDistance to the closest reference image
 };
 
 enum QAFlag : std::uint32_t {
@@ -60,20 +95,26 @@ enum QAFlag : std::uint32_t {
     QAColorMix = 1u << 3,
     QASilhouette = 1u << 4,
     QAEmpty = 1u << 5,
+    QAFlipped = 1u << 6,   // drawn facing the other way (the mirror image matches better)
+    QAOffModel = 1u << 7,  // colours do not match the character's reference images
 };
 
 struct FrameQA {
     IntRect bounds;                  // opaque bounds (empty if nothing drawn)
-    int groundOffset = 0;            // frame ground - reference ground (px, + = lower)
-    double heightRatio = 1.0;        // frame height / reference height
+    int groundOffset = 0;            // frame ground - expected ground (px, + = lower)
+    double heightRatio = 1.0;        // frame height / expected height
+    FrameExpectation expected;       // what the pose asked for
+    double identity = 0.0;           // colourProfileDistance to the closest reference image (0 if none)
+    double facing = 1.0;             // -1..1: how the left/right placement of colours agrees with the
+                                     // reference (+1 same facing, -1 mirrored; 1 when undecidable)
     double paletteDistance = 0.0;
-    double colorMix = 0.0;           // vs the reference
+    double colorMix = 0.0;           // colourProfileDistance vs the reference frame
     double iouPrevious = 1.0;        // vs the previous frame (1 for the first)
     std::uint32_t flags = 0;
     double score = 1.0;              // 0..1, 1 = consistent
     bool ok() const noexcept { return flags == 0; }
     // Flags that corrections cannot fix: regenerate the frame.
-    bool needsRegeneration() const noexcept { return (flags & (QASilhouette | QAEmpty | QAColorMix)) != 0; }
+    bool needsRegeneration() const noexcept { return (flags & (QASilhouette | QAEmpty | QAColorMix | QAOffModel)) != 0; }
 };
 
 struct QAReport {
@@ -87,12 +128,14 @@ struct QAReport {
 };
 
 // `reference` sets the expected ground line, height, centre and colour mix;
-// all images must have the same size.
+// all frames must have the same size. The colour checks do not need a
+// palette; `palette` (may be empty) is only used for the off-palette check.
 QAReport evaluateFrames(const std::vector<Image>& frames, const Image& reference, const Palette& palette,
                         const QAOptions& opts = {});
 std::string describe(const FrameQA& qa);
 
-// Fixes the ground line, height (nearest-neighbour scale about the feet) and
+// Fixes the ground line and height (to what the frame's pose expects;
+// nearest-neighbour scale about the feet), facing (mirrors flipped frames) and
 // off-palette colours; each frame keeps its horizontal position. Frames that need regeneration are returned
 // unchanged apart from palette mapping.
 std::vector<Image> correctFrames(const std::vector<Image>& frames, const QAReport& report, const Palette& palette,

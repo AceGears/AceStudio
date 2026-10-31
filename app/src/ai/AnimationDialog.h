@@ -7,6 +7,7 @@
 #include <QDialog>
 #include <QPointer>
 
+#include <array>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -49,6 +50,7 @@ private:
     void generate(const std::vector<int>& frames, bool newSeed);
     void onJobFinished(const QString& id);
     void evaluate();
+    QAOptions qaOptions() const;
     void autoCorrect();
     void commit();
     void editPose(int frame);
@@ -67,6 +69,8 @@ private:
     std::vector<int> m_attempts;
     std::optional<QAReport> m_report;
     std::int64_t m_seed = -1;
+    std::optional<std::array<double, 4>> m_box;   // framing box of the last generation
+    int m_previewSerial = 0;
     bool m_corrected = false;
 
     QComboBox* m_character = nullptr;
@@ -76,6 +80,7 @@ private:
     QLineEdit* m_actionWords = nullptr;
     QSpinBox* m_steps = nullptr;
     QSpinBox* m_poseStrength = nullptr;
+    QComboBox* m_precision = nullptr;
     QCheckBox* m_useRefs = nullptr;
     QCheckBox* m_removeBg = nullptr;
     QListWidget* m_strip = nullptr;

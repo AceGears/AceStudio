@@ -261,3 +261,37 @@ TEST_CASE("Old AI job folders are pruned; recent ones and other files are kept",
     CHECK(fs::exists(root / "j3-dddddd"));
     CHECK(pruneJobFolders(root / "missing", std::chrono::hours(1)) == 0);
 }
+
+TEST_CASE("Cancel during an uninterruptible stage waits for it, keeping the worker", "[ai]") {
+    REQUIRE_PYTHON();
+    Fixture f([](WorkerOptions& o) {
+        o.cancelGrace = 800ms;
+        o.uninterruptibleGrace = 20s;
+    });
+    REQUIRE(f.ready());
+    const auto pid = f.sup->workerPid();
+    auto job = f.sup->submit("diag.sleep", {{"uninterruptible_seconds", 3.0}, {"seconds", 30}, {"steps", 300}}).value();
+    REQUIRE(f.sup->runUntil([&] { return f.sup->job(job)->uninterruptible; }, 30s));
+    const auto t0 = Clock::now();
+    REQUIRE(f.sup->cancel(job));
+    CHECK(f.sup->job(job)->message.find("after the model") != std::string::npos);
+    REQUIRE(f.finished(job, 20s));
+    CHECK(f.sup->job(job)->state == JobState::Cancelled);
+    CHECK(Clock::now() - t0 > 1500ms);          // waited past the normal grace
+    CHECK(f.sup->workerPid() == pid);           // and did not restart the worker
+
+    // A stage that never ends is still bounded by uninterruptibleGrace.
+    Fixture g([](WorkerOptions& o) {
+        o.cancelGrace = 300ms;
+        o.uninterruptibleGrace = 1500ms;
+    });
+    REQUIRE(g.ready());
+    const auto pid2 = g.sup->workerPid();
+    auto stuck = g.sup->submit("diag.sleep", {{"uninterruptible_seconds", 60.0}}).value();
+    REQUIRE(g.sup->runUntil([&] { return g.sup->job(stuck)->uninterruptible; }, 30s));
+    REQUIRE(g.sup->cancel(stuck));
+    REQUIRE(g.finished(stuck, 15s));
+    CHECK(g.sup->job(stuck)->state == JobState::Cancelled);
+    REQUIRE(g.ready());
+    CHECK(g.sup->workerPid() != pid2);
+}

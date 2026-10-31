@@ -1,5 +1,6 @@
 #include "acestudio/core/AnimationQA.h"
 
+#include "acestudio/core/PaletteIO.h"
 #include "acestudio/core/Transform.h"
 
 #include <algorithm>
@@ -152,6 +153,106 @@ std::vector<int> QAReport::toRegenerate() const {
     return v;
 }
 
+namespace {
+struct ColourSide {
+    double count = 0, offset = 0;   // pixels; mean signed x offset from the figure centre (fraction of width)
+};
+// Coarse colour bins (3 bits per channel) with their mean horizontal offset.
+std::vector<ColourSide> colourSides(const Image& img) {
+    std::vector<ColourSide> bins(512);
+    int x0 = img.width(), x1 = -1;
+    for (int y = 0; y < img.height(); ++y)
+        for (int x = 0; x < img.width(); ++x)
+            if (img.pixel(x, y).a >= 128) { x0 = std::min(x0, x); x1 = std::max(x1, x); }
+    if (x1 < x0) return bins;
+    const double cx = (x0 + x1) / 2.0, w = std::max(1, x1 - x0 + 1);
+    for (int y = 0; y < img.height(); ++y)
+        for (int x = 0; x < img.width(); ++x) {
+            const Rgba8 p = img.pixel(x, y);
+            if (p.a < 128) continue;
+            ColourSide& b = bins[static_cast<std::size_t>((p.r >> 5) << 6 | (p.g >> 5) << 3 | (p.b >> 5))];
+            b.count += 1;
+            b.offset += (x - cx) / w;
+        }
+    for (auto& b : bins) if (b.count > 0) b.offset /= b.count;
+    return bins;
+}
+} // namespace
+
+namespace {
+std::array<double, 40> colourProfile(const Image& img) {
+    std::array<double, 40> h{};
+    double n = 0;
+    for (const Rgba8 p : img.pixels()) {
+        if (p.a < 128) continue;
+        const int mx = std::max({p.r, p.g, p.b}), mn = std::min({p.r, p.g, p.b});
+        const double l = (mx + mn) / 510.0, chroma = (mx - mn) / 255.0;
+        std::size_t bin;
+        if (chroma < 0.12) {
+            bin = 36 + static_cast<std::size_t>(std::min(3, static_cast<int>(l * 4)));
+        } else {
+            double hue;   // 0..6
+            const double r = p.r / 255.0, g = p.g / 255.0, b = p.b / 255.0, d = chroma;
+            if (mx == p.r) hue = std::fmod((g - b) / d + 6.0, 6.0);
+            else if (mx == p.g) hue = (b - r) / d + 2.0;
+            else hue = (r - g) / d + 4.0;
+            const int hb = std::min(11, static_cast<int>(hue * 2.0));
+            bin = static_cast<std::size_t>(hb * 3 + std::min(2, static_cast<int>(l * 3)));
+        }
+        h[bin] += 1;
+        n += 1;
+    }
+    if (n > 0) for (double& v : h) v /= n;
+    return h;
+}
+} // namespace
+
+double colourProfileDistance(const Image& a, const Image& b) {
+    const auto ha = colourProfile(a), hb = colourProfile(b);
+    double d = 0;
+    for (std::size_t i = 0; i < ha.size(); ++i) d += std::abs(ha[i] - hb[i]);
+    return d / 2.0;
+}
+
+double facingAgreement(const Image& img, const Image& reference) {
+    const auto a = colourSides(img), b = colourSides(reference);
+    double num = 0, den = 0, refAsym = 0, refTotal = 0;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        refTotal += b[i].count;
+        refAsym += b[i].count * std::abs(b[i].offset);
+        const double w = std::min(a[i].count, b[i].count);
+        if (w <= 0) continue;
+        num += w * a[i].offset * b[i].offset;
+        den += w * std::abs(a[i].offset) * std::abs(b[i].offset);
+    }
+    // A symmetric reference (mean colour offset under 3% of the width) or
+    // no shared colours: facing cannot be told.
+    if (refTotal <= 0 || refAsym / refTotal < 0.03 || den <= 1e-9) return 1.0;
+    return num / den;
+}
+
+std::vector<FrameExpectation> expectationsFromPoses(const std::vector<Pose>& poses, const std::array<double, 4>& box,
+                                                    int spriteHeight) {
+    std::vector<FrameExpectation> out(poses.size());
+    if (poses.empty() || spriteHeight <= 0 || box[3] <= box[1]) return out;
+    auto extent = [](const Pose& p, double& top, double& bottom) {
+        top = 1; bottom = 0;
+        for (const Keypoint& k : p.points)
+            if (k.visible) { top = std::min(top, k.y); bottom = std::max(bottom, k.y); }
+    };
+    double t0, b0;
+    extent(poses.front(), t0, b0);
+    const double h0 = b0 - t0;
+    const double pxPerUnit = spriteHeight / (box[3] - box[1]);
+    for (std::size_t i = 0; i < poses.size(); ++i) {
+        double t, b;
+        extent(poses[i], t, b);
+        out[i].groundOffset = static_cast<int>(std::lround((b - b0) * pxPerUnit));
+        out[i].heightRatio = h0 > 1e-6 ? (b - t) / h0 : 1.0;
+    }
+    return out;
+}
+
 QAReport evaluateFrames(const std::vector<Image>& frames, const Image& reference, const Palette& palette,
                         const QAOptions& o) {
     QAReport r;
@@ -164,7 +265,7 @@ QAReport evaluateFrames(const std::vector<Image>& frames, const Image& reference
     for (std::size_t i = 0; i < frames.size(); ++i) {
         const Image& f = frames[i];
         FrameQA q;
-        const Mask m = silhouette(f);
+        Mask m = silhouette(f);
         q.bounds = m.bounds();
         if (q.bounds.empty()) {
             q.flags = QAEmpty;
@@ -174,24 +275,43 @@ QAReport evaluateFrames(const std::vector<Image>& frames, const Image& reference
             previous = m;
             continue;
         }
-        q.groundOffset = (q.bounds.y + q.bounds.h - 1) - r.referenceGround;
-        q.heightRatio = r.referenceHeight ? static_cast<double>(q.bounds.h) / r.referenceHeight : 1.0;
+        if (i < o.expected.size()) q.expected = o.expected[i];
+        q.groundOffset = (q.bounds.y + q.bounds.h - 1) - (r.referenceGround + q.expected.groundOffset);
+        const double expectedH = r.referenceHeight * q.expected.heightRatio;
+        q.heightRatio = expectedH > 0 ? q.bounds.h / expectedH : 1.0;
+        q.facing = i == 0 ? 1.0 : facingAgreement(f, reference);
         q.paletteDistance = paletteDistance(f, palette);
-        q.colorMix = colorMixDistance(f, reference, palette);
+        q.colorMix = colourProfileDistance(f, reference);
+        if (!o.identity.empty()) {
+            q.identity = 1.0;
+            for (const Image& id : o.identity) q.identity = std::min(q.identity, colourProfileDistance(f, id));
+        }
         q.iouPrevious = i == 0 ? silhouetteIoU(m, refMask) : silhouetteIoU(m, previous);
         if (std::abs(q.groundOffset) > o.groundTolerance) q.flags |= QAGround;
         if (std::abs(q.heightRatio - 1.0) > o.heightTolerance) q.flags |= QAHeight;
         if (q.paletteDistance > o.paletteTolerance) q.flags |= QAPalette;
         if (q.colorMix > o.colorMixTolerance) q.flags |= QAColorMix;
+        if (!o.identity.empty() && q.identity > o.identityTolerance) q.flags |= QAOffModel;
         if (q.iouPrevious < o.minIoU) q.flags |= QASilhouette;
+        if (q.facing < o.flipThreshold) {
+            // A mirrored frame also fails the silhouette check against its
+            // neighbour; flipping fixes both, so judge the shape after flipping.
+            q.flags |= QAFlipped;
+            Mask mm = silhouette(flipHorizontal(f));
+            const double iouFlipped = silhouetteIoU(mm, previous);
+            if (iouFlipped >= o.minIoU) q.flags &= ~static_cast<std::uint32_t>(QASilhouette);
+            q.iouPrevious = std::max(q.iouPrevious, iouFlipped);
+            m = std::move(mm);   // the next frame is compared with the corrected shape
+        }
         // Score: each check contributes; silhouette and colour mix weigh most.
         auto clamp01 = [](double v) { return std::clamp(v, 0.0, 1.0); };
         const double sGround = clamp01(1.0 - std::abs(q.groundOffset) / 8.0);
         const double sHeight = clamp01(1.0 - std::abs(q.heightRatio - 1.0) / 0.5);
         const double sPal = clamp01(1.0 - q.paletteDistance / 0.25);
-        const double sMix = clamp01(1.0 - q.colorMix);
+        const double sMix = clamp01(1.0 - 1.5 * std::max(q.colorMix, q.identity));
         const double sIoU = clamp01(q.iouPrevious);
         q.score = 0.15 * sGround + 0.15 * sHeight + 0.1 * sPal + 0.25 * sMix + 0.35 * sIoU;
+        if (q.flags & QAFlipped) q.score *= 0.7;
         r.frames.push_back(q);
         previous = m;
     }
@@ -203,10 +323,12 @@ std::string describe(const FrameQA& q) {
     if (q.flags & QAEmpty) return "empty frame";
     bool first = true;
     auto add = [&](const std::string& t) { s << (first ? "" : "; ") << t; first = false; };
+    if (q.flags & QAFlipped) add("facing the wrong way");
     if (q.flags & QAGround) add("ground off by " + std::to_string(q.groundOffset) + " px");
-    if (q.flags & QAHeight) add("height " + std::to_string(static_cast<int>(std::lround(q.heightRatio * 100))) + "% of reference");
+    if (q.flags & QAHeight) add("height " + std::to_string(static_cast<int>(std::lround(q.heightRatio * 100))) + "% of expected");
     if (q.flags & QAPalette) add("off-palette colours");
-    if (q.flags & QAColorMix) add("colours differ from the reference");
+    if (q.flags & QAColorMix) add("colours differ from frame 1");
+    if (q.flags & QAOffModel) add("does not look like the character's reference images");
     if (q.flags & QASilhouette) add("shape changed (" + std::to_string(static_cast<int>(std::lround(q.iouPrevious * 100))) + "% overlap)");
     if (first) return "ok";
     return s.str();
@@ -233,20 +355,25 @@ std::vector<Image> correctFrames(const std::vector<Image>& frames, const QARepor
         if (i >= report.frames.size()) { out.push_back(std::move(f)); continue; }
         const FrameQA& q = report.frames[i];
         if (q.needsRegeneration() || q.bounds.empty()) { out.push_back(std::move(f)); continue; }
-        // Height: rescale the figure (nearest) about its bottom-centre.
         Image figure = f.copy(q.bounds);
+        if (q.flags & QAFlipped) figure = flipHorizontal(figure);
+        // Height: rescale the figure (nearest) about its bottom-centre to the
+        // height its pose expects.
         if ((q.flags & QAHeight) && report.referenceHeight > 0) {
-            const double s = static_cast<double>(report.referenceHeight) / q.bounds.h;
+            const int nh = std::max(1, static_cast<int>(std::lround(report.referenceHeight * q.expected.heightRatio)));
+            const double s = static_cast<double>(nh) / q.bounds.h;
             const int nw = std::max(1, static_cast<int>(std::lround(q.bounds.w * s)));
-            const int nh = report.referenceHeight;
             if (auto scaled = scaleNearest(figure, nw, nh)) figure = std::move(scaled).value();
         }
         (void)o;
-        // Place: feet on the reference ground line. The horizontal centre is the
-        // frame's own (a stride's bounds move with the legs; re-centring would jitter).
+        // Place: feet where the pose expects them (the reference ground, or
+        // above it for a jump). The horizontal centre is the frame's own (a
+        // stride's bounds move with the legs; re-centring would jitter).
         Image placed(f.width(), f.height());
         const int x = q.bounds.x + q.bounds.w / 2 - figure.width() / 2;
-        const int y = report.referenceGround - (figure.height() - 1);
+        const int ground = (q.flags & QAGround) ? report.referenceGround + q.expected.groundOffset
+                                                : q.bounds.y + q.bounds.h - 1;
+        const int y = ground - (figure.height() - 1);
         placed.blit(figure, x, y);
         out.push_back(std::move(placed));
     }

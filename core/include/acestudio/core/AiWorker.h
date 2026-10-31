@@ -55,6 +55,7 @@ struct Job {
     std::map<std::string, std::filesystem::path> outputs;
     std::filesystem::path preview;             // latest in-progress preview PNG (inside `dir`), if any
     int previewSerial = 0;                     // increments with every new preview
+    bool uninterruptible = false;              // the worker is in a stage it cannot stop (e.g. loading a model)
     nlohmann::json info;
     std::string error;
     FailureKind failure = FailureKind::None;
@@ -70,6 +71,10 @@ struct WorkerOptions {
     std::filesystem::path jobsRoot;            // job directories are created here
     std::chrono::milliseconds helloTimeout{std::chrono::seconds(90)};   // importing torch can be slow
     std::chrono::milliseconds cancelGrace{std::chrono::seconds(10)};    // then the worker is killed
+    // While the job reports an uninterruptible stage (loading a model), a
+    // cancel waits up to this long for the stage to end, so the loaded model
+    // stays cached instead of the worker being killed.
+    std::chrono::milliseconds uninterruptibleGrace{std::chrono::seconds(180)};
     std::chrono::milliseconds restartDelay{std::chrono::milliseconds(500)};
     int maxCrashes = 3;                        // within crashWindow, then stop restarting
     std::chrono::milliseconds crashWindow{std::chrono::minutes(2)};
@@ -157,6 +162,7 @@ private:
     JobId m_running;
     std::optional<Clock::time_point> m_helloDeadline;
     std::optional<Clock::time_point> m_cancelDeadline;
+    Clock::time_point m_cancelStarted{};
     std::optional<Clock::time_point> m_restartAt;
     std::vector<Clock::time_point> m_crashes;
     std::vector<Event> m_deferred;  // events raised outside poll() (cancel of a queued job, stop); delivered by the next poll()

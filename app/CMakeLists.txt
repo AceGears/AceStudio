@@ -1,4 +1,4 @@
-find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets Network)
 include(QtLicenseGuard)
 
 set(CMAKE_AUTOMOC ON)
@@ -37,6 +37,8 @@ add_executable(AceStudio WIN32
     src/ai/PoseEditor.cpp
     src/ai/AnimationDialog.h
     src/ai/AnimationDialog.cpp
+    src/SingleInstance.h
+    src/SingleInstance.cpp
     src/Shortcuts.h
     src/Shortcuts.cpp
     src/ToolState.h
@@ -58,7 +60,7 @@ add_executable(AceStudio WIN32
 )
 
 target_include_directories(AceStudio PRIVATE src)
-target_link_libraries(AceStudio PRIVATE AceStudio::core Qt6::Core Qt6::Gui Qt6::Widgets)
+target_link_libraries(AceStudio PRIVATE AceStudio::core Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
 target_compile_definitions(AceStudio PRIVATE QT_NO_KEYWORDS QT_DISABLE_DEPRECATED_BEFORE=0x060400)
 acestudio_set_warnings(AceStudio)
 acestudio_check_qt_licenses(AceStudio)

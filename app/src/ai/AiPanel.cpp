@@ -31,6 +31,9 @@
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QTabWidget>
+#include <QToolButton>
+#include <QWheelEvent>
+#include <QAbstractSpinBox>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -70,6 +73,30 @@ private:
     QPixmap m_source;
 };
 
+// In a scrolling page the mouse wheel should scroll the page, not change the
+// combo box or spin box that happens to be under the cursor.
+class WheelGuard : public QObject {
+public:
+    using QObject::QObject;
+protected:
+    bool eventFilter(QObject* obj, QEvent* e) override {
+        if (e->type() == QEvent::Wheel)
+            if (auto* w = qobject_cast<QWidget*>(obj); w && !w->hasFocus()) {
+                e->ignore();       // passes the event on to the scroll area
+                return true;
+            }
+        return false;
+    }
+};
+
+void guardWheel(QWidget* page, QObject* guard) {
+    for (QWidget* w : page->findChildren<QWidget*>())
+        if (qobject_cast<QComboBox*>(w) || qobject_cast<QAbstractSpinBox*>(w)) {
+            w->setFocusPolicy(Qt::StrongFocus);   // wheel no longer focuses it
+            w->installEventFilter(guard);
+        }
+}
+
 QString utf8Path(const std::filesystem::path& p) { return fromPath(p); }
 std::string toUtf8(const std::filesystem::path& p) {
     const auto u = p.u8string();
@@ -103,7 +130,9 @@ AiPanel::AiPanel(AiService& ai, AppContext& ctx, QWidget* parent) : QWidget(pare
 
     // Pages scroll, so the dock never forces the window taller than the screen.
     m_tabs = new QTabWidget(this);
-    auto scrolled = [this](QWidget* page) {
+    auto* wheelGuard = new WheelGuard(this);
+    auto scrolled = [this, wheelGuard](QWidget* page) {
+        guardWheel(page, wheelGuard);
         auto* area = new QScrollArea(m_tabs);
         area->setWidget(page);
         area->setWidgetResizable(true);
@@ -261,15 +290,26 @@ QWidget* AiPanel::buildGenerateTab() {
     size->addWidget(m_width);
     size->addWidget(new QLabel(QStringLiteral("×"), w));
     size->addWidget(m_height);
-    auto* f = new QFormLayout(w);
+    // The prompt comes first so it is visible in a short dock (1080p laptop
+    // layouts show about two rows); everything else is under Options.
+    m_prompt->setFixedHeight(m_prompt->fontMetrics().lineSpacing() * 3 + 12);
+    auto* top = new QFormLayout;
+    top->addRow(tr("Prompt:"), m_prompt);
+    top->addRow(tr("Negative:"), m_negative);
+    auto* optionsToggle = new QToolButton(w);
+    optionsToggle->setText(tr("Options"));
+    optionsToggle->setCheckable(true);
+    optionsToggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    optionsToggle->setAutoRaise(true);
+    auto* options = new QWidget(w);
+    auto* f = new QFormLayout(options);
+    f->setContentsMargins(0, 0, 0, 0);
     f->addRow(tr("Model:"), m_genModel);
     auto* loraRow = new QHBoxLayout;
     loraRow->addWidget(m_genLora);
     loraRow->addWidget(m_genLoraStrength);
     loraRow->addStretch();
     f->addRow(QString(), loraRow);
-    f->addRow(tr("Prompt:"), m_prompt);
-    f->addRow(tr("Negative:"), m_negative);
     f->addRow(QString(), m_pixelMode);
     f->addRow(QString(), m_usePalette);
     f->addRow(QString(), m_cropSubject);
@@ -280,6 +320,21 @@ QWidget* AiPanel::buildGenerateTab() {
     f->addRow(tr("Images:"), m_count);
     f->addRow(QString(), m_img2img);
     f->addRow(tr("Strength:"), m_strength);
+    const bool open = m_ctx.settings().get<bool>("ai.generateOptionsOpen");
+    optionsToggle->setChecked(open);
+    optionsToggle->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
+    options->setVisible(open);
+    connect(optionsToggle, &QToolButton::toggled, this, [this, optionsToggle, options](bool on) {
+        optionsToggle->setArrowType(on ? Qt::DownArrow : Qt::RightArrow);
+        options->setVisible(on);
+        (void)m_ctx.settings().set("ai.generateOptionsOpen", on);
+    });
+    auto* v = new QVBoxLayout(w);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->addLayout(top);
+    v->addWidget(optionsToggle);
+    v->addWidget(options);
+    v->addStretch();
     return w;
 }
 
@@ -418,8 +473,19 @@ void AiPanel::runGenerate() {
         m_prompt->setFocus();
         return void(Q_EMIT statusMessage(tr("Enter a prompt first.")));
     }
-    json p = {{"model_dir", toUtf8(toPath(model))}, {"prompt", prompt.toStdString()},
-              {"negative_prompt", m_negative->text().toStdString()}, {"steps", m_steps->value()},
+    // One sprite for this canvas: Pixel Art XL tends to draw a sheet of many
+    // items, so ask for one centred object unless the prompt says otherwise.
+    const bool single = m_view && m_pixelMode->isChecked() &&
+                        !prompt.contains(QLatin1String("sheet"), Qt::CaseInsensitive) &&
+                        !prompt.contains(QLatin1String("tileset"), Qt::CaseInsensitive);
+    std::string fullPrompt = prompt.toStdString();
+    std::string negative = m_negative->text().trimmed().toStdString();
+    if (single) {
+        fullPrompt += ", one single object, centered, plain background";
+        negative += std::string(negative.empty() ? "" : ", ") + "sprite sheet, multiple objects, collage, grid, pattern";
+    }
+    json p = {{"model_dir", toUtf8(toPath(model))}, {"prompt", fullPrompt},
+              {"negative_prompt", negative}, {"steps", m_steps->value()},
               {"guidance", m_guidance->value()}, {"seed", m_seed->value()}, {"count", m_count->value()},
               {"model_id", m_genModel->currentData().toString().toStdString()}};
     Pending pend;
