@@ -2,9 +2,13 @@
 
 #include "acestudio/core/Log.h"
 
+#include <QApplication>
+#include <QFontDatabase>
 #include <QPlainTextEdit>
 #include <QScrollBar>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace acestudio::ui {
 
@@ -12,7 +16,10 @@ LogPanel::LogPanel(QWidget* parent) : QWidget(parent) {
     m_text = new QPlainTextEdit(this);
     m_text->setReadOnly(true);
     m_text->setMaximumBlockCount(2000);
-    m_text->setFont(QFont(QStringLiteral("Consolas"), 9));
+    // The platform's fixed-width font (Consolas on Windows), at the UI's size.
+    QFont mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    mono.setPointSizeF(std::max(8.0, QApplication::font().pointSizeF() - 1.0));
+    m_text->setFont(mono);
     m_text->setLineWrapMode(QPlainTextEdit::NoWrap);
 
     auto* layout = new QVBoxLayout(this);

@@ -26,6 +26,9 @@ public:
     explicit LayersPanel(QWidget* parent = nullptr);
     void setView(DocumentView* view);
 
+protected:
+    void changeEvent(QEvent* e) override;
+
 private:
     void scheduleRebuild();
     bool m_rebuildPending = false;

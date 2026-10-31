@@ -2,6 +2,7 @@
 
 #include <QApplication>
 #include <QPalette>
+#include <QProxyStyle>
 #include <QStyleFactory>
 
 namespace acestudio::ui {
@@ -18,6 +19,18 @@ Tokens tokensFor(ThemeKind k) {
     return {QColor("#1E1E23"), QColor("#18181C"), QColor("#222228"), QColor("#26262D"),
             QColor("#34343D"), QColor("#E6E6EC"), QColor("#9A9AA8"), QColor("#5C5C68"), QColor("#30303A")};
 }
+// Fusion, except that clicking a slider's track jumps straight to the click
+// point (the platform default moves by a page step, which feels broken for
+// opacity and other value sliders).
+class AceStyle final : public QProxyStyle {
+public:
+    using QProxyStyle::QProxyStyle;
+    int styleHint(StyleHint hint, const QStyleOption* opt, const QWidget* w, QStyleHintReturn* ret) const override {
+        if (hint == QStyle::SH_Slider_AbsoluteSetButtons) return Qt::LeftButton;
+        if (hint == QStyle::SH_Slider_PageSetButtons) return Qt::MiddleButton;
+        return QProxyStyle::styleHint(hint, opt, w, ret);
+    }
+};
 } // namespace
 
 ThemeKind themeFromString(const QString& s) { return s == QLatin1String("light") ? ThemeKind::Light : ThemeKind::Dark; }
@@ -26,7 +39,7 @@ QString toString(ThemeKind t) { return t == ThemeKind::Light ? QStringLiteral("l
 void applyTheme(QApplication& app, ThemeKind kind, const QColor& accentIn) {
     const QColor accent = accentIn.isValid() ? accentIn : QColor("#4F8CFF");
     const Tokens t = tokensFor(kind);
-    app.setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
+    app.setStyle(new AceStyle(QStyleFactory::create(QStringLiteral("Fusion"))));   // QApplication takes ownership
 
     QPalette p;
     p.setColor(QPalette::Window, t.window);

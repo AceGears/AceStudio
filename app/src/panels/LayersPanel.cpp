@@ -11,11 +11,62 @@
 #include <QLabel>
 #include <QMap>
 #include <QSlider>
+#include <QEvent>
+#include <QPainter>
+#include <QPainterPath>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
 namespace acestudio::ui {
+
+namespace {
+enum class LayerGlyph { NewLayer, NewGroup, Duplicate, Merge, Up, Down, Delete };
+
+// Small monochrome glyphs drawn in code (16×16 logical px, 2× for high DPI).
+QIcon layerIcon(LayerGlyph g, const QColor& fg) {
+    QPixmap pm(32, 32);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.scale(2, 2);
+    p.setPen(QPen(fg, 1.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    switch (g) {
+    case LayerGlyph::NewLayer:
+        p.drawRect(QRectF(2.5, 3.5, 9, 9));
+        p.drawLine(QPointF(12, 1.5), QPointF(12, 6.5));
+        p.drawLine(QPointF(9.5, 4), QPointF(14.5, 4));
+        break;
+    case LayerGlyph::NewGroup: {
+        QPainterPath folder;
+        folder.moveTo(2, 4); folder.lineTo(6, 4); folder.lineTo(7.5, 5.5); folder.lineTo(14, 5.5);
+        folder.lineTo(14, 13); folder.lineTo(2, 13); folder.closeSubpath();
+        p.drawPath(folder);
+        break;
+    }
+    case LayerGlyph::Duplicate:
+        p.drawRect(QRectF(2.5, 5.5, 8, 8));
+        p.drawPolyline(QPolygonF({QPointF(5.5, 5.5), QPointF(5.5, 2.5), QPointF(13.5, 2.5), QPointF(13.5, 10.5), QPointF(10.5, 10.5)}));
+        break;
+    case LayerGlyph::Merge:
+        p.drawLine(QPointF(8, 2), QPointF(8, 10));
+        p.drawPolyline(QPolygonF({QPointF(5, 7), QPointF(8, 10), QPointF(11, 7)}));
+        p.drawLine(QPointF(3, 13.5), QPointF(13, 13.5));
+        break;
+    case LayerGlyph::Up: p.drawPolyline(QPolygonF({QPointF(4, 10), QPointF(8, 6), QPointF(12, 10)})); break;
+    case LayerGlyph::Down: p.drawPolyline(QPolygonF({QPointF(4, 6), QPointF(8, 10), QPointF(12, 6)})); break;
+    case LayerGlyph::Delete:
+        p.drawLine(QPointF(3, 4.5), QPointF(13, 4.5));
+        p.drawLine(QPointF(6.5, 4.5), QPointF(6.5, 2.5));
+        p.drawLine(QPointF(6.5, 2.5), QPointF(9.5, 2.5));
+        p.drawLine(QPointF(9.5, 2.5), QPointF(9.5, 4.5));
+        p.drawPolyline(QPolygonF({QPointF(4.5, 4.5), QPointF(5.5, 13.5), QPointF(10.5, 13.5), QPointF(11.5, 4.5)}));
+        break;
+    }
+    pm.setDevicePixelRatio(2.0);
+    return QIcon(pm);
+}
+} // namespace
 
 namespace {
 constexpr int kIdRole = Qt::UserRole + 1;
@@ -70,39 +121,41 @@ LayersPanel::LayersPanel(QWidget* parent) : QWidget(parent) {
     });
 
     // Layer actions
-    auto makeButton = [this](const QString& text, const QString& tip, auto fn) {
+    auto makeButton = [this](LayerGlyph glyph, const QString& tip, auto fn) {
         auto* b = new QToolButton(this);
-        b->setText(text);
+        b->setIcon(layerIcon(glyph, palette().color(QPalette::WindowText)));
+        b->setIconSize(QSize(16, 16));
+        b->setProperty("glyph", static_cast<int>(glyph));
         b->setToolTip(tip);
+        b->setAccessibleName(tip);
         b->setAutoRaise(true);
-        b->setMinimumWidth(28);
         connect(b, &QToolButton::clicked, this, fn);
         m_layerButtons << b;
         return b;
     };
     auto* buttons = new QHBoxLayout;
-    buttons->setSpacing(2);
-    buttons->addWidget(makeButton(tr("+ Layer"), tr("New layer (Shift+Ctrl+N)"), [this] {
+    buttons->setSpacing(1);
+    buttons->addWidget(makeButton(LayerGlyph::NewLayer, tr("New layer (Shift+Ctrl+N)"), [this] {
         if (!m_view) return;
         auto r = m_view->editor().addLayer("", LayerKind::Raster, m_view->currentLayer());
         if (r) m_view->setCurrentLayer(r.value()); else report(r.error());
     }));
-    buttons->addWidget(makeButton(tr("+ Group"), tr("New group"), [this] {
+    buttons->addWidget(makeButton(LayerGlyph::NewGroup, tr("New group"), [this] {
         if (!m_view) return;
         auto r = m_view->editor().addLayer("", LayerKind::Group, m_view->currentLayer());
         if (r) m_view->setCurrentLayer(r.value()); else report(r.error());
     }));
-    buttons->addWidget(makeButton(tr("Duplicate"), tr("Duplicate layer"), [this] {
+    buttons->addWidget(makeButton(LayerGlyph::Duplicate, tr("Duplicate layer (Ctrl+J)"), [this] {
         if (!m_view) return;
         auto r = m_view->editor().duplicateLayer(m_view->currentLayer());
         if (r) m_view->setCurrentLayer(r.value()); else report(r.error());
     }));
-    buttons->addWidget(makeButton(tr("Merge"), tr("Merge down into the layer below"), [this] {
+    buttons->addWidget(makeButton(LayerGlyph::Merge, tr("Merge down into the layer below (Ctrl+E)"), [this] {
         if (m_view) report(m_view->editor().mergeDown(m_view->currentLayer()));
     }));
-    buttons->addWidget(makeButton(QStringLiteral("▲"), tr("Move up"), [this] { moveCurrent(+1); }));
-    buttons->addWidget(makeButton(QStringLiteral("▼"), tr("Move down"), [this] { moveCurrent(-1); }));
-    buttons->addWidget(makeButton(tr("Delete"), tr("Delete layer"), [this] {
+    buttons->addWidget(makeButton(LayerGlyph::Up, tr("Move up"), [this] { moveCurrent(+1); }));
+    buttons->addWidget(makeButton(LayerGlyph::Down, tr("Move down"), [this] { moveCurrent(-1); }));
+    buttons->addWidget(makeButton(LayerGlyph::Delete, tr("Delete layer"), [this] {
         if (m_view) report(m_view->editor().removeLayer(m_view->currentLayer()));
     }));
 
@@ -242,6 +295,13 @@ void LayersPanel::onItemChanged(QTreeWidgetItem* item, int column) {
         const Status st = m_view->editor().renameLayer(id, name);
         if (!st) { report(st); rebuild(); }
     }
+}
+
+void LayersPanel::changeEvent(QEvent* e) {
+    QWidget::changeEvent(e);
+    if (e->type() == QEvent::PaletteChange)   // theme switch: redraw glyphs in the new text colour
+        for (QToolButton* b : std::as_const(m_layerButtons))
+            b->setIcon(layerIcon(static_cast<LayerGlyph>(b->property("glyph").toInt()), palette().color(QPalette::WindowText)));
 }
 
 } // namespace acestudio::ui

@@ -46,6 +46,7 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -173,10 +174,21 @@ QWidget* MainWindow::buildWelcome() {
 }
 
 void MainWindow::buildDocks() {
-    auto makeDock = [this](const QString& title, const QString& objName, QWidget* content, Qt::DockWidgetArea area) {
+    auto makeDock = [this](const QString& title, const QString& objName, QWidget* content, Qt::DockWidgetArea area,
+                           bool scroll = false) {
         auto* dock = new QDockWidget(title, this);
         dock->setObjectName(objName);   // required for saveState/restoreState
-        dock->setWidget(content);
+        if (scroll) {
+            // Form-like panels scroll on short screens instead of squeezing their controls.
+            auto* scroller = new QScrollArea(dock);
+            scroller->setWidget(content);
+            scroller->setWidgetResizable(true);
+            scroller->setFrameShape(QFrame::NoFrame);
+            scroller->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+            dock->setWidget(scroller);
+        } else {
+            dock->setWidget(content);
+        }
         dock->setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable |
                           QDockWidget::DockWidgetFloatable);
         addDockWidget(area, dock);
@@ -208,10 +220,10 @@ void MainWindow::buildDocks() {
     connect(m_preview, &PreviewPanel::zoomChanged, this, [this](int z) { (void)m_ctx.settings().set("animation.preview.zoom", z); });
     connect(m_timeline, &TimelinePanel::tagsRequested, this, &MainWindow::editTags);
 
-    m_toolsDock = makeDock(tr("Tools"), QStringLiteral("dock.tools"), m_toolsPanel, Qt::LeftDockWidgetArea);
+    m_toolsDock = makeDock(tr("Tools"), QStringLiteral("dock.tools"), m_toolsPanel, Qt::LeftDockWidgetArea, true);
     m_layersDock = makeDock(tr("Layers"), QStringLiteral("dock.layers"), m_layers, Qt::RightDockWidgetArea);
-    m_propsDock = makeDock(tr("Properties"), QStringLiteral("dock.properties"), m_props, Qt::RightDockWidgetArea);
-    m_paletteDock = makeDock(tr("Palette"), QStringLiteral("dock.palette"), m_palette, Qt::RightDockWidgetArea);
+    m_propsDock = makeDock(tr("Properties"), QStringLiteral("dock.properties"), m_props, Qt::RightDockWidgetArea, true);
+    m_paletteDock = makeDock(tr("Palette"), QStringLiteral("dock.palette"), m_palette, Qt::RightDockWidgetArea, true);
     m_timelineDock = makeDock(tr("Timeline"), QStringLiteral("dock.timeline"), m_timeline, Qt::BottomDockWidgetArea);
     m_logDock = makeDock(tr("Log"), QStringLiteral("dock.log"), m_log, Qt::BottomDockWidgetArea);
     m_previewDock = makeDock(tr("Preview"), QStringLiteral("dock.preview"), m_preview, Qt::RightDockWidgetArea);

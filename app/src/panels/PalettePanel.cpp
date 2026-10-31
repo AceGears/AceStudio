@@ -116,6 +116,7 @@ PalettePanel::PalettePanel(ToolState* tools, QWidget* parent) : QWidget(parent),
     fileRow->addWidget(extract);
     fileRow->addStretch();
     layout->addLayout(fileRow);
+    layout->addStretch();
     const QString filter = tr("Palettes (*.gpl *.pal *.hex *.txt *.ase);;GIMP (*.gpl);;JASC-PAL (*.pal);;Hex list (*.hex);;Paint.NET (*.txt);;Adobe Swatch Exchange (*.ase)");
     connect(load, &QPushButton::clicked, this, [this, filter] {
         if (!m_view) return;
