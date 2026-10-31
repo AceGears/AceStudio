@@ -2,6 +2,41 @@
 
 All notable changes are documented here. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.6.0] — 2026-10-31 — Phase 5: advanced AI generation (unreleased)
+
+### Added
+- **Characters** (AI Studio › Characters…): reusable profiles with a name, description,
+  negative prompt, sprite size, seed, style and reference strength, facing, palette (from the
+  document or from the reference images) and up to four reference images. They are stored as
+  `.acechar` files in the data folder.
+- **Pose skeletons:** an 18-point body skeleton, procedural idle, walk, run and jump cycles,
+  and a pose editor. Drag joints, right-click to hide one, pick presets or cycle phases, and
+  mirror.
+- **Generate Animation** (AI Studio › Generate Animation…) runs generate, evaluate, correct
+  and commit:
+  - Each frame is one pose-conditioned SDXL job. All frames share the character's seed,
+    prompt, palette and reference images, and one fixed framing box.
+  - Each frame is scored against frame 1 for ground line, height, palette distance, colour
+    mix and silhouette.
+  - **Auto-Correct** fixes the ground line, height and off-palette colours. **Regenerate
+    Flagged** retries the rest with a new seed.
+  - **Commit** adds the frames as a new layer and tag in one undo step. A blank document is
+    filled from frame 1, a document with content gets the action appended after its last
+    frame, and a size mismatch opens a new document.
+- **Pose ControlNet** (xinsir OpenPose SDXL, Apache-2.0, 2.50 GB) and **IP-Adapter Plus**
+  reference images (h94, Apache-2.0, with the OpenCLIP ViT-H/14 encoder, 3.38 GB). Both are
+  optional downloads in the Models dialog, pinned by SHA-256.
+
+### Fixed
+- **ControlNet on 8 GB GPUs.** Under model CPU offload, Diffusers keeps the ControlNet on the
+  GPU next to the UNet. About 7.5 GB of FP16 weights spilled into shared memory, measured at
+  ~30 s per step on the RTX 4070 Laptop. On GPUs under 10 GB, the UNet and ControlNet weights
+  are now stored in FP8 and computed in FP16: ~1 s per step, ~48 s per finished frame.
+- Cancelling a queued AI job now reaches the UI. Before, the queue and the animation dialog
+  kept showing it as queued.
+- The queue's progress bar shows the percentage only, with the step text in its tooltip. Long
+  messages used to wrap and clip.
+
 ## [0.5.1] — 2026-10-31 — Phases 1–4 completed (unreleased)
 
 ### Added — known-issue fixes
