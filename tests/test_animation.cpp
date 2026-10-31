@@ -146,3 +146,57 @@ TEST_CASE("Onion skin with a composite provider matches on-demand rendering", "[
     o.tint = false;
     CHECK(renderOnionSkin(d, 2, o, provider) == renderOnionSkin(d, 2, o));
 }
+
+namespace {
+// Frame i is identified by its duration (100 + i) and a 1x1 cel of that red value.
+Editor framesEditor(int n) {
+    auto d = Document::create(2, 2).value();
+    const LayerId l = d.addLayer("L").value();
+    for (int i = 0; i < n; ++i) {
+        if (i) REQUIRE(d.insertFrame(i));
+        REQUIRE(d.setFrameDuration(i, 100 + i));
+        REQUIRE(d.setCel(l, i, Cel{Image(1, 1, Rgba8::opaque(static_cast<std::uint8_t>(i), 0, 0)), 0, 0}));
+    }
+    return Editor(std::move(d));
+}
+std::vector<int> order(const Editor& e) {
+    std::vector<int> v;
+    for (const auto& f : e.document().frames()) v.push_back(f.durationMs - 100);
+    return v;
+}
+} // namespace
+
+TEST_CASE("Frame range operations are single undo steps", "[animation][frames]") {
+    Editor e = framesEditor(6);
+    const std::size_t steps = e.history().size();
+    REQUIRE(e.moveFrames(1, 3, 3));
+    CHECK(order(e) == std::vector<int>{0, 4, 5, 1, 2, 3});
+    CHECK(e.history().size() == steps + 1);
+    const LayerId l = e.document().layers()[0].id;
+    CHECK(e.document().cel(l, 3)->image.pixel(0, 0).r == 1);    // cels travel with frames
+    REQUIRE(e.undo());
+    CHECK(order(e) == std::vector<int>{0, 1, 2, 3, 4, 5});
+    REQUIRE(e.moveFrames(3, 5, 0));
+    CHECK(order(e) == std::vector<int>{3, 4, 5, 0, 1, 2});
+    REQUIRE(e.undo());
+
+    auto first = e.duplicateFrames(1, 2);
+    REQUIRE(first);
+    CHECK(first.value() == 3);
+    CHECK(order(e) == std::vector<int>{0, 1, 2, 1, 2, 3, 4, 5});
+    CHECK(e.history().undoLabel() == "Duplicate 2 Frames");
+    REQUIRE(e.undo());
+    CHECK(order(e) == std::vector<int>{0, 1, 2, 3, 4, 5});
+
+    REQUIRE(e.removeFrames(2, 4));
+    CHECK(order(e) == std::vector<int>{0, 1, 5});
+    REQUIRE(e.undo());
+    CHECK(order(e) == std::vector<int>{0, 1, 2, 3, 4, 5});
+    CHECK(e.document().cel(l, 3)->image.pixel(0, 0).r == 3);
+    REQUIRE(e.redo());
+    CHECK(order(e) == std::vector<int>{0, 1, 5});
+
+    CHECK_FALSE(e.removeFrames(0, 2));          // would remove every frame
+    CHECK_FALSE(e.moveFrames(0, 1, 2));         // past the end
+    CHECK_FALSE(e.duplicateFrames(2, 1));
+}

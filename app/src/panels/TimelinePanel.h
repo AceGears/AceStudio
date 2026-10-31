@@ -5,6 +5,8 @@
 #include <QPointer>
 #include <QWidget>
 
+#include <utility>
+
 class QAction;
 class QLabel;
 class QHBoxLayout;
@@ -31,8 +33,10 @@ public:
 public Q_SLOTS:
     void togglePlayback();
     void stepFrame(int delta);
-    // Moves the current frame one step left (-1) or right (+1).
+    // Moves the selected frames (or the current one) one step left (-1) or right (+1).
     void moveCurrentFrame(int delta);
+    void duplicateSelected();
+    void deleteSelected();
 
 Q_SIGNALS:
     void tagsRequested();
@@ -45,6 +49,12 @@ private:
     void showContextMenu(const QPoint& pos);
     void editDuration(int frame);
     void editAllDurations();
+    void editSelectedDurations();
+    // Selected frame block [first, last]; the current frame alone when
+    // nothing else is selected.
+    std::pair<int, int> selectedRange() const;
+    void setRange(int first, int last, int current);
+    void onSelectionChanged();
 
     QPointer<DocumentView> m_view;
     QListWidget* m_frames = nullptr;
@@ -56,6 +66,8 @@ private:
     AnimationPlayer m_player;
     QTimer* m_timer = nullptr;
     bool m_syncing = false;
+    int m_rangeFirst = -1, m_rangeLast = -1;   // contiguous multi-frame selection
+    bool m_dropPending = false;                 // a drag of several frames is being applied
 };
 
 } // namespace acestudio::ui

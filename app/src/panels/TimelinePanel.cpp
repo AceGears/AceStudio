@@ -14,6 +14,9 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <climits>
+
 namespace acestudio::ui {
 
 namespace {
@@ -96,16 +99,8 @@ TimelinePanel::TimelinePanel(QWidget* parent) : QWidget(parent) {
         auto r = m_view->editor().insertFrame(at, m_view->document().frames()[static_cast<std::size_t>(at - 1)].durationMs);
         if (r) m_view->setCurrentFrame(at); else Q_EMIT m_view->statusMessage(qs(r.error().message));
     });
-    frameButton(tr("Duplicate"), tr("Duplicate the current frame"), [this] {
-        if (!m_view) return;
-        auto r = m_view->editor().duplicateFrame(m_view->currentFrame());
-        if (r) m_view->setCurrentFrame(r.value()); else Q_EMIT m_view->statusMessage(qs(r.error().message));
-    });
-    frameButton(tr("Delete"), tr("Delete the current frame"), [this] {
-        if (!m_view) return;
-        auto st = m_view->editor().removeFrame(m_view->currentFrame());
-        if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
-    });
+    frameButton(tr("Duplicate"), tr("Duplicate the selected frames"), [this] { duplicateSelected(); });
+    frameButton(tr("Delete"), tr("Delete the selected frames"), [this] { deleteSelected(); });
     frameButton(tr("Tags…"), tr("Add, edit or remove animation tags"), [this] { Q_EMIT tagsRequested(); });
     controls->addSpacing(12);
     m_actionInsert = controls->count();
@@ -123,7 +118,10 @@ TimelinePanel::TimelinePanel(QWidget* parent) : QWidget(parent) {
     m_frames->setViewMode(QListView::ListMode);
     m_frames->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
     m_frames->setFixedHeight(64);
-    m_frames->setToolTip(tr("Drag to reorder · double-click for duration · right-click for more"));
+    m_frames->setToolTip(tr("Drag to reorder · Shift/Ctrl-click to select several · double-click for duration · "
+                            "right-click for more"));
+    m_frames->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    connect(m_frames, &QListWidget::itemSelectionChanged, this, &TimelinePanel::onSelectionChanged);
     m_frames->setDragDropMode(QAbstractItemView::InternalMove);
     m_frames->setDefaultDropAction(Qt::MoveAction);
     m_frames->setMovement(QListView::Snap);
@@ -133,19 +131,43 @@ TimelinePanel::TimelinePanel(QWidget* parent) : QWidget(parent) {
     // The list moves its own row first; apply the real (undoable) move once
     // the drop has finished, then rebuild from the document.
     connect(m_frames->model(), &QAbstractItemModel::rowsMoved, this,
-            [this](const QModelIndex&, int start, int, const QModelIndex&, int row) {
-                if (m_syncing || !m_view) return;
-                const int to = row > start ? row - 1 : row;
+            [this](const QModelIndex&, int start, int end, const QModelIndex&, int row) {
+                if (m_syncing || !m_view || m_dropPending) return;
+                const auto [a, b] = selectedRange();
+                const int n = b - a + 1;
+                if (n > 1 && start >= a && start <= b) {
+                    // Several frames: Qt moves the items one by one; take the
+                    // drop position from the first move and apply the block move.
+                    const int dropRow = row > start ? row - (start - a) - 1 : row - (start - a);
+                    const int to = std::clamp(row > start ? dropRow - n + 1 + (start - a) : dropRow, 0,
+                                              m_view->document().frameCount() - n);
+                    m_dropPending = true;
+                    QTimer::singleShot(0, this, [this, a, b, n, to] {
+                        m_dropPending = false;
+                        if (!m_view) return;
+                        if (to == a) return rebuild();
+                        auto st = m_view->editor().moveFrames(a, b, to);
+                        if (!st) { Q_EMIT m_view->statusMessage(qs(st.error().message)); rebuild(); return; }
+                        setRange(to, to + n - 1, to + (m_view->currentFrame() - a));
+                    });
+                    return;
+                }
+                const int to = row > start ? row - 1 - (end - start) : row;
                 QTimer::singleShot(0, this, [this, start, to] {
                     if (!m_view) return;
                     if (start == to) return rebuild();
                     auto st = m_view->editor().moveFrame(start, to);
                     if (!st) { Q_EMIT m_view->statusMessage(qs(st.error().message)); rebuild(); return; }
-                    m_view->setCurrentFrame(to);
+                    setRange(to, to, to);
                 });
             });
     connect(m_frames, &QListWidget::currentRowChanged, this, [this](int row) {
-        if (!m_syncing && m_view && row >= 0) m_view->setCurrentFrame(row);
+        // Deferred: a Shift/Ctrl-click changes the current row before the
+        // selection, and the range must be known when the playhead moves.
+        if (m_syncing || !m_view || row < 0) return;
+        QTimer::singleShot(0, this, [this, row] {
+            if (m_view && row < m_view->document().frameCount()) m_view->setCurrentFrame(row);
+        });
     });
 
     auto* layout = new QVBoxLayout(this);
@@ -199,12 +221,51 @@ void TimelinePanel::rebuild() {
     setEnabled(m_view != nullptr);
 }
 
+std::pair<int, int> TimelinePanel::selectedRange() const {
+    if (!m_view) return {-1, -1};
+    const int cur = m_view->currentFrame();
+    const int n = m_view->document().frameCount();
+    if (m_rangeFirst >= 0 && m_rangeLast < n && m_rangeFirst <= cur && cur <= m_rangeLast) return {m_rangeFirst, m_rangeLast};
+    return {cur, cur};
+}
+
+void TimelinePanel::setRange(int first, int last, int current) {
+    m_rangeFirst = first;
+    m_rangeLast = last;
+    if (m_view) m_view->setCurrentFrame(current);
+    syncSelection(m_view ? m_view->currentFrame() : -1);
+}
+
+void TimelinePanel::onSelectionChanged() {
+    if (m_syncing || !m_view) return;
+    int lo = INT_MAX, hi = -1;
+    for (QListWidgetItem* it : m_frames->selectedItems()) {
+        const int r = m_frames->row(it);
+        lo = std::min(lo, r);
+        hi = std::max(hi, r);
+    }
+    if (hi < 0) return;
+    m_rangeFirst = lo;
+    m_rangeLast = hi;
+    // Frame operations work on blocks: fill gaps in a Ctrl-click selection.
+    if (m_frames->selectedItems().size() != hi - lo + 1) syncSelection(m_view->currentFrame());
+}
+
 void TimelinePanel::syncSelection(int frame) {
     m_syncing = true;
-    m_frames->setCurrentRow(frame);
+    const auto [a, b] = selectedRange();
+    if (frame >= 0 && a != b) {
+        m_frames->clearSelection();
+        for (int r = a; r <= b && r < m_frames->count(); ++r) m_frames->item(r)->setSelected(true);
+        m_frames->setCurrentRow(frame, QItemSelectionModel::NoUpdate);
+    } else {
+        m_rangeFirst = m_rangeLast = frame;
+        m_frames->setCurrentRow(frame);
+    }
     m_syncing = false;
     if (m_view)
-        m_info->setText(tr("Frame %1 of %2").arg(frame + 1).arg(m_view->document().frameCount()));
+        m_info->setText(a != b ? tr("Frames %1–%2 of %3").arg(a + 1).arg(b + 1).arg(m_view->document().frameCount())
+                               : tr("Frame %1 of %2").arg(frame + 1).arg(m_view->document().frameCount()));
     else
         m_info->setText(tr("No document"));
 }
@@ -220,12 +281,41 @@ bool TimelinePanel::isPlaying() const { return m_timer->isActive(); }
 
 void TimelinePanel::moveCurrentFrame(int delta) {
     if (!m_view) return;
-    const int from = m_view->currentFrame();
-    const int to = from + delta;
-    if (to < 0 || to >= m_view->document().frameCount()) return;
-    auto st = m_view->editor().moveFrame(from, to);
+    const auto [a, b] = selectedRange();
+    const int to = a + delta;
+    if (to < 0 || b + delta >= m_view->document().frameCount()) return;
+    auto st = m_view->editor().moveFrames(a, b, to);
     if (!st) return void(Q_EMIT m_view->statusMessage(qs(st.error().message)));
-    m_view->setCurrentFrame(to);
+    setRange(a + delta, b + delta, m_view->currentFrame() + delta);
+}
+
+void TimelinePanel::duplicateSelected() {
+    if (!m_view) return;
+    const auto [a, b] = selectedRange();
+    auto r = m_view->editor().duplicateFrames(a, b);
+    if (!r) return void(Q_EMIT m_view->statusMessage(qs(r.error().message)));
+    setRange(r.value(), r.value() + (b - a), r.value() + (m_view->currentFrame() - a));
+}
+
+void TimelinePanel::deleteSelected() {
+    if (!m_view) return;
+    const auto [a, b] = selectedRange();
+    auto st = m_view->editor().removeFrames(a, b);
+    if (!st) return void(Q_EMIT m_view->statusMessage(qs(st.error().message)));
+    const int f = std::min(a, m_view->document().frameCount() - 1);
+    setRange(f, f, f);
+}
+
+void TimelinePanel::editSelectedDurations() {
+    if (!m_view) return;
+    const auto [a, b] = selectedRange();
+    bool ok = false;
+    const int ms = QInputDialog::getInt(this, tr("Frame Duration"), tr("Duration of frames %1–%2 (ms):").arg(a + 1).arg(b + 1),
+                                        m_view->document().frames()[static_cast<std::size_t>(a)].durationMs, 1, 65535, 10, &ok);
+    if (!ok) return;
+    auto st = m_view->editor().setFrameDurations(a, b, ms);
+    if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
+    else setRange(a, b, m_view->currentFrame());
 }
 
 void TimelinePanel::editDuration(int f) {
@@ -252,15 +342,24 @@ void TimelinePanel::editAllDurations() {
 void TimelinePanel::showContextMenu(const QPoint& pos) {
     if (!m_view) return;
     QListWidgetItem* item = m_frames->itemAt(pos);
-    if (item) m_view->setCurrentFrame(m_frames->row(item));
+    if (item) {
+        const int row = m_frames->row(item);
+        const auto [a0, b0] = selectedRange();
+        if (row < a0 || row > b0) setRange(row, row, row);   // right-click outside the selection selects that frame
+        else m_view->setCurrentFrame(row);
+    }
     QMenu menu(this);
+    const auto [a, b] = selectedRange();
     const int f = m_view->currentFrame();
     const int n = m_view->document().frameCount();
-    menu.addAction(tr("Frame &Duration…"), this, [this, f] { editDuration(f); });
+    if (a == b) menu.addAction(tr("Frame &Duration…"), this, [this, f] { editDuration(f); });
+    else menu.addAction(tr("&Duration of %n Selected Frame(s)…", nullptr, b - a + 1), this, [this] { editSelectedDurations(); });
     menu.addAction(tr("Duration of &All Frames…"), this, [this] { editAllDurations(); });
     menu.addSeparator();
-    menu.addAction(tr("Move &Left"), this, [this] { moveCurrentFrame(-1); })->setEnabled(f > 0);
-    menu.addAction(tr("Move &Right"), this, [this] { moveCurrentFrame(1); })->setEnabled(f + 1 < n);
+    menu.addAction(tr("D&uplicate"), this, [this] { duplicateSelected(); });
+    menu.addAction(tr("De&lete"), this, [this] { deleteSelected(); })->setEnabled(b - a + 1 < n);
+    menu.addAction(tr("Move &Left"), this, [this] { moveCurrentFrame(-1); })->setEnabled(a > 0);
+    menu.addAction(tr("Move &Right"), this, [this] { moveCurrentFrame(1); })->setEnabled(b + 1 < n);
     menu.addSeparator();
     menu.addAction(tr("&Tags…"), this, [this] { Q_EMIT tagsRequested(); });
     menu.exec(m_frames->viewport()->mapToGlobal(pos));

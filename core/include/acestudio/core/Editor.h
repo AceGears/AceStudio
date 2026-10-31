@@ -78,6 +78,12 @@ public:
     Status removeFrame(int frame);
     Status setFrameDuration(int frame, int durationMs);
     Status moveFrame(int from, int to);
+    // Range operations on frames [first, last], each a single undo step.
+    Status removeFrames(int first, int last);
+    // Copies the block and inserts it right after `last`; returns the first copy.
+    Result<int> duplicateFrames(int first, int last);
+    // Moves the block so it starts at `to` (0 <= to <= frameCount - block size).
+    Status moveFrames(int first, int last, int to);
     // Sets the duration of every frame in [first, last].
     Status setFrameDurations(int first, int last, int durationMs);
 
@@ -123,6 +129,7 @@ public:
     void notifyChanged() { if (m_listener) m_listener(); }
 
 private:
+    Status grouped(const std::string& label, const std::function<Status()>& steps);
     Result<LayerId> addLayerWith(std::string name, LayerKind kind, LayerId above,
                                  std::function<void(Layer&)> customize, const std::string& label);
     Document m_doc;

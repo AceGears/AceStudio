@@ -559,6 +559,83 @@ Result<int> Editor::duplicateFrame(int frame) {
     return frame + 1;
 }
 
+namespace {
+// Silences change notifications while a multi-step operation runs; the
+// caller notifies once at the end.
+struct MuteListener {
+    explicit MuteListener(Editor::ChangeListener& l) : slot(l), saved(std::move(l)) { slot = {}; }
+    ~MuteListener() { slot = std::move(saved); }
+    Editor::ChangeListener& slot;
+    Editor::ChangeListener saved;
+};
+
+Status checkRange(const Document& d, int first, int last) {
+    if (first < 0 || last >= d.frameCount() || first > last) return Error{ErrorCode::InvalidArgument, "Frame range out of range"};
+    return {};
+}
+} // namespace
+
+// Runs `steps` as one undo step: notifications are muted while it runs, a
+// failure rolls back what was done, and listeners hear about it once.
+Status Editor::grouped(const std::string& label, const std::function<Status()>& steps) {
+    const std::size_t mark = m_history.mark();
+    Status st;
+    {
+        MuteListener mute(m_listener);
+        st = steps();
+        if (!st) while (m_history.mark() > mark) (void)m_history.undo(m_doc);
+        else (void)m_history.squash(mark, label);
+    }
+    notifyChanged();
+    return st;
+}
+
+Status Editor::removeFrames(int first, int last) {
+    if (auto st = checkRange(m_doc, first, last); !st) return st;
+    if (last - first + 1 >= m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "A document must keep at least one frame"};
+    if (first == last) return removeFrame(first);
+    return grouped("Delete " + std::to_string(last - first + 1) + " Frames", [&]() -> Status {
+        for (int f = last; f >= first; --f)
+            if (auto st = removeFrame(f); !st) return st;
+        return {};
+    });
+}
+
+Result<int> Editor::duplicateFrames(int first, int last) {
+    if (auto st = checkRange(m_doc, first, last); !st) return st.error();
+    const int n = last - first + 1;
+    if (m_doc.frameCount() + n > Document::kMaxFrames) return Error{ErrorCode::InvalidArgument, "Frame limit reached"};
+    if (n == 1) return duplicateFrame(first);
+    auto st = grouped("Duplicate " + std::to_string(n) + " Frames", [&]() -> Status {
+        for (int i = 0; i < n; ++i) {
+            // Copy frame first+i next to itself, then carry the copy past the block.
+            if (auto r = duplicateFrame(first + i); !r) return r.error();
+            if (auto m = moveFrame(first + i + 1, last + 1 + i); !m) return m;
+        }
+        return {};
+    });
+    if (!st) return st.error();
+    return last + 1;
+}
+
+Status Editor::moveFrames(int first, int last, int to) {
+    if (auto st = checkRange(m_doc, first, last); !st) return st;
+    const int n = last - first + 1;
+    if (to < 0 || to + n > m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "Frame range out of range"};
+    if (to == first) return {};
+    if (n == 1) return moveFrame(first, to);
+    return grouped("Move " + std::to_string(n) + " Frames", [&]() -> Status {
+        if (to < first) {
+            for (int i = 0; i < n; ++i)
+                if (auto st = moveFrame(first + i, to + i); !st) return st;
+        } else {
+            for (int i = n - 1; i >= 0; --i)
+                if (auto st = moveFrame(first + i, to + i); !st) return st;
+        }
+        return {};
+    });
+}
+
 Status Editor::removeFrame(int frame) {
     if (frame < 0 || frame >= m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
     if (m_doc.frameCount() == 1) return Error{ErrorCode::InvalidArgument, "A document must keep at least one frame"};
