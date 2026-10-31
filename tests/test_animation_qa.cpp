@@ -1,0 +1,108 @@
+// Consistency checks and corrections for generated frames (Phase 5).
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
+
+#include "acestudio/core/AnimationQA.h"
+
+using namespace acestudio;
+using Catch::Approx;
+
+namespace {
+const Rgba8 kSkin{230, 180, 140, 255}, kShirt{40, 90, 200, 255}, kBg{250, 250, 245, 255};
+
+Palette pal() {
+    Palette p;
+    (void)p.add(kSkin);
+    (void)p.add(kShirt);
+    (void)p.add({20, 20, 20, 255});
+    return p;
+}
+
+// A 10x20 "figure" (head + body) standing with its feet on row `ground`.
+Image figure(int w, int h, int cx, int ground, int height = 20, Rgba8 body = kShirt) {
+    Image img(w, h);
+    const int top = ground - height + 1;
+    img.fillRect({cx - 2, top, 4, height / 4}, kSkin);                     // head
+    img.fillRect({cx - 5, top + height / 4, 10, height - height / 4}, body); // body
+    return img;
+}
+} // namespace
+
+TEST_CASE("Border background removal keeps enclosed pixels", "[qa]") {
+    Image img(20, 20, kBg);
+    img.fillRect({5, 5, 10, 10}, kShirt);
+    img.fillRect({8, 8, 4, 4}, kBg);                // background-coloured hole inside the subject
+    const Image out = removeBorderBackground(img);
+    CHECK(out.pixel(0, 0).a == 0);
+    CHECK(out.pixel(19, 19).a == 0);
+    CHECK(out.pixel(6, 6) == kShirt);
+    CHECK(out.pixel(9, 9) == kBg);                  // enclosed: kept
+    Image noisy(8, 8, kBg);
+    noisy.setPixel(0, 0, Rgba8{240, 240, 236, 255});  // within tolerance of the median border
+    CHECK(removeBorderBackground(noisy).pixel(0, 0).a == 0);
+}
+
+TEST_CASE("Silhouette IoU ignores position, sees shape", "[qa]") {
+    const Mask a = silhouette(figure(64, 64, 20, 50));
+    const Mask moved = silhouette(figure(64, 64, 40, 60));
+    CHECK(silhouetteIoU(a, moved) == Approx(1.0));
+    const Mask tall = silhouette(figure(64, 64, 20, 50, 40));
+    CHECK(silhouetteIoU(a, tall) < 0.6);
+    CHECK(silhouetteIoU(Mask(4, 4), Mask(4, 4)) == 1.0);
+    CHECK(silhouetteIoU(a, Mask(64, 64)) == 0.0);
+}
+
+TEST_CASE("Palette distance and colour mix", "[qa]") {
+    const Image f = figure(32, 32, 16, 30);
+    CHECK(paletteDistance(f, pal()) == 0.0);
+    Image off = f;
+    for (auto& p : off.pixels()) if (p.a) p = {p.r, p.g, static_cast<std::uint8_t>(std::min(255, p.b + 60)), p.a};
+    CHECK(paletteDistance(off, pal()) > 0.06);
+    CHECK(colorMixDistance(f, f, pal()) == 0.0);
+    const Image red = figure(32, 32, 16, 30, 20, Rgba8{20, 20, 20, 255});
+    CHECK(colorMixDistance(f, red, pal()) > 0.5);     // shirt colour swapped
+}
+
+TEST_CASE("Evaluate flags ground, height, palette and shape problems", "[qa]") {
+    const Image ref = figure(64, 64, 32, 55);
+    const std::vector<Image> frames = {
+        figure(64, 64, 32, 55),                       // fine
+        figure(64, 64, 34, 58),                       // floating/sunk by 3 px (and moved: fine)
+        figure(64, 64, 32, 55, 26),                   // 30% taller
+        Image(64, 64),                                // empty
+    };
+    const QAReport r = evaluateFrames(frames, ref, pal());
+    REQUIRE(r.frames.size() == 4);
+    CHECK(r.frames[0].ok());
+    CHECK(r.frames[0].score == Approx(1.0));
+    CHECK((r.frames[1].flags & QAGround));
+    CHECK(r.frames[1].groundOffset == 3);
+    CHECK_FALSE(r.frames[1].needsRegeneration());
+    CHECK((r.frames[2].flags & QAHeight));
+    CHECK(r.frames[2].heightRatio == Approx(1.3));
+    CHECK((r.frames[3].flags & QAEmpty));
+    CHECK(r.frames[3].needsRegeneration());
+    CHECK(r.failing() == std::vector<int>{1, 2, 3});
+    CHECK(r.toRegenerate() == std::vector<int>{3});
+    CHECK(describe(r.frames[1]).find("ground") != std::string::npos);
+    CHECK(r.meanScore() < 1.0);
+}
+
+TEST_CASE("Corrections fix ground and height, then the frames pass", "[qa]") {
+    const Image ref = figure(64, 64, 32, 55);
+    std::vector<Image> frames = {figure(64, 64, 20, 50), figure(64, 64, 40, 55, 26)};
+    // Off-palette noise on one frame too.
+    frames[1].setPixel(40, 50, Rgba8{45, 95, 205, 255});
+    const QAReport before = evaluateFrames(frames, ref, pal());
+    CHECK_FALSE(before.frames[0].ok());
+    CHECK_FALSE(before.frames[1].ok());
+    const auto fixed = correctFrames(frames, before, pal());
+    const QAReport after = evaluateFrames(fixed, ref, pal());
+    for (const auto& q : after.frames) {
+        INFO(describe(q));
+        CHECK(q.ok());
+    }
+    // Horizontal positions are kept.
+    CHECK(after.frames[0].bounds.x + after.frames[0].bounds.w / 2 == 20);
+    CHECK(paletteDistance(fixed[1], pal()) == 0.0);
+}

@@ -5,6 +5,7 @@ add_library(acestudio_core STATIC
     src/AiWorker.cpp
     src/AnimCodec.cpp
     src/Animation.cpp
+    src/AnimationQA.cpp
     src/BlendMode.cpp
     src/Color.cpp
     src/Document.cpp
