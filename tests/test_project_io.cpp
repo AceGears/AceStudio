@@ -60,7 +60,7 @@ TEST_CASE("Project serializes and deserializes losslessly", "[project]") {
     auto back = deserializeProject(bytes.value(), &info);
     REQUIRE(back);
     checkEqual(doc, back.value());
-    CHECK(info.schemaVersion == kProjectSchemaVersion);
+    CHECK(info.schemaVersion == 1);   // nothing schema 2 adds is used
     CHECK(info.createdUtc == "2026-01-01T00:00:00.000Z");
     CHECK_FALSE(info.modifiedUtc.empty());
     CHECK(back.value().colorMode() == ColorMode::Indexed);

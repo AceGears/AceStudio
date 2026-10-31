@@ -1,4 +1,5 @@
 #include "acestudio/core/Document.h"
+#include "acestudio/core/Adjust.h"
 
 #include <algorithm>
 #include <set>
@@ -42,6 +43,53 @@ std::optional<PlaybackDirection> directionFromString(std::string_view s) noexcep
     return std::nullopt;
 }
 
+std::string_view toString(AdjustmentType t) noexcept {
+    switch (t) {
+    case AdjustmentType::BrightnessContrast: return "brightnessContrast";
+    case AdjustmentType::HueSaturation: return "hueSaturation";
+    case AdjustmentType::Invert: return "invert";
+    case AdjustmentType::Posterize: return "posterize";
+    case AdjustmentType::Threshold: return "threshold";
+    }
+    return "brightnessContrast";
+}
+
+std::optional<AdjustmentType> adjustmentTypeFromString(std::string_view s) noexcept {
+    for (auto t : {AdjustmentType::BrightnessContrast, AdjustmentType::HueSaturation, AdjustmentType::Invert,
+                   AdjustmentType::Posterize, AdjustmentType::Threshold})
+        if (toString(t) == s) return t;
+    return std::nullopt;
+}
+
+Status validateAdjustment(const Adjustment& a) {
+    auto in = [](int v, int lo, int hi) { return v >= lo && v <= hi; };
+    bool ok = true;
+    switch (a.type) {
+    case AdjustmentType::BrightnessContrast: ok = in(a.a, -100, 100) && in(a.b, -100, 100); break;
+    case AdjustmentType::HueSaturation: ok = in(a.a, -180, 180) && in(a.b, -100, 100) && in(a.c, -100, 100); break;
+    case AdjustmentType::Invert: break;
+    case AdjustmentType::Posterize: ok = in(a.a, 2, 64); break;
+    case AdjustmentType::Threshold: ok = in(a.a, 0, 255); break;
+    }
+    return ok ? Status{} : Status{Error{ErrorCode::InvalidArgument, "Adjustment parameters out of range"}};
+}
+
+std::string_view toString(TileMode m) noexcept {
+    switch (m) {
+    case TileMode::None: return "none";
+    case TileMode::Horizontal: return "horizontal";
+    case TileMode::Vertical: return "vertical";
+    case TileMode::Both: return "both";
+    }
+    return "none";
+}
+
+std::optional<TileMode> tileModeFromString(std::string_view s) noexcept {
+    for (auto m : {TileMode::None, TileMode::Horizontal, TileMode::Vertical, TileMode::Both})
+        if (toString(m) == s) return m;
+    return std::nullopt;
+}
+
 Result<Document> Document::create(int width, int height, ColorMode mode) {
     if (width <= 0 || height <= 0 || width > Image::kMaxDimension || height > Image::kMaxDimension)
         return Error{ErrorCode::InvalidArgument,
@@ -65,9 +113,22 @@ Status Document::setCanvasSize(int width, int height) {
 }
 
 void Document::offsetCels(int dx, int dy) noexcept {
-    for (auto& [k, c] : m_cels) {
-        c.x += dx;
-        c.y += dy;
+    for (auto* map : {&m_cels, &m_maskCels})
+        for (auto& [k, c] : *map) {
+            c.x += dx;
+            c.y += dy;
+        }
+}
+
+template <typename Fn> void Document::remapFrames(Fn fn) {
+    // fn(frame) -> new frame, or -1 to drop the cel. Applied to pixels and masks.
+    for (auto* map : {&m_cels, &m_maskCels}) {
+        std::map<CelKey, Cel> out;
+        for (auto& [k, c] : *map) {
+            const int f = fn(k.frame);
+            if (f >= 0) out.emplace(CelKey{k.layer, f}, std::move(c));
+        }
+        *map = std::move(out);
     }
 }
 
@@ -102,8 +163,8 @@ Result<LayerId> Document::addLayer(std::string name, LayerKind kind, LayerId par
     l.id = m_nextLayerId++;
     l.parent = parent;
     l.kind = kind;
-    l.name = name.empty() ? (kind == LayerKind::Group ? "Group " : "Layer ") + std::to_string(l.id)
-                          : std::move(name);
+    const char* prefix = kind == LayerKind::Group ? "Group " : kind == LayerKind::Adjustment ? "Adjustment " : "Layer ";
+    l.name = name.empty() ? prefix + std::to_string(l.id) : std::move(name);
     m_layers.push_back(std::move(l));
     return m_layers.back().id;
 }
@@ -130,6 +191,7 @@ Status Document::removeLayer(LayerId id) {
     }
     std::erase_if(m_layers, [&](const Layer& l) { return doomed.count(l.id) > 0; });
     std::erase_if(m_cels, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
+    std::erase_if(m_maskCels, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
     return {};
 }
 
@@ -192,10 +254,7 @@ Result<int> Document::insertFrame(int at, int durationMs) {
     if (durationMs < kMinFrameMs || durationMs > kMaxFrameMs)
         return Error{ErrorCode::InvalidArgument, "Frame duration must be 1..65535 ms"};
 
-    std::map<CelKey, Cel> shifted;
-    for (auto& [k, c] : m_cels)
-        shifted.emplace(CelKey{k.layer, k.frame >= at ? k.frame + 1 : k.frame}, std::move(c));
-    m_cels = std::move(shifted);
+    remapFrames([at](int f) { return f >= at ? f + 1 : f; });
     for (auto& t : m_tags) {
         if (t.fromFrame >= at) ++t.fromFrame;
         if (t.toFrame >= at) ++t.toFrame;
@@ -209,10 +268,12 @@ Result<int> Document::duplicateFrame(int frame) {
     const int duration = m_frames[static_cast<std::size_t>(frame)].durationMs;
     auto inserted = insertFrame(frame + 1, duration);
     if (!inserted) return inserted.error();
-    std::vector<std::pair<CelKey, Cel>> copies;
-    for (const auto& [k, c] : m_cels)
-        if (k.frame == frame) copies.emplace_back(CelKey{k.layer, frame + 1}, c);
-    for (auto& [k, c] : copies) m_cels[k] = std::move(c);
+    for (auto* map : {&m_cels, &m_maskCels}) {
+        std::vector<std::pair<CelKey, Cel>> copies;
+        for (const auto& [k, c] : *map)
+            if (k.frame == frame) copies.emplace_back(CelKey{k.layer, frame + 1}, c);
+        for (auto& [k, c] : copies) (*map)[k] = std::move(c);
+    }
     return frame + 1;
 }
 
@@ -220,12 +281,7 @@ Status Document::removeFrame(int frame) {
     if (frame < 0 || frame >= frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
     if (frameCount() == 1) return Error{ErrorCode::InvalidArgument, "A document must keep at least one frame"};
 
-    std::map<CelKey, Cel> shifted;
-    for (auto& [k, c] : m_cels) {
-        if (k.frame == frame) continue;
-        shifted.emplace(CelKey{k.layer, k.frame > frame ? k.frame - 1 : k.frame}, std::move(c));
-    }
-    m_cels = std::move(shifted);
+    remapFrames([frame](int f) { return f == frame ? -1 : (f > frame ? f - 1 : f); });
     m_frames.erase(m_frames.begin() + frame);
 
     std::vector<AnimationTag> kept;
@@ -249,9 +305,7 @@ Status Document::moveFrame(int from, int to) {
         if (to < from && f >= to && f < from) return f + 1;
         return f;
     };
-    std::map<CelKey, Cel> moved;
-    for (auto& [k, c] : m_cels) moved.emplace(CelKey{k.layer, remap(k.frame)}, std::move(c));
-    m_cels = std::move(moved);
+    remapFrames(remap);
     const Frame f = m_frames[static_cast<std::size_t>(from)];
     m_frames.erase(m_frames.begin() + from);
     m_frames.insert(m_frames.begin() + to, f);
@@ -281,6 +335,43 @@ Status Document::setCel(LayerId l, int frame, Cel c) {
 }
 
 void Document::clearCel(LayerId l, int frame) noexcept { m_cels.erase(CelKey{l, frame}); }
+
+const Cel* Document::maskCel(LayerId l, int frame) const noexcept {
+    auto it = m_maskCels.find(CelKey{l, frame});
+    return it == m_maskCels.end() ? nullptr : &it->second;
+}
+
+Cel* Document::maskCel(LayerId l, int frame) noexcept {
+    auto it = m_maskCels.find(CelKey{l, frame});
+    return it == m_maskCels.end() ? nullptr : &it->second;
+}
+
+Status Document::setMaskCel(LayerId l, int frame, Cel c) {
+    const Layer* lay = layer(l);
+    if (!lay) return Error{ErrorCode::NotFound, "No such layer"};
+    if (!lay->hasMask) return Error{ErrorCode::InvalidArgument, "The layer has no mask"};
+    if (frame < 0 || frame >= frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
+    if (c.image.isNull()) return Error{ErrorCode::InvalidArgument, "Mask image is empty"};
+    m_maskCels[CelKey{l, frame}] = std::move(c);
+    return {};
+}
+
+void Document::clearMaskCel(LayerId l, int frame) noexcept { m_maskCels.erase(CelKey{l, frame}); }
+
+std::uint8_t Document::maskValue(LayerId id, int frame, int x, int y) const noexcept {
+    const Layer* l = layer(id);
+    if (!l || !l->hasMask || !l->maskEnabled) return 255;
+    const Cel* c = maskCel(id, frame);
+    if (!c || !c->image.contains(x - c->x, y - c->y)) return 255;
+    return c->image.pixel(x - c->x, y - c->y).r;
+}
+
+Image Document::renderMask(LayerId id, int frame) const {
+    Image out(m_width, m_height);
+    out.fill(Rgba8{255, 255, 255, 255});
+    if (const Cel* c = maskCel(id, frame)) out.blit(c->image, c->x, c->y);
+    return out;
+}
 
 // ---------------------------------------------------------------- tags
 
@@ -331,17 +422,106 @@ bool Document::isLayerEditable(LayerId id) const noexcept {
 }
 
 
+void Document::applyMask(const Layer& l, int frame, Image& img, int ox, int oy) const {
+    const Cel* c = maskCel(l.id, frame);
+    if (!c) return;
+    for (int y = 0; y < img.height(); ++y)
+        for (int x = 0; x < img.width(); ++x) {
+            const int mx = x + ox - c->x, my = y + oy - c->y;
+            if (!c->image.contains(mx, my)) continue;
+            const unsigned m = c->image.pixel(mx, my).r;
+            if (m == 255) continue;
+            Rgba8 p = img.pixel(x, y);
+            p.a = static_cast<std::uint8_t>((p.a * m + 127) / 255);
+            img.setPixel(x, y, p);
+        }
+}
+
+namespace {
+void multiplyAlpha(Image& img, const std::vector<std::uint8_t>& alpha) {
+    std::size_t i = 0;
+    for (int y = 0; y < img.height(); ++y)
+        for (int x = 0; x < img.width(); ++x, ++i) {
+            const unsigned a = alpha[i];
+            if (a == 255) continue;
+            Rgba8 p = img.pixel(x, y);
+            p.a = static_cast<std::uint8_t>((p.a * a + 127) / 255);
+            img.setPixel(x, y, p);
+        }
+}
+
+std::vector<std::uint8_t> alphaOf(const Image& img) {
+    std::vector<std::uint8_t> a(static_cast<std::size_t>(img.width()) * static_cast<std::size_t>(img.height()));
+    std::size_t i = 0;
+    for (int y = 0; y < img.height(); ++y)
+        for (int x = 0; x < img.width(); ++x) a[i++] = img.pixel(x, y).a;
+    return a;
+}
+} // namespace
+
 void Document::compositeChildren(LayerId parent, int frame, Image& out, int ox, int oy, int depth) const {
     if (depth > kMaxLayers) return;   // defensive; validate() rejects cycles
-    for (const Layer& l : m_layers) {
-        if (l.parent != parent || !l.visible || l.opacity == 0) continue;
-        if (l.kind == LayerKind::Raster) {
-            if (const Cel* c = cel(l.id, frame)) blendImage(out, c->image, c->x - ox, c->y - oy, l.blend, l.opacity);
-        } else {
-            Image group(out.width(), out.height());
-            compositeChildren(l.id, frame, group, ox, oy, depth + 1);
-            blendImage(out, group, 0, 0, l.blend, l.opacity);
+    std::vector<const Layer*> kids;
+    for (const Layer& l : m_layers)
+        if (l.parent == parent) kids.push_back(&l);
+    const std::size_t npx = static_cast<std::size_t>(out.width()) * static_cast<std::size_t>(out.height());
+
+    // Clipping state: alpha of the current base layer (empty = base hidden).
+    std::vector<std::uint8_t> baseAlpha;
+    bool baseVisible = false;
+    bool haveBase = false;   // a clipped layer at the bottom of its group has no base and draws normally
+    for (std::size_t i = 0; i < kids.size(); ++i) {
+        const Layer& l = *kids[i];
+        const bool visible = l.visible && l.opacity > 0;
+        const bool nextClipped = i + 1 < kids.size() && kids[i + 1]->clipped;
+        const bool clip = l.clipped && haveBase;
+        if (clip && !baseVisible) continue;                   // base hidden: clipped layers are too
+        if (!clip) { baseVisible = visible; baseAlpha.clear(); haveBase = true; }
+        if (!visible) continue;
+        const bool masked = l.hasMask && l.maskEnabled && maskCel(l.id, frame);
+        const bool clipActive = clip && !baseAlpha.empty();
+
+        if (l.kind == LayerKind::Adjustment) {
+            // Blend the adjusted result over `out` by opacity x mask x base alpha.
+            Image weight(out.width(), out.height());
+            weight.fill(Rgba8{255, 255, 255, 255});
+            if (masked) applyMask(l, frame, weight, ox, oy);
+            std::vector<std::uint8_t> w = alphaOf(weight);
+            if (!clip && nextClipped) baseAlpha = w;          // clipped layers follow the adjustment's mask
+            if (clipActive)
+                for (std::size_t k = 0; k < npx; ++k) w[k] = static_cast<std::uint8_t>((w[k] * baseAlpha[k] + 127) / 255);
+            std::size_t k = 0;
+            for (int y = 0; y < out.height(); ++y)
+                for (int x = 0; x < out.width(); ++x, ++k) {
+                    const Rgba8 c = out.pixel(x, y);
+                    if (c.a == 0) continue;
+                    const unsigned t = (static_cast<unsigned>(w[k]) * l.opacity + 127) / 255;
+                    if (t == 0) continue;
+                    const Rgba8 a = adjustPixel(c, l.adjustment);
+                    auto mix = [t](std::uint8_t p, std::uint8_t q) {
+                        return static_cast<std::uint8_t>((p * (255 - t) + q * t + 127) / 255);
+                    };
+                    out.setPixel(x, y, {mix(c.r, a.r), mix(c.g, a.g), mix(c.b, a.b), c.a});
+                }
+            continue;
         }
+
+        // Fast path: an unmasked, unclipped raster layer that is not a base.
+        if (l.kind == LayerKind::Raster && !masked && !clipActive && !nextClipped) {
+            if (const Cel* c = cel(l.id, frame)) blendImage(out, c->image, c->x - ox, c->y - oy, l.blend, l.opacity);
+            continue;
+        }
+
+        Image content(out.width(), out.height());
+        if (l.kind == LayerKind::Raster) {
+            if (const Cel* c = cel(l.id, frame)) content.blit(c->image, c->x - ox, c->y - oy);
+        } else {
+            compositeChildren(l.id, frame, content, ox, oy, depth + 1);
+        }
+        if (masked) applyMask(l, frame, content, ox, oy);
+        if (!clip && nextClipped) baseAlpha = alphaOf(content);
+        if (clipActive) multiplyAlpha(content, baseAlpha);
+        blendImage(out, content, 0, 0, l.blend, l.opacity);
     }
 }
 
@@ -392,6 +572,18 @@ Status Document::validate() const {
             if (++steps > kMaxLayers || cur->parent == l.id) return corrupt("Layer hierarchy contains a cycle");
             cur = layer(cur->parent);
         }
+    }
+    for (const auto& l : m_layers) {
+        if (l.kind == LayerKind::Adjustment) {
+            if (auto st = validateAdjustment(l.adjustment); !st) return corrupt("Layer '" + l.name + "': " + st.error().message);
+        }
+        if (l.parent != kNoLayer && layer(l.parent)->kind != LayerKind::Group) return corrupt("Layer parent is not a group");
+    }
+    for (const auto& [k, c] : m_maskCels) {
+        const Layer* l = layer(k.layer);
+        if (!l || !l->hasMask) return corrupt("Mask references a missing layer or a layer without a mask");
+        if (k.frame < 0 || k.frame >= frameCount()) return corrupt("Mask references a missing frame");
+        if (c.image.isNull()) return corrupt("Mask has no image data");
     }
     for (const auto& [k, c] : m_cels) {
         const Layer* l = layer(k.layer);

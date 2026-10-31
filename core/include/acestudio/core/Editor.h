@@ -45,10 +45,29 @@ public:
     // when `mergeable` is true (slider drags).
     Status setLayerOpacity(LayerId id, std::uint8_t opacity, bool mergeable = false);
     Status setLayerBlend(LayerId id, BlendMode mode);
+    // Copies a layer, or a group with all its children, with cels and masks.
     Result<LayerId> duplicateLayer(LayerId id);
-    // Merges a raster layer into the raster layer directly beneath it
-    // (same parent), honouring blend mode and opacity on every frame.
+    // Merges a raster or adjustment layer into the raster layer directly
+    // beneath it (same parent). The result is exactly what the pair
+    // composites to: blend mode, opacity, masks and clipping are baked, and
+    // the merged layer has no mask.
     Status mergeDown(LayerId id);
+
+    // ---- Masks, clipping, adjustment layers ----
+    // New mask: all white, or white only inside `reveal` (from a selection).
+    Status addLayerMask(LayerId id, const Mask* reveal = nullptr);
+    // Removes the mask; with applyToPixels its values are multiplied into
+    // the layer's alpha first (raster layers).
+    Status removeLayerMask(LayerId id, bool applyToPixels);
+    Status setLayerMaskEnabled(LayerId id, bool enabled);
+    Status setLayerClipped(LayerId id, bool clipped);
+    Result<LayerId> addAdjustmentLayer(Adjustment adj, LayerId above = kNoLayer);
+    Status setLayerAdjustment(LayerId id, Adjustment adj, bool mergeable = false);
+
+    // ---- Document-wide ----
+    Status setTileMode(TileMode mode);
+    // Replaces the selection (an empty or null mask clears it); undoable.
+    Status setSelection(Mask selection, const std::string& label);
 
     // ---- Frames ----
     Result<int> insertFrame(int at, int durationMs = 100);
@@ -101,6 +120,8 @@ public:
     void notifyChanged() { if (m_listener) m_listener(); }
 
 private:
+    Result<LayerId> addLayerWith(std::string name, LayerKind kind, LayerId above,
+                                 std::function<void(Layer&)> customize, const std::string& label);
     Document m_doc;
     UndoStack m_history;
     ChangeListener m_listener;

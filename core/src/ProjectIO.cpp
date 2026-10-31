@@ -24,6 +24,10 @@ std::string celFileName(LayerId layer, int frame) {
     return "cels/L" + std::to_string(layer) + "_F" + std::to_string(frame) + ".png";
 }
 
+std::string maskFileName(LayerId layer, int frame) {
+    return "masks/L" + std::to_string(layer) + "_F" + std::to_string(frame) + ".png";
+}
+
 // ------------------------------------------------------------ ZIP helpers
 
 class ZipWriter {
@@ -138,7 +142,19 @@ Result<Document> documentFromJson(const json& j, ZipReader& zip) {
         const std::string kind = jl.value("kind", std::string("raster"));
         if (kind == "raster") l.kind = LayerKind::Raster;
         else if (kind == "group") l.kind = LayerKind::Group;
+        else if (kind == "adjustment") l.kind = LayerKind::Adjustment;
         else return corrupt("Unknown layer kind: " + kind);
+        l.clipped = jl.value("clipped", false);
+        if (jl.contains("mask")) {
+            l.hasMask = true;
+            l.maskEnabled = jl["mask"].value("enabled", true);
+        }
+        if (l.kind == LayerKind::Adjustment) {
+            const json& ja = jl.at("adjustment");
+            const auto t = adjustmentTypeFromString(ja.at("type").get<std::string>());
+            if (!t) return corrupt("Unknown adjustment type");
+            l.adjustment = Adjustment{*t, ja.value("a", 0), ja.value("b", 0), ja.value("c", 0)};
+        }
         l.name = jl.value("name", std::string());
         l.visible = jl.value("visible", true);
         l.locked = jl.value("locked", false);
@@ -174,6 +190,27 @@ Result<Document> documentFromJson(const json& j, ZipReader& zip) {
             return corrupt("Invalid cel " + file + ": " + st.error().message);
     }
 
+    // Layer masks (schema 2)
+    if (j.contains("masks")) {
+        for (const auto& jc : j["masks"]) {
+            const auto layerId = jc.at("layer").get<LayerId>();
+            const int frame = jc.at("frame").get<int>();
+            const std::string file = jc.at("file").get<std::string>();
+            if (file != maskFileName(layerId, frame)) return corrupt("Unexpected mask file name: " + file);
+            auto png = zip.read(file);
+            if (!png) return png.error();
+            auto img = decodePng(png.value());
+            if (!img) return corrupt(file + ": " + img.error().message);
+            if (auto st = doc.setMaskCel(layerId, frame, Cel{std::move(img).value(), jc.value("x", 0), jc.value("y", 0)}); !st)
+                return corrupt("Invalid mask " + file + ": " + st.error().message);
+        }
+    }
+    if (canvas.contains("tileMode")) {
+        const auto tm = tileModeFromString(canvas["tileMode"].get<std::string>());
+        if (!tm) return corrupt("Unknown tile mode");
+        doc.setTileMode(*tm);
+    }
+
     // Tags
     if (j.contains("tags")) {
         for (const auto& jt : j["tags"]) {
@@ -198,6 +235,13 @@ Result<Document> documentFromJson(const json& j, ZipReader& zip) {
 
 } // namespace
 
+int requiredSchemaVersion(const Document& doc) {
+    if (doc.tileMode() != TileMode::None || !doc.maskCels().empty()) return 2;
+    for (const auto& l : doc.layers())
+        if (l.clipped || l.hasMask || l.kind == LayerKind::Adjustment) return 2;
+    return 1;   // nothing schema 2 adds: stay readable by 0.5 and older
+}
+
 json documentToJson(const Document& doc) {
     json j;
     j["canvas"] = {{"width", doc.width()},
@@ -212,15 +256,20 @@ json documentToJson(const Document& doc) {
 
     json layers = json::array();
     for (const auto& l : doc.layers()) {
-        layers.push_back({{"id", l.id},
-                          {"parent", l.parent},
-                          {"kind", l.kind == LayerKind::Group ? "group" : "raster"},
-                          {"name", l.name},
-                          {"visible", l.visible},
-                          {"locked", l.locked},
-                          {"alphaLocked", l.alphaLocked},
-                          {"opacity", l.opacity},
-                          {"blend", toString(l.blend)}});
+        json jl = {{"id", l.id},
+                   {"parent", l.parent},
+                   {"kind", l.kind == LayerKind::Group ? "group" : l.kind == LayerKind::Adjustment ? "adjustment" : "raster"},
+                   {"name", l.name},
+                   {"visible", l.visible},
+                   {"locked", l.locked},
+                   {"alphaLocked", l.alphaLocked},
+                   {"opacity", l.opacity},
+                   {"blend", toString(l.blend)}};
+        if (l.clipped) jl["clipped"] = true;
+        if (l.hasMask) jl["mask"] = {{"enabled", l.maskEnabled}};
+        if (l.kind == LayerKind::Adjustment)
+            jl["adjustment"] = {{"type", toString(l.adjustment.type)}, {"a", l.adjustment.a}, {"b", l.adjustment.b}, {"c", l.adjustment.c}};
+        layers.push_back(std::move(jl));
     }
     j["layers"] = layers;
 
@@ -233,6 +282,13 @@ json documentToJson(const Document& doc) {
         cels.push_back({{"layer", k.layer}, {"frame", k.frame}, {"x", c.x}, {"y", c.y},
                         {"file", celFileName(k.layer, k.frame)}});
     j["cels"] = cels;
+    if (!doc.maskCels().empty()) {
+        json masks = json::array();
+        for (const auto& [k, c] : doc.maskCels())
+            masks.push_back({{"layer", k.layer}, {"frame", k.frame}, {"x", c.x}, {"y", c.y}, {"file", maskFileName(k.layer, k.frame)}});
+        j["masks"] = masks;
+    }
+    if (doc.tileMode() != TileMode::None) j["canvas"]["tileMode"] = toString(doc.tileMode());
 
     json tags = json::array();
     for (const auto& t : doc.tags())
@@ -249,7 +305,7 @@ Result<std::vector<std::uint8_t>> serializeProject(const Document& doc, const Sa
 
     const std::string now = nowUtcIso8601();
     const json manifest = {{"format", kProjectFormatId},
-                           {"schemaVersion", kProjectSchemaVersion},
+                           {"schemaVersion", requiredSchemaVersion(doc)},
                            {"writerVersion", kVersionString},
                            {"createdUtc", opts.createdUtc.empty() ? now : opts.createdUtc},
                            {"modifiedUtc", now}};
@@ -265,6 +321,11 @@ Result<std::vector<std::uint8_t>> serializeProject(const Document& doc, const Sa
         auto png = encodePng(c.image);
         if (!png) return png.error();
         if (auto st = zip.add(celFileName(k.layer, k.frame), png.value(), false); !st) return st.error();
+    }
+    for (const auto& [k, c] : doc.maskCels()) {
+        auto png = encodePng(c.image);
+        if (!png) return png.error();
+        if (auto st = zip.add(maskFileName(k.layer, k.frame), png.value(), false); !st) return st.error();
     }
     return zip.finish();
 }

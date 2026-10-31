@@ -3,6 +3,7 @@
 #include "acestudio/core/BlendMode.h"
 #include "acestudio/core/Image.h"
 #include "acestudio/core/Palette.h"
+#include "acestudio/core/Raster.h"
 #include "acestudio/core/Result.h"
 
 #include <nlohmann/json.hpp>
@@ -22,7 +23,33 @@ std::optional<ColorMode> colorModeFromString(std::string_view s) noexcept;
 using LayerId = std::uint32_t;
 inline constexpr LayerId kNoLayer = 0;
 
-enum class LayerKind { Raster, Group };
+enum class LayerKind { Raster, Group, Adjustment };
+
+// Non-destructive colour adjustments. An adjustment layer changes what is
+// composited beneath it in the same group; parameters by type:
+//   BrightnessContrast  a = brightness -100..100, b = contrast -100..100
+//   HueSaturation       a = hue -180..180, b = saturation -100..100, c = lightness -100..100
+//   Invert              (none)
+//   Posterize           a = levels 2..64
+//   Threshold           a = level 0..255 (luma at or above becomes white)
+enum class AdjustmentType { BrightnessContrast, HueSaturation, Invert, Posterize, Threshold };
+std::string_view toString(AdjustmentType t) noexcept;
+std::optional<AdjustmentType> adjustmentTypeFromString(std::string_view s) noexcept;
+
+struct Adjustment {
+    AdjustmentType type = AdjustmentType::BrightnessContrast;
+    int a = 0, b = 0, c = 0;
+    bool operator==(const Adjustment&) const = default;
+};
+Status validateAdjustment(const Adjustment& adj);
+
+// Seamless-tile editing: painting wraps around the chosen canvas edges and
+// the canvas shows neighbouring repeats.
+enum class TileMode { None, Horizontal, Vertical, Both };
+std::string_view toString(TileMode m) noexcept;
+std::optional<TileMode> tileModeFromString(std::string_view s) noexcept;
+inline bool wrapsX(TileMode m) noexcept { return m == TileMode::Horizontal || m == TileMode::Both; }
+inline bool wrapsY(TileMode m) noexcept { return m == TileMode::Vertical || m == TileMode::Both; }
 
 struct Layer {
     LayerId id = kNoLayer;
@@ -34,6 +61,14 @@ struct Layer {
     bool alphaLocked = false;
     std::uint8_t opacity = 255;
     BlendMode blend = BlendMode::Normal;
+    // Clipping mask: limited to the alpha of the nearest non-clipped layer
+    // below it in the same group (the base); hidden when the base is hidden.
+    bool clipped = false;
+    // Layer mask (raster, group or adjustment layers): per-frame greyscale
+    // cels; white shows, black hides. Frames without a mask cel show fully.
+    bool hasMask = false;
+    bool maskEnabled = true;
+    Adjustment adjustment;              // LayerKind::Adjustment only
 };
 
 struct Frame {
@@ -130,6 +165,28 @@ public:
     void clearCel(LayerId layer, int frame) noexcept;
     const std::map<CelKey, Cel>& cels() const noexcept { return m_cels; }
 
+    // ---- Layer masks ----
+    // Mask cels store the mask value in the red channel (R = G = B, A = 255).
+    const Cel* maskCel(LayerId layer, int frame) const noexcept;
+    Cel* maskCel(LayerId layer, int frame) noexcept;
+    Status setMaskCel(LayerId layer, int frame, Cel cel);
+    void clearMaskCel(LayerId layer, int frame) noexcept;
+    const std::map<CelKey, Cel>& maskCels() const noexcept { return m_maskCels; }
+    // Mask value 0..255 at a canvas pixel (255 when the layer has no mask,
+    // it is disabled, or the frame has no mask cel there).
+    std::uint8_t maskValue(LayerId layer, int frame, int x, int y) const noexcept;
+    // Canvas-sized greyscale image of the mask (white where none).
+    Image renderMask(LayerId layer, int frame) const;
+
+    // ---- Tiling ----
+    TileMode tileMode() const noexcept { return m_tileMode; }
+    void setTileMode(TileMode m) noexcept { m_tileMode = m; }
+
+    // ---- Selection (transient: not saved, but undoable through Editor) ----
+    const Mask& selection() const noexcept { return m_selection; }
+    void setSelection(Mask m) { m_selection = std::move(m); }
+    bool hasSelection() const noexcept { return !m_selection.isNull(); }
+
     // ---- Tags ----
     const std::vector<AnimationTag>& tags() const noexcept { return m_tags; }
     Status addTag(AnimationTag tag);
@@ -163,6 +220,9 @@ private:
     // Composites children of `parent` into `out`, which covers canvas area
     // starting at (originX, originY).
     void compositeChildren(LayerId parent, int frame, Image& out, int originX, int originY, int depth) const;
+    // Multiplies `img` (covering the canvas from (ox, oy)) alpha by the mask.
+    void applyMask(const Layer& l, int frame, Image& img, int ox, int oy) const;
+    template <typename Fn> void remapFrames(Fn fn);
 
     int m_width = 0;
     int m_height = 0;
@@ -175,6 +235,9 @@ private:
     LayerId m_nextLayerId = 1;
     std::vector<Frame> m_frames;
     std::map<CelKey, Cel> m_cels;
+    std::map<CelKey, Cel> m_maskCels;
+    TileMode m_tileMode = TileMode::None;
+    Mask m_selection;
     std::vector<AnimationTag> m_tags;
     nlohmann::json m_extensions = nlohmann::json::object();
 };

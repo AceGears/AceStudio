@@ -6,6 +6,7 @@
 //   manifest.json     format id, schema version, writer version, timestamps
 //   document.json     the document model (see docs/project-format.md)
 //   cels/L<id>_F<n>.png  one PNG per non-empty cel
+//   masks/L<id>_F<n>.png one PNG per layer-mask cel (schema 2)
 //
 // Integrity: every ZIP entry carries a CRC-32 that is verified on read;
 // the document is structurally validated after load.
@@ -24,7 +25,9 @@
 
 namespace acestudio {
 
-inline constexpr int kProjectSchemaVersion = 1;
+// Schema 2 (0.6.0) adds layer masks, clipping, adjustment layers and tile
+// mode. Files that use none of them are still written as schema 1.
+inline constexpr int kProjectSchemaVersion = 2;
 inline constexpr const char* kProjectFormatId = "acestudio.project";
 inline constexpr const char* kProjectExtension = ".acestudio";
 
@@ -49,5 +52,7 @@ Result<Document> loadProject(const std::filesystem::path& path, ProjectInfo* inf
 
 // document.json <-> Document (no pixel data); exposed for tooling.
 nlohmann::json documentToJson(const Document& doc);
+// Lowest schema version that can represent `doc`.
+int requiredSchemaVersion(const Document& doc);
 
 } // namespace acestudio

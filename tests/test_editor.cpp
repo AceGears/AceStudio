@@ -13,12 +13,19 @@ namespace {
 struct Snapshot {
     nlohmann::json meta;
     std::vector<std::tuple<LayerId, int, int, int, Image>> cels;
+    std::vector<std::tuple<LayerId, int, int, int, Image>> masks;
+    std::vector<int> selection;   // selected pixel indices
     bool operator==(const Snapshot&) const = default;
 };
 
 Snapshot snap(const Document& d) {
-    Snapshot s{documentToJson(d), {}};
+    Snapshot s{documentToJson(d), {}, {}, {}};
     for (const auto& [k, c] : d.cels()) s.cels.emplace_back(k.layer, k.frame, c.x, c.y, c.image);
+    for (const auto& [k, c] : d.maskCels()) s.masks.emplace_back(k.layer, k.frame, c.x, c.y, c.image);
+    const Mask& m = d.selection();
+    for (int y = 0; y < m.height(); ++y)
+        for (int x = 0; x < m.width(); ++x)
+            if (m.get(x, y)) s.selection.push_back(y * m.width() + x);
     return s;
 }
 
@@ -221,4 +228,138 @@ TEST_CASE("Layer transforms honour selection and frames", "[editor][undo][transf
     }
     REQUIRE(e.setLayerLocked(b, true));
     CHECK_FALSE(e.transformLayer(b, 0, false, nullptr, "x", [](const Image& i) { return i; }));
+}
+
+TEST_CASE("Masks, clipping and adjustment layers undo and redo exactly", "[editor][undo][mask]") {
+    Editor e = makeEditor();
+    const LayerId a = e.document().layers()[0].id, b = e.document().layers()[1].id;
+    Mask sel(8, 8);
+    sel.fillRect({0, 0, 4, 8}, true);
+    checkRoundTrip(e, [&](Editor& ed) { REQUIRE(ed.addLayerMask(a, &sel)); });   // leaves the mask applied
+    CHECK(e.document().composite(0).pixel(6, 6).a == 0);   // hidden outside the selection
+    CHECK(e.document().composite(0).pixel(1, 1).a == 255);
+    CHECK_FALSE(e.addLayerMask(a));                          // already has one
+    checkRoundTrip(e, [&](Editor& ed) { REQUIRE(ed.setLayerMaskEnabled(a, false)); });
+    checkRoundTrip(e, [&](Editor& ed) { REQUIRE(ed.removeLayerMask(a, true)); });
+    REQUIRE(e.undo());                                         // mask back
+    checkRoundTrip(e, [&](Editor& ed) { REQUIRE(ed.removeLayerMask(a, false)); });
+    {
+        Editor f = makeEditor();
+        const LayerId fa = f.document().layers()[0].id;
+        REQUIRE(f.addLayerMask(fa, &sel));
+        REQUIRE(f.removeLayerMask(fa, true));               // apply: pixels lose alpha outside
+        CHECK_FALSE(f.document().layer(fa)->hasMask);
+        CHECK(f.document().composite(0).pixel(6, 6).a == 0);
+        CHECK(f.document().cel(fa, 0)->image.opaqueBounds().w == 4);
+    }
+    checkRoundTrip(e, [&](Editor& ed) { REQUIRE(ed.setLayerClipped(b, true)); });
+    checkRoundTrip(e, [&](Editor& ed) { REQUIRE(ed.addAdjustmentLayer({AdjustmentType::Invert}, b)); });
+    auto adj = e.addAdjustmentLayer({AdjustmentType::Posterize, 4}, b);
+    REQUIRE(adj);
+    CHECK(e.document().layer(adj.value())->kind == LayerKind::Adjustment);
+    CHECK(e.document().layer(adj.value())->name == "Posterize");
+    CHECK_FALSE(e.setLayerAdjustment(adj.value(), {AdjustmentType::Posterize, 1}));
+    CHECK_FALSE(e.setLayerAdjustment(a, {AdjustmentType::Invert}));
+    checkRoundTrip(e, [&](Editor& ed) { REQUIRE(ed.setLayerAdjustment(adj.value(), {AdjustmentType::Threshold, 100})); });
+    // Undo the settings change, then one more undo removes the layer with its settings.
+    REQUIRE(e.undo());
+    CHECK(e.document().layer(adj.value())->adjustment == Adjustment{AdjustmentType::Posterize, 4});
+    REQUIRE(e.undo());
+    CHECK_FALSE(e.document().layer(adj.value()));
+    REQUIRE(e.redo());
+    CHECK(e.document().layer(adj.value())->adjustment == Adjustment{AdjustmentType::Posterize, 4});
+}
+
+TEST_CASE("Merge down bakes masks, clipping and adjustments", "[editor][undo][mask]") {
+    auto mk = [] {
+        auto d = Document::create(4, 4).value();
+        const auto lo = d.addLayer("Lo").value();
+        Image half(4, 4);
+        half.fillRect({0, 0, 2, 4}, Rgba8::opaque(200, 100, 50));
+        REQUIRE(d.setCel(lo, 0, Cel{half, 0, 0}));
+        const auto hi = d.addLayer("Hi").value();
+        REQUIRE(d.setCel(hi, 0, Cel{Image(4, 4, Rgba8::opaque(0, 0, 255)), 0, 0}));
+        d.layer(hi)->clipped = true;
+        return Editor(std::move(d));
+    };
+    Editor e = mk();
+    const LayerId lo = e.document().layers()[0].id, hi = e.document().layers()[1].id;
+    const Image before = e.document().composite(0);
+    checkRoundTrip(e, [&](Editor& ed) { REQUIRE(ed.mergeDown(hi)); });   // leaves it merged
+    CHECK(e.document().layers().size() == 1);
+    CHECK(e.document().composite(0) == before);          // clipped blue only over the left half
+    CHECK(e.document().composite(0).pixel(3, 0).a == 0);
+
+    Editor f = mk();
+    const LayerId flo = f.document().layers()[0].id;
+    REQUIRE(f.setLayerClipped(f.document().layers()[1].id, false));
+    REQUIRE(f.removeLayer(f.document().layers()[1].id));
+    auto inv = f.addAdjustmentLayer({AdjustmentType::Invert}, flo);
+    REQUIRE(inv);
+    const Image adjusted = f.document().composite(0);
+    REQUIRE(f.mergeDown(inv.value()));
+    CHECK(f.document().composite(0) == adjusted);
+    CHECK(f.document().composite(0).pixel(0, 0) == Rgba8::opaque(55, 155, 205));
+    (void)lo;
+}
+
+TEST_CASE("Duplicating a group copies its children, cels and masks", "[editor][undo]") {
+    auto d = Document::create(4, 4).value();
+    const auto g = d.addLayer("G", LayerKind::Group).value();
+    const auto c1 = d.addLayer("C1", LayerKind::Raster, g).value();
+    const auto c2 = d.addLayer("C2", LayerKind::Raster, g).value();
+    REQUIRE(d.setCel(c1, 0, Cel{Image(2, 2, Rgba8::opaque(1, 2, 3)), 1, 1}));
+    REQUIRE(d.setCel(c2, 0, Cel{Image(1, 1, Rgba8::opaque(9, 9, 9)), 0, 0}));
+    d.layer(c2)->hasMask = true;
+    REQUIRE(d.setMaskCel(c2, 0, Cel{Image(1, 1, Rgba8{0, 0, 0, 255}), 0, 0}));
+    Editor e(std::move(d));
+    checkRoundTrip(e, [&](Editor& ed) { REQUIRE(ed.duplicateLayer(g)); });   // leaves the copy
+    const LayerId copy = idOf(e, "G copy");
+    CHECK(e.document().layers().size() == 6);
+    int children = 0, masks = 0;
+    for (const auto& l : e.document().layers())
+        if (l.parent == copy) {
+            ++children;
+            if (e.document().maskCel(l.id, 0)) ++masks;
+        }
+    CHECK(children == 2);
+    CHECK(masks == 1);
+    CHECK(e.document().validate());
+    // Copy composites like the original (stacked twice gives the same result here).
+    CHECK(e.document().composite(0).pixel(1, 1) == Rgba8::opaque(1, 2, 3));
+}
+
+TEST_CASE("Selection is undoable and follows canvas transforms", "[editor][undo][selection]") {
+    Editor e = makeEditor();
+    Mask m(8, 8);
+    m.fillRect({1, 1, 2, 2}, true);
+    checkRoundTrip(e, [&](Editor& ed) { REQUIRE(ed.setSelection(m, "Select")); });
+    CHECK(e.document().selection().count() == 4);
+    CHECK_FALSE(e.setSelection(Mask(4, 4, true), "Bad size"));
+    checkRoundTrip(e, [&](Editor& ed) { REQUIRE(ed.resizeCanvas(12, 10, 2, 1)); });
+    CHECK(e.document().selection().width() == 12);
+    CHECK(e.document().selection().get(3, 2));             // moved with the content
+    CHECK(e.document().selection().count() == 4);
+    REQUIRE(e.flipCanvas(true));
+    CHECK(e.document().selection().get(12 - 1 - 3, 2));
+    REQUIRE(e.undo());   // flip
+    REQUIRE(e.undo());   // resize
+    CHECK(e.document().selection().get(1, 1));
+    REQUIRE(e.setSelection(Mask(), "Deselect"));
+    CHECK_FALSE(e.document().hasSelection());
+    checkRoundTrip(e, [&](Editor& ed) { REQUIRE(ed.setTileMode(TileMode::Both)); });
+}
+
+TEST_CASE("Canvas transforms keep masks white outside their cel", "[editor][mask]") {
+    Editor e = makeEditor();
+    const LayerId a = e.document().layers()[0].id;
+    Mask sel(8, 8);
+    sel.fillRect({0, 0, 8, 4}, true);
+    REQUIRE(e.addLayerMask(a, &sel));
+    REQUIRE(e.resizeCanvas(10, 10, 0, 0));
+    // The new area of the mask is white (visible), matching the default.
+    CHECK(e.document().maskValue(a, 0, 9, 9) == 255);
+    CHECK(e.document().maskValue(a, 0, 1, 6) == 0);
+    REQUIRE(e.rotateCanvas90(true));
+    CHECK(e.document().validate());
 }

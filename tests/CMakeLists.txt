@@ -3,6 +3,7 @@ add_executable(acestudio_core_tests
     test_color_image.cpp
     test_blend.cpp
     test_document.cpp
+    test_layers_advanced.cpp
     test_png.cpp
     test_project_io.cpp
     test_fileutil.cpp

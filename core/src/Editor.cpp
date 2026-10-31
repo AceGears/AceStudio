@@ -57,6 +57,9 @@ private:
         l->alphaLocked = v.alphaLocked;
         l->opacity = v.opacity;
         l->blend = v.blend;
+        l->clipped = v.clipped;
+        l->maskEnabled = v.maskEnabled;
+        l->adjustment = v.adjustment;
         return {};
     }
     std::string m_label;
@@ -81,6 +84,7 @@ struct SavedCel {
 struct LayerSnapshot {
     std::vector<SavedLayer> layers;   // ascending index
     std::vector<SavedCel> cels;
+    std::vector<SavedCel> masks;
     std::size_t bytes = 0;
 
     static LayerSnapshot capture(const Document& d, LayerId root) {
@@ -92,6 +96,11 @@ struct LayerSnapshot {
                     s.cels.push_back({k.layer, k.frame, c});
                     s.bytes += celBytes(c);
                 }
+            for (const auto& [k, c] : d.maskCels())
+                if (k.layer == id) {
+                    s.masks.push_back({k.layer, k.frame, c});
+                    s.bytes += celBytes(c);
+                }
         }
         std::sort(s.layers.begin(), s.layers.end(), [](auto& a, auto& b) { return a.index < b.index; });
         return s;
@@ -100,8 +109,26 @@ struct LayerSnapshot {
     void restore(Document& d) const {
         for (const auto& sl : layers) (void)d.insertLayerAt(sl.layer, sl.index);
         for (const auto& sc : cels) (void)d.setCel(sc.layer, sc.frame, sc.cel);
+        for (const auto& sc : masks) (void)d.setMaskCel(sc.layer, sc.frame, sc.cel);
     }
 };
+
+// A copy of `d` holding only `below` and `top` (top clipped to below if it
+// is clipped), for baking merges exactly as they composite.
+Image compositePair(const Document& d, LayerId belowId, LayerId topId, int frame) {
+    Document tmp = Document::create(d.width(), d.height()).value();
+    (void)tmp.insertFrame(1);   // placeholder frames up to `frame`
+    for (int f = tmp.frameCount(); f <= frame; ++f) (void)tmp.insertFrame(f);
+    for (LayerId id : {belowId, topId}) {
+        Layer l = *d.layer(id);
+        l.parent = kNoLayer;
+        if (id == belowId) { l.opacity = 255; l.blend = BlendMode::Normal; l.clipped = false; l.visible = true; }
+        (void)tmp.restoreLayer(l);
+        if (const Cel* c = d.cel(id, frame)) (void)tmp.setCel(id, frame, *c);
+        if (const Cel* m = d.maskCel(id, frame)) (void)tmp.setMaskCel(id, frame, *m);
+    }
+    return tmp.composite(frame);
+}
 
 } // namespace
 
@@ -133,6 +160,11 @@ Status Editor::redo() {
 // ------------------------------------------------------------------ layers
 
 Result<LayerId> Editor::addLayer(std::string name, LayerKind kind, LayerId above) {
+    return addLayerWith(std::move(name), kind, above, {}, kind == LayerKind::Group ? "New Group" : "New Layer");
+}
+
+Result<LayerId> Editor::addLayerWith(std::string name, LayerKind kind, LayerId above,
+                                     std::function<void(Layer&)> customize, const std::string& label) {
     LayerId parent = kNoLayer;
     std::size_t index = m_doc.layers().size();
     if (above != kNoLayer) {
@@ -143,12 +175,13 @@ Result<LayerId> Editor::addLayer(std::string name, LayerKind kind, LayerId above
     }
     auto created = std::make_shared<std::optional<Layer>>();
     auto cmd = std::make_unique<FnCommand>(
-        kind == LayerKind::Group ? "New Group" : "New Layer",
+        label,
         [=, name = std::move(name)](Document& d) -> Status {
             if (*created) return d.insertLayerAt(**created, index);
             auto id = d.addLayer(name, kind, parent);
             if (!id) return id.error();
             if (auto st = d.moveLayer(id.value(), index); !st) { (void)d.removeLayer(id.value()); return st; }
+            if (customize) customize(*d.layer(id.value()));
             *created = *d.layer(id.value());
             return {};
         },
@@ -213,40 +246,56 @@ Status Editor::setLayerBlend(LayerId id, BlendMode mode) {
 Result<LayerId> Editor::duplicateLayer(LayerId id) {
     const Layer* src = m_doc.layer(id);
     if (!src) return Error{ErrorCode::NotFound, "No such layer"};
-    if (src->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Only raster layers can be duplicated for now"};
+    if (m_doc.layers().size() + m_doc.subtree(id).size() > static_cast<std::size_t>(Document::kMaxLayers))
+        return Error{ErrorCode::InvalidArgument, "Layer limit reached"};
+    // The whole subtree (a group with its children), with cels and masks.
+    auto snap = std::make_shared<LayerSnapshot>(LayerSnapshot::capture(m_doc, id));
     const std::size_t index = *m_doc.layerIndex(id) + 1;
-    auto created = std::make_shared<std::optional<Layer>>();
-    std::size_t bytes = 0;
-    auto cels = std::make_shared<std::vector<std::pair<int, Cel>>>();
-    for (const auto& [k, c] : m_doc.cels())
-        if (k.layer == id) { cels->emplace_back(k.frame, c); bytes += celBytes(c); }
-    const Layer original = *src;
+    auto copies = std::make_shared<LayerSnapshot>();   // assigned ids, filled on first apply
 
     auto cmd = std::make_unique<FnCommand>(
-        "Duplicate Layer",
+        src->kind == LayerKind::Group ? "Duplicate Group" : "Duplicate Layer",
         [=](Document& d) -> Status {
-            if (!*created) {
-                auto nid = d.addLayer(original.name + " copy", LayerKind::Raster, original.parent);
-                if (!nid) return nid.error();
-                Layer l = original;
-                l.id = nid.value();
-                l.name = original.name + " copy";
-                (void)d.removeLayer(nid.value());
-                *created = l;
+            if (copies->layers.empty()) {
+                // New ids: allocate by adding and removing placeholders.
+                std::map<LayerId, LayerId> idMap;
+                std::vector<LayerId> placeholders;
+                for (const auto& sl : snap->layers) {
+                    auto nid = d.addLayer("tmp");
+                    if (!nid) { for (auto p : placeholders) (void)d.removeLayer(p); return nid.error(); }
+                    placeholders.push_back(nid.value());
+                    idMap[sl.layer.id] = nid.value();
+                }
+                for (auto p : placeholders) (void)d.removeLayer(p);
+                // Root first, then descendants in stack order.
+                std::vector<SavedLayer> order = snap->layers;
+                std::stable_partition(order.begin(), order.end(), [id](const SavedLayer& sl) { return sl.layer.id == id; });
+                std::size_t at = index;
+                for (const auto& sl : order) {
+                    Layer l = sl.layer;
+                    l.id = idMap[l.id];
+                    if (sl.layer.id == id) l.name = sl.layer.name + " copy";
+                    else l.parent = idMap[l.parent];
+                    copies->layers.push_back({l, at++});
+                }
+                for (const auto& sc : snap->cels) copies->cels.push_back({idMap[sc.layer], sc.frame, sc.cel});
+                for (const auto& sc : snap->masks) copies->masks.push_back({idMap[sc.layer], sc.frame, sc.cel});
             }
-            if (auto st = d.insertLayerAt(**created, index); !st) return st;
-            for (const auto& [f, c] : *cels) (void)d.setCel((*created)->id, f, c);
+            for (const auto& sl : copies->layers)
+                if (auto st = d.insertLayerAt(sl.layer, sl.index); !st) return st;
+            for (const auto& sc : copies->cels) (void)d.setCel(sc.layer, sc.frame, sc.cel);
+            for (const auto& sc : copies->masks) (void)d.setMaskCel(sc.layer, sc.frame, sc.cel);
             return {};
         },
-        [created](Document& d) { (void)d.removeLayer((*created)->id); }, bytes);
+        [copies](Document& d) { (void)d.removeLayer(copies->layers.front().layer.id); }, snap->bytes);
     if (auto st = apply(std::move(cmd)); !st) return st.error();
-    return (*created)->id;
+    return copies->layers.front().layer.id;
 }
 
 Status Editor::mergeDown(LayerId id) {
     const Layer* top = m_doc.layer(id);
     if (!top) return Error{ErrorCode::NotFound, "No such layer"};
-    if (top->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Only raster layers can be merged"};
+    if (top->kind == LayerKind::Group) return Error{ErrorCode::InvalidArgument, "Groups cannot be merged down yet; merge their layers first"};
     if (!top->visible) return Error{ErrorCode::InvalidArgument, "Show the layer before merging it"};
     // Nearest sibling below.
     const auto& layers = m_doc.layers();
@@ -255,51 +304,191 @@ Status Editor::mergeDown(LayerId id) {
     for (std::size_t i = topIdx; i-- > 0;)
         if (layers[i].parent == top->parent) { below = &layers[i]; break; }
     if (!below) return Error{ErrorCode::InvalidArgument, "There is no layer below to merge into"};
-    if (below->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Cannot merge into a group"};
+    if (below->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Can only merge into a raster layer"};
     if (!m_doc.isLayerEditable(below->id)) return Error{ErrorCode::PermissionDenied, "The layer below is locked"};
 
     const LayerId belowId = below->id;
+    // Masks, clipping and adjustments are baked: the merged pixels are what
+    // the two layers composite to; the result has no mask.
     auto topSnap = std::make_shared<LayerSnapshot>(LayerSnapshot::capture(m_doc, id));
-    auto belowCels = std::make_shared<std::vector<std::pair<int, std::optional<Cel>>>>();
-    std::size_t bytes = topSnap->bytes;
+    auto belowSnap = std::make_shared<LayerSnapshot>(LayerSnapshot::capture(m_doc, belowId));
+    auto merged = std::make_shared<std::vector<std::pair<int, std::optional<Cel>>>>();
     for (int f = 0; f < m_doc.frameCount(); ++f) {
-        const Cel* c = m_doc.cel(belowId, f);
-        belowCels->emplace_back(f, c ? std::optional<Cel>(*c) : std::nullopt);
-        if (c) bytes += celBytes(*c);
+        if (!m_doc.cel(id, f) && !m_doc.maskCel(belowId, f) && top->kind == LayerKind::Raster) {
+            const Cel* bc = m_doc.cel(belowId, f);
+            merged->emplace_back(f, bc ? std::optional<Cel>(*bc) : std::nullopt);
+            continue;
+        }
+        const Image base = compositePair(m_doc, belowId, id, f);
+        const IntRect r = base.opaqueBounds();
+        merged->emplace_back(f, r.empty() ? std::nullopt : std::optional<Cel>(Cel{base.copy(r), r.x, r.y}));
     }
+    std::size_t bytes = topSnap->bytes + belowSnap->bytes;
+    for (const auto& [f, c] : *merged) if (c) bytes += celBytes(*c);
 
     return apply(std::make_unique<FnCommand>(
         "Merge Down",
         [=](Document& d) -> Status {
-            const Layer* t = d.layer(id);
-            if (!t) return Error{ErrorCode::NotFound, "Layer no longer exists"};
-            for (int f = 0; f < d.frameCount(); ++f) {
-                const Cel* tc = d.cel(id, f);
-                if (!tc) continue;
-                Image base = d.renderLayer(belowId, f);
-                blendImage(base, tc->image, tc->x, tc->y, t->blend, t->opacity);
-                const IntRect r = base.opaqueBounds();
-                if (r.empty()) d.clearCel(belowId, f);
-                else (void)d.setCel(belowId, f, Cel{base.copy(r), r.x, r.y});
+            if (!d.layer(id) || !d.layer(belowId)) return Error{ErrorCode::NotFound, "Layer no longer exists"};
+            for (int f = 0; f < d.frameCount(); ++f) d.clearMaskCel(belowId, f);
+            d.layer(belowId)->hasMask = false;
+            for (const auto& [f, c] : *merged) {
+                if (c) (void)d.setCel(belowId, f, *c);
+                else d.clearCel(belowId, f);
             }
             return d.removeLayer(id);
         },
         [=](Document& d) {
+            (void)d.removeLayer(belowId);
+            belowSnap->restore(d);
             topSnap->restore(d);
-            for (const auto& [f, c] : *belowCels) {
-                if (c) (void)d.setCel(belowId, f, *c);
-                else d.clearCel(belowId, f);
-            }
         },
-        bytes * 2));
+        bytes));
+}
+
+// ------------------------------------------------------------------ masks, clipping, adjustments
+
+Status Editor::addLayerMask(LayerId id, const Mask* reveal) {
+    const Layer* l = m_doc.layer(id);
+    if (!l) return Error{ErrorCode::NotFound, "No such layer"};
+    if (l->hasMask) return Error{ErrorCode::InvalidArgument, "The layer already has a mask"};
+    std::optional<Image> init;
+    if (reveal && !reveal->isNull()) {
+        Image m(m_doc.width(), m_doc.height(), Rgba8{0, 0, 0, 255});
+        for (int y = 0; y < m.height(); ++y)
+            for (int x = 0; x < m.width(); ++x)
+                if (reveal->get(x, y)) m.setPixel(x, y, {255, 255, 255, 255});
+        init = std::move(m);
+    }
+    const int frames = m_doc.frameCount();
+    return apply(std::make_unique<FnCommand>(
+        reveal ? "Add Mask from Selection" : "Add Layer Mask",
+        [=](Document& d) -> Status {
+            Layer* t = d.layer(id);
+            if (!t) return Error{ErrorCode::NotFound, "Layer no longer exists"};
+            t->hasMask = true;
+            t->maskEnabled = true;
+            if (init) for (int f = 0; f < frames && f < d.frameCount(); ++f) (void)d.setMaskCel(id, f, Cel{*init, 0, 0});
+            return {};
+        },
+        [=](Document& d) {
+            for (int f = 0; f < d.frameCount(); ++f) d.clearMaskCel(id, f);
+            if (Layer* t = d.layer(id)) t->hasMask = false;
+        },
+        init ? init->byteSize() * static_cast<std::size_t>(frames) : 0));
+}
+
+Status Editor::removeLayerMask(LayerId id, bool applyToPixels) {
+    const Layer* l = m_doc.layer(id);
+    if (!l) return Error{ErrorCode::NotFound, "No such layer"};
+    if (!l->hasMask) return Error{ErrorCode::InvalidArgument, "The layer has no mask"};
+    if (applyToPixels && l->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Only a raster layer's mask can be applied"};
+    if (applyToPixels && !m_doc.isLayerEditable(id)) return Error{ErrorCode::PermissionDenied, "The layer is locked"};
+    auto snap = std::make_shared<LayerSnapshot>(LayerSnapshot::capture(m_doc, id));
+    auto baked = std::make_shared<std::vector<std::pair<int, std::optional<Cel>>>>();
+    if (applyToPixels) {
+        for (int f = 0; f < m_doc.frameCount(); ++f) {
+            const Cel* c = m_doc.cel(id, f);
+            if (!c) continue;
+            Cel out = *c;
+            for (int y = 0; y < out.image.height(); ++y)
+                for (int x = 0; x < out.image.width(); ++x) {
+                    Rgba8 p = out.image.pixel(x, y);
+                    const unsigned v = m_doc.maskCel(id, f) ? [&] {
+                        const Cel* mc = m_doc.maskCel(id, f);
+                        const int mx = out.x + x - mc->x, my = out.y + y - mc->y;
+                        return mc->image.contains(mx, my) ? static_cast<unsigned>(mc->image.pixel(mx, my).r) : 255u;
+                    }() : 255u;
+                    p.a = static_cast<std::uint8_t>((p.a * v + 127) / 255);
+                    out.image.setPixel(x, y, p);
+                }
+            baked->emplace_back(f, out.image.opaqueBounds().empty() ? std::nullopt : std::optional<Cel>(out));
+        }
+    }
+    return apply(std::make_unique<FnCommand>(
+        applyToPixels ? "Apply Layer Mask" : "Delete Layer Mask",
+        [=](Document& d) -> Status {
+            if (!d.layer(id)) return Error{ErrorCode::NotFound, "Layer no longer exists"};
+            for (const auto& [f, c] : *baked) {
+                if (c) (void)d.setCel(id, f, *c);
+                else d.clearCel(id, f);
+            }
+            for (int f = 0; f < d.frameCount(); ++f) d.clearMaskCel(id, f);
+            d.layer(id)->hasMask = false;
+            return {};
+        },
+        [=](Document& d) {
+            Layer* t = d.layer(id);
+            if (!t) return;
+            *t = snap->layers.front().layer;
+            for (const auto& sc : snap->cels) (void)d.setCel(sc.layer, sc.frame, sc.cel);
+            for (int f = 0; f < d.frameCount(); ++f) d.clearMaskCel(id, f);
+            for (const auto& sc : snap->masks) (void)d.setMaskCel(sc.layer, sc.frame, sc.cel);
+        },
+        snap->bytes * 2));
+}
+
+#define ACE_SET_LAYER2(LABEL, FIELD, MERGE, ASSIGN)                                              \
+    const Layer* cur = m_doc.layer(id);                                                         \
+    if (!cur) return Error{ErrorCode::NotFound, "No such layer"};                               \
+    Layer after = *cur;                                                                          \
+    ASSIGN;                                                                                      \
+    return apply(std::make_unique<SetLayerCommand>(LABEL, *cur, after, MERGE ? FIELD : -1), MERGE)
+
+Status Editor::setLayerMaskEnabled(LayerId id, bool enabled) {
+    if (const Layer* l = m_doc.layer(id); l && !l->hasMask) return Error{ErrorCode::InvalidArgument, "The layer has no mask"};
+    ACE_SET_LAYER2(enabled ? "Enable Layer Mask" : "Disable Layer Mask", 20, false, after.maskEnabled = enabled);
+}
+
+Status Editor::setLayerClipped(LayerId id, bool clipped) {
+    ACE_SET_LAYER2(clipped ? "Create Clipping Mask" : "Release Clipping Mask", 21, false, after.clipped = clipped);
+}
+
+Status Editor::setLayerAdjustment(LayerId id, Adjustment adj, bool mergeable) {
+    if (const Layer* l = m_doc.layer(id); l && l->kind != LayerKind::Adjustment)
+        return Error{ErrorCode::InvalidArgument, "Not an adjustment layer"};
+    if (auto st = validateAdjustment(adj); !st) return st;
+    ACE_SET_LAYER2("Adjustment Settings", 22, mergeable, after.adjustment = adj);
+}
+#undef ACE_SET_LAYER2
+
+Result<LayerId> Editor::addAdjustmentLayer(Adjustment adj, LayerId above) {
+    if (auto st = validateAdjustment(adj); !st) return st.error();
+    static const char* names[] = {"Brightness/Contrast", "Hue/Saturation", "Invert", "Posterize", "Threshold"};
+    const std::string name = names[static_cast<int>(adj.type)];
+    return addLayerWith(name, LayerKind::Adjustment, above, [adj](Layer& l) { l.adjustment = adj; },
+                        "New Adjustment Layer");
+}
+
+Status Editor::setTileMode(TileMode mode) {
+    const TileMode old = m_doc.tileMode();
+    if (old == mode) return {};
+    return apply(std::make_unique<FnCommand>(
+        mode == TileMode::None ? "Tiled Mode Off" : "Tiled Mode",
+        [=](Document& d) -> Status { d.setTileMode(mode); return {}; },
+        [=](Document& d) { d.setTileMode(old); }));
+}
+
+Status Editor::setSelection(Mask selection, const std::string& label) {
+    if (!selection.isNull() && (selection.width() != m_doc.width() || selection.height() != m_doc.height()))
+        return Error{ErrorCode::InvalidArgument, "Selection size does not match the canvas"};
+    if (!selection.isNull() && selection.count() == 0) selection = Mask();
+    auto before = std::make_shared<Mask>(m_doc.selection());
+    auto after = std::make_shared<Mask>(std::move(selection));
+    if (before->isNull() && after->isNull()) return {};
+    return apply(std::make_unique<FnCommand>(
+        label, [after](Document& d) -> Status { d.setSelection(*after); return {}; },
+        [before](Document& d) { d.setSelection(*before); },
+        static_cast<std::size_t>(before->width()) * static_cast<std::size_t>(before->height()) +
+            static_cast<std::size_t>(after->width()) * static_cast<std::size_t>(after->height())));
 }
 
 // ------------------------------------------------------------------ frames
 
 namespace {
-std::vector<SavedCel> celsAtFrame(const Document& d, int frame, std::size_t& bytes) {
+std::vector<SavedCel> celsAtFrame(const Document& d, int frame, std::size_t& bytes, bool masks = false) {
     std::vector<SavedCel> out;
-    for (const auto& [k, c] : d.cels())
+    for (const auto& [k, c] : masks ? d.maskCels() : d.cels())
         if (k.frame == frame) { out.push_back({k.layer, k.frame, c}); bytes += celBytes(c); }
     return out;
 }
@@ -339,12 +528,14 @@ Status Editor::removeFrame(int frame) {
     auto tags = std::make_shared<std::vector<AnimationTag>>(m_doc.tags());
     std::size_t bytes = 0;
     auto cels = std::make_shared<std::vector<SavedCel>>(celsAtFrame(m_doc, frame, bytes));
+    auto masks = std::make_shared<std::vector<SavedCel>>(celsAtFrame(m_doc, frame, bytes, true));
     const int duration = m_doc.frames()[static_cast<std::size_t>(frame)].durationMs;
     return apply(std::make_unique<FnCommand>(
         "Delete Frame", [=](Document& d) { return d.removeFrame(frame); },
         [=](Document& d) {
             (void)d.insertFrame(frame, duration);
             for (const auto& sc : *cels) (void)d.setCel(sc.layer, frame, sc.cel);
+            for (const auto& sc : *masks) (void)d.setMaskCel(sc.layer, frame, sc.cel);
             (void)d.replaceTags(*tags);
         },
         bytes));
@@ -363,6 +554,8 @@ Status Editor::setFrameDuration(int frame, int durationMs) {
 namespace {
 struct CelSnapshot {
     std::vector<SavedCel> cels;
+    std::vector<SavedCel> masks;
+    Mask selection;
     std::size_t bytes = 0;
     static CelSnapshot capture(const Document& d) {
         CelSnapshot s;
@@ -370,15 +563,40 @@ struct CelSnapshot {
             s.cels.push_back({k.layer, k.frame, c});
             s.bytes += celBytes(c);
         }
+        for (const auto& [k, c] : d.maskCels()) {
+            s.masks.push_back({k.layer, k.frame, c});
+            s.bytes += celBytes(c);
+        }
+        s.selection = d.selection();
         return s;
     }
     void restore(Document& d) const {
-        std::vector<CelKey> keys;
+        std::vector<CelKey> keys, maskKeys;
         for (const auto& [k, c] : d.cels()) keys.push_back(k);
+        for (const auto& [k, c] : d.maskCels()) maskKeys.push_back(k);
         for (const auto& k : keys) d.clearCel(k.layer, k.frame);
+        for (const auto& k : maskKeys) d.clearMaskCel(k.layer, k.frame);
         for (const auto& sc : cels) (void)d.setCel(sc.layer, sc.frame, sc.cel);
+        for (const auto& sc : masks) (void)d.setMaskCel(sc.layer, sc.frame, sc.cel);
+        d.setSelection(selection);
     }
 };
+
+// Selection <-> image, so canvas transforms move the selection exactly like pixels.
+Image selectionImage(const Mask& m) {
+    Image img(m.width(), m.height());
+    for (int y = 0; y < m.height(); ++y)
+        for (int x = 0; x < m.width(); ++x)
+            if (m.get(x, y)) img.setPixel(x, y, {255, 255, 255, 255});
+    return img;
+}
+Mask selectionFromCel(const Cel& c, int w, int h) {
+    Mask m(w, h);
+    for (int y = 0; y < c.image.height(); ++y)
+        for (int x = 0; x < c.image.width(); ++x)
+            if (c.image.pixel(x, y).a) m.set(c.x + x, c.y + y, true);
+    return m.count() ? m : Mask();
+}
 
 // Applies a per-cel geometric transform to every cel and changes the canvas
 // size; undone by restoring the exact cels and the previous size.
@@ -392,6 +610,18 @@ Status applyCanvasTransform(Editor& e, const std::string& label, int newW, int n
         [=](Document& doc) -> Status {
             if (auto st = doc.setCanvasSize(newW, newH); !st) return st;
             for (const auto& sc : snap->cels) (void)doc.setCel(sc.layer, sc.frame, fn(sc.cel, oldW, oldH));
+            for (const auto& sc : snap->masks) {
+                // Masks are white outside their cel: keep that by transforming
+                // a full-canvas mask, then clipping to the new canvas.
+                Image full(oldW, oldH, Rgba8{255, 255, 255, 255});
+                full.blit(sc.cel.image, sc.cel.x, sc.cel.y);
+                Cel moved = fn(Cel{std::move(full), 0, 0}, oldW, oldH);
+                Image canvas(newW, newH, Rgba8{255, 255, 255, 255});
+                canvas.blit(moved.image, moved.x, moved.y);
+                (void)doc.setMaskCel(sc.layer, sc.frame, Cel{std::move(canvas), 0, 0});
+            }
+            if (!snap->selection.isNull())
+                doc.setSelection(selectionFromCel(fn(Cel{selectionImage(snap->selection), 0, 0}, oldW, oldH), newW, newH));
             return {};
         },
         [=](Document& doc) {

@@ -1,6 +1,7 @@
 # acestudio_core: platform-neutral engine. Must never depend on Qt so the
 # CLI, MCP server, tests and plugins can all share it.
 add_library(acestudio_core STATIC
+    src/Adjust.cpp
     src/AiWorker.cpp
     src/AnimCodec.cpp
     src/Animation.cpp
