@@ -127,3 +127,13 @@ TEST_CASE("Cycles fit in the image: a jump's raised hands and head stay inside",
     fitPoses(walk);
     CHECK(walk[0] == before);
 }
+
+TEST_CASE("A jump's rise and fall poses match within rounding", "[pose]") {
+    const auto jump = cyclePoses(PoseCycle::Jump, 6);
+    CHECK(jump[1].nearlyEquals(jump[5]));    // same crouch on the way down and back
+    CHECK(jump[2].nearlyEquals(jump[4]));    // same height going up and coming down
+    CHECK_FALSE(jump[1].nearlyEquals(jump[2]));
+    Pose hidden = jump[1];
+    hidden[Joint::LWrist].visible = !hidden[Joint::LWrist].visible;
+    CHECK_FALSE(hidden.nearlyEquals(jump[1]));
+}

@@ -16,7 +16,7 @@ not been run.
   driver 621.01).
   - SDXL at 1024², 30 steps, with model CPU offload: ~34 s warm, 50–56 s cold.
   - Animation frames (SDXL + pose ControlNet, optional IP-Adapter, FP8 weight storage, 28
-    steps, background removal included): 46–49 s per frame warm, ~73 s for the first.
+    steps, background removal included): 46–56 s per frame warm, ~73–84 s for the first.
   - BiRefNet on CUDA: 2.6 s warm.
   - Real-ESRGAN 512→2048: 3.1 s.
 
@@ -40,15 +40,19 @@ not been run.
 - **Small canvases and SDXL:** generation runs near 1024² and is reduced with nearest neighbour.
   At 64×64 that is a 16× reduction, twice Pixel Art XL's ~8× pixel size, so results are coarse;
   128×128 fits best. "Frame the subject" helps when the background is plain.
-- **FP8 weight storage** is used automatically for pose-controlled generation on GPUs under
-  10 GB, so the UNet and ControlNet fit in VRAM. Without it, a frame took ~14 minutes on an
-  8 GB card. No visible difference was seen in the 64×64 results, but none was measured either.
-  `weights: "full"` in the job parameters turns it off.
-- **Cancelling while models load:** loading SDXL cannot be interrupted. A cancel during loading
-  restarts the worker after 10 s, and the next job loads the models again.
-- **SDXL often draws several objects** ("sprite sheet" style) even when asked for one. The
-  animation pipeline crops every frame to its pose framing box. For single images, describe one
-  object and use "Frame the subject".
+- **FP8 weight storage (Precision: Auto)** is used for pose-controlled generation on GPUs under
+  10 GB, so the UNet and ControlNet fit in VRAM.
+  - Speed, measured on the 8 GB test PC at 10 steps: FP8 ~20 s per frame, Full 505 s, because
+    full precision spills into shared memory.
+  - Quality: with the same seed and pose the two give different images (PSNR 13 dB). Both are
+    clean knights of similar quality, so FP8 changes which image a seed gives without
+    visibly degrading it.
+  - Seeds do not carry over between precision modes.
+- **SDXL ignores some prompt words.** It sometimes adds a floor, a floor shadow or scenery even
+  when asked for a plain background. AceStudio now asks for "isolated on a plain white
+  background" and adds floor and scenery terms to the negative prompt. A floor drawn beneath
+  an airborne character is removed before the checks. A floor touching the feet stays and
+  counts as part of the figure.
 - **Real-ESRGAN** smears small pixel art; that is how the model works. Use Image › Scale for
   pixel art.
 - **GIF export:**
@@ -66,12 +70,33 @@ not been run.
   mode, mask, clip and adjustment exactly; these numbers do not justify that cost. Phase 8
   profiles again on real hardware.
 - **Live generation preview** needs the optional 10 MB TAESD-XL model (MIT; Models dialog).
-  Without it, generation shows progress only. The Generate Animation dialog shows each frame
-  when it finishes, not a live preview.
-- **Animation consistency scores** compare every frame with frame 1 for ground line, height,
-  palette, colour mix and silhouette. They catch jumps in shape and colour, not identity: two
-  different knights in similar armour score as consistent. Reference images (IP-Adapter) are
-  what keep the identity.
+  Without it, generation shows progress only. Generate Animation shows the preview on the
+  frame being generated.
+- **What the animation checks can and cannot see:**
+  - Each frame is checked against its own pose: ground line and height (so a jump may leave
+    the ground), facing, shape continuity with its neighbours (relaxed by as much as the poses
+    themselves differ), and colour profile.
+  - The colour profile is compared with frame 1 and with the character's reference images.
+    It uses 12 hues × 3 lightness levels and 4 greys. On real frames of one character it
+    measured ≤ 0.31, and ≥ 0.41 for other subjects and recoloured copies; the thresholds are
+    0.36 and 0.38.
+  - It is a colour check, not face or identity recognition: a different knight in the same
+    colours passes. Reference images (IP-Adapter) are what keep the identity; the check
+    catches drift.
+  - Between very different poses (a crouch and the top of a jump overlap 12%) the shape check
+    allows almost any shape. There, only the colour and identity checks protect against a
+    wrong drawing.
+- **Cancelling generation:**
+  - Between steps (FP8, ~1 s each) a cancel takes effect at the next step.
+  - Loading SDXL and importing PyTorch cannot be interrupted. A cancel then waits for the load
+    to finish (up to 3 minutes), so the model stays loaded. Measured: it cancelled about 40 s
+    later and the next job skipped the load.
+  - Full-precision steps on an 8 GB GPU take 25–45 s and are waited for the same way.
+- **Identical poses share one job.** A jump's rise and fall use the same poses, so a 6-frame
+  jump runs 4 SDXL jobs; the repeated frames are pixel-identical.
+- **One AceStudio per data folder.** Opening a file while AceStudio runs sends it to the open
+  window. `--new-instance` starts another window anyway; two windows then share settings, and
+  the last one closed wins.
 - **Committing an animation** fills a blank document from frame 1. Into a document with
   content, it appends the frames after the last one with their own tag. To place frames
   elsewhere, move the block in the timeline afterwards.
@@ -90,11 +115,6 @@ not been run.
   reports "The layer is empty".
 - Onion-skin ghosts are cached. The first display after a structural change composites each
   ghost frame once (about 240 ms for one ghost each side at 1024² × 20 layers on the VM).
-
-## Phase 5 items not yet run with real models
-- **Auto-Correct** (ground line, height, palette remap) is covered by core tests. None of the
-  real runs produced a frame that only needed correcting; flagged frames needed regenerating.
-- **Run and jump cycles** have only been generated with the tiny test model, not SDXL.
 
 ## Planned in later phases
 - Tileset, MCP, Lua and plugin features (Phases 6–7). Their menus show a disabled entry naming

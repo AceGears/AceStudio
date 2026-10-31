@@ -396,7 +396,7 @@ void AnimationDialog::generate(const std::vector<int>& frames, bool newSeed) {
         bool dup = false;
         for (int g : submitted) {
             const auto gi = static_cast<std::size_t>(g);
-            if (m_poses[gi] == m_poses[fi] && m_attempts[gi] == m_attempts[fi] + 1) {
+            if (m_poses[gi].nearlyEquals(m_poses[fi]) && m_attempts[gi] == m_attempts[fi] + 1) {
                 m_dupOf[f] = g;
                 ++m_attempts[fi];
                 m_results[fi].reset();

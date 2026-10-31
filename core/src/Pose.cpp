@@ -110,6 +110,15 @@ Pose Pose::mirrored() const {
     return m;
 }
 
+bool Pose::nearlyEquals(const Pose& o, double eps) const {
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        const Keypoint &a = points[i], &b = o.points[i];
+        if (a.visible != b.visible) return false;
+        if (a.visible && (std::abs(a.x - b.x) > eps || std::abs(a.y - b.y) > eps)) return false;
+    }
+    return true;
+}
+
 double Pose::groundY() const {
     double g = 0;
     for (Joint j : {Joint::RAnkle, Joint::LAnkle})

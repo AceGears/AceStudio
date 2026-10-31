@@ -46,6 +46,9 @@ struct Pose {
 
     // Mirrors left/right (the figure faces the other way).
     Pose mirrored() const;
+    // Same visible joints at the same places within `eps` (normalised units;
+    // cycles computed at different phases can differ by rounding only).
+    bool nearlyEquals(const Pose& o, double eps = 1e-6) const;
     // Lowest visible ankle (y, normalised) — the ground contact.
     double groundY() const;
     // Moves and scales the figure (about the image origin).
