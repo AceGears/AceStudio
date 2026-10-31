@@ -479,8 +479,10 @@ void AnimationDialog::commit() {
         return;
     }
     Editor& ed = m_view->editor();
-    // Start at the current frame; an empty single-frame document starts at 0.
-    const int start = m_view->currentFrame();
+    // A blank document is filled from frame 1; otherwise the action is
+    // appended after the existing frames with its own tag, so actions never
+    // draw over each other (one tagged range per action, as in a sprite sheet).
+    const int start = ed.contentBounds().empty() ? 0 : ed.document().frameCount();
     auto id = ed.addAnimationLayer(name.toStdString(), frames, start, m_duration->value(), action.toLower().toStdString());
     if (!id) { QMessageBox::warning(this, windowTitle(), qs(id.error().message)); return; }
     m_view->setCurrentLayer(id.value());

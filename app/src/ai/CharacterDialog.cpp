@@ -4,6 +4,7 @@
 #include "../QtBridge.h"
 
 #include "acestudio/core/Log.h"
+#include "acestudio/core/PaletteIO.h"
 #include "acestudio/core/PngCodec.h"
 
 #include <QCheckBox>
@@ -101,9 +102,12 @@ CharacterDialog::CharacterDialog(fs::path libraryDir, DocumentView* view, QWidge
     m_palette->setMinimumHeight(20);
     auto* palBtn = new QPushButton(tr("From &Document"), m_form);
     palBtn->setToolTip(tr("Use the current document's palette"));
+    auto* palRefs = new QPushButton(tr("From &References"), m_form);
+    palRefs->setToolTip(tr("Use the colours of the reference images (up to 32)"));
     auto* palClear = new QPushButton(tr("Clear"), m_form);
     auto* palRow = new QHBoxLayout;
     palRow->addWidget(m_palette, 1);
+    palRow->addWidget(palRefs);
     palRow->addWidget(palBtn);
     palRow->addWidget(palClear);
     m_refs = new QListWidget(m_form);
@@ -204,6 +208,28 @@ CharacterDialog::CharacterDialog(fs::path libraryDir, DocumentView* view, QWidge
     connect(palBtn, &QPushButton::clicked, this, [this] {
         if (!m_current || !m_view) return;
         m_current->palette = m_view->document().palette();
+        refreshPalette();
+        m_dirty = true;
+        m_save->setEnabled(true);
+    });
+    connect(palRefs, &QPushButton::clicked, this, [this] {
+        if (!m_current) return;
+        if (m_current->references.empty()) {
+            QMessageBox::information(this, windowTitle(), tr("Add a reference image first."));
+            return;
+        }
+        // One strip of all references, so shared colours are counted together.
+        int w = 0, h = 0;
+        for (const Image& r : m_current->references) { w += r.width(); h = std::max(h, r.height()); }
+        Image strip(w, h);
+        int x = 0;
+        for (const Image& r : m_current->references) { strip.blit(r, x, 0); x += r.width(); }
+        Palette pal = extractPalette(strip, 32);
+        if (pal.size() == 0) {
+            QMessageBox::information(this, windowTitle(), tr("The reference images have no opaque colours."));
+            return;
+        }
+        m_current->palette = std::move(pal);
         refreshPalette();
         m_dirty = true;
         m_save->setEnabled(true);
