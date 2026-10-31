@@ -215,3 +215,20 @@ TEST_CASE("Dither brush paints a stable pattern", "[paint]") {
     CHECK(f.flat().pixel(0, 0) == R);   // threshold 0 < 8
     CHECK(f.flat().pixel(0, 3).a == 0); // threshold 15 >= 8
 }
+
+TEST_CASE("RotSprite expand keeps the corners of a full square", "[transform]") {
+    Image img(16, 16, R);
+    const Image clipped = rotSprite(img, 45.0);
+    const Image grown = rotSprite(img, 45.0, 24, true);
+    CHECK(clipped.width() == 16);
+    CHECK(grown.width() >= 22);                       // 16·√2 ≈ 22.6
+    CHECK(grown.width() == grown.height());
+    CHECK((grown.width() - 16) % 2 == 0);             // centred on the same grid
+    CHECK(opaqueCount(grown) > opaqueCount(clipped));
+    const double ratio = double(opaqueCount(grown)) / 256.0;
+    CHECK(ratio > 0.9);
+    CHECK(ratio < 1.1);
+    CHECK(colorsOf(grown) == colorsOf(img));
+    // Right angles on a non-square image swap the dimensions when expanding.
+    CHECK(rotSprite(asym(), 90.0, 24, true) == rotate90(asym(), true));
+}

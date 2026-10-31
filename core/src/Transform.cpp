@@ -1,5 +1,6 @@
 #include "acestudio/core/Transform.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 
@@ -80,25 +81,37 @@ Image scale2xSimilar(const Image& src, int threshold) {
     return out;
 }
 
-Image rotSprite(const Image& src, double degrees, int similarity) {
+Image rotSprite(const Image& src, double degrees, int similarity, bool expand) {
     if (src.isNull()) return src;
     double norm = std::fmod(degrees, 360.0);
     if (norm < 0) norm += 360.0;
     // Exact paths for right angles (and identity).
     if (std::abs(norm) < 1e-9) return src;
     if (std::abs(norm - 180.0) < 1e-9) return rotate180(src);
-    if ((std::abs(norm - 90.0) < 1e-9 || std::abs(norm - 270.0) < 1e-9) && src.width() == src.height())
+    if ((std::abs(norm - 90.0) < 1e-9 || std::abs(norm - 270.0) < 1e-9) && (expand || src.width() == src.height()))
         return rotate90(src, std::abs(norm - 90.0) < 1e-9);
 
     const Image big = scale2xSimilar(scale2xSimilar(scale2xSimilar(src, similarity), similarity), similarity);
     const double rad = norm * 3.14159265358979323846 / 180.0;
     const double c = std::cos(rad), s = std::sin(rad);
     const double cx = src.width() / 2.0, cy = src.height() / 2.0;
-    Image out(src.width(), src.height());
-    for (int y = 0; y < src.height(); ++y)
-        for (int x = 0; x < src.width(); ++x) {
+    int ow = src.width(), oh = src.height();
+    if (expand) {
+        const double ac = std::abs(c), as = std::abs(s);
+        ow = static_cast<int>(std::ceil(src.width() * ac + src.height() * as - 1e-9));
+        oh = static_cast<int>(std::ceil(src.width() * as + src.height() * ac - 1e-9));
+        // Same parity as the source, so the centre stays on the same pixel grid.
+        ow += (ow - src.width()) & 1;
+        oh += (oh - src.height()) & 1;
+        ow = std::clamp(std::max(ow, src.width()), 1, Image::kMaxDimension);
+        oh = std::clamp(std::max(oh, src.height()), 1, Image::kMaxDimension);
+    }
+    const double ocx = ow / 2.0, ocy = oh / 2.0;
+    Image out(ow, oh);
+    for (int y = 0; y < oh; ++y)
+        for (int x = 0; x < ow; ++x) {
             // Inverse-rotate the destination pixel centre into source space.
-            const double dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+            const double dx = x + 0.5 - ocx, dy = y + 0.5 - ocy;
             const double sx = c * dx + s * dy + cx;
             const double sy = -s * dx + c * dy + cy;
             const int bx = static_cast<int>(std::floor(sx * 8.0));

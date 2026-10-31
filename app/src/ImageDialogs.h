@@ -37,10 +37,12 @@ public:
     explicit RotateDialog(QWidget* parent = nullptr);
     double degrees() const;
     bool allFrames() const;
+    bool expand() const;
 
 private:
     QDoubleSpinBox* m_angle = nullptr;
     QCheckBox* m_allFrames = nullptr;
+    QCheckBox* m_expand = nullptr;
 };
 
 // Nearest-neighbour scale by percentage.

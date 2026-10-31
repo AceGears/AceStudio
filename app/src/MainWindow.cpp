@@ -392,7 +392,9 @@ void MainWindow::buildMenus() {
         RotateDialog dlg(this);
         if (dlg.exec() != QDialog::Accepted) return;
         const double deg = dlg.degrees();
-        transformCurrentLayer(tr("Rotate Layer %1°").arg(deg), dlg.allFrames(), [deg](const Image& i) { return rotSprite(i, deg); });
+        const bool expand = dlg.expand();
+        transformCurrentLayer(tr("Rotate Layer %1°").arg(deg), dlg.allFrames(),
+                              [deg, expand](const Image& i) { return rotSprite(i, deg, 24, expand); });
     });
     docAction(image, tr("&Scale Layer…"), QKeySequence(), [this] {
         ScaleDialog dlg(this);

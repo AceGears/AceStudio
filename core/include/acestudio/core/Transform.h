@@ -26,7 +26,9 @@ Image scale2xSimilar(const Image& src, int threshold);
 // (3 passes, similarity threshold), rotated with nearest sampling and
 // sampled back down, so edges stay clean and no new colours appear.
 // Multiples of 90° are routed to the exact rotations.
-Image rotSprite(const Image& src, double degrees, int similarity = 24);
+// With `expand`, the result is enlarged to hold the whole rotated image
+// (centred on the same point) instead of keeping the source size.
+Image rotSprite(const Image& src, double degrees, int similarity = 24, bool expand = false);
 
 enum class OutlineMode { Outside, Inside };
 // Draws a 1px outline in `color` around opaque pixels (alpha > 0).

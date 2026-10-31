@@ -725,27 +725,37 @@ Status Editor::transformLayer(LayerId layer, int frame, bool allFrames, const Ma
     for (int f = f0; f <= f1; ++f) {
         const Cel* c = m_doc.cel(layer, f);
         if (!c) continue;
-        Image canvas = m_doc.renderLayer(layer, f);
-        // Lift the selected block.
-        Image block = canvas.copy(area);
+        // Lift the selected block (the selection, or the canvas area).
+        Image block(area.w, area.h);
+        block.blit(c->image, c->x - area.x, c->y - area.y);
         if (useSel)
             for (int y = 0; y < block.height(); ++y)
                 for (int x = 0; x < block.width(); ++x)
                     if (!selection->get(area.x + x, area.y + y)) block.setPixel(x, y, Rgba8::transparent());
-        Image result = fn(block);
+        const Image result = fn(block);
+        // Work on the union of the cel and the pasted result, so pixels past the
+        // canvas edge (kept from imports or earlier transforms) are never lost.
+        const int px = area.x + (area.w - result.width()) / 2, py = area.y + (area.h - result.height()) / 2;
+        const int ux = std::min(c->x, px), uy = std::min(c->y, py);
+        const int uw = std::max(c->x + c->image.width(), px + result.width()) - ux;
+        const int uh = std::max(c->y + c->image.height(), py + result.height()) - uy;
+        if (uw > Image::kMaxDimension || uh > Image::kMaxDimension)
+            return Error{ErrorCode::InvalidArgument, "The transformed layer would be too large"};
+        Image work(uw, uh);
+        work.blit(c->image, c->x - ux, c->y - uy);
         // Clear the lifted pixels, then paste the result centred on the area.
         for (int y = area.y; y < area.y + area.h; ++y)
             for (int x = area.x; x < area.x + area.w; ++x)
-                if (!useSel || selection->get(x, y)) canvas.setPixel(x, y, Rgba8::transparent());
-        const int px = area.x + (area.w - result.width()) / 2, py = area.y + (area.h - result.height()) / 2;
+                if (!useSel || selection->get(x, y))
+                    if (work.contains(x - ux, y - uy)) work.setPixel(x - ux, y - uy, Rgba8::transparent());
         for (int y = 0; y < result.height(); ++y)
             for (int x = 0; x < result.width(); ++x) {
                 const Rgba8 p = result.pixel(x, y);
-                if (p.a) canvas.setPixel(px + x, py + y, p);
+                if (p.a) work.setPixel(px + x - ux, py + y - uy, p);
             }
-        const IntRect bounds = canvas.opaqueBounds();
+        const IntRect bounds = work.opaqueBounds();
         std::optional<Cel> after;
-        if (!bounds.empty()) after = Cel{canvas.copy(bounds), bounds.x, bounds.y};
+        if (!bounds.empty()) after = Cel{work.copy(bounds), bounds.x + ux, bounds.y + uy};
         bytes += celBytes(*c) + (after ? celBytes(*after) : 0);
         changes->push_back({f, *c, std::move(after)});
     }

@@ -363,3 +363,32 @@ TEST_CASE("Canvas transforms keep masks white outside their cel", "[editor][mask
     REQUIRE(e.rotateCanvas90(true));
     CHECK(e.document().validate());
 }
+
+TEST_CASE("Layer transforms keep pixels past the canvas edge", "[editor][transform]") {
+    auto d = Document::create(8, 8).value();
+    const LayerId l = d.addLayer("L").value();
+    // Cel 12 px wide starting at -2: two columns hidden on each side.
+    Image wide(12, 2, Rgba8::opaque(255, 0, 0));
+    wide.setPixel(0, 0, Rgba8::opaque(0, 0, 255));
+    REQUIRE(d.setCel(l, 0, Cel{wide, -2, 3}));
+    Editor ed(std::move(d));
+    // Flip the canvas area: the hidden columns must survive untouched.
+    REQUIRE(ed.transformLayer(l, 0, false, nullptr, "Flip", [](const Image& i) { return flipHorizontal(i); }));
+    const Cel* c = ed.document().cel(l, 0);
+    REQUIRE(c);
+    CHECK(c->x == -2);
+    CHECK(c->image.width() == 12);
+    CHECK(c->image.pixel(0, 0) == Rgba8::opaque(0, 0, 255));   // off-canvas pixel kept
+    // A rotation that grows past the canvas keeps every pixel.
+    auto d2 = Document::create(8, 8).value();
+    const LayerId l2 = d2.addLayer("L").value();
+    REQUIRE(d2.setCel(l2, 0, Cel{Image(8, 8, Rgba8::opaque(0, 255, 0)), 0, 0}));
+    Editor ed2(std::move(d2));
+    REQUIRE(ed2.transformLayer(l2, 0, false, nullptr, "Rot", [](const Image& i) { return rotSprite(i, 45.0, 24, true); }));
+    const Cel* c2 = ed2.document().cel(l2, 0);
+    REQUIRE(c2);
+    CHECK(c2->x < 0);
+    CHECK(c2->image.width() > 8);
+    REQUIRE(ed2.undo());
+    CHECK(ed2.document().cel(l2, 0)->image.width() == 8);
+}

@@ -99,8 +99,13 @@ RotateDialog::RotateDialog(QWidget* parent) : QDialog(parent) {
     m_angle->setSuffix(QStringLiteral("°"));
     m_angle->setValue(45.0);
     m_allFrames = allFramesBox(this);
+    m_expand = new QCheckBox(tr("Expand to fit (don't clip corners)"), this);
+    m_expand->setChecked(true);
+    m_expand->setToolTip(tr("Keep the whole rotated image. Pixels that land past the canvas edge stay on the layer "
+                            "and show if the canvas is enlarged."));
     auto* form = new QFormLayout;
     form->addRow(tr("Angle (clockwise)"), m_angle);
+    form->addRow(m_expand);
     form->addRow(m_allFrames);
     auto* note = new QLabel(tr("RotSprite keeps pixel-art edges clean and adds no new colours. "
                                "Applies to the selection, or the whole layer if nothing is selected."), this);
@@ -114,6 +119,7 @@ RotateDialog::RotateDialog(QWidget* parent) : QDialog(parent) {
 
 double RotateDialog::degrees() const { return m_angle->value(); }
 bool RotateDialog::allFrames() const { return m_allFrames->isChecked(); }
+bool RotateDialog::expand() const { return m_expand->isChecked(); }
 
 // ------------------------------------------------------------------ scale
 

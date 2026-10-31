@@ -133,7 +133,22 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item build/app/AceStudio.exe dist/
           Copy-Item build/cli/acestudio-cli.exe dist/
-          windeployqt --release --no-translations --no-system-d3d-compiler dist/AceStudio.exe
+          windeployqt --release --no-translations --no-system-d3d-compiler --no-compiler-runtime dist/AceStudio.exe
+          # App-local Visual C++ runtime (allowed by the Visual Studio redistribution
+          # terms), so the app starts on PCs without the VC++ 2015-2022 redistributable.
+          $crt = Get-ChildItem "$env:VCToolsRedistDir\x64" -Directory -Filter "Microsoft.VC14*.CRT" | Select-Object -First 1
+          if (-not $crt) { Write-Error "VC++ CRT redist folder not found under $env:VCToolsRedistDir"; exit 1 }
+          Write-Host "CRT from $($crt.FullName)"
+          Copy-Item "$($crt.FullName)\*.dll" dist/
+          # Every VC runtime DLL any shipped binary imports must be in the package.
+          $missing = @()
+          foreach ($bin in Get-ChildItem dist -Recurse -Include *.exe, *.dll) {
+            $deps = dumpbin /dependents $bin.FullName | Select-String -Pattern '^\s+((msvcp|vcruntime|concrt|vccorlib)\S*\.dll)' |
+              ForEach-Object { $_.Matches[0].Groups[1].Value }
+            foreach ($d in $deps) { if (-not (Test-Path "dist/$d")) { $missing += "$($bin.Name) -> $d" } }
+          }
+          if ($missing) { Write-Error ("Missing VC runtime DLLs:`n" + ($missing -join "`n")); exit 1 }
+          Get-ChildItem dist -Filter *.dll | Where-Object { $_.Name -match '^(msvcp|vcruntime|concrt)' } | ForEach-Object { Write-Host "app-local: $($_.Name)" }
           # The AI worker ships next to the executables (without its tests).
           New-Item -ItemType Directory -Force dist/ai_worker | Out-Null
           Copy-Item -Recurse ai_worker/acestudio_worker, ai_worker/requirements, ai_worker/catalog dist/ai_worker/
