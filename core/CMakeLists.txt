@@ -15,6 +15,7 @@ add_library(acestudio_core STATIC
     src/Log.cpp
     src/ModelCatalog.cpp
     src/Paint.cpp
+    src/Pose.cpp
     src/Palette.cpp
     src/PaletteIO.cpp
     src/PngCodec.cpp

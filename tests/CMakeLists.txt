@@ -13,6 +13,7 @@ add_executable(acestudio_core_tests
     test_editor.cpp
     test_paint.cpp
     test_paint2.cpp
+    test_pose.cpp
     test_recovery.cpp
     test_transform.cpp
     test_palette_io.cpp
