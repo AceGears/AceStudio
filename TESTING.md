@@ -86,6 +86,15 @@ computer use on 2026-10-30 with build 8955520:
 | Maximised window at 1456×819 | ❌ four stacked right-hand docks needed ~850 px, so the window grew past the screen and hid the timeline; layer buttons and Properties text overlapped. Fixed in 53256f7 (tab groups, smaller minimums; verified at 1456×740 in Xvfb) |
 | Properties "File" row | ❌ showed "C:" only; fixed (file name, full path in the tooltip) |
 
+Re-check on the same PC with nightly build c57e5c2 (portable mode, data in `<exe>\data`):
+
+| Check | Result |
+|---|---|
+| Window fits 1456×819: timeline and Log tabs visible, Layers/AI Studio and Palette/Preview/Properties tab groups | ✅ |
+| Set Up AI Runtime with only Python 3.15 installed: warns it is newer than the AI packages support, links python.org, background-removal option disabled; destination shows the portable data folder | ✅ |
+| Properties "File" row shows `knight.acestudio` | ✅ |
+| Palette buttons with no document open are clipped vertically (cosmetic) | ⚠️ known issue |
+
 **Not yet verified:** anything on an NVIDIA GPU (SDXL quality and speed, CUDA wheels from the
 PyTorch index, DirectML), BiRefNet output quality, the `onnx-windows` and `diffusion-cuda`
 profiles, and the SDXL/Pixel Art XL file lists against Hugging Face (not reachable from the

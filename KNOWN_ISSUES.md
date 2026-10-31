@@ -78,5 +78,6 @@ Current as of 0.5.0 (Phase 4).
 - The layer action buttons wrap tightly when the Layers dock is narrow.
 - Clicking the opacity slider track moves it by a page step rather than jumping to the click
   point (standard Qt behaviour).
-- Long file paths in the Properties panel wrap across several lines.
+- On a short screen (about 820 px tall) with no document open, the Palette panel's buttons are
+  clipped vertically; they display fully once a document is open.
 - The Log panel requests the Consolas font; other platforms fall back to a default monospace.
