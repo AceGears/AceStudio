@@ -101,6 +101,12 @@ Re-check on the same PC with nightly build c57e5c2 (portable mode, data in `<exe
 | Remove background, DirectML (onnxruntime-directml 1.24.4): `RUNTIME_EXCEPTION` in `DmlFusedNode_17_58` | ❌ on this GPU/driver; fixed by falling back (below) |
 | Remove background with the fallback: DirectML failed, the retry ran on the CPU; ~16 s for BiRefNet at 1024², result added as a layer | ✅ (CPU) |
 | BiRefNet quality on the synthetic `scene.png`: background gradient removed and figure kept, but many flat circles kept as foreground (IoU 0.60 vs the intended mask) | ⚠️ synthetic image is a weak test for a photo-trained model |
+| Install `diffusion-cuda` with the old pins: pip took PyPI's CPU-only torch 2.15.0 (126.7 MB) without error | ❌ fixed: `torch==2.14.1+cu126` and a CUDA check after install |
+| "checking GPU…" never finished (2.5 h) after the PyTorch install | ❌ fixed: worker protocol stdin moved off fd 0; after the change the probe finished within 30 s of a restart |
+| Install `diffusion-cuda` with the fixed pins: torch 2.14.1+cu126 (CUDA 12.6) downloaded from download.pytorch.org and verified; ~4 min including diffusers/transformers | ✅ |
+| Device probe: NVIDIA GeForce RTX 4070 Laptop GPU, 8.0 GB | ✅ |
+| Real-ESRGAN x4plus download (67 MB, BSD-3, licence accepted on the user's instruction): SHA-256 verified | ✅ |
+| Upscale ×4 on CUDA, 512×512 → 2048×2048: 3.1 s for the whole job (model load, tiled inference, 4.3 MB PNG); result opened as a new document; downscaled back it matches the source at 37.6 dB PSNR, edges smooth | ✅ |
 | Remove BG tab: the Run button is below the fold of a ~80 px tab area on a 819 px screen; needs scrolling | ⚠️ usability |
 | Install `onnx-windows`: no pip output for 4+ minutes. Same pip from a console (PIP-CHECK.cmd) reached PyPI in 0.8 s and downloaded numpy in under a second | ❌ fixed: pip inherited the worker's protocol stdin and stalled at startup; it now gets DEVNULL (unit-tested; Windows re-check pending) |
 

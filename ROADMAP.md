@@ -75,19 +75,19 @@ large HD canvases.
 | PNG sequence export | ✅ |
 | CLI `export` for all formats | ✅ cli_smoke on Linux and the Windows build (Wine) |
 
-## Phase 4 — AI Infrastructure · 🟡 (infrastructure done; GPU verification pending)
+## Phase 4 — AI Infrastructure · 🟡 (verified on a Windows NVIDIA PC except SDXL)
 
 | Criterion | Status |
 |---|---|
 | Supervised Python worker with crash recovery, tested by killing it mid-job | ✅ SIGKILL mid-job → job retried on a fresh worker and succeeds (unit test); real out-of-memory kill in the app → retried once, then failed with a memory hint, editor unaffected |
 | Queue, progress, cancellation (cooperative, and forced for stuck jobs) | ✅ unit-tested against the real worker; queue UI in AI Studio |
 | Model manager with licence display and approval-gated downloads | ✅ licence dialog with mandatory acceptance; resumable downloads verified by SHA-256; real 224 MB and 18 MB downloads from the official releases |
-| Runtime setup (private Python environment, pinned packages, no system changes) | ✅ from the app and the CLI on Linux; Windows CI runs the real-worker supervision tests and the Python worker suite on Windows Python 3.14; Windows profiles (`onnx-windows`, `diffusion-cuda`) not yet installed on a user PC |
+| Runtime setup (private Python environment, pinned packages, no system changes) | ✅ from the app and the CLI on Linux; Windows CI runs the real-worker supervision tests and the Python worker suite on Windows Python 3.14; installed from the app on a Windows 11 PC with an RTX 4070 Laptop GPU: `onnx-windows` in 29 s, `diffusion-cuda` (torch 2.14.1+cu126) in ~4 min |
 | Text-to-image and image-to-image with SDXL on a 12 GB NVIDIA GPU | 🟡 code path verified end to end with real Diffusers 0.42 on a tiny random SDXL (seeds, img2img, LoRA hook, cancel, pixel-art post-process); real SDXL weights and GPU not available here |
-| BiRefNet background removal | 🟡 implemented; BiRefNet Lite needs more than 6 GB RAM on CPU and was OOM-killed on the 7 GB test VM. Must be verified on a GPU machine |
-| Real-ESRGAN upscaling | ✅ official x4plus and anime weights run on CPU (64→256 px in 6 s) |
+| BiRefNet background removal | 🟡 works in the app on the Windows PC, but on the CPU (~16 s at 1024²): DirectML fails inside a fused node and AceStudio falls back. GPU path for ONNX (CUDA provider) still to do |
+| Real-ESRGAN upscaling | ✅ CPU (64→256 px in 6 s) and CUDA on the RTX 4070 Laptop: 512→2048 px in 3.1 s per job including model load |
 | Nearest-neighbour upscaling | ✅ Image › Scale (core, since 0.3.0) |
-| Benchmarks recorded from real runs | 🟡 CPU numbers recorded (TESTING.md); GPU benchmarks need the target machine |
+| Benchmarks recorded from real runs | 🟡 CPU, plus Real-ESRGAN on the RTX 4070 Laptop (TESTING.md); SDXL benchmarks pending (needs the user's licence acceptance and a ~7 GB download) |
 
 ## Phase 5 — Advanced AI Generation · ⬜
 Character profiles; IP-Adapter reference conditioning; OpenPose ControlNet with an editable
