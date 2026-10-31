@@ -30,14 +30,52 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 | `test_palette_io` | unit | .gpl/.pal/.hex/.txt round trips, real-world variants (CRLF, comments, alpha), malformed and oversized input rejected, files on disk, extraction (exact and median cut), colour-mode conversion with undo |
 | `test_animation` | unit | tag cycles for every direction, repeats, `AnimationPlayer` looping/finite tags/all-frames, frame move with exact undo, tag validation and undo, onion-skin fade/tint/wrap |
 | `test_export` | unit/integration | frame ranges and playback order, every sheet layout placing frames exactly, trim/merge/packed/power-of-two, Aseprite JSON (hash/array, tag remapping), GIF/APNG/WebP round trips, noisy-frame LZW resets, >255-colour reduction bound, corrupt input, PNG sequence and file writers refusing to overwrite |
+| `test_layers_advanced` | unit | layer masks (partial alpha, disabled, outside the cel), clipping (hidden base, group bottom), every adjustment type and weighting, tile mode, schema 2 round trip and schema 1 fallback, banded multi-threaded compositing identical to row-by-row |
+| `test_paint2` | unit | curve/polygon rasterisation, clone stroke, custom tips (round trip, from selection), blend and shading inks, mask painting, tiled wrap |
 | `test_subprocess` | unit | stdin/stdout/stderr lines, UTF-8, exit codes, 5000-line output with unterminated tail, arguments with spaces/quotes/backslashes (Windows quoting round-trips through the real C runtime), environment, working directory, kill, destructor kill, missing programs |
 | `test_ai_worker` | integration | the real Python worker: handshake, progress, ordering, queued cancel, cooperative and forced cancel, crash retry then failure with stderr, restart-storm cut-off, external SIGKILL mid-job (job retried and succeeds), image inputs, stop, unstartable worker |
 | `test_model_catalog` | unit/integration | shipped catalogue valid and commercial-only, unsafe entries rejected, licence-gated downloads, install state, hash pinning, end-to-end download through the worker from a local HTTP server |
-| `ai_worker/tests/test_server.py` | integration (Python) | protocol, busy/next-job race, cancel, failures, stdout protection, crash exit, EOF, downloads with resume, hash mismatch, licence refusal, unsafe paths |
+| `ai_worker/tests/test_server.py` | integration (Python) | protocol, busy/next-job race, cancel, failures, stdout protection, crash exit, EOF, downloads with resume, hash mismatch, licence refusal, unsafe paths, pip stdin, ONNX provider fallback, NVIDIA driver threshold, subject framing, LoRA strength validation |
 | `ai_worker/tests/test_models_real.py` | integration (Python, optional) | BiRefNet IoU against a known mask; Real-ESRGAN reconstruction; tiny random SDXL through real Diffusers (seeds, cache, pixel post-process with exact palette, img2img, cancel, input errors) |
 | `cli_smoke` | end-to-end | every CLI command, JSON output, exit codes, overwrite protection, corrupt-file handling |
 
 ## Recorded results
+
+### 2026-10-31 — Phases 1–4 completion, version 0.5.1
+
+| Environment | Build | Result |
+|---|---|---|
+| Linux, GCC 13.3, Qt 6.4.2 | everything, Release | ✅ 157/157 CTest |
+| Linux, AddressSanitizer + UBSan | everything | ✅ 157/157 CTest; the app driven through every Phase 2c action under ASan with no reports |
+| Python 3.13 | worker suite | ✅ 26 passed, 3 skipped (real-model tests need the packages) |
+| GitHub Actions, Windows, MSVC `/W4 /WX`, **Qt 6.12.0** | everything + package | ✅ (first green build against 6.12 on 2026-10-31); app-local VC++ runtime check passes |
+
+Benchmarks (2-vCPU Xeon VM, Release):
+
+| Measurement | Result |
+|---|---|
+| Full composite, 1024×1024 × 20 layers (random, mixed blend/opacity) | 115 ms → **67 ms** with banded threading (identical output) |
+| Full composite, 2048×2048 × 10 layers | 258 ms → 129 ms |
+| Full composite, 256×256 × 20 layers | 8.0 ms → 5.1 ms |
+
+Manual desktop checks (Linux, Xvfb 1456×819 and 2880×1620), real mouse and keyboard input via xdotool:
+
+| Check | Result |
+|---|---|
+| Polygon (preview, close on first point), Curve (both handles) | ✅ |
+| Hue/Saturation adjustment layer with live preview; Cancel removes it | ✅ |
+| Layer mask add/edit; Delete in mask mode hides instead of erasing; undo | ✅ |
+| Clipping mask (blue clipped to the red base below) | ✅ |
+| Move tool drag (original area cleared, block moved) and 3× arrow nudge | ✅ moved 21 px = 3 image px at 700% |
+| Tiled Mode › Both draws the dimmed neighbours | ✅ |
+| Brush tip from selection saved as `brushes/Brush 1.png` | ✅ |
+| Clone stamp stroke; 15× Ctrl+Z back to the pre-move state | ✅ no ASan reports |
+| Layer › Layer Mask items: only Add enabled without a mask | ✅ |
+| Tools dock width stays the same switching Pencil ↔ Rectangle Select | ✅ |
+| Timeline: Shift-click frames 2–4, Duplicate → copies at 5–7, Alt+← → 4–6, Delete → 5 frames, one Ctrl+Z restores 8 | ✅ |
+| Timeline: drag frames 2–3 to the end; frame contents read back in order 0, 3, 4, 1, 2 | ✅ |
+| `QT_SCALE_FACTOR` 1.5 and 2 on a 2880×1620 screen: icons crisp, text scaled, no clipped or overlapping controls | ✅ |
+| Defects found and fixed: crash editing a layer row (synchronous rebuild in the tree's signal handler); clearing a selection in mask mode erased pixels; mask menu items enabled without a mask; tools dock widened by long combo items; first MSVC build of the Phase 2c code failed on C4244 (32-bit `long`) | ✅ fixed and re-verified |
 
 ### 2026-10-30 — Phase 4, version 0.5.0
 

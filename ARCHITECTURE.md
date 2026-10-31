@@ -78,6 +78,11 @@ duplicate implementation of document logic, file formats or export in any front 
 - Structural commands capture precisely what they need (e.g. delete-layer keeps the whole
   subtree with stack indices and cels). Property changes on the same layer and field can merge
   (slider drags) but never across the saved ("clean") point.
+- **Grouped steps**: `UndoStack::mark()` / `squash(mark, label)` fold the commands recorded
+  since a mark into one `CompositeCommand` (undo runs the parts in reverse). Multi-step edits
+  ("expand canvas + insert image", frame-block moves) use it through `Editor::grouped`. That
+  helper mutes change notifications while the steps run, rolls back on failure and notifies
+  once.
 - **PaintSession** edits one cel live so the canvas can show strokes in progress. On start it
   normalises the cel to canvas size (keeping the exact original for undo); on commit it diffs
   against the original and records one `PaintCommand` holding only the changed rectangle
@@ -87,7 +92,19 @@ duplicate implementation of document logic, file formats or export in any front 
   symmetry, pixel-perfect corner detection, scanline flood fill with an explicit stack, masks).
 - **Compositing**: groups are rendered in isolation then blended with their own mode/opacity.
   Normal blending uses exact integer arithmetic; other modes use the float W3C formulas.
-  `compositeRegion` lets the canvas recomposite only a stroke's dirty rectangle.
+  `compositeRegion` lets the canvas recomposite only a stroke's dirty rectangle. Since 0.5.1:
+  - Clipped layers use the alpha of the base layer below them; a hidden base hides them.
+  - Masks multiply a layer's alpha (red channel, white outside the mask cel).
+  - Adjustment layers transform the buffer accumulated so far, weighted by opacity × mask ×
+    base alpha.
+  - Areas of 256² px or more are split into horizontal bands composited on worker threads. The
+    compositor is per-pixel over a read-only `Document`, so the output is identical to a
+    single pass (tested).
+  - Cels may extend past the canvas; transforms work on the union of the cel and the result,
+    so off-canvas pixels are never dropped.
+- **Project schema 2** adds masks (`masks/L<id>_F<n>.png`), clipping and adjustment fields
+  and the tile mode. `requiredSchemaVersion()` still writes schema 1 when none of these is
+  used, so older builds keep opening such files.
 - **Recovery**: `RecoveryStore` writes `<id>.acestudio` + `<id>.json` (writer pid, original
   path) into `<data dir>/recovery`. Files whose writer process is no longer running are
   offered for recovery at startup. Saving or closing a document removes its files.
