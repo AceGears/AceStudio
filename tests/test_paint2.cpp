@@ -246,3 +246,33 @@ TEST_CASE("Polygons: outline closes, fill covers the interior", "[paint][polygon
     CHECK(g.raw(2, 2) == kBlue);
     CHECK(g.raw(8, 8).a == 0);
 }
+
+TEST_CASE("Painting keeps a cel's pixels beyond the canvas", "[paint][undo]") {
+    auto d = Document::create(8, 8).value();
+    const LayerId l = d.addLayer("L").value();
+    Image wide(12, 8);
+    wide.setPixel(0, 0, Rgba8::opaque(0, 0, 255));      // canvas x = -2
+    wide.setPixel(11, 7, Rgba8::opaque(0, 255, 0));     // canvas x = 9
+    REQUIRE(d.setCel(l, 0, Cel{wide, -2, 0}));
+    Editor ed(std::move(d));
+    {
+        auto s = PaintSession::begin(ed, l, 0, "Dot");
+        REQUIRE(s);
+        s.value()->writePixel(3, 3, Rgba8::opaque(255, 0, 0));
+        REQUIRE(s.value()->commit());
+    }
+    auto check = [&] {
+        const Cel* c = ed.document().cel(l, 0);
+        REQUIRE(c);
+        CHECK(c->x == -2);
+        CHECK(c->image.width() == 12);
+        CHECK(c->image.pixel(0, 0) == Rgba8::opaque(0, 0, 255));
+        CHECK(c->image.pixel(11, 7) == Rgba8::opaque(0, 255, 0));
+        CHECK(c->image.pixel(5, 3) == Rgba8::opaque(255, 0, 0));   // canvas (3,3)
+    };
+    check();
+    REQUIRE(ed.undo());
+    CHECK(ed.document().cel(l, 0)->image == wide);
+    REQUIRE(ed.redo());
+    check();
+}

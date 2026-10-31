@@ -410,9 +410,10 @@ void DocumentView::finishMove(bool commit) {
     m_canvas->setSelectionPreview({});
     const Point off = m_moveOffset;
     const bool moved = commit && (off.x != 0 || off.y != 0);
+    const std::size_t mark = m_editor.history().mark();
     endSession(moved);
     if (moved && hasSelection()) {
-        // The selection travels with the pixels (a second, separate undo step).
+        // The selection travels with the pixels, in the same undo step.
         const int W = document().width(), H = document().height();
         Mask shifted(W, H);
         const bool wx = wrapsX(document().tileMode()), wy = wrapsY(document().tileMode());
@@ -425,6 +426,8 @@ void DocumentView::finishMove(bool commit) {
                     shifted.set(nx, ny, true);
                 }
         (void)m_editor.setSelection(std::move(shifted), "Move Selection Outline");
+        (void)m_editor.history().squash(mark, m_moveCopy ? "Duplicate Selection" : "Move Selection");
+        Q_EMIT documentChanged();   // refreshes the undo label
     }
     m_moveImage = Image();
     m_moveMask = Mask();

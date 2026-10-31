@@ -24,12 +24,21 @@ public:
 
     Status redo(Document& d) override {
         if (m_normalized) {
+            // The result covers the canvas and, if the original cel reached past
+            // it, the original's whole extent: off-canvas pixels are kept.
             const bool mask = m_target == PaintTarget::Mask;
-            Image canvas(m_w, m_h, mask ? Rgba8{255, 255, 255, 255} : Rgba8::transparent());
-            if (m_originalCel) canvas.blit(m_originalCel->image, m_originalCel->x, m_originalCel->y);
-            canvas.blit(m_after, m_rect.x, m_rect.y);
-            return mask ? d.setMaskCel(m_layer, m_frame, Cel{std::move(canvas), 0, 0})
-                        : d.setCel(m_layer, m_frame, Cel{std::move(canvas), 0, 0});
+            int ux = 0, uy = 0, ur = m_w, ub = m_h;
+            if (m_originalCel) {
+                ux = std::min(0, m_originalCel->x);
+                uy = std::min(0, m_originalCel->y);
+                ur = std::max(m_w, m_originalCel->x + m_originalCel->image.width());
+                ub = std::max(m_h, m_originalCel->y + m_originalCel->image.height());
+            }
+            Image canvas(ur - ux, ub - uy, mask ? Rgba8{255, 255, 255, 255} : Rgba8::transparent());
+            if (m_originalCel) canvas.blit(m_originalCel->image, m_originalCel->x - ux, m_originalCel->y - uy);
+            canvas.blit(m_after, m_rect.x - ux, m_rect.y - uy);
+            return mask ? d.setMaskCel(m_layer, m_frame, Cel{std::move(canvas), ux, uy})
+                        : d.setCel(m_layer, m_frame, Cel{std::move(canvas), ux, uy});
         }
         Cel* c = m_target == PaintTarget::Mask ? d.maskCel(m_layer, m_frame) : d.cel(m_layer, m_frame);
         if (!c) return Error{ErrorCode::Internal, "Cel missing on redo"};
@@ -328,8 +337,12 @@ bool PaintSession::commit() {
         return false;
     }
     const IntRect rect{minX, minY, maxX - minX + 1, maxY - minY + 1};
-    m_editor.recordApplied(std::make_unique<PaintCommand>(m_label, m_layer, m_frame, normalized, m_originalCel, rect,
-                                                          m_original.copy(rect), cur.copy(rect), d.width(), d.height(), m_target));
+    auto cmd = std::make_unique<PaintCommand>(m_label, m_layer, m_frame, normalized, m_originalCel, rect,
+                                              m_original.copy(rect), cur.copy(rect), d.width(), d.height(), m_target);
+    // While painting, the cel was canvas-sized; the committed state also
+    // keeps any of the original's pixels beyond the canvas.
+    if (normalized && m_originalCel) (void)cmd->redo(d);
+    m_editor.recordApplied(std::move(cmd));
     return true;
 }
 
