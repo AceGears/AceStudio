@@ -15,6 +15,8 @@ params:
   strength          img2img strength 0..1 (default 0.6)
   device            auto | cuda | cpu
   offload           auto | none | model   (model = enable_model_cpu_offload, for <10 GB VRAM)
+  weights           auto | fp8 | full: with a ControlNet on a <10 GB GPU (auto), the UNet and ControlNet
+                    weights are stored in FP8 and computed in FP16 so both fit in VRAM
   preview           optional {"dir": TAESD-XL folder, "every": n}: a small preview PNG every n steps
   controlnet        optional {"dir": SDXL ControlNet folder, "image": conditioning PNG (e.g. a pose),
                     "scale": 0..2 (default 0.8)} (text-to-image only)
@@ -69,7 +71,32 @@ def _ip_key(ip):
     return (ip.get("dir"), ip.get("weight"), ip.get("encoder")) if ip else None
 
 
-def _pipelines(ctx, model_dir, vae_dir, lora, device, offload, controlnet=None, ip=None):
+def _wants_fp8_weights(device, offload, weights="auto"):
+    """Model CPU offload moves one model at a time to the GPU, but Diffusers
+    keeps the ControlNet resident next to the UNet (it is not in the offload
+    chain). Together they hold ~7.5 GB of FP16 weights, which spills past an
+    8 GB card into shared memory (measured: ~30 s per step on an RTX 4070
+    Laptop, vs ~1 s without ControlNet). Storing those two models' weights in
+    FP8 and computing in FP16 halves that to ~3.75 GB. `weights` = auto |
+    fp8 | full overrides the choice."""
+    if weights == "fp8":
+        return True
+    if weights == "full":
+        return False
+    return device == "cuda" and offload == "model"
+
+
+def _enable_fp8_weights(pipe, device):
+    import torch
+    compute = torch.float16 if device == "cuda" else torch.float32
+    for name in ("unet", "controlnet"):
+        model = getattr(pipe, name, None)
+        if model is not None and hasattr(model, "enable_layerwise_casting"):
+            model.enable_layerwise_casting(storage_dtype=torch.float8_e4m3fn, compute_dtype=compute)
+    pipe._acestudio_fp8 = True
+
+
+def _pipelines(ctx, model_dir, vae_dir, lora, device, offload, controlnet=None, ip=None, weights="auto"):
     import os
     import torch
     from diffusers import AutoencoderKL, StableDiffusionXLImg2ImgPipeline, StableDiffusionXLPipeline
@@ -79,7 +106,7 @@ def _pipelines(ctx, model_dir, vae_dir, lora, device, offload, controlnet=None, 
     # The LoRA strength is not part of the key: it is set per run on the
     # cached pipeline, so changing it does not reload SDXL.
     key = (model_dir, vae_dir, lora.get("path") if lora else None, device, offload,
-           controlnet.get("dir") if controlnet else None, _ip_key(ip))
+           controlnet.get("dir") if controlnet else None, _ip_key(ip), weights)
     with _cache_lock:
         if _cache["key"] == key:
             if lora:
@@ -123,6 +150,8 @@ def _pipelines(ctx, model_dir, vae_dir, lora, device, offload, controlnet=None, 
         cn = ControlNetModel.from_pretrained(cn_dir, torch_dtype=dtype, use_safetensors=True)
         pipe = StableDiffusionXLControlNetPipeline(**pipe.components, controlnet=cn)
         pipe.set_progress_bar_config(disable=True)
+    if controlnet and _wants_fp8_weights(device, offload, weights):
+        _enable_fp8_weights(pipe, device)
     if device == "cuda" and offload == "model":
         pipe.enable_model_cpu_offload()
     else:
@@ -272,6 +301,9 @@ def run(ctx):
         if device == "cuda":
             vram = torch.cuda.get_device_properties(0).total_memory / 2**30
             offload = "model" if vram < 10 else "none"
+    weights = ctx.param("weights", "auto")
+    if weights not in ("auto", "fp8", "full"):
+        raise JobError("weights must be auto, fp8 or full", kind="invalid_input")
     lora = ctx.param("lora")
     if lora:
         _lora_scale(lora)   # reject a bad value before loading anything
@@ -295,7 +327,7 @@ def run(ctx):
             raise JobError("ip_adapter scale must be between 0 and 1", kind="invalid_input")
         ip_images = [load_rgba(pth).convert("RGB") for pth in ip["images"][:4]]
     pipe, img2img = _pipelines(ctx, ctx.param("model_dir", required=True, kind=str), ctx.param("vae_dir"),
-                               lora, device, offload, controlnet, ip)
+                               lora, device, offload, controlnet, ip, weights)
     if ip is not None:
         pipe.set_ip_adapter_scale(ip_scale)
     init_path = ctx.param("init_image")
@@ -367,4 +399,5 @@ def run(ctx):
     return {"outputs": outputs,
             "info": {"seed": seed, "device": device, "offload": offload, "steps": steps, "width": width,
                      "height": height, "img2img": bool(init_path), "controlnet": cn_image is not None,
-                     "ip_adapter": bool(ip_images)}}
+                     "ip_adapter": bool(ip_images),
+                     "weights": "fp8-storage" if getattr(pipe, "_acestudio_fp8", False) else "fp16" if device == "cuda" else "fp32"}}

@@ -141,10 +141,9 @@ void WorkerSupervisor::stop() {
     (void)send("shutdown", json::object(), Pending::Shutdown);
     m_proc->closeStdin();
     if (!m_proc->wait(std::chrono::seconds(3))) killWorker();
-    std::vector<Event> ev;
     if (Job* j = runningJob()) {
         j->error = "Stopped";
-        finishJob(*j, JobState::Cancelled, ev);
+        finishJob(*j, JobState::Cancelled, m_deferred);
     }
     m_proc.reset();
     m_pending.clear();
@@ -198,8 +197,7 @@ Status WorkerSupervisor::cancel(const JobId& id) {
     if (isFinished(j->state)) return {};
     j->cancelRequested = true;
     if (j->state == JobState::Queued) {
-        std::vector<Event> ev;
-        finishJob(*j, JobState::Cancelled, ev);
+        finishJob(*j, JobState::Cancelled, m_deferred);   // reported by the next poll()
         return {};
     }
     if (!m_cancelDeadline) {
@@ -211,7 +209,7 @@ Status WorkerSupervisor::cancel(const JobId& id) {
 }
 
 std::vector<Event> WorkerSupervisor::poll() {
-    std::vector<Event> ev;
+    std::vector<Event> ev = std::exchange(m_deferred, {});
     if (m_proc) {
         for (auto& line : m_proc->takeLines(Subprocess::Stream::Stderr)) {
             m_stderrTail.push_back(line);

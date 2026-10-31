@@ -105,6 +105,9 @@ TEST_CASE("AI jobs run in order; queued jobs cancel immediately", "[ai]") {
     auto c = f.sup->submit("diag.echo", {{"n", 3}}).value();
     REQUIRE(f.sup->cancel(b));
     CHECK(f.sup->job(b)->state == JobState::Cancelled);
+    // The UI learns about the cancellation through the next poll().
+    const auto ev = f.sup->poll();
+    CHECK(std::any_of(ev.begin(), ev.end(), [&](const Event& e) { return e.kind == Event::Kind::Job && e.job == b; }));
     REQUIRE(f.finished(c));
     CHECK(f.sup->job(a)->state == JobState::Succeeded);
     CHECK(f.sup->job(c)->state == JobState::Succeeded);

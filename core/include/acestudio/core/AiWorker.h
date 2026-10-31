@@ -159,6 +159,7 @@ private:
     std::optional<Clock::time_point> m_cancelDeadline;
     std::optional<Clock::time_point> m_restartAt;
     std::vector<Clock::time_point> m_crashes;
+    std::vector<Event> m_deferred;  // events raised outside poll() (cancel of a queued job, stop); delivered by the next poll()
     bool m_hardCancel = false;      // we killed the worker on purpose
     bool m_stopping = false;
     int m_restarts = 0;

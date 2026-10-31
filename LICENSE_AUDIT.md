@@ -79,6 +79,25 @@ See `docs/research/ai-models.md` for the full survey with sources. Summary:
   and requires "Powered by Stability AI").
 - Models are never bundled in the base installer and never downloaded without user approval.
 
+### Models in the shipped catalog (`ai_worker/catalog/models.json`)
+
+Every file is pinned to a Hugging Face / GitHub commit with a SHA-256; the Models dialog shows
+the licence, source and obligations and requires the user to tick "I have read the licence and
+accept its terms" before each download.
+
+| Catalog id | Model | Licence | Pinned commit | Obligations |
+|---|---|---|---|---|
+| birefnet-lite / birefnet-general | ZhengPeng7 BiRefNet (ONNX) | MIT | release asset | keep notice |
+| realesrgan-x4plus / -anime | xinntao Real-ESRGAN | BSD-3-Clause | release asset | keep notice |
+| sdxl-base-1.0 | stabilityai SDXL base 1.0 | CreativeML OpenRAIL++-M | 462165984030 | pass Attachment A use restrictions to users |
+| pixel-art-xl | nerijs/pixel-art-xl LoRA | CreativeML OpenRAIL-M | 8bf4a4d9ea28 | pass use restrictions to users |
+| taesdxl | madebyollin/taesdxl (live preview decoder) | MIT | b20258aaef75 | keep notice |
+| controlnet-openpose-sdxl | xinsir/controlnet-openpose-sdxl-1.0 | Apache-2.0 | 23f966cd5cfd | keep licence + NOTICE; state changes |
+| ip-adapter-plus-sdxl | h94/IP-Adapter (ip-adapter-plus_sdxl_vit-h) + OpenCLIP ViT-H/14 encoder | Apache-2.0 (encoder weights: LAION OpenCLIP, MIT) | 018e402774ae | keep licence + NOTICE |
+
+Phase 5 deliberately uses AceStudio's own pose skeleton editor and procedural cycles instead
+of an OpenPose/DWPose *detector*, so no CMU OpenPose weights (non-commercial) are needed.
+
 ## Generated content
 
 AceStudio will not claim generated assets are copyrightable, exclusive or free of third-party

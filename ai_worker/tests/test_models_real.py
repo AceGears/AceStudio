@@ -291,6 +291,15 @@ class TinySdxlPlumbingTest(unittest.TestCase):
             a = run_job(w_, self.tmp, "c1", "image.generate", dict(base, controlnet={"dir": cn, "image": pose, "scale": 0.9}))
             self.assertEqual(a["method"], "job.done", a)
             self.assertTrue(a["params"]["info"]["controlnet"])
+            self.assertEqual(a["params"]["info"]["weights"], "fp32")
+            # FP8 weight storage (used automatically on <10 GB GPUs) runs the
+            # same pipeline with the UNet and ControlNet held in float8.
+            q = run_job(w_, self.tmp, "c1q", "image.generate",
+                        dict(base, weights="fp8", controlnet={"dir": cn, "image": pose, "scale": 0.9}))
+            self.assertEqual(q["method"], "job.done", q)
+            self.assertEqual(q["params"]["info"]["weights"], "fp8-storage")
+            bad = run_job(w_, self.tmp, "c1b", "image.generate", dict(base, weights="half"))
+            self.assertEqual(bad["params"]["kind"], "invalid_input")
             # A different pose image changes the result (the ControlNet is wired in).
             pose2 = os.path.join(self.tmp, "pose2.png")
             Image.new("RGB", (64, 64), (255, 255, 255)).save(pose2)

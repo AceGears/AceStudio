@@ -541,12 +541,15 @@ void AiPanel::refreshJob(const QString& qid) {
     }
     auto* bar = qobject_cast<QProgressBar*>(m_queue->itemWidget(item, 1));
     if (!bar) return;
+    bar->setToolTip(tip);
     switch (j->state) {
     case JobState::Queued: bar->setRange(0, 100); bar->setValue(0); bar->setFormat(tr("Queued")); break;
     case JobState::Running:
         if (j->progress < 0) { bar->setRange(0, 0); }
         else { bar->setRange(0, 100); bar->setValue(qRound(j->progress * 100)); }
-        bar->setFormat(j->message.empty() ? QStringLiteral("%p%") : qs(j->message).left(40));
+        // The column is narrow: show only the percentage (or "Working" when
+        // indeterminate) and keep the step message in the tooltip.
+        bar->setFormat(j->progress < 0 ? tr("Working") : QStringLiteral("%p%"));
         break;
     case JobState::Succeeded: bar->setRange(0, 100); bar->setValue(100); bar->setFormat(tr("Done")); break;
     case JobState::Failed: bar->setRange(0, 100); bar->setValue(0); bar->setFormat(tr("Failed")); break;
