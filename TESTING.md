@@ -107,6 +107,14 @@ Re-check on the same PC with nightly build c57e5c2 (portable mode, data in `<exe
 | Device probe: NVIDIA GeForce RTX 4070 Laptop GPU, 8.0 GB | ✅ |
 | Real-ESRGAN x4plus download (67 MB, BSD-3, licence accepted on the user's instruction): SHA-256 verified | ✅ |
 | Upscale ×4 on CUDA, 512×512 → 2048×2048: 3.1 s for the whole job (model load, tiled inference, 4.3 MB PNG); result opened as a new document; downscaled back it matches the source at 37.6 dB PSNR, edges smooth | ✅ |
+| SDXL Base 1.0 + Pixel Art XL file lists checked against the Hugging Face API; URLs pinned to commits 462165984030 / 8bf4a4d9ea28; weight hashes pinned | ✅ |
+| SDXL download (6.94 GB, licence accepted on the user's instruction): ~8 min; every pinned SHA-256 matched; Pixel Art XL (170.5 MB) likewise | ✅ |
+| SDXL text-to-image with Pixel Art XL on the RTX 4070 Laptop (8 GB, so model CPU offload), 1024×1024, 30 steps: ~50 s for the first job (includes loading 7 GB from disk), ~34 s warm; times read from the job files, ±3 s | ✅ |
+| Generated knight sprite is clean at 1024²; the 64×64 pixel-art result (palette-limited, 10 colours) is coarse: 16× reduction, figure drawn small | ⚠️ quality limitation; see KNOWN_ISSUES |
+| "Pixel art for this canvas" was unticked whenever the session started on the welcome page, so the first result arrived as a 1024² document | ❌ fixed (b49bd18) |
+| Tab in the prompt typed a tab character | ❌ fixed (b49bd18) |
+| `diffusion-cuda` with the driver check: NVIDIA driver 621.01 detected → torch 2.14.1+cu130 (1998.9 MB) and onnxruntime-gpu 1.31.1 replacing onnxruntime-directml; ~3 min | ✅ |
+| BiRefNet Lite on the CUDA execution provider (no fallback warnings): cold job 6.4 s session + 1.2 s run; warm jobs reuse the cached session: runs of 7.7 s, 2.6 s, 2.6 s (the outlier coincides with the laptop GPU waking); CPU was ~16 s | ✅ |
 | Remove BG tab: the Run button is below the fold of a ~80 px tab area on a 819 px screen; needs scrolling | ⚠️ usability |
 | Install `onnx-windows`: no pip output for 4+ minutes. Same pip from a console (PIP-CHECK.cmd) reached PyPI in 0.8 s and downloaded numpy in under a second | ❌ fixed: pip inherited the worker's protocol stdin and stalled at startup; it now gets DEVNULL (unit-tested; Windows re-check pending) |
 

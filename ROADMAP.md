@@ -20,7 +20,7 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | CI: Linux core job and Windows MSVC + Qt job, green on GitHub Actions | ✅ (Windows built against Qt 6.8.3; see KNOWN_ISSUES) |
 | Core/CLI/tests build for Windows and pass (MinGW cross-compile, run under Wine) | ✅ |
 | App builds with MSVC on Windows, tests pass, packaged with windeployqt | ✅ CI |
-| App launched and used interactively on a Windows desktop | 🟡 CI build (Qt 6.8.3, MSVC) launched on a Windows 11 PC with an NVIDIA GPU on 2026-10-30 and opened its window; interactive use still to be recorded |
+| App launched and used interactively on a Windows desktop | ✅ Windows 11 PC, 2026-10-30/31: open, draw, undo, import, layers, AI setup, downloads, generation, background removal and upscaling driven through the UI (TESTING.md) |
 | High-DPI check at 150%/200% scaling on Windows | ⬜ |
 
 ## Phase 2 — Core Editor · 🟡 (2a and 2b done; 2c remaining)
@@ -75,7 +75,7 @@ large HD canvases.
 | PNG sequence export | ✅ |
 | CLI `export` for all formats | ✅ cli_smoke on Linux and the Windows build (Wine) |
 
-## Phase 4 — AI Infrastructure · 🟡 (verified on a Windows NVIDIA PC except SDXL)
+## Phase 4 — AI Infrastructure · ✅ (verified on a Windows 11 PC with an RTX 4070 Laptop GPU, 2026-10-31)
 
 | Criterion | Status |
 |---|---|
@@ -83,11 +83,11 @@ large HD canvases.
 | Queue, progress, cancellation (cooperative, and forced for stuck jobs) | ✅ unit-tested against the real worker; queue UI in AI Studio |
 | Model manager with licence display and approval-gated downloads | ✅ licence dialog with mandatory acceptance; resumable downloads verified by SHA-256; real 224 MB and 18 MB downloads from the official releases |
 | Runtime setup (private Python environment, pinned packages, no system changes) | ✅ from the app and the CLI on Linux; Windows CI runs the real-worker supervision tests and the Python worker suite on Windows Python 3.14; installed from the app on a Windows 11 PC with an RTX 4070 Laptop GPU: `onnx-windows` in 29 s, `diffusion-cuda` (torch 2.14.1+cu126) in ~4 min |
-| Text-to-image and image-to-image with SDXL on a 12 GB NVIDIA GPU | 🟡 code path verified end to end with real Diffusers 0.42 on a tiny random SDXL (seeds, img2img, LoRA hook, cancel, pixel-art post-process); real SDXL weights and GPU not available here |
-| BiRefNet background removal | 🟡 works in the app on the Windows PC, but on the CPU (~16 s at 1024²): DirectML fails inside a fused node and AceStudio falls back. GPU path for ONNX (CUDA provider) still to do |
+| Text-to-image and image-to-image with SDXL on an NVIDIA GPU | ✅ real SDXL Base 1.0 + Pixel Art XL on an 8 GB RTX 4070 Laptop (model offload): ~34 s per 1024² image at 30 steps warm, ~50 s cold; pixel-art post-process to the canvas and palette. Plumbing (seeds, img2img, LoRA, cancel) also covered by the tiny-SDXL test. 12 GB cards not measured |
+| BiRefNet background removal | ✅ CUDA provider on the RTX 4070 Laptop: 2.6 s per warm job (session cached), 7.6 s cold; DirectML failure falls back automatically (CPU ~16 s) |
 | Real-ESRGAN upscaling | ✅ CPU (64→256 px in 6 s) and CUDA on the RTX 4070 Laptop: 512→2048 px in 3.1 s per job including model load |
 | Nearest-neighbour upscaling | ✅ Image › Scale (core, since 0.3.0) |
-| Benchmarks recorded from real runs | 🟡 CPU, plus Real-ESRGAN on the RTX 4070 Laptop (TESTING.md); SDXL benchmarks pending (needs the user's licence acceptance and a ~7 GB download) |
+| Benchmarks recorded from real runs | ✅ CPU and RTX 4070 Laptop numbers for every model (TESTING.md); other GPUs are Phase 9's GPU matrix |
 
 ## Phase 5 — Advanced AI Generation · ⬜
 Character profiles; IP-Adapter reference conditioning; OpenPose ControlNet with an editable

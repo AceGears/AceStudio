@@ -1,6 +1,7 @@
 """Image helpers shared by tasks. Imports numpy/Pillow lazily."""
 
 import os
+import time
 
 from .jobs import JobError
 
@@ -32,6 +33,11 @@ _GPU_PROVIDERS = ("CUDAExecutionProvider", "DmlExecutionProvider", "CoreMLExecut
 # model path -> (provider, optimization) that last worked, so a model that
 # fails on the GPU does not fail again on every job in this worker.
 _working = {}
+# (model path, provider, optimization) -> session. Creating a CUDA session
+# (model upload, cuDNN set-up) costs seconds, so the worker keeps the most
+# recent few; the first session of a job is reused by the next one.
+_sessions = {}
+_SESSION_CACHE = 2
 
 
 def onnx_session(model_path, device="auto", provider=None, optimization="all"):
@@ -78,6 +84,19 @@ def onnx_session(model_path, device="auto", provider=None, optimization="all"):
     return sess, sess.get_providers()[0]
 
 
+def _cached_session(model_path, device, provider, optimization):
+    for (path, used, opt), sess in list(_sessions.items()):
+        if path == model_path and opt == optimization and (provider is None or provider == used):
+            if device == "cpu" and used != "CPUExecutionProvider":
+                continue
+            return sess, used
+    sess, used = onnx_session(model_path, device, provider=provider, optimization=optimization)
+    _sessions[(model_path, used, optimization)] = sess
+    while len(_sessions) > _SESSION_CACHE:
+        _sessions.pop(next(iter(_sessions)))
+    return sess, used
+
+
 def _next_gpu_provider():
     """The second GPU provider in preference order, if one is installed."""
     import onnxruntime as ort
@@ -113,7 +132,9 @@ def run_onnx(ctx, model_path, device, fn):
             continue
         tried.add((prov, opt))
         try:
-            sess, used = onnx_session(model_path, device, provider=prov, optimization=opt)
+            t0 = time.monotonic()
+            sess, used = _cached_session(model_path, device, prov, opt)
+            t_session = time.monotonic() - t0
         except JobError:
             raise
         except Exception as e:   # onnxruntime raises its own exception types
@@ -128,8 +149,11 @@ def run_onnx(ctx, model_path, device, fn):
         if first_gpu is None and used != "CPUExecutionProvider":
             first_gpu = used
         try:
+            t0 = time.monotonic()
             result = fn(sess, used)
+            t_run = time.monotonic() - t0
         except Exception as e:
+            _sessions.pop((model_path, used, opt), None)
             if used == "CPUExecutionProvider":
                 raise
             last_error = e
@@ -137,6 +161,8 @@ def run_onnx(ctx, model_path, device, fn):
                     level="warning")
             continue
         _working[model_path] = (used, opt)
+        ctx.log("%s on %s: session %.1f s, run %.1f s" % (os.path.basename(model_path),
+                                                          used.replace("ExecutionProvider", ""), t_session, t_run))
         if last_error is not None:
             ctx.log("Using %s (graph optimisation '%s') for %s" % (used, opt, os.path.basename(model_path)),
                     level="warning")

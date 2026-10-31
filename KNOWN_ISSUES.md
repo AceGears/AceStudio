@@ -53,10 +53,22 @@ Current as of 0.5.0 (Phase 4).
   warns when only a newer Python is installed (background removal cannot be set up then).
   It must also be a **64-bit** Python: ONNX Runtime and PyTorch publish no 32-bit Windows
   wheels, so a 32-bit Python is skipped, or refused when it is the only one.
-- **DirectML and BiRefNet:** on the first tested NVIDIA PC, onnxruntime-directml 1.24.4 fails
-  inside a fused DirectML node when running BiRefNet; AceStudio falls back to the CPU (~16 s per
-  image at 1024²). The AI Studio status line still says "DirectML GPU" because that is the
-  provider available, not the one that ran. CUDA through onnxruntime-gpu is not offered yet.
+- **SDXL pixel-art quality at small canvases:** generation runs near 1024² and is reduced to the
+  canvas with nearest neighbour; for a 64×64 canvas that is a 16× reduction, twice Pixel Art
+  XL's natural ~8× pixel size, and SDXL often draws the subject small. Results at 64×64 are
+  coarse; 128×128 canvases fit the LoRA better. Cropping to the subject before reduction is
+  planned with Phase 5's consistency tools.
+- **8 GB GPUs:** SDXL runs with model CPU offload (~34 s per 1024² image at 30 steps on an RTX
+  4070 Laptop); 12 GB+ keeps the model resident and is faster.
+- **ONNX on non-NVIDIA GPUs:** onnxruntime-directml 1.24.4 failed inside a fused DirectML node
+  when running BiRefNet on the tested PC; AceStudio falls back (fewer fusions, then the CPU,
+  ~16 s per image). NVIDIA GPUs with driver R580+ use the CUDA provider instead (2.6 s warm on
+  an RTX 4070 Laptop). DirectML has not been tried on AMD or Intel GPUs.
+- **BiRefNet on CUDA is slower than it should be:** 2.6 s per warm run includes CPU pre- and
+  post-processing and host↔device copies; I/O binding and GPU-side resizing are left for the
+  Phase 8 profiling pass.
+- **NVIDIA drivers older than R580** get the CUDA 12.6 PyTorch and keep ONNX models on
+  DirectML/CPU (current onnxruntime-gpu builds need CUDA 12.8+ or 13).
 - **Python is not bundled yet:** AI features need Python 3.10+ installed (or configured in Set
   Up AI Runtime). Bundling an embeddable Python is planned for packaging (Phase 8). Choosing a
   specific Python installs packages into that environment.

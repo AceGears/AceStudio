@@ -351,7 +351,7 @@ class OnnxFallbackTests(unittest.TestCase):
 
         real = imaging.onnx_session
         imaging.onnx_session = fake_session
-        imaging._working.clear()
+        imaging._working.clear(); imaging._sessions.clear()
         try:
             ctx = Ctx()
             result, used = imaging.run_onnx(ctx, "m.onnx", "auto", fn)
@@ -361,10 +361,11 @@ class OnnxFallbackTests(unittest.TestCase):
             self.assertTrue(any(level == "warning" for level, _ in ctx.logs))
             calls.clear()
             self.assertEqual(imaging.run_onnx(ctx, "m.onnx", "auto", fn), ("ok", "CPUExecutionProvider"))
-            self.assertEqual(calls, [("CPUExecutionProvider", "all")])   # remembered
+            self.assertEqual(calls, [])   # remembered, and the CPU session is reused
+            self.assertEqual(list(imaging._sessions), [("m.onnx", "CPUExecutionProvider", "all")])   # failing GPU sessions evicted
         finally:
             imaging.onnx_session = real
-            imaging._working.clear()
+            imaging._working.clear(); imaging._sessions.clear()
 
     def test_cpu_errors_are_not_swallowed(self):
         sys.path.insert(0, ROOT)
@@ -372,7 +373,7 @@ class OnnxFallbackTests(unittest.TestCase):
 
         real = imaging.onnx_session
         imaging.onnx_session = lambda *a, **k: (object(), "CPUExecutionProvider")
-        imaging._working.clear()
+        imaging._working.clear(); imaging._sessions.clear()
         try:
             with self.assertRaises(ValueError):
                 imaging.run_onnx(None, "m.onnx", "cpu", lambda s, u: (_ for _ in ()).throw(ValueError("bad")))
@@ -402,14 +403,14 @@ class OnnxSessionFallbackTests(unittest.TestCase):
         real_s, real_n = imaging.onnx_session, imaging._next_gpu_provider
         imaging.onnx_session = fake_session
         imaging._next_gpu_provider = lambda: "DmlExecutionProvider"
-        imaging._working.clear()
+        imaging._working.clear(); imaging._sessions.clear()
         try:
             result, used = imaging.run_onnx(Ctx(), "m.onnx", "auto", lambda s, u: u)
             self.assertEqual(used, "DmlExecutionProvider")
             self.assertEqual(calls[:2], [(None, "all"), ("DmlExecutionProvider", "all")])
         finally:
             imaging.onnx_session, imaging._next_gpu_provider = real_s, real_n
-            imaging._working.clear()
+            imaging._working.clear(); imaging._sessions.clear()
 
 
 class DriverTests(unittest.TestCase):

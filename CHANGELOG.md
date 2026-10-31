@@ -21,7 +21,18 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - Python worker (`ai_worker/`): protocol server, tasks, own RRDBNet implementation for the
   official Real-ESRGAN weights, test suite.
 
+### Added (verified on Windows with an RTX 4070 Laptop GPU)
+- NVIDIA driver detection; with R580+ drivers the CUDA profile installs PyTorch 2.14.1+cu130 and
+  swaps ONNX Runtime to onnxruntime-gpu 1.31.1, so BiRefNet runs on CUDA (2.6 s warm vs ~16 s
+  on the CPU). Older drivers keep PyTorch cu126.
+- ONNX sessions are cached in the worker; each ONNX job logs its provider and session/run
+  times; every job's wall time is logged when it finishes.
+- SDXL Base 1.0 and Pixel Art XL files pinned to Hugging Face commits with verified sizes and
+  SHA-256 for the weights.
+
 ### Fixed
+- "Pixel art for this canvas" was unticked whenever a session started without a document.
+- Tab in the prompt box typed a tab character instead of moving to the next field.
 - Windows: the AI worker's device check ("checking GPU…") could hang indefinitely. Any query
   of the protocol stdin handle from another thread (library imports on the probe thread)
   waits behind the main thread's blocking read. The worker now reads the protocol from a
