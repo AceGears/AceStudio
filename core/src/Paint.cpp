@@ -202,8 +202,8 @@ void PaintSession::put(int x, int y, Rgba8 color, Ink ink) {
         if (base.a == 0) return;
         auto it = std::find_if(m_ramp.begin(), m_ramp.end(), [&](Rgba8 r) { return r.r == base.r && r.g == base.g && r.b == base.b; });
         if (it == m_ramp.end()) return;
-        const long idx = (it - m_ramp.begin()) + m_shadeStep;
-        if (idx < 0 || idx >= static_cast<long>(m_ramp.size())) return;
+        const std::ptrdiff_t idx = (it - m_ramp.begin()) + m_shadeStep;
+        if (idx < 0 || idx >= static_cast<std::ptrdiff_t>(m_ramp.size())) return;
         m_shaded.set(x, y, true);
         color = m_ramp[static_cast<std::size_t>(idx)];
         color.a = base.a;
