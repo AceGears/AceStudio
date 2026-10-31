@@ -1,6 +1,6 @@
 # Known Issues and Limitations
 
-Current as of 0.5.1. Everything that could be fixed in code for Phases 1–4 has been fixed and
+Current as of 0.6.0. Everything that could be fixed in code for Phases 1–5 has been fixed and
 tested; what remains below needs hardware we have not had, is a limit of a third-party
 component or file format, or is a deliberate design choice. Nothing is listed as done that has
 not been run.
@@ -15,6 +15,8 @@ not been run.
 - **GPUs other than the test PC's:** everything AI was verified on one RTX 4070 Laptop (8 GB,
   driver 621.01).
   - SDXL at 1024², 30 steps, with model CPU offload: ~34 s warm, 50–56 s cold.
+  - Animation frames (SDXL + pose ControlNet, optional IP-Adapter, FP8 weight storage, 28
+    steps, background removal included): 46–49 s per frame warm, ~73 s for the first.
   - BiRefNet on CUDA: 2.6 s warm.
   - Real-ESRGAN 512→2048: 3.1 s.
 
@@ -38,6 +40,15 @@ not been run.
 - **Small canvases and SDXL:** generation runs near 1024² and is reduced with nearest neighbour.
   At 64×64 that is a 16× reduction, twice Pixel Art XL's ~8× pixel size, so results are coarse;
   128×128 fits best. "Frame the subject" helps when the background is plain.
+- **FP8 weight storage** is used automatically for pose-controlled generation on GPUs under
+  10 GB, so the UNet and ControlNet fit in VRAM. Without it, a frame took ~14 minutes on an
+  8 GB card. No visible difference was seen in the 64×64 results, but none was measured either.
+  `weights: "full"` in the job parameters turns it off.
+- **Cancelling while models load:** loading SDXL cannot be interrupted. A cancel during loading
+  restarts the worker after 10 s, and the next job loads the models again.
+- **SDXL often draws several objects** ("sprite sheet" style) even when asked for one. The
+  animation pipeline crops every frame to its pose framing box. For single images, describe one
+  object and use "Frame the subject".
 - **Real-ESRGAN** smears small pixel art; that is how the model works. Use Image › Scale for
   pixel art.
 - **GIF export:**
@@ -55,7 +66,17 @@ not been run.
   mode, mask, clip and adjustment exactly; these numbers do not justify that cost. Phase 8
   profiles again on real hardware.
 - **Live generation preview** needs the optional 10 MB TAESD-XL model (MIT; Models dialog).
-  Without it, generation shows progress only.
+  Without it, generation shows progress only. The Generate Animation dialog shows each frame
+  when it finishes, not a live preview.
+- **Animation consistency scores** compare every frame with frame 1 for ground line, height,
+  palette, colour mix and silhouette. They catch jumps in shape and colour, not identity: two
+  different knights in similar armour score as consistent. Reference images (IP-Adapter) are
+  what keep the identity.
+- **Committing an animation** fills a blank document from frame 1. Into a document with
+  content, it appends the frames after the last one with their own tag. To place frames
+  elsewhere, move the block in the timeline afterwards.
+- **AI job folders** (inputs, raw 1024² outputs, previews) are kept for 7 days, then removed at
+  start-up.
 - **Free Transform** scales about the box centre. Shift keeps proportions and dragging past the
   centre flips. The preview uses fast nearest-neighbour rotation; the applied result uses
   RotSprite.
@@ -69,6 +90,11 @@ not been run.
   reports "The layer is empty".
 - Onion-skin ghosts are cached. The first display after a structural change composites each
   ghost frame once (about 240 ms for one ghost each side at 1024² × 20 layers on the VM).
+
+## Phase 5 items not yet run with real models
+- **Auto-Correct** (ground line, height, palette remap) is covered by core tests. None of the
+  real runs produced a frame that only needed correcting; flagged frames needed regenerating.
+- **Run and jump cycles** have only been generated with the tiny test model, not SDXL.
 
 ## Planned in later phases
 - Tileset, MCP, Lua and plugin features (Phases 6–7). Their menus show a disabled entry naming

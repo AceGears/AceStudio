@@ -41,6 +41,34 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 
 ## Recorded results
 
+### 2026-10-31 — Phase 5, version 0.6.0
+
+| Environment | Build | Result |
+|---|---|---|
+| Linux, GCC 13.3, Qt 6.4.2 | everything, Release | ✅ 182/182 CTest (pose, animation QA, character profiles, job-folder pruning, queued-cancel events) |
+| Python 3.13 + Diffusers 0.42.1 (scratch venv) | worker suite + tiny-SDXL plumbing | ✅ worker suite; 3/3 plumbing tests: ControlNet changes the output, IP-Adapter with 1 and 2 references, FP8 weight storage, live preview |
+| GitHub Actions, Windows, MSVC `/W4 /WX`, Qt 6.12.0 | everything + package | ✅ |
+
+Real models on the Windows 11 test PC (RTX 4070 Laptop, 8 GB, so model CPU offload).
+Downloads went through the Models dialog with each licence accepted, and were checked by
+SHA-256:
+
+| Check | Result |
+|---|---|
+| Download TAESD-XL (9.8 MB), OpenPose ControlNet (2.50 GB), IP-Adapter Plus + ViT-H (3.38 GB) | ✅ 1.8 s, 146.7 s, 221.3 s; all verified |
+| First 8-frame walk with ControlNet (FP16 weights) | ❌ ~30 s per step: UNet + ControlNet weights spill past 8 GB into shared memory. Cancelling also showed queued jobs never reached the UI. **Both fixed** |
+| Same walk after the fix (FP8 weight storage, FP16 compute) | ✅ frame 1 in 73.2 s (includes loading), frames 2–8 in 46.6–49.4 s, including background removal; QA 88%, frame 5 flagged (81) |
+| Regenerate Flagged | ✅ frame 5 regenerated in 46.9 s → 84; all pass, 89% |
+| Commit to a blank document | ✅ new 64×64 document, 8 frames at 100 ms, walk tag, preview plays |
+| Characters: reference from the current layer (cropped to 29×57) | ✅ |
+| 4-frame idle with the reference (IP-Adapter + ControlNet) | ✅ ~48 s per frame; 95% consistency, all pass |
+| Commit into a document that has frames, then one Ctrl+Z | ✅ one undo step. ❌ The idle was drawn over frames 1–4 of the walk; **fixed**: actions are appended after the last frame |
+| Live preview (plain Generate, 30 steps) | ✅ previews at steps 5–30, 4.4 s apart. ❌ Not visible in the panel on a 1080p layout; **fixed**: moved out of the scrolling page |
+| Disk: AI job folders | ❌ 47 kept forever; **fixed**: folders older than 7 days are pruned at start-up |
+| 0.6.0 build re-test: cancel an 8-frame run during model loading | ✅ all 8 frames and queue rows show Cancelled, dialog idle; worker restarted after the 10 s grace (loading cannot be interrupted). ❌ Status said "Some frames failed"; **fixed** wording |
+| 0.6.0: 4-frame idle committed into a document with a generated image on frame 1 | ✅ appended as frames 2–5 with tag `idle (2–5)`; 98% consistency; 52 s per warm frame |
+| 0.6.0: live preview in the AI panel | ✅ visible while generating, hidden when done. ❌ Its fixed 128 px raised the dock's minimum height and pushed the status bar off a 1080p screen; **fixed**: the preview scales to the free space |
+
 ### 2026-10-31 — Phases 1–4 completion, version 0.5.1
 
 | Environment | Build | Result |

@@ -412,8 +412,23 @@ void AnimationDialog::onJobFinished(const QString& qid) {
     if (m_jobs.empty()) {
         bool all = true;
         for (const auto& r : m_results) all = all && r.has_value();
-        if (all) evaluate();
-        else m_status->setText(tr("Some frames failed; Regenerate Flagged retries them."));
+        if (all) {
+            evaluate();
+        } else {
+            int done = 0, cancelled = 0;
+            for (std::size_t i = 0; i < m_results.size(); ++i) {
+                if (m_results[i]) ++done;
+                else if (m_errors[i] == tr("Cancelled")) ++cancelled;
+            }
+            const int failed = static_cast<int>(m_results.size()) - done - cancelled;
+            if (done == 0 && failed == 0)
+                m_status->setText(tr("Cancelled."));
+            else if (done == 0)
+                m_status->setText(tr("No frames were generated: %1").arg(m_errors.front().isEmpty() ? tr("see the log") : m_errors.front()));
+            else
+                m_status->setText(tr("%1 of %2 frame(s) missing (%3 failed, %4 cancelled); Regenerate Flagged fills them in.")
+                                      .arg(static_cast<int>(m_results.size()) - done).arg(m_results.size()).arg(failed).arg(cancelled));
+        }
     } else {
         m_status->setText(tr("Generating… %n frame(s) left", nullptr, static_cast<int>(m_jobs.size())));
     }

@@ -107,10 +107,17 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | Live generation preview (optional TAESD-XL), all-frame upscaling, CPU memory pre-check | ✅ preview through real Diffusers with a tiny random model; multi-frame upscale with a stub model; memory check fails in 5 s on a 6 GB container instead of being killed |
 | Benchmarks recorded from real runs | ✅ CPU and RTX 4070 Laptop numbers for every model (TESTING.md); other GPUs are Phase 9's GPU matrix |
 
-## Phase 5 — Advanced AI Generation · ⬜
-Character profiles; IP-Adapter reference conditioning; OpenPose ControlNet with an editable
-skeleton; animation generation pipeline (generate → evaluate → correct → commit) with
-automated consistency checks (palette drift, silhouette, ground line).
+## Phase 5 — Advanced AI Generation · ✅ (verified with the real models on the RTX 4070 Laptop PC, 2026-10-31)
+
+| Criterion | Status |
+|---|---|
+| Character profiles (prompt, negative, palette, up to 4 references, size, seed, strengths, facing) saved and reloaded | ✅ `.acechar` zip format with validation and round-trip tests; created, edited and saved in the Characters dialog on Windows |
+| Editable pose skeleton and procedural cycles | ✅ 18-point skeleton; idle, walk, run and jump cycles; pose editor with presets, mirror and joint drag; unit tests for cycles, mirroring, framing and JSON |
+| OpenPose ControlNet conditioning | ✅ xinsir SDXL OpenPose (Apache-2.0, 2.50 GB, SHA-256 verified) on the RTX 4070 Laptop: 8-frame walk, all frames follow the skeleton; ~48 s per finished frame including background removal (FP8 weight storage on <10 GB GPUs, see CHANGELOG); plumbing test with a tiny ControlNet shows the pose image changes the output |
+| IP-Adapter reference conditioning | ✅ h94 IP-Adapter Plus SDXL + ViT-H encoder (Apache-2.0, 3.38 GB, SHA-256 verified): a 4-frame idle with one reference scored 95% consistency and kept the character's look (the walk without references scored 89%, but it moves more, so this is not a controlled comparison) |
+| Pipeline generate → evaluate → correct → commit | ✅ on Windows: generate 8 frames, 1 flagged (score 81), Regenerate Flagged → all pass (89%), Commit → new layer, tag and frames in one undo step (undo verified). Auto-Correct (ground line, height, palette remap) is covered by core tests; no real run produced a correctable-only frame |
+| Automated consistency checks (palette drift, silhouette, ground line, height, colour mix) | ✅ `AnimationQA` with unit tests on synthetic frames; scores and flags shown per frame in the dialog |
+| Live generation preview | ✅ real TAESD-XL (MIT, 9.8 MB): a preview every 5 steps, ~0.9 s per step with previews on |
 
 ## Phase 6 — Environment & Asset Tools · ⬜
 Tileset generator; 4/8-neighbour, bitmask and Wang autotiling with automated seam tests;

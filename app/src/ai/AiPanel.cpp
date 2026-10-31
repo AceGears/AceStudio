@@ -10,6 +10,8 @@
 
 #include "acestudio/core/PngCodec.h"
 
+#include <algorithm>
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -17,6 +19,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QResizeEvent>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
@@ -37,6 +40,36 @@ using namespace acestudio::ai;
 using nlohmann::json;
 
 namespace {
+// Shows a pixmap scaled to whatever height the layout can spare (never more
+// than 128 px), so a running preview never makes the dock taller than the
+// screen.
+class PreviewLabel : public QLabel {
+public:
+    explicit PreviewLabel(QWidget* parent) : QLabel(parent) {
+        setAlignment(Qt::AlignCenter);
+        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+        setMinimumSize(0, 0);
+    }
+    void setSource(const QPixmap& pm) { m_source = pm; rescale(); }
+    void clearSource() { m_source = QPixmap(); clear(); }
+    QSize sizeHint() const override { return {128, 128}; }
+
+protected:
+    void resizeEvent(QResizeEvent* e) override {
+        QLabel::resizeEvent(e);
+        rescale();
+    }
+
+private:
+    void rescale() {
+        if (m_source.isNull()) return;
+        const int side = std::min({width(), height(), 128});
+        if (side < 16) { clear(); return; }
+        setPixmap(m_source.scaled(QSize(side, side), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    }
+    QPixmap m_source;
+};
+
 QString utf8Path(const std::filesystem::path& p) { return fromPath(p); }
 std::string toUtf8(const std::filesystem::path& p) {
     const auto u = p.u8string();
@@ -97,8 +130,7 @@ AiPanel::AiPanel(AiService& ai, AppContext& ctx, QWidget* parent) : QWidget(pare
     // Live preview of a running generation. It sits outside the scrolling
     // pages so it is visible however short the dock is (found on a 1080p
     // laptop screen, where the Generate page shows only two rows).
-    m_genPreview = new QLabel(this);
-    m_genPreview->setAlignment(Qt::AlignCenter);
+    m_genPreview = new PreviewLabel(this);
     m_genPreview->setToolTip(tr("Live preview of the image being generated"));
     m_genPreview->hide();
 
@@ -144,7 +176,7 @@ AiPanel::AiPanel(AiService& ai, AppContext& ctx, QWidget* parent) : QWidget(pare
     layout->addLayout(top);
     layout->addWidget(m_tabs, 3);
     layout->addLayout(runRow);
-    layout->addWidget(m_genPreview);
+    layout->addWidget(m_genPreview, 2);
     layout->addLayout(queueHeader);
     layout->addWidget(m_queue, 1);
 
@@ -533,13 +565,13 @@ void AiPanel::refreshJob(const QString& qid) {
             m_previewSerial[id] = j->previewSerial;
             QPixmap pm;
             if (pm.load(fromPath(j->preview))) {
-                m_genPreview->setPixmap(pm.scaled(QSize(128, 128), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                static_cast<PreviewLabel*>(m_genPreview)->setSource(pm);
                 m_genPreview->show();
             }
         } else if (j->state != JobState::Running && j->state != JobState::Queued) {
             m_previewSerial.erase(id);
             m_genPreview->hide();
-            m_genPreview->clear();
+            static_cast<PreviewLabel*>(m_genPreview)->clearSource();
         }
     }
     auto* bar = qobject_cast<QProgressBar*>(m_queue->itemWidget(item, 1));
