@@ -54,6 +54,18 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - **AI panel:** the prompt comes first and the other settings sit under a collapsible
   Options. Scrolling no longer changes the dropdown or spin box under the mouse.
 - **Single pixel-art sprites** ask SDXL for one centred object instead of a sheet of items.
+- **Crash when cancelling Generate Animation jobs.** Cancelling changed the dialog's job list
+  while the dialog was still going through it.
+- **Jump animations:**
+  - Raised hands and head left the image; cycles are now fitted inside it.
+  - Floor lines drawn under an airborne character are removed.
+  - Auto-Correct never cuts off part of a figure.
+  - Shape checks allow for how much the poses themselves change.
+  - Frames with the same pose share one generation.
+- **Generate Animation:** frames Auto-Correct cannot fix can be regenerated, and the dialog
+  says why they are still flagged.
+- **Cancel during a step** stops immediately, without decoding the interrupted image. A cancel
+  during a slow full-precision step waits for that step instead of restarting the worker.
 - **ControlNet on 8 GB GPUs.** Under model CPU offload, Diffusers keeps the ControlNet on the
   GPU next to the UNet. About 7.5 GB of FP16 weights spilled into shared memory, measured at
   ~30 s per step on the RTX 4070 Laptop. On GPUs under 10 GB, the UNet and ControlNet weights

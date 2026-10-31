@@ -41,6 +41,39 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 
 ## Recorded results
 
+### 2026-10-31 — Phase 5 review pass, version 0.6.0
+
+| Environment | Build | Result |
+|---|---|---|
+| Linux, GCC 13.3, Qt 6.4.2 | everything, Release | ✅ 191/191 CTest |
+| Python 3.13 + Diffusers 0.42.1 | worker suite + tiny-SDXL plumbing | ✅ 27 + 3. Includes a cancel mid-step followed by a regeneration that gives the same image |
+| GitHub Actions, Windows, MSVC `/W4 /WX`, Qt 6.12.0 | everything + package | ✅ every push |
+
+**Re-scoring real frames from the test PC.** I staged the 21 real frames (walk, regenerated
+walk, two idle runs, chests) and ran the checks in a harness:
+- The old colour checks did nothing when the character had no palette.
+- A 32-colour version gave 0.53–0.69 on visually consistent frames.
+- The perceptual profile gives ≤ 0.31 within the character and ≥ 0.41 for chests and
+  recoloured knights.
+- No false positives on the earlier runs.
+
+Real models on the Windows 11 test PC (RTX 4070 Laptop, 8 GB):
+
+| Check | Result |
+|---|---|
+| Second launch from Explorer while AceStudio runs | ✅ existing window comes to the front; one window, one taskbar entry |
+| Generate tab on a 1080p maximised window | ✅ prompt and negative visible; other settings under Options |
+| Cancel right after Generate (worker still importing PyTorch / loading SDXL) | ❌ **crash** (cancel events modified the job map the dialog was iterating) → fixed. ✅ After the fix: "Cancelling after the model has loaded…", cancelled about 40 s later, worker not restarted; the next Generate skipped loading |
+| Crash recovery after that crash | ✅ recovery prompt on restart, document recovered |
+| Live preview on the frame being generated | ✅ the tile updates during steps |
+| Frame tooltips | ✅ e.g. "shape changed (44% overlap)", "ground off by 6 px" |
+| Run, 6 frames | ✅ 50–56 s per frame, clear running poses facing right. One frame flagged; regenerating it got worse (63) and also failed the good next frame → fixed: shape is compared with both neighbours |
+| Jump, 6 frames (old poses) | ❌ raised hands and head left the image (clipped conditioning) → fixed (`fitPoses`). ❌ Floor drawn under airborne frames set the ground 4–6 px low → fixed (`removeDetachedBelow`). ❌ Auto-Correct lifted a frame off the top and clipped the helmet → fixed (never clips). ❌ crouch-to-air frames failed the 55% shape threshold → fixed (threshold from the poses' own overlap). ❌ identical poses ran twice → fixed (one job; tolerance compare) |
+| Jump, 6 frames (fixed build) | ✅ headroom above the figure; nothing needs regenerating; 3 frames flagged ground. Auto-Correct correctly left the two whose sword touches the top edge (no clipping) → Regenerate Flagged now retries them |
+| Cancel mid-frame at Auto precision | ✅ queued frames cancelled at once, no worker restart. The running frame took ~8 s (latent decode after interrupt) → fixed: cancel is raised from the step callback |
+| Precision: Auto (FP8) vs Full, same seed and pose, 10 steps | Full 505.5 s against ~20 s for FP8. Different images (PSNR 13 dB), similar quality. Cancel during a Full step restarted the worker → fixed: slow steps are reported as uninterruptible |
+| Single pixel-art sprite ("a wooden treasure chest") | ✅ one centred chest instead of a sheet. SDXL put it on floor planks, so the prompt now asks for "isolated on a plain white background" |
+
 ### 2026-10-31 — Phase 5, version 0.6.0
 
 | Environment | Build | Result |
