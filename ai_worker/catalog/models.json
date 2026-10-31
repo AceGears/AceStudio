@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "note": "Models AceStudio can download after the user accepts the licence. Sizes and SHA-256 values marked pinned were measured from the official files on 2026-10-29. Entries with verification 'first-download' could not be fetched from the build environment: their hashes are recorded on first download and checked afterwards, and their file lists still need confirming against the repository.",
+  "note": "Models AceStudio can download after the user accepts the licence. Files with a size and SHA-256 are verified against those values (measured from the official files on 2026-10-29, and for SDXL/Pixel Art XL read from the Hugging Face API on 2026-10-31, with URLs pinned to a commit). Files without a published SHA-256 (small configuration files) are hashed on first download and checked on every later download.",
   "licenses": {
     "MIT": {
       "name": "MIT License",

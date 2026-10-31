@@ -115,6 +115,8 @@ Re-check on the same PC with nightly build c57e5c2 (portable mode, data in `<exe
 | Tab in the prompt typed a tab character | ❌ fixed (b49bd18) |
 | `diffusion-cuda` with the driver check: NVIDIA driver 621.01 detected → torch 2.14.1+cu130 (1998.9 MB) and onnxruntime-gpu 1.31.1 replacing onnxruntime-directml; ~3 min | ✅ |
 | BiRefNet Lite on the CUDA execution provider (no fallback warnings): cold job 6.4 s session + 1.2 s run; warm jobs reuse the cached session: runs of 7.7 s, 2.6 s, 2.6 s (the outlier coincides with the laptop GPU waking); CPU was ~16 s | ✅ |
+| Build 43e1f42: "Pixel art for this canvas" ticked after starting on the welcome page; Shift+Tab/Tab leave the prompt | ✅ |
+| SDXL + Pixel Art XL on CUDA 13 PyTorch, 128×128 canvas: clean knight sprite placed on the canvas; job logged "succeeded in 55.7 s" (cold: worker start, 7 GB load, 30 steps, offload) | ✅ |
 | Remove BG tab: the Run button is below the fold of a ~80 px tab area on a 819 px screen; needs scrolling | ⚠️ usability |
 | Install `onnx-windows`: no pip output for 4+ minutes. Same pip from a console (PIP-CHECK.cmd) reached PyPI in 0.8 s and downloaded numpy in under a second | ❌ fixed: pip inherited the worker's protocol stdin and stalled at startup; it now gets DEVNULL (unit-tested; Windows re-check pending) |
 
