@@ -276,6 +276,8 @@ def pixelate(img, width, height, colors=None, palette=None, crop=False, box=None
 
 
 def run(ctx):
+    # Importing PyTorch takes seconds and cannot be interrupted either.
+    ctx.progress(0.01, "Starting PyTorch", force=True, uninterruptible=True)
     require("torch", "diffusers", "transformers", "numpy", "PIL")
     import torch
     prompt = ctx.param("prompt", required=True, kind=str).strip()

@@ -36,6 +36,7 @@ int main(int argc, char* argv[]) {
     if (!newInstance) {
         if (single.forwardToRunning(files)) {
             ACE_LOG_INFO("ui", "AceStudio is already running; handed over " + std::to_string(files.size()) + " file(s)");
+            Logger::instance().flush();
             return 0;
         }
         single.listen();

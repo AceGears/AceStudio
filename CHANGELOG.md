@@ -27,7 +27,33 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   reference images (h94, Apache-2.0, with the OpenCLIP ViT-H/14 encoder, 3.38 GB). Both are
   optional downloads in the Models dialog, pinned by SHA-256.
 
+### Added — Phase 5 review pass
+- **Pose-aware checks.** Each frame is judged against what its pose asks for: a jump frame
+  may leave the ground and a crouch may be shorter. Auto-Correct moves frames to where their
+  pose expects them. Before, it pinned jump frames to the floor.
+- **Facing check.** It compares where colours sit left and right of the figure, such as a
+  cape behind or a sword in front. A frame drawn facing the other way is flagged, and
+  Auto-Correct mirrors it back.
+- **Identity check.** Every frame, frame 1 included, is compared with the character's
+  reference images. A frame 1 that is a different character is flagged for regeneration.
+- **Live preview in Generate Animation:** the frame being generated shows its in-progress
+  image.
+- **Precision option** in Generate Animation: Auto (FP8 weights on GPUs under 10 GB) or Full.
+- **One AceStudio per data folder.** Opening a file while AceStudio runs sends it to the open
+  window. `--new-instance` starts another one anyway.
+
 ### Fixed
+- **Colour checks silently off.** With no palette on the character, which is the default,
+  the colour checks did nothing. They now use a palette-free perceptual colour profile. On
+  real frames, the same character scores ≤ 0.31 and other subjects ≥ 0.41; the thresholds
+  are 0.36 and 0.38.
+- **Cancelling while a model loads** now waits for the load to finish (up to 3 minutes)
+  instead of restarting the worker, so the model stays loaded for the next job.
+- **Regenerated frames are cropped with the same framing box** as the rest, even after a
+  pose edit.
+- **AI panel:** the prompt comes first and the other settings sit under a collapsible
+  Options. Scrolling no longer changes the dropdown or spin box under the mouse.
+- **Single pixel-art sprites** ask SDXL for one centred object instead of a sheet of items.
 - **ControlNet on 8 GB GPUs.** Under model CPU offload, Diffusers keeps the ControlNet on the
   GPU next to the UNet. About 7.5 GB of FP16 weights spilled into shared memory, measured at
   ~30 s per step on the RTX 4070 Laptop. On GPUs under 10 GB, the UNet and ControlNet weights

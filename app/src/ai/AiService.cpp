@@ -198,7 +198,9 @@ Result<JobId> AiService::submit(const std::string& task, nlohmann::json params, 
 
 void AiService::cancel(const JobId& id) {
     if (m_sup) (void)m_sup->cancel(id);
-    poll();
+    // Deliver the resulting events on the next event-loop turn, never from
+    // inside the caller (which may be iterating over its own jobs).
+    QTimer::singleShot(0, this, &AiService::poll);
 }
 
 const Job* AiService::job(const JobId& id) const { return m_sup ? m_sup->job(id) : nullptr; }

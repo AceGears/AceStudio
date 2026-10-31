@@ -217,7 +217,11 @@ AnimationDialog::AnimationDialog(AppContext& ctx, AiService& ai, DocumentView* v
     connect(m_correct, &QPushButton::clicked, this, &AnimationDialog::autoCorrect);
     connect(m_commit, &QPushButton::clicked, this, &AnimationDialog::commit);
     connect(m_cancel, &QPushButton::clicked, this, [this] {
-        for (const auto& [id, f] : m_jobs) m_ai.cancel(id);
+        // Copy the ids: a cancelled job reports back (onJobFinished erases
+        // it from m_jobs), which must not happen under a live iterator.
+        std::vector<std::string> ids;
+        for (const auto& [id, f] : m_jobs) ids.push_back(id);
+        for (const auto& id : ids) m_ai.cancel(id);
     });
     connect(&m_ai, &AiService::jobFinished, this, &AnimationDialog::onJobFinished);
     connect(&m_ai, &AiService::jobChanged, this, [this](const QString& qid) {
@@ -240,7 +244,11 @@ AnimationDialog::AnimationDialog(AppContext& ctx, AiService& ai, DocumentView* v
 }
 
 AnimationDialog::~AnimationDialog() {
-    for (const auto& [id, f] : m_jobs) m_ai.cancel(id);
+    // Stop listening first: the cancellations must not call back into a
+    // dialog that is being destroyed.
+    disconnect(&m_ai, nullptr, this, nullptr);
+    const auto jobs = m_jobs;
+    for (const auto& [id, f] : jobs) m_ai.cancel(id);
     std::error_code ec;
     fs::remove_all(m_session, ec);   // pose/reference inputs written for this dialog only
 }
