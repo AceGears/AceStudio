@@ -272,8 +272,72 @@ class DownloadTests(unittest.TestCase):
         self.assertIn("Unsafe", msg["params"]["error"])
 
 
-if __name__ == "__main__":
-    unittest.main()
+
+def _has(*mods):
+    import importlib.util
+    return all(importlib.util.find_spec(m) is not None for m in mods)
+
+
+@unittest.skipUnless(_has("PIL", "numpy"), "needs Pillow and NumPy")
+class SubjectCropTests(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, ROOT)
+        from acestudio_worker.tasks import generate
+        self.g = generate
+
+    def test_small_subject_is_framed(self):
+        from PIL import Image
+        img = Image.new("RGB", (1024, 1024), (240, 240, 235))
+        img.paste((200, 30, 30), (400, 380, 600, 640))        # 200x260 subject
+        box = self.g.subject_box(img, 128, 128)
+        self.assertIsNotNone(box)
+        x0, y0, x1, y1 = box
+        self.assertEqual(x1 - x0, y1 - y0)                     # square, like the canvas
+        self.assertTrue(x0 <= 400 and y0 <= 380 and x1 >= 600 and y1 >= 640)
+        self.assertLess(x1 - x0, 400)                          # much tighter than 1024
+        out = self.g.pixelate(img, 128, 128, crop=True)
+        import numpy as np
+        def reds(im):
+            a = np.asarray(im.convert("RGB"), dtype=np.int16)
+            return int(((a[..., 0] > 150) & (a[..., 1] < 100)).sum())
+        red = reds(out)
+        plain = self.g.pixelate(img, 128, 128)
+        red_plain = reds(plain)
+        self.assertGreater(red, 3 * red_plain)                 # subject fills more of the sprite
+
+    def test_busy_or_full_images_are_left_alone(self):
+        from PIL import Image
+        import random
+        rnd = random.Random(1)
+        noisy = Image.new("RGB", (256, 256))
+        noisy.putdata([(rnd.randrange(256), rnd.randrange(256), rnd.randrange(256)) for _ in range(256 * 256)])
+        self.assertIsNone(self.g.subject_box(noisy, 64, 64))
+        full = Image.new("RGB", (256, 256), (10, 10, 10))
+        full.paste((250, 250, 0), (4, 4, 252, 252))
+        self.assertIsNone(self.g.subject_box(full, 64, 64))
+        empty = Image.new("RGB", (256, 256), (90, 90, 90))
+        self.assertIsNone(self.g.subject_box(empty, 64, 64))
+
+    def test_wide_canvas_gets_wide_box_inside_image(self):
+        from PIL import Image
+        img = Image.new("RGB", (1024, 1024), (0, 0, 0))
+        img.paste((0, 200, 0), (900, 100, 1000, 300))          # near the right edge
+        x0, y0, x1, y1 = self.g.subject_box(img, 128, 64)
+        self.assertTrue(0 <= x0 < x1 <= 1024 and 0 <= y0 < y1 <= 1024)
+        self.assertAlmostEqual((x1 - x0) / float(y1 - y0), 2.0, delta=0.05)
+        self.assertTrue(x0 <= 900 and x1 >= 1000)
+
+
+class LoraScaleTests(unittest.TestCase):
+    def test_range_and_type(self):
+        sys.path.insert(0, ROOT)
+        from acestudio_worker.tasks import generate
+        from acestudio_worker.jobs import JobError
+        self.assertEqual(generate._lora_scale({"scale": 0.6}), 0.6)
+        self.assertEqual(generate._lora_scale({}), 1.0)
+        for bad in (-0.1, 2.5, "x", None):
+            with self.assertRaises(JobError):
+                generate._lora_scale({"scale": bad})
 
 
 class RuntimeInstallTests(unittest.TestCase):
@@ -421,3 +485,6 @@ class DriverTests(unittest.TestCase):
         self.assertTrue(gpu.supports_cuda13("580.97"))
         self.assertFalse(gpu.supports_cuda13("566.36"))
         self.assertFalse(gpu.supports_cuda13(None))
+
+if __name__ == "__main__":
+    unittest.main()

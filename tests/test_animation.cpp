@@ -4,6 +4,8 @@
 #include "acestudio/core/Editor.h"
 #include "acestudio/core/ProjectIO.h"
 
+#include <map>
+
 using namespace acestudio;
 
 namespace {
@@ -117,4 +119,30 @@ TEST_CASE("Onion skin shows tinted, fading neighbours only", "[animation][onion]
     CHECK(renderOnionSkin(e.document(), 0, o).pixel(3, 0).a > 0);   // wraps to the last frame
     o.opacity = 0;
     CHECK(renderOnionSkin(e.document(), 2, o).isFullyTransparent());
+}
+
+TEST_CASE("Onion skin with a composite provider matches on-demand rendering", "[animation][onion]") {
+    auto d = Document::create(6, 6).value();
+    const LayerId l = d.addLayer("L").value();
+    for (int i = 0; i < 4; ++i) {
+        if (i) REQUIRE(d.insertFrame(i));
+        REQUIRE(d.setCel(l, i, Cel{Image(2, 2, Rgba8::opaque(static_cast<std::uint8_t>(40 * i), 100, 200)), i, i}));
+    }
+    OnionSkin o;
+    o.before = 2;
+    o.after = 1;
+    const Image direct = renderOnionSkin(d, 2, o);
+    std::map<int, Image> cache;
+    int calls = 0;
+    auto provider = [&](int f) -> const Image& {
+        ++calls;
+        auto it = cache.find(f);
+        if (it == cache.end()) it = cache.emplace(f, d.composite(f)).first;
+        return it->second;
+    };
+    CHECK(renderOnionSkin(d, 2, o, provider) == direct);
+    CHECK(calls == 3);
+    CHECK(onionSkinFrames(d, 2, o) == std::vector<int>{0, 1, 3});
+    o.tint = false;
+    CHECK(renderOnionSkin(d, 2, o, provider) == renderOnionSkin(d, 2, o));
 }

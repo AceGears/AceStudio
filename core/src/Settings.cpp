@@ -52,6 +52,9 @@ Settings::Settings() {
     registerDefault("ai.autoStart", false);                   // start the worker when the app opens
     registerDefault("ai.outputDirectory", "");
     registerDefault("ai.vramLimitMb", 0);                     // 0 = auto
+    registerDefault("ai.generate.lora", true);                // use the Pixel Art XL LoRA when installed
+    registerDefault("ai.generate.loraStrength", 100);         // percent, 0..200
+    registerDefault("ai.generate.cropSubject", true);         // frame the subject before pixelizing
     // Export
     registerDefault("export.defaultEngine", "godot");
     // MCP
@@ -61,6 +64,7 @@ Settings::Settings() {
     registerDefault("advanced.logLevel", "info");
     // Keyboard shortcut overrides {actionId: "Ctrl+Shift+N"}
     registerDefault("keyboard.shortcuts", json::object());
+    registerDefault("export.presets", json::object());   // last-used options per export kind
     // Window state (opaque Qt blobs stored as base64)
     registerDefault("window.geometry", "");
     registerDefault("window.state", "");

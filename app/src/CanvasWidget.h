@@ -38,6 +38,7 @@ public:
     // a null image clears it.
     void setUnderlay(const QImage& image);
     void setAppearance(const CanvasAppearance& a);
+    const CanvasAppearance& appearance() const { return m_look; }
     double zoom() const { return m_zoom; }
 
     // When true, a left drag pans instead of reporting tool events.

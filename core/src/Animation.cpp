@@ -40,12 +40,13 @@ std::optional<std::size_t> tagAt(const Document& doc, int frame) {
     return std::nullopt;
 }
 
-Image renderOnionSkin(const Document& doc, int frame, const OnionSkin& o) {
-    Image out(doc.width(), doc.height());
-    const int n = doc.frameCount();
-    if (n < 2 || o.opacity <= 0) return out;
-    struct Ghost { int frame; int distance; bool before; };
+namespace {
+struct Ghost { int frame; int distance; bool before; };
+
+std::vector<Ghost> ghostsFor(const Document& doc, int frame, const OnionSkin& o) {
     std::vector<Ghost> ghosts;
+    const int n = doc.frameCount();
+    if (n < 2 || o.opacity <= 0) return ghosts;
     auto add = [&](int f, int dist, bool before) {
         if (o.wrap) f = ((f % n) + n) % n;
         if (f < 0 || f >= n || f == frame) return;
@@ -55,16 +56,38 @@ Image renderOnionSkin(const Document& doc, int frame, const OnionSkin& o) {
     for (int d = 1; d <= std::max(0, o.after); ++d) add(frame + d, d, false);
     // Furthest first so nearer ghosts end up on top.
     std::stable_sort(ghosts.begin(), ghosts.end(), [](const Ghost& a, const Ghost& b) { return a.distance > b.distance; });
-    for (const Ghost& g : ghosts) {
-        Image img = doc.composite(g.frame);
+    return ghosts;
+}
+} // namespace
+
+std::vector<int> onionSkinFrames(const Document& doc, int frame, const OnionSkin& o) {
+    std::vector<int> out;
+    for (const Ghost& g : ghostsFor(doc, frame, o)) out.push_back(g.frame);
+    return out;
+}
+
+Image renderOnionSkin(const Document& doc, int frame, const OnionSkin& o, const std::function<const Image&(int)>& composite) {
+    Image out(doc.width(), doc.height());
+    Image scratch;
+    for (const Ghost& g : ghostsFor(doc, frame, o)) {
+        const Image* src = nullptr;
+        if (composite) src = &composite(g.frame);
+        if (!src || src->width() != doc.width() || src->height() != doc.height()) {
+            scratch = doc.composite(g.frame);
+            src = &scratch;
+        }
+        const int pct = std::clamp(o.opacity / g.distance, 1, 100);
+        const auto opacity = static_cast<std::uint8_t>(pct * 255 / 100);
         if (o.tint) {
+            Image img = *src;
             const Rgba8 t = g.before ? Rgba8{220, 60, 60, 255} : Rgba8{60, 110, 230, 255};
             for (auto& p : img.pixels())
                 if (p.a) p = {static_cast<std::uint8_t>((p.r + t.r) / 2), static_cast<std::uint8_t>((p.g + t.g) / 2),
                               static_cast<std::uint8_t>((p.b + t.b) / 2), p.a};
+            blendImage(out, img, 0, 0, BlendMode::Normal, opacity);
+        } else {
+            blendImage(out, *src, 0, 0, BlendMode::Normal, opacity);
         }
-        const int pct = std::clamp(o.opacity / g.distance, 1, 100);
-        blendImage(out, img, 0, 0, BlendMode::Normal, static_cast<std::uint8_t>(pct * 255 / 100));
     }
     return out;
 }

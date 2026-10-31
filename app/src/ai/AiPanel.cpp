@@ -24,6 +24,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTreeWidget>
@@ -151,6 +152,18 @@ QWidget* AiPanel::buildGenerateTab() {
     auto* w = new QWidget(this);
     m_genModel = new QComboBox(w);
     m_genLora = new QCheckBox(tr("Pixel Art XL style"), w);
+    m_genLoraStrength = new QSpinBox(w);
+    m_genLoraStrength->setRange(0, 200);
+    m_genLoraStrength->setSingleStep(10);
+    m_genLoraStrength->setSuffix(QStringLiteral(" %"));
+    m_genLoraStrength->setToolTip(tr("How strongly the Pixel Art XL style is applied (100 % = as trained)"));
+    m_genLoraStrength->setValue(std::clamp(m_ctx.settings().get<int>("ai.generate.loraStrength"), 0, 200));
+    m_genLora->setChecked(m_ctx.settings().get<bool>("ai.generate.lora"));
+    connect(m_genLora, &QCheckBox::toggled, this, [this](bool on) {
+        m_genLoraStrength->setEnabled(on && m_genLora->isEnabled());
+        if (m_genLora->isEnabled()) (void)m_ctx.settings().set("ai.generate.lora", on);   // not when greyed out
+    });
+    connect(m_genLoraStrength, &QSpinBox::valueChanged, this, [this](int v) { (void)m_ctx.settings().set("ai.generate.loraStrength", v); });
     m_prompt = new QPlainTextEdit(w);
     m_prompt->setPlaceholderText(tr("Describe the asset, e.g. “knight with a red shield, side view, game sprite”"));
     m_prompt->setFixedHeight(64);
@@ -162,6 +175,11 @@ QWidget* AiPanel::buildGenerateTab() {
     m_pixelMode->setChecked(true);
     m_usePalette = new QCheckBox(tr("Use document palette"), w);
     m_usePalette->setChecked(true);
+    m_cropSubject = new QCheckBox(tr("Frame the subject"), w);
+    m_cropSubject->setToolTip(tr("Crop to the subject before reducing to the canvas size, so small subjects keep more "
+                                 "detail. Works when the image has a plain background."));
+    m_cropSubject->setChecked(m_ctx.settings().get<bool>("ai.generate.cropSubject"));
+    connect(m_cropSubject, &QCheckBox::toggled, this, [this](bool on) { (void)m_ctx.settings().set("ai.generate.cropSubject", on); });
     m_width = new QSpinBox(w);
     m_height = new QSpinBox(w);
     for (QSpinBox* s : {m_width, m_height}) { s->setRange(64, 2048); s->setSingleStep(64); s->setValue(1024); }
@@ -190,6 +208,7 @@ QWidget* AiPanel::buildGenerateTab() {
         m_width->setEnabled(!m_pixelMode->isChecked());
         m_height->setEnabled(!m_pixelMode->isChecked());
         m_usePalette->setEnabled(m_pixelMode->isChecked());
+        m_cropSubject->setEnabled(m_pixelMode->isChecked());
     };
     connect(m_pixelMode, &QCheckBox::toggled, this, sizeEnabled);
     sizeEnabled();
@@ -202,11 +221,16 @@ QWidget* AiPanel::buildGenerateTab() {
     size->addWidget(m_height);
     auto* f = new QFormLayout(w);
     f->addRow(tr("Model:"), m_genModel);
-    f->addRow(QString(), m_genLora);
+    auto* loraRow = new QHBoxLayout;
+    loraRow->addWidget(m_genLora);
+    loraRow->addWidget(m_genLoraStrength);
+    loraRow->addStretch();
+    f->addRow(QString(), loraRow);
     f->addRow(tr("Prompt:"), m_prompt);
     f->addRow(tr("Negative:"), m_negative);
     f->addRow(QString(), m_pixelMode);
     f->addRow(QString(), m_usePalette);
+    f->addRow(QString(), m_cropSubject);
     f->addRow(tr("Size:"), size);
     f->addRow(tr("Steps:"), m_steps);
     f->addRow(tr("Guidance:"), m_guidance);
@@ -292,8 +316,12 @@ void AiPanel::refreshModels() {
     fillModelCombo(m_upModel, "upscale.esrgan");
     const ModelEntry* lora = m_ai.catalog() ? m_ai.catalog()->find("pixel-art-xl") : nullptr;
     const bool loraOk = lora && m_ai.store() && m_ai.store()->state(*lora) == InstallState::Installed;
-    m_genLora->setEnabled(loraOk);
-    m_genLora->setChecked(loraOk && m_genLora->isChecked());
+    {
+        const QSignalBlocker block(m_genLora);   // greying out must not change the saved choice
+        m_genLora->setEnabled(loraOk);
+        m_genLora->setChecked(loraOk && m_ctx.settings().get<bool>("ai.generate.lora"));
+    }
+    m_genLoraStrength->setEnabled(loraOk && m_genLora->isChecked());
     m_genLora->setToolTip(loraOk ? QString() : tr("Download “Pixel Art XL” in Models… to enable"));
 }
 
@@ -359,7 +387,7 @@ void AiPanel::runGenerate() {
         auto [gw, gh] = generationSizeFor(d.width(), d.height());
         p["width"] = gw;
         p["height"] = gh;
-        p["pixel"] = {{"width", d.width()}, {"height", d.height()}};
+        p["pixel"] = {{"width", d.width()}, {"height", d.height()}, {"crop", m_cropSubject->isChecked()}};
         if (m_usePalette->isChecked() && d.palette().size() > 0) {
             json pal = json::array();
             for (std::size_t i = 0; i < d.palette().size(); ++i) pal.push_back(d.palette().at(i).toHex(false));
@@ -376,7 +404,7 @@ void AiPanel::runGenerate() {
     }
     if (m_genLora->isChecked() && m_ai.catalog())
         if (const ModelEntry* l = m_ai.catalog()->find("pixel-art-xl"))
-            p["lora"] = {{"path", toUtf8(m_ai.store()->entryPath(*l))}, {"scale", 1.0}};
+            p["lora"] = {{"path", toUtf8(m_ai.store()->entryPath(*l))}, {"scale", m_genLoraStrength->value() / 100.0}};
     std::optional<Image> init;
     if (m_img2img->isChecked() && m_view) {
         init = m_view->document().composite(m_view->currentFrame());
@@ -422,6 +450,27 @@ void AiPanel::runUpscale() {
     pend.name = m_view->displayName() + tr(" ×4");
     submit("upscale.esrgan", std::move(p), tr("Upscale: %1").arg(m_view->displayName()), std::move(pend), {{"input", &src}});
 }
+
+namespace {
+// " (on CUDA, 2.6 s)": where a finished job actually ran (after any fallback) and how long it took.
+QString ranOn(const Job& j) {
+    std::string dev = j.info.value("provider", std::string());
+    if (dev.empty()) dev = j.info.value("device", std::string());
+    static const std::pair<const char*, const char*> names[] = {
+        {"CUDAExecutionProvider", "CUDA"}, {"DmlExecutionProvider", "DirectML"}, {"CPUExecutionProvider", "CPU"},
+        {"cuda", "CUDA"}, {"cpu", "CPU"}, {"mps", "Metal"}};
+    QString where = QString::fromStdString(dev);
+    for (const auto& [k, v] : names)
+        if (dev == k || dev.rfind(std::string(k) + ":", 0) == 0) where = QString::fromLatin1(v);
+    QString out = where.isEmpty() ? QString() : AiPanel::tr("on %1").arg(where);
+    if (j.started != Clock::time_point{} && j.finished > j.started) {
+        const double secs = std::chrono::duration<double>(j.finished - j.started).count();
+        const QString t = AiPanel::tr("%1 s").arg(secs, 0, 'f', secs < 10 ? 1 : 0);
+        out = out.isEmpty() ? t : AiPanel::tr("%1, %2").arg(out, t);
+    }
+    return out.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(out);
+}
+} // namespace
 
 void AiPanel::refreshJob(const QString& qid) {
     const std::string id = qid.toStdString();
@@ -491,16 +540,18 @@ void AiPanel::onJobFinished(const QString& qid) {
                 Q_EMIT resultAsDocument(*img, name);
         }
         const QString seed = QString::number(j->info.value("seed", 0LL));
-        Q_EMIT statusMessage(tr("Generated %n image(s) (seed %1)", nullptr, n).arg(seed));
+        Q_EMIT statusMessage(tr("Generated %n image(s) with seed %1%2", nullptr, n).arg(seed, ranOn(*j)));
         break;
     }
     case Pending::Kind::RemoveBackground:
+        Q_EMIT statusMessage(tr("Background removed%1").arg(ranOn(*j)));
         if (auto img = load("image")) {
             if (pend.view) Q_EMIT resultAsLayer(pend.view, *img, pend.name, pend.layer, pend.frame);
             else Q_EMIT resultAsDocument(*img, pend.name);
         }
         break;
     case Pending::Kind::Upscale:
+        Q_EMIT statusMessage(tr("Upscaled%1").arg(ranOn(*j)));
         if (auto img = load("image")) Q_EMIT resultAsDocument(*img, pend.name);
         break;
     case Pending::Kind::Other: break;

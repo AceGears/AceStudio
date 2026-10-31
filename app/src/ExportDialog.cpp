@@ -41,7 +41,8 @@ constexpr int kAllFrames = -1;
 constexpr int kCustom = -2;
 } // namespace
 
-ExportDialog::ExportDialog(ExportKind kind, const Document& doc, int currentFrame, QString suggestedPath, QWidget* parent)
+ExportDialog::ExportDialog(ExportKind kind, const Document& doc, int currentFrame, QString suggestedPath,
+                           const nlohmann::json& preset, QWidget* parent)
     : QDialog(parent), m_kind(kind), m_doc(doc) {
     setWindowTitle(tr("Export %1").arg(kindTitle()));
     const bool animated = kind == ExportKind::Gif || kind == ExportKind::Apng || kind == ExportKind::Webp;
@@ -169,6 +170,7 @@ ExportDialog::ExportDialog(ExportKind kind, const Document& doc, int currentFram
             m_range->setCurrentIndex(static_cast<int>(i) + 1);
             break;
         }
+    applyPreset(preset);
     updateRangeControls();
     setMinimumWidth(460);
 }
@@ -223,6 +225,63 @@ void ExportDialog::updateSummary() {
     if (sel >= 0 && m_kind != ExportKind::SpriteSheet && m_kind != ExportKind::PngSequence)
         text += tr(" — played in the tag's direction");
     m_summary->setText(text);
+}
+
+QString ExportDialog::kindKey(ExportKind k) {
+    switch (k) {
+    case ExportKind::SpriteSheet: return QStringLiteral("sheet");
+    case ExportKind::Gif: return QStringLiteral("gif");
+    case ExportKind::Apng: return QStringLiteral("apng");
+    case ExportKind::Webp: return QStringLiteral("webp");
+    case ExportKind::PngSequence: return QStringLiteral("sequence");
+    }
+    return {};
+}
+
+nlohmann::json ExportDialog::preset() const {
+    nlohmann::json p = {{"scale", m_scale->value()}};
+    if (m_loop) p["loop"] = m_loop->value();
+    if (m_layout) {
+        p["layout"] = m_layout->currentData().toInt();
+        p["columns"] = m_columns->value();
+        p["border"] = m_border->value();
+        p["spacing"] = m_spacing->value();
+        p["inner"] = m_inner->value();
+        p["trim"] = m_trim->isChecked();
+        p["merge"] = m_merge->isChecked();
+        p["pot"] = m_pot->isChecked();
+        p["data"] = m_json->currentData().toInt();
+    }
+    const QFileInfo fi(outputPath());
+    if (!outputPath().isEmpty()) p["folder"] = fi.absolutePath().toStdString();   // parent of the file or sequence folder
+    return p;
+}
+
+void ExportDialog::applyPreset(const nlohmann::json& p) {
+    if (!p.is_object()) return;
+    // Tolerant: a missing or mistyped value keeps the default.
+    auto num = [&](const char* k, QSpinBox* box) {
+        if (box && p.contains(k) && p[k].is_number_integer()) box->setValue(p[k].get<int>());
+    };
+    auto flag = [&](const char* k, QCheckBox* box) {
+        if (box && p.contains(k) && p[k].is_boolean()) box->setChecked(p[k].get<bool>());
+    };
+    auto pick = [&](const char* k, QComboBox* box) {
+        if (!box || !p.contains(k) || !p[k].is_number_integer()) return;
+        const int i = box->findData(p[k].get<int>());
+        if (i >= 0) box->setCurrentIndex(i);
+    };
+    num("scale", m_scale);
+    num("loop", m_loop);
+    pick("layout", m_layout);
+    num("columns", m_columns);
+    num("border", m_border);
+    num("spacing", m_spacing);
+    num("inner", m_inner);
+    flag("trim", m_trim);
+    flag("merge", m_merge);
+    flag("pot", m_pot);
+    pick("data", m_json);
 }
 
 bool ExportDialog::runExport() {

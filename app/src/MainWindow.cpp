@@ -1001,10 +1001,27 @@ bool MainWindow::insertImageAsLayer(DocumentView* v, const Image& src, const QSt
 void MainWindow::exportAnimation(int kind) {
     DocumentView* v = currentView();
     if (!v) return;
+    const auto k = static_cast<ExportKind>(kind);
+    nlohmann::json presets = m_ctx.settings().get("export.presets");
+    if (!presets.is_object()) presets = nlohmann::json::object();
+    const std::string key = ExportDialog::kindKey(k).toStdString();
+    const nlohmann::json preset = presets.contains(key) ? presets[key] : nlohmann::json::object();
     QString suggested = v->filePath();
-    if (suggested.isEmpty()) suggested = QDir::home().filePath(QStringLiteral("untitled.acestudio"));
-    ExportDialog dlg(static_cast<ExportKind>(kind), v->document(), v->currentFrame(), suggested, this);
-    if (dlg.exec() == QDialog::Accepted) statusBar()->showMessage(dlg.resultMessage(), 6000);
+    if (suggested.isEmpty()) {
+        // Unsaved documents export next to the last export of this kind.
+        QString folder = QDir::homePath();
+        if (preset.contains("folder") && preset["folder"].is_string()) {
+            const QString f = QString::fromStdString(preset["folder"].get<std::string>());
+            if (QDir(f).exists()) folder = f;
+        }
+        suggested = QDir(folder).filePath(QStringLiteral("untitled.acestudio"));
+    }
+    ExportDialog dlg(k, v->document(), v->currentFrame(), suggested, preset, this);
+    if (dlg.exec() != QDialog::Accepted) return;
+    statusBar()->showMessage(dlg.resultMessage(), 6000);
+    presets[key] = dlg.preset();
+    (void)m_ctx.settings().set("export.presets", presets);
+    m_ctx.saveSettings();
 }
 
 void MainWindow::editTags() {

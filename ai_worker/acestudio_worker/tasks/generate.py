@@ -15,7 +15,8 @@ params:
   strength          img2img strength 0..1 (default 0.6)
   device            auto | cuda | cpu
   offload           auto | none | model   (model = enable_model_cpu_offload, for <10 GB VRAM)
-  pixel             optional post-process {"width": w, "height": h, "colors": n | "palette": ["#RRGGBB", ...]}
+  pixel             optional post-process {"width": w, "height": h, "colors": n | "palette": ["#RRGGBB", ...],
+                    "crop": true to frame the subject before reducing (plain backdrops only)}
 outputs:
   image0..imageN    PNGs (post-processed when `pixel` is given)
   raw0..rawN        the full-size generations when `pixel` is given
@@ -48,6 +49,16 @@ def _int(ctx, name, default, lo, hi):
     return v
 
 
+def _lora_scale(lora):
+    try:
+        scale = float(lora.get("scale", 1.0))
+    except (TypeError, ValueError):
+        raise JobError("LoRA scale must be a number", kind="invalid_input")
+    if not 0.0 <= scale <= 2.0:
+        raise JobError("LoRA scale must be between 0 and 2", kind="invalid_input")
+    return scale
+
+
 def _pipelines(ctx, model_dir, vae_dir, lora, device, offload):
     import os
     import torch
@@ -55,9 +66,13 @@ def _pipelines(ctx, model_dir, vae_dir, lora, device, offload):
     if not model_dir or not os.path.exists(os.path.join(model_dir, "model_index.json")):
         raise JobError("SDXL model not found in %s. Download it in AI Studio > Models." % model_dir,
                        kind="missing_model")
-    key = (model_dir, vae_dir, lora.get("path") if lora else None, lora.get("scale") if lora else None, device, offload)
+    # The LoRA strength is not part of the key: it is set per run on the
+    # cached pipeline, so changing it does not reload SDXL.
+    key = (model_dir, vae_dir, lora.get("path") if lora else None, device, offload)
     with _cache_lock:
         if _cache["key"] == key:
+            if lora:
+                _cache["pipe"].set_adapters(["style"], adapter_weights=[_lora_scale(lora)])
             return _cache["pipe"], _cache["img2img"]
         _cache.update(key=None, pipe=None, img2img=None)
         if device == "cuda":
@@ -76,7 +91,7 @@ def _pipelines(ctx, model_dir, vae_dir, lora, device, offload):
             raise JobError("LoRA file not found: %s" % lora.get("path"), kind="missing_model")
         folder, name = os.path.split(lora["path"])
         pipe.load_lora_weights(folder, weight_name=name, adapter_name="style")
-        pipe.set_adapters(["style"], adapter_weights=[float(lora.get("scale", 1.0))])
+        pipe.set_adapters(["style"], adapter_weights=[_lora_scale(lora)])
     if device == "cuda" and offload == "model":
         pipe.enable_model_cpu_offload()
     else:
@@ -94,10 +109,56 @@ def _pipelines(ctx, model_dir, vae_dir, lora, device, offload):
     return pipe, img2img
 
 
-def pixelate(img, width, height, colors=None, palette=None):
+def subject_box(img, width, height, threshold=40, pad=0.08):
+    """Box (left, top, right, bottom) around the subject of a generation, grown
+    to the target aspect ratio, or None when the subject fills the image or
+    cannot be told from the background. The background colour is the median
+    of the border pixels (SDXL sprites are usually on a plain backdrop)."""
+    import numpy as np
+    a = np.asarray(img.convert("RGB"), dtype=np.int16)
+    h, w = a.shape[:2]
+    if w < 8 or h < 8:
+        return None
+    border = np.concatenate([a[0], a[-1], a[:, 0], a[:, -1]])
+    bg = np.median(border, axis=0)
+    # The backdrop must be fairly uniform, or "background" means nothing.
+    if np.mean(np.max(np.abs(border - bg), axis=1) > threshold) > 0.2:
+        return None
+    fg = np.max(np.abs(a - bg), axis=2) > threshold
+    if fg.mean() < 0.005:
+        return None
+    ys, xs = np.nonzero(fg)
+    left, right, top, bottom = int(xs.min()), int(xs.max()) + 1, int(ys.min()), int(ys.max()) + 1
+    bw, bh = right - left, bottom - top
+    if bw * bh > 0.85 * w * h:
+        return None
+    # Pad, then grow the short side to the target aspect, centred on the subject.
+    bw, bh = bw * (1 + 2 * pad), bh * (1 + 2 * pad)
+    aspect = width / float(height)
+    if bw / bh < aspect:
+        bw = bh * aspect
+    else:
+        bh = bw / aspect
+    bw, bh = min(bw, w), min(bh, h)
+    # Never crop below the output size (no upscaling of the crop).
+    bw, bh = max(bw, min(w, width)), max(bh, min(h, height))
+    cx, cy = (left + right) / 2.0, (top + bottom) / 2.0
+    x0 = int(round(min(max(cx - bw / 2, 0), w - bw)))
+    y0 = int(round(min(max(cy - bh / 2, 0), h - bh)))
+    x1, y1 = min(w, x0 + int(round(bw))), min(h, y0 + int(round(bh)))
+    if (x1 - x0) * (y1 - y0) > 0.85 * w * h:
+        return None
+    return (x0, y0, x1, y1)
+
+
+def pixelate(img, width, height, colors=None, palette=None, crop=False):
     """Nearest-neighbour downscale (centre sampling) and palette reduction
     without dithering, so the result is editable pixel art."""
     from PIL import Image
+    if crop:
+        box = subject_box(img, width, height)
+        if box:
+            img = img.crop(box)
     small = img.convert("RGB").resize((width, height), Image.NEAREST, reducing_gap=None)
     if palette:
         pal_img = Image.new("P", (1, 1))
@@ -140,6 +201,8 @@ def run(ctx):
             vram = torch.cuda.get_device_properties(0).total_memory / 2**30
             offload = "model" if vram < 10 else "none"
     lora = ctx.param("lora")
+    if lora:
+        _lora_scale(lora)   # reject a bad value before loading anything
     pipe, img2img = _pipelines(ctx, ctx.param("model_dir", required=True, kind=str), ctx.param("vae_dir"),
                                lora, device, offload)
     init_path = ctx.param("init_image")
@@ -175,7 +238,8 @@ def run(ctx):
             img = result.images[0]
             if pixel:
                 outputs["raw%d" % i] = save_png(img, ctx.path("raw%d.png" % i))
-                img = pixelate(img, int(pixel["width"]), int(pixel["height"]), pixel.get("colors"), pixel.get("palette"))
+                img = pixelate(img, int(pixel["width"]), int(pixel["height"]), pixel.get("colors"), pixel.get("palette"),
+                               crop=bool(pixel.get("crop", False)))
             outputs["image%d" % i] = save_png(img, ctx.path("image%d.png" % i))
     except Cancelled:
         raise

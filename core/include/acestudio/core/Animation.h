@@ -5,6 +5,7 @@
 
 #include "acestudio/core/Document.h"
 
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -33,7 +34,12 @@ struct OnionSkin {
 
 // Ghost frames only (no current frame), composited back-to-front so the
 // nearest ghosts are on top. Draw the current frame over this image.
-Image renderOnionSkin(const Document& doc, int frame, const OnionSkin& opts);
+// `composite` supplies a frame's composite (e.g. from a cache); when empty,
+// frames are composited on demand.
+Image renderOnionSkin(const Document& doc, int frame, const OnionSkin& opts,
+                      const std::function<const Image&(int)>& composite = {});
+// Frames renderOnionSkin would show as ghosts for `frame`.
+std::vector<int> onionSkinFrames(const Document& doc, int frame, const OnionSkin& opts);
 
 // Steps through a document's frames honouring a tag (or all frames when
 // no tag applies) and each frame's duration.

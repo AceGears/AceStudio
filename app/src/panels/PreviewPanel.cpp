@@ -1,10 +1,12 @@
 #include "PreviewPanel.h"
+#include "CanvasWidget.h"
 #include "DocumentView.h"
 #include "QtBridge.h"
 
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPainter>
 #include <QPixmap>
 #include <QScrollArea>
 #include <QSpinBox>
@@ -141,7 +143,22 @@ void PreviewPanel::showFrame() {
     const int f = std::clamp(m_player.currentFrame(), 0, d.frameCount() - 1);
     const QImage img = toQImage(d.composite(f));
     const int z = m_zoom->value();
-    m_image->setPixmap(QPixmap::fromImage(img.scaled(img.width() * z, img.height() * z, Qt::IgnoreAspectRatio, Qt::FastTransformation)));
+    // Checkerboard behind transparent pixels, in the canvas colours.
+    const CanvasAppearance& look = m_view->canvas()->appearance();
+    QPixmap pm(img.width() * z, img.height() * z);
+    {
+        const int s = std::max(2, look.checkerSize);
+        QPixmap tile(s * 2, s * 2);
+        QPainter tp(&tile);
+        tp.fillRect(0, 0, s * 2, s * 2, look.checker1);
+        tp.fillRect(s, 0, s, s, look.checker2);
+        tp.fillRect(0, s, s, s, look.checker2);
+        tp.end();
+        QPainter p(&pm);
+        p.drawTiledPixmap(pm.rect(), tile);
+        p.drawImage(pm.rect(), img);   // nearest-neighbour: no smooth transform hint set
+    }
+    m_image->setPixmap(pm);
     m_status->setText(tr("Frame %1 · %2 ms%3").arg(f + 1).arg(d.frames()[static_cast<std::size_t>(f)].durationMs)
                           .arg(m_player.finished() ? tr(" · finished") : QString()));
 }

@@ -70,11 +70,25 @@ void DocumentView::refreshCanvas() {
     m_canvas->setTiling(wrapsX(document().tileMode()), wrapsY(document().tileMode()));
     m_composite = document().composite(m_frame);
     m_canvas->setImage(toQImage(m_composite));
-    m_canvas->setUnderlay(m_onion ? toQImage(renderOnionSkin(document(), m_frame, *m_onion)) : QImage());
+    m_canvas->setUnderlay(m_onion ? toQImage(renderOnion()) : QImage());
+}
+
+Image DocumentView::renderOnion() {
+    // Ghost composites are cached: painting only touches the current frame,
+    // which is never a ghost; any other change clears the cache.
+    const std::vector<int> want = onionSkinFrames(document(), m_frame, *m_onion);
+    for (auto it = m_frameCache.begin(); it != m_frameCache.end();)
+        it = std::find(want.begin(), want.end(), it->first) == want.end() ? m_frameCache.erase(it) : std::next(it);
+    return renderOnionSkin(document(), m_frame, *m_onion, [this](int f) -> const Image& {
+        auto it = m_frameCache.find(f);
+        if (it == m_frameCache.end()) it = m_frameCache.emplace(f, document().composite(f)).first;
+        return it->second;
+    });
 }
 
 void DocumentView::setOnionSkin(std::optional<OnionSkin> opts) {
     m_onion = opts;
+    m_frameCache.clear();
     refreshCanvas();
 }
 
@@ -86,6 +100,7 @@ void DocumentView::refreshRegion(const IntRect& region) {
         return;
     }
     document().compositeRegion(m_frame, r, m_composite);
+    m_frameCache.erase(m_frame);
     m_canvas->updateImageRegion(toQImage(m_composite.copy(r)), QPoint(r.x, r.y));
 }
 
@@ -115,6 +130,7 @@ void DocumentView::onEditorChanged() {
         refreshRegion(*m_pendingRegion);   // a stroke just committed: only its area changed
         m_pendingRegion.reset();
     } else {
+        m_frameCache.clear();
         refreshCanvas();
     }
     Q_EMIT documentChanged();
@@ -127,6 +143,7 @@ void DocumentView::onEditorChanged() {
 
 void DocumentView::setCurrentFrame(int frame) {
     if (frame < 0 || frame >= document().frameCount() || frame == m_frame || m_session) return;
+    if (m_onion) m_frameCache[m_frame] = m_composite;   // up to date: it may become a ghost
     m_frame = frame;
     refreshCanvas();
     Q_EMIT currentFrameChanged(m_frame);

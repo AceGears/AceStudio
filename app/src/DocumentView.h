@@ -10,6 +10,7 @@
 #include <QWidget>
 
 #include <memory>
+#include <map>
 #include <optional>
 
 namespace acestudio::ui {
@@ -90,6 +91,8 @@ Q_SIGNALS:
 private:
     void onEditorChanged();
     void refreshCanvas();
+    Image renderOnion();
+    std::map<int, Image> m_frameCache;   // composites of onion-skin ghost frames
     void refreshRegion(const IntRect& r);
     void ensureValidLayer();
     void onToolPressed(QPoint px, Qt::MouseButton button, Qt::KeyboardModifiers mods);

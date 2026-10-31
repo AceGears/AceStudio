@@ -85,10 +85,12 @@ private:
     // Generate
     QComboBox* m_genModel = nullptr;
     QCheckBox* m_genLora = nullptr;
+    QSpinBox* m_genLoraStrength = nullptr;
     QPlainTextEdit* m_prompt = nullptr;
     QLineEdit* m_negative = nullptr;
     QCheckBox* m_pixelMode = nullptr;
     QCheckBox* m_usePalette = nullptr;
+    QCheckBox* m_cropSubject = nullptr;
     QSpinBox* m_width = nullptr;
     QSpinBox* m_height = nullptr;
     QSpinBox* m_steps = nullptr;

@@ -2,6 +2,8 @@
 
 #include "acestudio/core/Document.h"
 
+#include <nlohmann/json.hpp>
+
 #include <QDialog>
 
 class QCheckBox;
@@ -20,7 +22,12 @@ enum class ExportKind { SpriteSheet, Gif, Apng, Webp, PngSequence };
 class ExportDialog : public QDialog {
     Q_OBJECT
 public:
-    ExportDialog(ExportKind kind, const Document& doc, int currentFrame, QString suggestedPath, QWidget* parent = nullptr);
+    // `preset` holds the options last used for this kind (see preset()).
+    ExportDialog(ExportKind kind, const Document& doc, int currentFrame, QString suggestedPath,
+                 const nlohmann::json& preset = {}, QWidget* parent = nullptr);
+    // The chosen options (not frames or file name), to remember for next time.
+    nlohmann::json preset() const;
+    static QString kindKey(ExportKind kind);
     // Human-readable summary of what was written (valid after accept).
     QString resultMessage() const { return m_result; }
     QString outputPath() const;
@@ -31,6 +38,7 @@ private:
     void updateSummary();
     bool runExport();   // false keeps the dialog open
     QString kindTitle() const;
+    void applyPreset(const nlohmann::json& p);
 
     ExportKind m_kind;
     const Document& m_doc;
