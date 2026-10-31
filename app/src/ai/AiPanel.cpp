@@ -154,6 +154,7 @@ QWidget* AiPanel::buildGenerateTab() {
     m_prompt = new QPlainTextEdit(w);
     m_prompt->setPlaceholderText(tr("Describe the asset, e.g. “knight with a red shield, side view, game sprite”"));
     m_prompt->setFixedHeight(64);
+    m_prompt->setTabChangesFocus(true);   // Tab moves on to the next field instead of typing a tab
     m_negative = new QLineEdit(w);
     m_negative->setPlaceholderText(tr("Avoid (optional): blurry, text, watermark"));
     m_pixelMode = new QCheckBox(tr("Pixel art for this canvas"), w);
@@ -255,7 +256,9 @@ void AiPanel::setView(DocumentView* view) {
     for (QPushButton* b : {m_genButton, m_bgButton, m_upButton}) b->setEnabled(has || b == m_genButton);
     m_pixelMode->setEnabled(has);
     m_img2img->setEnabled(has);
-    if (!has) { m_pixelMode->setChecked(false); m_img2img->setChecked(false); }
+    // Only disable: unticking here lost the pixel-art default for every
+    // session that started on the welcome page (seen on Windows: a 64x64
+    // canvas got a 1024x1024 result). runGenerate checks m_view anyway.
 }
 
 void AiPanel::focusTab(int index) { m_tabs->setCurrentIndex(index); }

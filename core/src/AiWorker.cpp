@@ -353,7 +353,15 @@ void WorkerSupervisor::finishJob(Job& job, JobState state, std::vector<Event>& e
         m_running.clear();
         m_cancelDeadline.reset();
     }
-    const std::string summary = job.label + ": " + toString(state) + (job.error.empty() ? "" : " — " + job.error);
+    std::string timing;
+    if (job.started != Clock::time_point{}) {
+        // Wall time from dispatch to the worker's answer; used for benchmarks.
+        const double s = std::chrono::duration<double>(job.finished - job.started).count();
+        char buf[32];
+        std::snprintf(buf, sizeof buf, " in %.1f s", s);
+        timing = buf;
+    }
+    const std::string summary = job.label + ": " + toString(state) + timing + (job.error.empty() ? "" : " — " + job.error);
     if (state == JobState::Failed) ACE_LOG_WARN("ai", summary); else ACE_LOG_INFO("ai", summary);
     ev.push_back({Event::Kind::Job, job.id, {}, LogLevel::Info});
 }
