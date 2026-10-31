@@ -37,6 +37,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
+      # aqtinstall 3.3.0 (the newest PyPI release) cannot read the Qt 6.11+
+      # Windows repository layout ("Failed to download checksum for the file
+      # 'Updates.xml'"). The fix, miurahr/aqtinstall#1000, was merged on
+      # 2026-03-24 but is unreleased, so install aqtinstall from that merge
+      # commit (pinned by SHA). Fall back to 6.11, then to 6.8 LTS from PyPI.
       - name: Install Qt 6.12 (target LTS)
         id: qt612
         continue-on-error: true
@@ -46,49 +51,10 @@ jobs:
           arch: win64_msvc2022_64
           cache: true
           setup-python: false
-          aqtversion: '>=3.1.0'
-      # download.qt.io failed checksum downloads for 6.11/6.12 metadata; try
-      # official mirrors (aqtinstall --base) before falling back.
-      - name: Install Qt 6.12 from a mirror (constant.com)
-        id: qt612m1
-        if: steps.qt612.outcome == 'failure'
-        continue-on-error: true
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.12.*'
-          arch: win64_msvc2022_64
-          cache: true
-          setup-python: false
-          aqtversion: '>=3.1.0'
-          extra: '--base https://qt.mirror.constant.com/'
-      - name: Install Qt 6.12 from a mirror (ocf.berkeley.edu)
-        id: qt612m2
-        if: steps.qt612.outcome == 'failure' && steps.qt612m1.outcome == 'failure'
-        continue-on-error: true
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.12.*'
-          arch: win64_msvc2022_64
-          cache: true
-          setup-python: false
-          aqtversion: '>=3.1.0'
-          extra: '--base https://mirrors.ocf.berkeley.edu/qt/'
-      - name: Diagnose Qt 6.12 availability
-        if: steps.qt612.outcome == 'failure' && steps.qt612m1.outcome == 'failure' && steps.qt612m2.outcome == 'failure'
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          python -m pip install -q aqtinstall
-          $v = python -m aqt list-qt windows desktop 2>&1 | Out-String
-          Write-Host "::warning::Available Qt versions (tail): $(($v -split "`n" | Select-Object -Last 3) -join ' | ')"
-          $a = python -m aqt list-qt windows desktop --arch 6.12.0 2>&1 | Out-String
-          Write-Host "::warning::Qt 6.12.0 arches: $($a.Trim())"
-          $b = python -m aqt list-qt windows desktop --arch 6.11.3 2>&1 | Out-String
-          Write-Host "::warning::Qt 6.11.3 arches: $($b.Trim())"
-          Write-Host "::warning::aqtinstall version: $(python -m aqt version 2>&1 | Out-String)"
-      - name: Install Qt 6.11 (fallback while 6.12 is not yet in the aqt index)
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b'
+      - name: Install Qt 6.11 (fallback)
         id: qt611
-        if: steps.qt612.outcome == 'failure' && steps.qt612m1.outcome == 'failure' && steps.qt612m2.outcome == 'failure'
+        if: steps.qt612.outcome == 'failure'
         continue-on-error: true
         uses: jurplel/install-qt-action@v4
         with:
@@ -96,9 +62,20 @@ jobs:
           arch: win64_msvc2022_64
           cache: true
           setup-python: false
-          aqtversion: '>=3.1.0'
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b'
+      - name: Diagnose Qt availability
+        if: steps.qt612.outcome == 'failure' && steps.qt611.outcome == 'failure'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          python -m pip install -q "git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b"
+          $v = python -m aqt list-qt windows desktop 2>&1 | Out-String
+          Write-Host "::warning::Available Qt versions (tail): $(($v -split "`n" | Select-Object -Last 3) -join ' | ')"
+          $a = python -m aqt list-qt windows desktop --arch 6.12.0 2>&1 | Out-String
+          Write-Host "::warning::Qt 6.12.0 arches: $($a.Trim())"
+          Write-Host "::warning::aqtinstall version: $(python -m aqt version 2>&1 | Out-String)"
       - name: Install Qt 6.8 LTS (last-resort fallback)
-        if: steps.qt612.outcome == 'failure' && steps.qt612m1.outcome == 'failure' && steps.qt612m2.outcome == 'failure' && steps.qt611.outcome == 'failure'
+        if: steps.qt612.outcome == 'failure' && steps.qt611.outcome == 'failure'
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.*'
