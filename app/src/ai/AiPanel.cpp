@@ -481,8 +481,11 @@ void AiPanel::runGenerate() {
     std::string fullPrompt = prompt.toStdString();
     std::string negative = m_negative->text().trimmed().toStdString();
     if (single) {
-        fullPrompt += ", one single object, centered, plain background";
-        negative += std::string(negative.empty() ? "" : ", ") + "sprite sheet, multiple objects, collage, grid, pattern";
+        // "plain background" alone was ignored (a chest came out on floor
+        // planks), which breaks framing and background removal.
+        fullPrompt += ", one single object, centered, isolated on a plain white background";
+        negative += std::string(negative.empty() ? "" : ", ") +
+                    "sprite sheet, multiple objects, collage, grid, pattern, floor, table, ground, scenery, background texture";
     }
     json p = {{"model_dir", toUtf8(toPath(model))}, {"prompt", fullPrompt},
               {"negative_prompt", negative}, {"steps", m_steps->value()},

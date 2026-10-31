@@ -382,9 +382,9 @@ void AnimationDialog::generate(const std::vector<int>& frames, bool newSeed) {
     std::string prompt = c.prompt;
     if (!words.isEmpty()) prompt += (prompt.empty() ? "" : ", ") + words.toStdString();
     prompt += c.facingRight ? ", full body, side view facing right" : ", full body, side view facing left";
-    prompt += ", single character, plain light background, game sprite";
+    prompt += ", single character, isolated on a plain white background, game sprite";
     std::string negative = c.negative;
-    negative += std::string(negative.empty() ? "" : ", ") + "multiple characters, sprite sheet, cropped, shadow, floor, text, watermark";
+    negative += std::string(negative.empty() ? "" : ", ") + "multiple characters, sprite sheet, cropped, shadow, floor, ground, scenery, text, watermark";
 
     // Frames with the same pose and attempt as one already submitted here
     // (a jump's rise and fall, an idle that returns to its start) would give
