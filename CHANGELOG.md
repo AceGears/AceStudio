@@ -36,6 +36,18 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - **Parallax:** Clear Sky modes (flat colour, follow gradient, every matching pixel), BiRefNet
   background removal, and Undo for layer edits.
 
+### Added — second review pass
+- **Clear Sky › Sky against ground** (the new default): the top row seeds the sky and the bottom
+  row the ground, and each pixel joins the side it reaches across the smallest colour step. It
+  handles banded, palette-reduced skies with no tolerance and wraps for repeating layers.
+- **AI cut-out refinement** (slicer and parallax): hard pixel-art edges in the original colours,
+  dropped parts that differ from the local background come back, background gaps the mask
+  filled in (between legs) open again.
+- **Parallax AI cut-out on a wrapped copy**, so a repeating layer still repeats afterwards.
+- **Sandbox Margins:** neighbouring cells never differ by more than one level, so grass painted
+  on water gets a ring of sand; the sample and Random maps follow the same rule.
+- Clear Sky says how much it cleared and suggests the AI cut-out when that is little.
+
 ### Changed
 - The seam check judges each edge pixel by pixel: most of the edge must jump more than the image
   changes beside it, or form a line along it. Outline corners, ragged edges and noisy textures

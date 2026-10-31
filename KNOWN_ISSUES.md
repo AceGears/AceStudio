@@ -117,23 +117,20 @@ not been run.
   ghost frame once (about 240 ms for one ghost each side at 1024² × 20 layers on the VM).
 
 ## Phase 6 asset tools (design limits)
-- Terrain levels are layers: each level is drawn over the one below it, so painting grass
-  straight onto water shows a grass edge over water with no sand between. Paint the level
-  below first where a margin is wanted (the Random map nests levels this way).
 - Up to three terrains over a base, and textures of up to 4×4 tiles. Engines without per-cell
   variants (most autotile rule systems) use phase variant 0 or need the documented
-  `x mod phases, y mod phases` rule.
-- AI background removal (slicer, parallax) uses BiRefNet, which picks out the main objects in
-  an image. On the test sheet it found all four knights but cut away part of one leg, and a
-  cut-out parallax layer no longer wraps (Make Seamless fixes that). Picking the background
-  colour by clicking is exact when the background is one colour.
+  `x mod phases, y mod phases` rule. With Margins off in the sandbox, a level painted straight
+  onto a much lower one shows its edge with no level in between (Margins is on by default).
+- AI background removal (slicer, parallax) is BiRefNet followed by `refineCutout`, which gives
+  hard pixel-art edges, brings back dropped parts that differ from the local background and
+  opens background gaps the mask filled in. A sprite part with the same colour as the
+  background next to it cannot be told apart from it.
+- Clear Sky "Sky against ground" needs ground at the bottom of the layer. A scene whose bottom
+  is mist that fades into the sky (one PC castle layer) keeps its sky; the dialog then says how
+  little it cleared and suggests the AI cut-out, which handled that layer.
 - Texture results depend on the prompt: SDXL with Pixel Art XL drew "lush green grass" as bushes
   on pale stone in three PC runs, while "dense short green grass lawn, solid green" gave a plain
   grass texture, so that is now the default.
-- Clear Sky's "Follow gradient" handles smooth skies. SDXL layers reduced to a palette have
-  banded skies with clouds and distant hills: on the PC castle layer it stopped at the first
-  band (tolerance 6 and 14) or ran into the castle (24). Use Remove Background (AI) there; Undo
-  restores the layer.
 - The atlas packer rotates only by 90° clockwise (TexturePacker's convention), never flips.
 
 ## Planned in later phases

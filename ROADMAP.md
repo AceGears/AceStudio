@@ -133,6 +133,7 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | Smart slicer | ✅ connected sprites with merge distance and noise filter, or a detected / manual grid; JSON, PNG files, or a new animation document |
 | Deterministic atlas packer | ✅ MaxRects, byte-identical output across runs, trim, duplicates, extrusion, padding, border, power of two, several pages, optional 90° rotation, TexturePacker-compatible JSON; squarer pages preferred within 25% of the minimum area |
 | Review pass (2026-10-31) | ✅ Several terrains as levels (base + up to 3: dirt, grass, rock, snow from SDXL on the PC, 0 seams in 1536 pairs); textures up to 4×4 tiles with phase variants; per-pixel seam check without false seams on noisy textures; slicer on busy backgrounds (picked colour, or BiRefNet: 4 of 4 knights found in 11 s on the PC); Clear Sky follows gradients, BiRefNet cut-out (9.6 s) and undo; atlas rotation. See TESTING.md |
+| Second review pass (2026-10-31) | ✅ Clear Sky "Sky against ground" for banded skies (no tolerance); AI cut-outs refined (hard edges, missed parts back, filled gaps opened: tested on the real BiRefNet output from the PC); repeating layers cut on a wrapped copy and still wrap (PC castle layer: no problems found); sandbox Margins (grass painted on water gets a beach) |
 
 ## Phase 7 — Developer Integrations · ⬜
 CLI generation/export commands; Lua 5.4 API (sandboxed); MCP server (spec 2026-07-28 with

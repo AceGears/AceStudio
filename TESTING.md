@@ -41,6 +41,22 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 
 ## Recorded results
 
+### 2026-10-31 — Phase 6 second review pass, version 0.7.0
+
+| Environment | Build | Result |
+|---|---|---|
+| Linux, GCC 13.3, Qt 6.4.2 | everything, Release | ✅ 219/219 CTest: sky/ground split on banded skies (castle kept at two shades, wrap), refineCutout (missed legs back, filled gap opened, no specks), the real BiRefNet cut-out from the PC as a regression test, level margins |
+| GitHub Actions, Windows, MSVC `/W4 /WX`, Qt 6.12.0 | everything + package | ✅ |
+
+Real models on the Windows 11 test PC (RTX 4070 Laptop, 8 GB):
+
+| Check | Result |
+|---|---|
+| Parallax › Remove Background (AI) on a repeating castle layer (now cut on a wrapped copy) | ✅ clean cut-out over the sunset layer, and the dialog reports no wrap problems (the earlier build's cut-out failed the wrap check at 38%) |
+| Clear Sky › Sky against ground on the same kind of layer | ⚠ the layer's bottom was mist that fades into the sky, so the mist counted as ground and only the top strip went. Undo restored it; the dialog now reports how little was cleared and suggests the AI cut-out (KNOWN_ISSUES) |
+| Sandbox, Margins on: grass painted on open water | ✅ a ring of sand around it |
+| Slicer › Remove Background (AI) on the 4-knight test sheet | ❌ first build: one knight showed background between his legs (BiRefNet filled the gap at full alpha). Fixed in refineCutout, checked on the exported cut-out → ✅ final build on the PC: four clean knights |
+
 ### 2026-10-31 — Phase 6 review pass, version 0.7.0
 
 | Environment | Build | Result |
