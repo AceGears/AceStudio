@@ -117,16 +117,16 @@ not been run.
   ghost frame once (about 240 ms for one ghost each side at 1024² × 20 layers on the VM).
 
 ## Phase 6 asset tools (design limits)
-- A generated tileset has one terrain over one base. Transitions between three or more
-  terrains need one set per pair.
-- Textures are tile-sized (one tile repeats), so a 16 px tile can hold only small detail. SDXL
-  textures are reduced from 1024² to the tile size; what reads well at 16 px depends on the
-  prompt. Larger tiles keep more detail.
-- The smart slicer needs a uniform background (transparent or one colour). Sprites packed
-  edge to edge on a busy background are not separated; use the grid mode.
-- The atlas packer does not rotate sprites.
-- Clear Sky removes one colour (with a tolerance) touching the top edge, or everywhere. Skies
-  with gradients or clouds behind a silhouette need manual cleanup or a plainer prompt.
+- Terrain levels are layers: each level is drawn over the one below it, so painting grass
+  straight onto water shows a grass edge over water with no sand between. Paint the level
+  below first where a margin is wanted (the Random map nests levels this way).
+- Up to three terrains over a base, and textures of up to 4×4 tiles. Engines without per-cell
+  variants (most autotile rule systems) use phase variant 0 or need the documented
+  `x mod phases, y mod phases` rule.
+- AI background removal (slicer, parallax) uses BiRefNet, which picks out the main objects in
+  an image; on a sheet of many small sprites it may miss some. Picking the background colour
+  by clicking is the exact method when the background is one colour.
+- The atlas packer rotates only by 90° clockwise (TexturePacker's convention), never flips.
 
 ## Planned in later phases
 - MCP, Lua and plugin features, and Godot/Tiled/Unity exporters for tilesets, atlases and UI

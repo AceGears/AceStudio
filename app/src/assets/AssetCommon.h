@@ -22,6 +22,10 @@ Image fitSquare(const Image& img, int size);
 
 Status writeTextFile(const std::filesystem::path& path, const std::string& text);
 
+// Return in a spin box or combo box must not press a dialog button (it used
+// to add a terrain level): turns off auto-default on every button inside.
+void noDefaultButtons(QWidget* dialog);
+
 // Shows an image with integer nearest-neighbour zoom on a checkerboard; the
 // zoom fits the widget unless fixed.
 class PixelView : public QWidget {

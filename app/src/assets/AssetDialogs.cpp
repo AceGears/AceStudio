@@ -271,6 +271,7 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
         m_genStatus->setText(tr("Removing the background…"));
     });
     connect(m_generate, &QPushButton::clicked, this, &ParallaxDialog::generate);
+    noDefaultButtons(this);
     resize(1000, 600);
     refreshList();
 }
@@ -531,6 +532,7 @@ UiKitDialog::UiKitDialog(DocumentView* view, OpenImageFn openImage, QWidget* par
     connect(m_element, &QComboBox::currentIndexChanged, this, &UiKitDialog::rebuild);
     connect(m_stretchW, &QSpinBox::valueChanged, this, &UiKitDialog::rebuild);
     connect(m_stretchH, &QSpinBox::valueChanged, this, &UiKitDialog::rebuild);
+    noDefaultButtons(this);
     resize(900, 600);
     rebuild();
 }
@@ -730,6 +732,7 @@ SliceDialog::SliceDialog(AiService& ai, DocumentView* view, OpenFramesFn openFra
     connect(m_skipEmpty, &QCheckBox::toggled, this, &SliceDialog::reslice);
     for (QSpinBox* s : {m_tolerance, m_merge, m_minPixels, m_cellW, m_cellH, m_offX, m_offY, m_spaceX, m_spaceY})
         connect(s, &QSpinBox::valueChanged, this, &SliceDialog::reslice);
+    noDefaultButtons(this);
     resize(960, 600);
     if (!m_sheet.isNull()) {
         // Start in grid mode when the sheet looks like a grid.
@@ -972,6 +975,7 @@ AtlasDialog::AtlasDialog(DocumentView* view, QWidget* parent) : QDialog(parent),
     connect(m_page, &QSpinBox::valueChanged, this, [this](int p) {
         if (m_atlas && p >= 1 && p <= static_cast<int>(m_atlas->pages.size())) m_preview->setImage(m_atlas->pages[static_cast<std::size_t>(p - 1)]);
     });
+    noDefaultButtons(this);
     resize(960, 620);
     refreshList();
 }

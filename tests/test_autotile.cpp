@@ -238,3 +238,44 @@ TEST_CASE("Seam check: textures that do not wrap give seams; ragged edges do not
         }
     }
 }
+
+TEST_CASE("Seam check: noisy textures (like reduced SDXL output) give no false seams", "[autotile]") {
+    // Per-pixel hash noise: neighbouring pixels are unrelated, as in a
+    // texture reduced from a large image.
+    auto noise = [](int T, Rgba8 c, std::uint32_t seed) {
+        Image img(T, T);
+        for (int y = 0; y < T; ++y)
+            for (int x = 0; x < T; ++x) {
+                std::uint32_t h = (static_cast<std::uint32_t>(x) * 73856093u) ^ (static_cast<std::uint32_t>(y) * 19349663u) ^ (seed * 83492791u);
+                h ^= h >> 13;
+                h *= 0x5bd1e995u;
+                h ^= h >> 15;
+                const int d = static_cast<int>(h % 50) - 25;
+                auto ch = [&](int b) { return static_cast<std::uint8_t>(std::clamp(b + d, 0, 255)); };
+                img.setPixel(x, y, {ch(c.r), ch(c.g), ch(c.b), 255});
+            }
+        return img;
+    };
+    int sets = 0;
+    for (std::uint32_t seed = 1; seed <= 12; ++seed)
+        for (auto s : {AutotileScheme::Wang16, AutotileScheme::Blob47, AutotileScheme::Cardinal16})
+            for (int P : {1, 2}) {
+                TilesetStyle st;
+                st.seed = seed;
+                const Image terrain = noise(16 * P, {235, 235, 240, 255}, seed), base = noise(16 * P, {120, 90, 60, 255}, seed + 100);
+                INFO(toString(s) << " seed " << seed << " phases " << P);
+                CHECK(checkSeams(generateTileset(s, Image(), terrain, st, 16).value()).value().ok());
+                CHECK(checkSeams(generateTileset(s, base, terrain, st, 16).value()).value().ok());
+                ++sets;
+            }
+    CHECK(sets == 72);
+}
+
+TEST_CASE("Seam check: the template's grid lines count as seams", "[autotile]") {
+    Tileset t;
+    t.scheme = AutotileScheme::Blob47;
+    t.tileSize = 12;
+    t.image = tilesetTemplate(AutotileScheme::Blob47, 12, {0, 200, 0, 255}, {120, 80, 40, 255});
+    const auto rep = checkSeams(t).value();
+    CHECK(rep.issues.size() * 2 > static_cast<std::size_t>(rep.pairsChecked));
+}

@@ -98,13 +98,17 @@ Status validateTileset(const Tileset& t);
 Result<Image> renderMap(const TerrainMap& map, const Tileset& t);
 
 // Seam check: every pair of tiles that may touch (by their samples), on both
-// axes, compared along the shared edge. An edge is a seam when the colour
-// jump across it is much larger than the tiles' own column/row variation.
+// axes and in every phase, compared along the shared edge pixel by pixel. An
+// edge is a seam when most of its pixels either jump much more than the image
+// changes on either side of the edge (a texture that does not continue) or
+// form a line along it (a border drawn on the tiles). Outline corners and
+// ragged edges change only a few pixels and do not count. Transparent layers
+// are judged over grey.
 struct SeamIssue {
     int a = 0, b = 0;           // tile indices (kBaseTile = the base fill); b is right of (horizontal) or below (vertical) a
     bool horizontal = true;
     double jump = 0;            // mean colour difference across the edge (0..1)
-    double typical = 0;         // mean difference between neighbouring pixels inside the tiles
+    double typical = 0;         // mean difference next to the edge on either side (larger of the two)
     int phaseX = 0, phaseY = 0; // phase of tile a (b is in the next phase along the edge)
 };
 struct SeamReport {
@@ -113,8 +117,8 @@ struct SeamReport {
     bool ok() const noexcept { return issues.empty(); }
 };
 struct SeamOptions {
-    double factor = 2.5;        // jump must exceed factor x typical ...
-    double floor = 0.06;        // ... and this absolute amount to count
+    double factor = 2.5;        // a pixel jumps when it changes factor x more than beside the edge ...
+    double floor = 0.06;        // ... and by at least this much (0..1); also the size of a line
 };
 Result<SeamReport> checkSeams(const Tileset& t, const SeamOptions& opts = {});
 

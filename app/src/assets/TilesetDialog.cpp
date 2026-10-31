@@ -249,6 +249,7 @@ TilesetDialog::TilesetDialog(AiService& ai, DocumentView* view, OpenImageFn open
     addSource(tr("brown dirt ground"));
     addSource(tr("lush green grass"));
     retitleSources();
+    noDefaultButtons(this);
     resize(1180, 760);
     rebuild();
 }
@@ -304,6 +305,7 @@ TilesetDialog::Source& TilesetDialog::addSource(const QString& defaultPrompt) {
     top->addLayout(side, 1);
     s.status->setText(wrapText({}));
     m_sourceLayout->insertWidget(m_sourceLayout->count() - 1, s.box);
+    noDefaultButtons(s.box);
     return s;
 }
 
@@ -350,7 +352,7 @@ void TilesetDialog::generateTexture(Source& s) {
     }
     AiImageJob::Request r;
     r.prompt = s.prompt->text().trimmed() + tr(", seamless repeating texture filling the whole image, top-down view, flat even lighting, pixel art");
-    r.negative = tr("objects, border, frame, perspective, horizon, shadow, vignette, text, watermark");
+    r.negative = tr("objects, border, frame, perspective, horizon, shadow, vignette, text, watermark, tiles, paving, grid of squares");
     r.tileable = QStringLiteral("xy");
     r.pixelWidth = r.pixelHeight = tileSize() * phases();
     r.colors = 16;
@@ -577,6 +579,7 @@ TerrainSandbox::TerrainSandbox(std::vector<Tileset> levels, QWidget* parent) : Q
     root->addWidget(m_view, 1);
     root->addWidget(m_status);
     root->addLayout(bar);
+    noDefaultButtons(this);
     QDialog::resize(900, 640);
     redraw();
 }

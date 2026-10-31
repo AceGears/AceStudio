@@ -288,14 +288,6 @@ double interiorDiff(const Image& img, bool columns) {
     for (int k = 0; k + 1 < n; ++k) s += edgeDiff(img, k, img, k + 1, columns);
     return s / (n - 1);
 }
-// The largest difference between neighbouring columns (or rows) inside,
-// leaving out the outermost ones, where a broken edge would itself show.
-double interiorMax(const Image& img, bool columns) {
-    const int n = columns ? img.width() : img.height();
-    double m = 0;
-    for (int k = 1; k + 2 < n; ++k) m = std::max(m, edgeDiff(img, k, img, k + 1, columns));
-    return m;
-}
 // A layer with a transparent base is judged as it will look, drawn over
 // something: here a neutral grey, so a pixel's coverage counts as much as a
 // colour change of the same size would, not as a full 0-to-255 alpha jump.
@@ -315,29 +307,65 @@ bool sideMatches(const TileSamples& a, const TileSamples& b, bool horizontal) {
 }
 } // namespace
 
+namespace {
+// Compares the edge between a (left / above) and b (right / below) pixel by
+// pixel. With a1, a0 the last two columns of a and b0, b1 the first two of b:
+//   step  the jump a0 -> b0 is much bigger than a1 -> a0 and b0 -> b1, i.e.
+//         bigger than the image changes on either side (a texture that does
+//         not continue, a tile drawn offset)
+//   line  a0 (or b0) differs from both its neighbours while those agree with
+//         each other (a grid line or border drawn along the tile edge)
+// The edge is a seam when such pixels make up most of it. Outline corners,
+// ragged edges and noisy textures change only scattered pixels.
+struct EdgeVerdict {
+    bool seam = false;
+    double jump = 0, local = 0;
+};
+EdgeVerdict judgeEdge(const Image& A, const Image& B, bool horizontal, const SeamOptions& o) {
+    const int T = A.width();
+    const int n = horizontal ? A.height() : A.width();
+    auto px = [&](const Image& img, int line, int k) { return horizontal ? img.pixel(line, k) : img.pixel(k, line); };
+    const double floor = o.floor * 255.0;
+    int bad = 0;
+    double jumpSum = 0, localSum = 0;
+    for (int k = 0; k < n; ++k) {
+        const Rgba8 a2 = px(A, T - 3, k), a1 = px(A, T - 2, k), a0 = px(A, T - 1, k), b0 = px(B, 0, k), b1 = px(B, 1, k), b2 = px(B, 2, k);
+        const double d = channelDiff(a0, b0), la = channelDiff(a1, a0), lb = channelDiff(b0, b1);
+        // How much the image varies a little away from the edge, on both sides.
+        const double ref = std::max({static_cast<double>(channelDiff(a2, a1)), static_cast<double>(channelDiff(b1, b2)), floor / o.factor});
+        jumpSum += d;
+        localSum += std::max(la, lb);
+        const bool step = d > floor && d > o.factor * std::max({la, lb, ref});
+        auto line = [&](Rgba8 mid, Rgba8 left, Rgba8 right) {
+            const double x = channelDiff(mid, left), y = channelDiff(mid, right), z = channelDiff(left, right);
+            return x > floor && y > floor && std::min(x, y) > o.factor * ref && z * 2 < std::min(x, y);
+        };
+        if (step || line(a0, a1, b0) || line(b0, a0, b1)) ++bad;
+    }
+    EdgeVerdict v;
+    v.jump = jumpSum / (255.0 * n);
+    v.local = localSum / (255.0 * n);
+    v.seam = bad >= 3 && bad * 2 >= n;
+    return v;
+}
+} // namespace
+
 Result<SeamReport> checkSeams(const Tileset& t, const SeamOptions& o) {
     if (auto st = validateTileset(t); !st) return st.error();
-    const int n = tileCount(t.scheme), T = t.tileSize, P = t.phases;
+    if (t.tileSize < 4) return Error{ErrorCode::InvalidArgument, "Tiles must be at least 4 px for the seam check"};
+    const int n = tileCount(t.scheme), P = t.phases;
     std::vector<int> ids;
     for (int i = 0; i < n; ++i) ids.push_back(i);
     if (t.scheme != AutotileScheme::Wang16 && !t.base.isNull()) ids.push_back(kBaseTile);
     const std::size_t N = ids.size();
     // Images per (phase, tile): index (py * P + px) * N + k.
     std::vector<Image> img(N * static_cast<std::size_t>(P * P));
-    std::vector<double> typX(img.size()), typY(img.size()), maxX(img.size()), maxY(img.size());
     std::vector<TileSamples> smp(N);
     for (std::size_t k = 0; k < N; ++k) smp[k] = ids[k] == kBaseTile ? TileSamples{} : tileSamples(t.scheme, ids[k]);
     auto slot = [&](int px, int py, std::size_t k) { return (static_cast<std::size_t>(py * P + px)) * N + k; };
     for (int py = 0; py < P; ++py)
         for (int px = 0; px < P; ++px)
-            for (std::size_t k = 0; k < N; ++k) {
-                const std::size_t s = slot(px, py, k);
-                img[s] = flattenOverGrey(t.tile(ids[k], px, py));
-                typX[s] = interiorDiff(img[s], true);
-                typY[s] = interiorDiff(img[s], false);
-                maxX[s] = interiorMax(img[s], true);
-                maxY[s] = interiorMax(img[s], false);
-            }
+            for (std::size_t k = 0; k < N; ++k) img[slot(px, py, k)] = flattenOverGrey(t.tile(ids[k], px, py));
     SeamReport r;
     for (int py = 0; py < P; ++py)
         for (int px = 0; px < P; ++px)
@@ -349,13 +377,8 @@ Result<SeamReport> checkSeams(const Tileset& t, const SeamOptions& o) {
                         const std::size_t sa = slot(px, py, a);
                         const std::size_t sb = horizontal ? slot((px + 1) % P, py, b) : slot(px, (py + 1) % P, b);
                         ++r.pairsChecked;
-                        const double jump = edgeDiff(img[sa], T - 1, img[sb], 0, horizontal);
-                        const double typical = horizontal ? (typX[sa] + typX[sb]) / 2 : (typY[sa] + typY[sb]) / 2;
-                        // A step no bigger than ones inside the tiles (a ragged
-                        // edge moving by a pixel) is not a seam.
-                        const double inside = horizontal ? std::max(maxX[sa], maxX[sb]) : std::max(maxY[sa], maxY[sb]);
-                        if (jump > o.factor * typical && jump > o.floor && jump > 1.25 * inside)
-                            r.issues.push_back({ids[a], ids[b], horizontal, jump, typical, px, py});
+                        const EdgeVerdict v = judgeEdge(img[sa], img[sb], horizontal, o);
+                        if (v.seam) r.issues.push_back({ids[a], ids[b], horizontal, v.jump, v.local, px, py});
                     }
     std::stable_sort(r.issues.begin(), r.issues.end(), [](const SeamIssue& x, const SeamIssue& y) { return x.jump > y.jump; });
     return r;

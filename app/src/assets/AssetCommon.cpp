@@ -8,6 +8,7 @@
 
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPushButton>
 
 #include <algorithm>
 #include <cmath>
@@ -35,6 +36,13 @@ Image fitSquare(const Image& img, int size) {
 
 Status writeTextFile(const std::filesystem::path& path, const std::string& text) {
     return writeFileAtomic(path, std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(text.data()), text.size()));
+}
+
+void noDefaultButtons(QWidget* dialog) {
+    for (QPushButton* b : dialog->findChildren<QPushButton*>()) {
+        b->setAutoDefault(false);
+        b->setDefault(false);
+    }
 }
 
 PixelView::PixelView(QWidget* parent) : QWidget(parent) {
