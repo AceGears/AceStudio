@@ -265,6 +265,10 @@ class TinySdxlPlumbingTest(unittest.TestCase):
             e = w_.wait_for(lambda m: m.get("method") in ("job.done", "job.failed", "job.cancelled")
                             and m["params"]["job"] == "g5", 120)
             self.assertEqual(e["method"], "job.cancelled", e)
+            # The cached pipeline still works after a cancel mid-step.
+            again = run_job(w_, self.tmp, "g5b", "image.generate", dict(base, seed=42))
+            self.assertEqual(again["method"], "job.done", again)
+            self.assertTrue((np.asarray(Image.open(again["params"]["outputs"]["image0"])) == img0).all())
             # Bad input is reported, not fatal.
             f = run_job(w_, self.tmp, "g6", "image.generate", dict(base, width=100))
             self.assertEqual(f["method"], "job.failed")

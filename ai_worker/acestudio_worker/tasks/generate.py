@@ -359,7 +359,10 @@ def run(ctx):
     def on_step(p, step, timestep, kwargs):
         done_steps[0] += 1
         if ctx.cancelled():
+            # Raise here rather than interrupting the pipeline: an interrupted
+            # pipeline still decodes the latents (5-8 s on 8 GB with offload).
             p._interrupt = True
+            ctx.check_cancel()
         path = None
         if decoder is not None and "latents" in kwargs and (step + 1) % every == 0:
             try:
