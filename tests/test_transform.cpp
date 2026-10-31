@@ -8,6 +8,18 @@
 using namespace acestudio;
 
 namespace {
+[[maybe_unused]] BrushSettings brush(int size, BrushShape shape, MirrorMode mirror, int density = 16) {
+    BrushSettings b;
+    b.size = size;
+    b.shape = shape;
+    b.mirror = mirror;
+    b.ditherDensity = density;
+    return b;
+}
+} // namespace
+
+
+namespace {
 const Rgba8 R = Rgba8::opaque(255, 0, 0), G = Rgba8::opaque(0, 255, 0), B = Rgba8::opaque(0, 0, 255);
 
 Image asym() {   // 3×2 with distinct corners
@@ -196,7 +208,7 @@ TEST_CASE("Smooth and radial gradients", "[paint][gradient]") {
 TEST_CASE("Dither brush paints a stable pattern", "[paint]") {
     PaintFixture f;
     auto s = f.session();
-    s->setBrush({4, BrushShape::Square, MirrorMode::None, 8});
+    s->setBrush(brush(4, BrushShape::Square, MirrorMode::None, 8));
     s->stamp(1, 1, R);   // footprint 0..3 x 0..3 = one Bayer tile
     REQUIRE(s->commit());
     CHECK(opaqueCount(f.flat()) == 8);

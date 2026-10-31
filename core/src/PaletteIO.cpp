@@ -2,6 +2,8 @@
 #include "acestudio/core/FileUtil.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <cctype>
 #include <cstdio>
 #include <sstream>
@@ -102,6 +104,155 @@ Result<Palette> parseHexLike(std::string_view text, bool paintNet) {
     return p;
 }
 
+// ------------------------------------------------------------------ Adobe Swatch Exchange
+// Big-endian binary: "ASEF", version 1.0, block count, then blocks
+//   0x0001 colour entry: name (u16 length incl. NUL, UTF-16BE), model
+//          ("RGB ", "CMYK", "LAB ", "Gray"), float32 components, u16 type
+//   0xC001 group start (name), 0xC002 group end.
+
+struct BeReader {
+    std::string_view d;
+    std::size_t pos = 0;
+    bool ok = true;
+    std::uint32_t u(int bytes) {
+        if (pos + static_cast<std::size_t>(bytes) > d.size()) { ok = false; return 0; }
+        std::uint32_t v = 0;
+        for (int i = 0; i < bytes; ++i) v = (v << 8) | static_cast<std::uint8_t>(d[pos++]);
+        return v;
+    }
+    float f32() {
+        const std::uint32_t bits = u(4);
+        float f;
+        std::memcpy(&f, &bits, 4);
+        return f;
+    }
+    std::string utf16name() {
+        const std::uint32_t n = u(2);
+        std::string out;
+        for (std::uint32_t i = 0; i < n && ok; ++i) {
+            const std::uint32_t c = u(2);
+            if (c == 0) continue;
+            if (c < 0x80) out += static_cast<char>(c);
+            else if (c < 0x800) { out += static_cast<char>(0xC0 | (c >> 6)); out += static_cast<char>(0x80 | (c & 0x3F)); }
+            else { out += static_cast<char>(0xE0 | (c >> 12)); out += static_cast<char>(0x80 | ((c >> 6) & 0x3F)); out += static_cast<char>(0x80 | (c & 0x3F)); }
+        }
+        return out;
+    }
+};
+
+std::uint8_t unit8(double v) { return static_cast<std::uint8_t>(std::clamp(std::lround(v * 255.0), 0L, 255L)); }
+
+Rgba8 labToSrgb(double L, double a, double b) {
+    // CIE L*a*b* (D50, as used by Adobe) -> XYZ -> Bradford to D65 -> sRGB.
+    const double fy = (L + 16.0) / 116.0, fx = fy + a / 500.0, fz = fy - b / 200.0;
+    auto finv = [](double t) { return t * t * t > 0.008856 ? t * t * t : (116.0 * t - 16.0) / 903.3; };
+    const double X50 = 0.9642 * finv(fx), Y50 = L > 8.0 ? fy * fy * fy : L / 903.3, Z50 = 0.8249 * finv(fz);
+    const double X = 0.9555766 * X50 - 0.0230393 * Y50 + 0.0631636 * Z50;
+    const double Y = -0.0282895 * X50 + 1.0099416 * Y50 + 0.0210077 * Z50;
+    const double Z = 0.0122982 * X50 - 0.0204830 * Y50 + 1.3299098 * Z50;
+    double r = 3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z;
+    double g = -0.9692660 * X + 1.8760108 * Y + 0.0415560 * Z;
+    double bl = 0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z;
+    auto gamma = [](double c) { c = std::clamp(c, 0.0, 1.0); return c <= 0.0031308 ? 12.92 * c : 1.055 * std::pow(c, 1 / 2.4) - 0.055; };
+    return {unit8(gamma(r)), unit8(gamma(g)), unit8(gamma(bl)), 255};
+}
+
+Result<Palette> parseAse(std::string_view data) {
+    BeReader r{data};
+    if (data.substr(0, 4) != "ASEF") return Error{ErrorCode::InvalidArgument, "Not an Adobe Swatch Exchange file"};
+    r.pos = 4;
+    const std::uint32_t major = r.u(2);
+    (void)r.u(2);
+    if (major != 1) return Error{ErrorCode::InvalidArgument, "Unsupported .ase version " + std::to_string(major)};
+    const std::uint32_t blocks = r.u(4);
+    Palette p;
+    p.setName("Imported");
+    bool named = false;
+    for (std::uint32_t i = 0; i < blocks && r.ok; ++i) {
+        const std::uint32_t type = r.u(2), len = r.u(4);
+        const std::size_t end = r.pos + len;
+        if (end > data.size()) return Error{ErrorCode::CorruptData, "Truncated .ase block"};
+        if (type == 0xC001) {
+            const std::string name = r.utf16name();
+            if (!named && !name.empty()) { p.setName(name); named = true; }
+        } else if (type == 0x0001) {
+            (void)r.utf16name();
+            const std::string model(data.substr(r.pos, 4));
+            r.pos += 4;
+            Rgba8 c{0, 0, 0, 255};
+            if (model == "RGB ") {
+                const float R = r.f32(), G = r.f32(), B = r.f32();
+                c = {unit8(R), unit8(G), unit8(B), 255};
+            } else if (model == "CMYK") {
+                const double C = r.f32(), M = r.f32(), Y = r.f32(), K = r.f32();
+                c = {unit8((1 - C) * (1 - K)), unit8((1 - M) * (1 - K)), unit8((1 - Y) * (1 - K)), 255};
+            } else if (model == "LAB ") {
+                const double L = r.f32() * 100.0, A = r.f32(), B = r.f32();
+                c = labToSrgb(L, A, B);
+            } else if (model == "Gray") {
+                const std::uint8_t g = unit8(r.f32());
+                c = {g, g, g, 255};
+            } else {
+                return Error{ErrorCode::InvalidArgument, "Unknown .ase colour model '" + model + "'"};
+            }
+            if (!r.ok) break;
+            if (auto st = p.add(c); !st) return Error{ErrorCode::InvalidArgument, "The palette has more than 256 colours"};
+        }
+        r.pos = end;   // skip the rest (colour type, unknown blocks)
+    }
+    if (!r.ok) return Error{ErrorCode::CorruptData, "Truncated .ase file"};
+    if (p.size() == 0) return Error{ErrorCode::InvalidArgument, "The .ase file has no colours"};
+    return p;
+}
+
+void putBe(std::string& out, std::uint32_t v, int bytes) {
+    for (int i = bytes - 1; i >= 0; --i) out += static_cast<char>((v >> (8 * i)) & 0xFF);
+}
+void putName(std::string& out, const std::string& utf8) {
+    // ASCII and 2-byte UTF-8 are converted; other characters become '?'.
+    std::vector<std::uint16_t> u;
+    for (std::size_t i = 0; i < utf8.size(); ++i) {
+        const auto ch = static_cast<unsigned char>(utf8[i]);
+        if (ch < 0x80) u.push_back(ch);
+        else if ((ch & 0xE0) == 0xC0 && i + 1 < utf8.size()) { u.push_back(static_cast<std::uint16_t>(((ch & 0x1F) << 6) | (utf8[i + 1] & 0x3F))); ++i; }
+        else { u.push_back('?'); while (i + 1 < utf8.size() && (static_cast<unsigned char>(utf8[i + 1]) & 0xC0) == 0x80) ++i; }
+    }
+    putBe(out, static_cast<std::uint32_t>(u.size() + 1), 2);
+    for (auto c : u) putBe(out, c, 2);
+    putBe(out, 0, 2);
+}
+
+std::string formatAse(const Palette& p) {
+    std::string blocks;
+    auto block = [&](std::uint32_t type, const std::string& body) {
+        putBe(blocks, type, 2);
+        putBe(blocks, static_cast<std::uint32_t>(body.size()), 4);
+        blocks += body;
+    };
+    std::string g;
+    putName(g, p.name());
+    block(0xC001, g);
+    for (const auto& c : p.colors()) {
+        std::string e;
+        putName(e, c.toHex(false));
+        e += "RGB ";
+        for (std::uint8_t v : {c.r, c.g, c.b}) {
+            const float f = v / 255.0f;
+            std::uint32_t bits;
+            std::memcpy(&bits, &f, 4);
+            putBe(e, bits, 4);
+        }
+        putBe(e, 2, 2);   // normal colour
+        block(0x0001, e);
+    }
+    block(0xC002, "");
+    std::string out = "ASEF";
+    putBe(out, 1, 2);
+    putBe(out, 0, 2);
+    putBe(out, static_cast<std::uint32_t>(p.size() + 2), 4);
+    return out + blocks;
+}
+
 char hexDigit(int v) { return "0123456789ABCDEF"[v & 15]; }
 std::string hex2(std::uint8_t v) { return {hexDigit(v >> 4), hexDigit(v)}; }
 
@@ -119,6 +270,7 @@ Result<Palette> parsePalette(std::string_view text, std::string_view extension) 
     }
     if (ext == ".hex") return parseHexLike(norm, false);
     if (ext == ".txt") return parseHexLike(norm, true);
+    if (ext == ".ase") return parseAse(text);   // binary: use the raw bytes
     return Error{ErrorCode::InvalidArgument, "Unsupported palette format: " + std::string(extension)};
 }
 
@@ -137,6 +289,8 @@ Result<std::string> formatPalette(const Palette& p, std::string_view extension) 
         for (const auto& c : p.colors()) out += std::to_string(c.r) + " " + std::to_string(c.g) + " " + std::to_string(c.b) + "\n";
     } else if (ext == ".hex") {
         for (const auto& c : p.colors()) out += hex2(c.r) + hex2(c.g) + hex2(c.b) + "\n";
+    } else if (ext == ".ase") {
+        out = formatAse(p);
     } else if (ext == ".txt") {
         out = "; paint.net Palette File\n; Exported by AceStudio\n";
         for (const auto& c : p.colors()) out += hex2(c.a) + hex2(c.r) + hex2(c.g) + hex2(c.b) + "\n";

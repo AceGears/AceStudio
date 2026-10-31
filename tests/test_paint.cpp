@@ -9,6 +9,18 @@
 using namespace acestudio;
 
 namespace {
+[[maybe_unused]] BrushSettings brush(int size, BrushShape shape, MirrorMode mirror, int density = 16) {
+    BrushSettings b;
+    b.size = size;
+    b.shape = shape;
+    b.mirror = mirror;
+    b.ditherDensity = density;
+    return b;
+}
+} // namespace
+
+
+namespace {
 const Rgba8 kRed = Rgba8::opaque(255, 0, 0);
 const Rgba8 kBlue = Rgba8::opaque(0, 0, 255);
 
@@ -170,7 +182,7 @@ TEST_CASE("Pixel-perfect freehand removes doubled corners", "[paint]") {
 TEST_CASE("Brush size, shape and mirror", "[paint]") {
     Fixture f(9, 9);
     auto s = f.session();
-    s->setBrush({3, BrushShape::Square, MirrorMode::Both});
+    s->setBrush(brush(3, BrushShape::Square, MirrorMode::Both));
     s->stamp(1, 1, kRed);
     REQUIRE(s->commit());
     CHECK(f.count(kRed) == 36);        // 3x3 in each of four quadrants
@@ -179,7 +191,7 @@ TEST_CASE("Brush size, shape and mirror", "[paint]") {
 
     Fixture g(9, 9);
     auto s2 = g.session();
-    s2->setBrush({5, BrushShape::Circle, MirrorMode::None});
+    s2->setBrush(brush(5, BrushShape::Circle, MirrorMode::None));
     s2->stamp(4, 4, kRed);
     REQUIRE(s2->commit());
     CHECK(g.count(kRed) < 25);         // corners trimmed

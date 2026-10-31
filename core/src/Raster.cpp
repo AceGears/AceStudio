@@ -23,6 +23,41 @@ std::vector<Point> linePoints(Point a, Point b) {
     return pts;
 }
 
+std::vector<Point> curvePoints(Point a, Point b, Point c1, Point c2) {
+    // Sample densely (more samples than the control polygon is long), then
+    // join consecutive samples with Bresenham lines so the path is connected.
+    auto dist = [](Point p, Point q) { return std::abs(p.x - q.x) + std::abs(p.y - q.y); };
+    const int n = std::max(8, 2 * (dist(a, c1) + dist(c1, c2) + dist(c2, b)));
+    std::vector<Point> out{a};
+    Point prev = a;
+    for (int i = 1; i <= n; ++i) {
+        const double t = static_cast<double>(i) / n, u = 1.0 - t;
+        const double x = u * u * u * a.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * b.x;
+        const double y = u * u * u * a.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * b.y;
+        const Point p{static_cast<int>(std::lround(x)), static_cast<int>(std::lround(y))};
+        if (p == prev) continue;
+        const auto seg = linePoints(prev, p);
+        for (std::size_t k = 1; k < seg.size(); ++k) out.push_back(seg[k]);
+        prev = p;
+    }
+    if (!(out.back() == b)) {
+        const auto seg = linePoints(out.back(), b);
+        for (std::size_t k = 1; k < seg.size(); ++k) out.push_back(seg[k]);
+    }
+    // Remove L-shaped corners so the curve is 1px wide without doubled steps.
+    std::vector<Point> clean;
+    for (const Point& p : out) {
+        clean.push_back(p);
+        while (clean.size() >= 3) {
+            const Point& p0 = clean[clean.size() - 3];
+            const Point& p2 = clean[clean.size() - 1];
+            if (std::abs(p0.x - p2.x) == 1 && std::abs(p0.y - p2.y) == 1) clean.erase(clean.end() - 2);
+            else break;
+        }
+    }
+    return clean;
+}
+
 IntRect rectFromCorners(Point a, Point b) noexcept {
     const int x0 = std::min(a.x, b.x), y0 = std::min(a.y, b.y);
     return {x0, y0, std::abs(b.x - a.x) + 1, std::abs(b.y - a.y) + 1};

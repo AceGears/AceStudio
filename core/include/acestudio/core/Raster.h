@@ -18,6 +18,10 @@ struct Point {
 // Bresenham line, inclusive of both ends, no duplicates.
 std::vector<Point> linePoints(Point a, Point b);
 
+// Cubic Bezier rasterised to a connected 8-neighbour pixel path from a to b,
+// with no duplicate consecutive points.
+std::vector<Point> curvePoints(Point a, Point b, Point c1, Point c2);
+
 // Normalised rectangle spanning two corner points (inclusive).
 IntRect rectFromCorners(Point a, Point b) noexcept;
 

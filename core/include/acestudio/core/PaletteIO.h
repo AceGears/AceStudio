@@ -5,6 +5,7 @@
 //   .pal  JASC-PAL (Paint Shop Pro, Aseprite, many tools; text)
 //   .hex  one RRGGBB per line    (Lospec export)
 //   .txt  Paint.NET palette      (AARRGGBB per line, ';' comments)
+//   .ase  Adobe Swatch Exchange  (binary; RGB, CMYK, LAB and Gray swatches read, RGB written)
 // Readers are strict about structure but tolerant of whitespace and
 // comments, and never accept more than 256 colours.
 

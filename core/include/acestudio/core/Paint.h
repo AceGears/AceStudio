@@ -10,9 +10,16 @@
 //   - color mode: indexed snaps to the nearest opaque palette color,
 //     grayscale converts to luma
 //   - mirror: pixels are duplicated across the canvas centre lines
-//   - pencil writes the color exactly (no blending), so pixel art stays exact
+//   - tile mode: coordinates wrap around the canvas edges (seamless tiles)
+//   - ink: Simple writes the colour exactly (pixel art stays exact), Blend
+//     composites it over the existing pixel, Shading steps existing pixels
+//     along a colour ramp
+//   - mask target: painting edits the layer mask (luma of the colour; the
+//     eraser hides) instead of the layer pixels
 
 #include "acestudio/core/Editor.h"
+
+#include <filesystem>
 #include "acestudio/core/Raster.h"
 
 #include <memory>
@@ -22,7 +29,9 @@
 
 namespace acestudio {
 
-enum class BrushShape { Square, Circle };
+enum class BrushShape { Square, Circle, Custom };
+enum class Ink { Simple, Blend, Shading };
+enum class PaintTarget { Pixels, Mask };
 enum class MirrorMode { None, Horizontal, Vertical, Both };   // Horizontal = mirror across the vertical centre line
 
 struct BrushSettings {
@@ -33,13 +42,26 @@ struct BrushSettings {
     // threshold is >= density are skipped, giving a stable pattern that
     // tiles seamlessly across strokes.
     int ditherDensity = 16;
+    Ink ink = Ink::Simple;
+    // Custom brush tip (shape == Custom): pixels with alpha > 0 form the
+    // footprint, centred on the cursor; with tipColors the tip's own colours
+    // are stamped instead of the paint colour.
+    std::shared_ptr<const Image> tip;
+    bool tipColors = false;
 };
+
+// Brush tips saved as PNG files (any size up to 256x256).
+Result<Image> loadBrushTip(const std::filesystem::path& file);
+Status saveBrushTip(const Image& tip, const std::filesystem::path& file);
+// A tip from the pixels of `img` inside `selection` (cropped to its bounds).
+Result<Image> brushTipFromSelection(const Image& img, const Mask& selection);
 
 class PaintSession {
 public:
     // Fails if the layer is missing, a group, locked or hidden, or the
     // frame is out of range.
-    static Result<std::unique_ptr<PaintSession>> begin(Editor& editor, LayerId layer, int frame, std::string label);
+    static Result<std::unique_ptr<PaintSession>> begin(Editor& editor, LayerId layer, int frame, std::string label,
+                                                       PaintTarget target = PaintTarget::Pixels);
     ~PaintSession();   // cancels if neither committed nor cancelled
 
     PaintSession(const PaintSession&) = delete;
@@ -48,12 +70,21 @@ public:
     void setSelection(const Mask* selection) { m_selection = selection; }
     void setBrush(const BrushSettings& b) { m_brush = b; }
     const BrushSettings& brush() const noexcept { return m_brush; }
+    // Shading ink: pixels whose colour is in `ramp` move `step` entries
+    // along it (each pixel at most once per session).
+    void setShading(std::vector<Rgba8> ramp, int step) { m_ramp = std::move(ramp); m_shadeStep = step; }
+    PaintTarget target() const noexcept { return m_target; }
+    // The brush footprint around (x, y), without mirroring.
+    void footprintAt(int x, int y, std::vector<Point>& out) const { footprint(x, y, out); }
 
     // Paints/erases a brush footprint centred on (x, y), with mirroring.
     void stamp(int x, int y, Rgba8 color);
     void eraseStamp(int x, int y);
-    // Writes one pixel (no brush, no mirror) with all constraints applied.
+    // Writes one pixel (no brush, no mirror) with all constraints and the
+    // ink applied.
     void writePixel(int x, int y, Rgba8 color);
+    // Writes exactly (Simple ink) regardless of the brush ink.
+    void writeExact(int x, int y, Rgba8 color);
     // Restores one pixel to its value at session start (pixel-perfect).
     void restorePixel(int x, int y);
     // Discards everything painted so far in this session (shape previews).
@@ -73,11 +104,14 @@ public:
     void cancel();
 
 private:
-    PaintSession(Editor& e, LayerId layer, int frame, std::string label);
+    PaintSession(Editor& e, LayerId layer, int frame, std::string label, PaintTarget target);
     Image& work();
+    const Cel* currentCel() const;
     void touch(int x, int y) noexcept;
+    bool wrap(int& x, int& y) const noexcept;   // applies tile mode; false if outside the canvas
     Rgba8 constrain(Rgba8 c) const;
     void footprint(int cx, int cy, std::vector<Point>& out) const;
+    void put(int x, int y, Rgba8 color, Ink ink);
 
     Editor& m_editor;
     LayerId m_layer;
@@ -89,8 +123,12 @@ private:
     IntRect m_dirty;
     const Mask* m_selection = nullptr;
     BrushSettings m_brush;
+    PaintTarget m_target = PaintTarget::Pixels;
     bool m_alphaLocked = false;
     bool m_finished = false;
+    std::vector<Rgba8> m_ramp;
+    int m_shadeStep = 1;
+    Mask m_shaded;                      // pixels already shaded this session
 };
 
 // ---------------------------------------------------------------- tools
@@ -113,7 +151,26 @@ private:
     bool m_started = false;
 };
 
+// Clone stamp: paints with pixels copied from `source` (a canvas-sized
+// snapshot) at `offset` from the cursor (source = cursor - offset).
+class CloneStroke {
+public:
+    CloneStroke(PaintSession& s, Image source, Point offset);
+    void moveTo(Point p);
+
+private:
+    void put(Point p);
+    PaintSession& m_s;
+    Image m_source;
+    Point m_offset;
+    std::optional<Point> m_last;
+};
+
 void drawLine(PaintSession& s, Point a, Point b, Rgba8 color);
+// Cubic Bezier from a to b with control points c1, c2.
+void drawCurve(PaintSession& s, Point a, Point b, Point c1, Point c2, Rgba8 color);
+// Closed polygon through `points` (outline with the brush, or filled).
+void drawPolygon(PaintSession& s, const std::vector<Point>& points, bool filled, Rgba8 color);
 void drawRectangle(PaintSession& s, Point a, Point b, bool filled, Rgba8 color);
 void drawEllipse(PaintSession& s, Point a, Point b, bool filled, Rgba8 color);
 enum class GradientShape { Linear, Radial };

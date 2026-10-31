@@ -4,6 +4,8 @@
 #include "acestudio/core/Editor.h"
 #include "acestudio/core/PaletteIO.h"
 
+#include <cstring>
+
 using namespace acestudio;
 
 namespace {
@@ -119,4 +121,63 @@ TEST_CASE("Colour-mode conversion is undoable and correct", "[palette][editor]")
     CHECK_FALSE(empty.convertColorMode(ColorMode::Indexed));
     REQUIRE(empty.undo());
     CHECK(empty.document().palette().size() == 16);
+}
+
+namespace {
+// Hand-built Adobe Swatch Exchange bytes (independent of formatAse).
+struct AseBuilder {
+    std::string out = "ASEF";
+    int blocks = 0;
+    std::string body;
+    static void be(std::string& s, std::uint32_t v, int n) { for (int i = n - 1; i >= 0; --i) s += static_cast<char>((v >> (8 * i)) & 0xFF); }
+    static void fl(std::string& s, float f) { std::uint32_t b; std::memcpy(&b, &f, 4); be(s, b, 4); }
+    static void name(std::string& s, const std::string& n) { be(s, static_cast<std::uint32_t>(n.size() + 1), 2); for (char c : n) be(s, static_cast<unsigned char>(c), 2); be(s, 0, 2); }
+    void add(std::uint32_t type, const std::string& b) { be(body, type, 2); be(body, static_cast<std::uint32_t>(b.size()), 4); body += b; ++blocks; }
+    void color(const std::string& n, const char* model, std::initializer_list<float> v) {
+        std::string b; name(b, n); b += model; for (float f : v) fl(b, f); be(b, 0, 2); add(0x0001, b);
+    }
+    std::string bytes() const { std::string s = out; be(s, 1, 2); be(s, 0, 2); be(s, static_cast<std::uint32_t>(blocks), 4); return s + body; }
+};
+} // namespace
+
+TEST_CASE("Adobe Swatch Exchange palettes", "[palette][ase]") {
+    AseBuilder a;
+    std::string g; AseBuilder::name(g, "Forest"); a.add(0xC001, g);
+    a.color("red", "RGB ", {1.0f, 0.0f, 0.0f});
+    a.color("half", "Gray", {0.5f});
+    a.color("cyan", "CMYK", {1.0f, 0.0f, 0.0f, 0.0f});
+    a.color("white", "LAB ", {1.0f, 0.0f, 0.0f});
+    a.color("black", "LAB ", {0.0f, 0.0f, 0.0f});
+    a.add(0xC002, "");
+    auto p = parsePalette(a.bytes(), ".ase");
+    REQUIRE(p);
+    CHECK(p.value().name() == "Forest");
+    REQUIRE(p.value().size() == 5);
+    CHECK(p.value().at(0) == Rgba8{255, 0, 0, 255});
+    CHECK(p.value().at(1) == Rgba8{128, 128, 128, 255});
+    CHECK(p.value().at(2) == Rgba8{0, 255, 255, 255});
+    CHECK(p.value().at(3) == Rgba8{255, 255, 255, 255});
+    CHECK(p.value().at(4) == Rgba8{0, 0, 0, 255});
+
+    // Round trip through the writer.
+    auto text = formatPalette(p.value(), ".ase");
+    REQUIRE(text);
+    CHECK(text.value().substr(0, 4) == "ASEF");
+    auto back = parsePalette(text.value(), ".ASE");
+    REQUIRE(back);
+    CHECK(back.value().colors() == p.value().colors());
+    CHECK(back.value().name() == "Forest");
+
+    // Malformed input is rejected, never misread.
+    CHECK_FALSE(parsePalette("ASEF", ".ase"));
+    CHECK_FALSE(parsePalette("NOPE....", ".ase"));
+    std::string truncated = a.bytes();
+    truncated.resize(truncated.size() - 7);
+    CHECK_FALSE(parsePalette(truncated, ".ase"));
+    AseBuilder bad;
+    bad.color("x", "HSB ", {0.1f, 0.2f, 0.3f});
+    CHECK_FALSE(parsePalette(bad.bytes(), ".ase"));
+    AseBuilder many;
+    for (int i = 0; i < 257; ++i) many.color("c", "Gray", {static_cast<float>(i) / 256.0f});
+    CHECK_FALSE(parsePalette(many.bytes(), ".ase"));
 }
