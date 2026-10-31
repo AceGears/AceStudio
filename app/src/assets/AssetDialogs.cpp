@@ -120,6 +120,9 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
     m_skyMode->addItem(tr("Every matching pixel"), static_cast<int>(SkyClear::Every));
     m_skyMode->setToolTip(tr("Flat: one colour touching the top. Follow gradient: also skies that change colour or have clouds. "
                              "Every matching pixel: also gaps between trees"));
+    m_undo = new QPushButton(tr("Undo"), this);
+    m_undo->setToolTip(tr("Undo the last Clear Sky, Make Seamless or background removal"));
+    m_undo->setEnabled(false);
     m_aiCut = new QPushButton(tr("Remove Background (AI)"), this);
     m_aiCut->setToolTip(tr("Cut the layer out with BiRefNet: for skies Clear Sky cannot handle"));
     m_prompt = new QLineEdit(tr("distant purple mountains at dusk"), this);
@@ -141,7 +144,10 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
     skyRow->addWidget(m_skyTolerance);
     skyRow->addWidget(m_skyMode, 1);
     layerForm->addRow(tr("Sky tolerance:"), skyRow);
-    layerForm->addRow(QString(), m_aiCut);
+    auto* cutRow = new QHBoxLayout;
+    cutRow->addWidget(m_aiCut, 1);
+    cutRow->addWidget(m_undo);
+    layerForm->addRow(QString(), cutRow);
     auto* listButtons = new QHBoxLayout;
     for (auto* b : {fromDoc, fromFile, remove}) listButtons->addWidget(b);
     auto* orderButtons = new QHBoxLayout;
@@ -217,12 +223,16 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
         const int i = current();
         if (i < 0) return;
         m_set.layers.erase(m_set.layers.begin() + i);
+        m_undoStack.clear();
+        m_undo->setEnabled(false);
         refreshList();
     });
     auto move = [this](int d) {
         const int i = current(), j = i + d;
         if (i < 0 || j < 0 || j >= static_cast<int>(m_set.layers.size())) return;
         std::swap(m_set.layers[static_cast<std::size_t>(i)], m_set.layers[static_cast<std::size_t>(j)]);
+        m_undoStack.clear();
+        m_undo->setEnabled(false);
         refreshList();
         m_list->setCurrentRow(j);
     };
@@ -237,8 +247,22 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
         const int i = current();
         if (i < 0) return;
         auto& l = m_set.layers[static_cast<std::size_t>(i)];
+        pushUndo(i);
         l.image = clearSky(l.image, m_skyTolerance->value(), static_cast<SkyClear>(m_skyMode->currentData().toInt()));
         redraw();
+    });
+    connect(m_undo, &QPushButton::clicked, this, [this] {
+        if (m_undoStack.empty()) return;
+        auto [k, img] = std::move(m_undoStack.back());
+        m_undoStack.pop_back();
+        if (k >= 0 && k < static_cast<int>(m_set.layers.size())) m_set.layers[static_cast<std::size_t>(k)].image = std::move(img);
+        m_undo->setEnabled(!m_undoStack.empty());
+        refreshList();
+    });
+    // Following a gradient compares neighbouring pixels, so it needs a much
+    // smaller step than matching one flat colour.
+    connect(m_skyMode, &QComboBox::currentIndexChanged, this, [this] {
+        m_skyTolerance->setValue(static_cast<SkyClear>(m_skyMode->currentData().toInt()) == SkyClear::Gradient ? 6 : 24);
     });
     connect(m_aiCut, &QPushButton::clicked, this, [this] {
         if (m_cutJob && m_cutJob->running()) { m_cutJob->cancel(); return; }
@@ -251,6 +275,7 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
                 m_aiCut->setText(tr("Remove Background (AI)"));
                 const int k = m_cutJob->property("layer").toInt();
                 if (k >= 0 && k < static_cast<int>(m_set.layers.size()) && cut.width() == m_set.layers[static_cast<std::size_t>(k)].image.width()) {
+                    pushUndo(k);
                     m_set.layers[static_cast<std::size_t>(k)].image = cut;
                     m_genStatus->setText(tr("Background removed."));
                     redraw();
@@ -274,6 +299,13 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
     noDefaultButtons(this);
     resize(1000, 600);
     refreshList();
+}
+
+void ParallaxDialog::pushUndo(int layer) {
+    if (layer < 0 || layer >= static_cast<int>(m_set.layers.size())) return;
+    m_undoStack.emplace_back(layer, m_set.layers[static_cast<std::size_t>(layer)].image);
+    if (m_undoStack.size() > 20) m_undoStack.erase(m_undoStack.begin());
+    m_undo->setEnabled(true);
 }
 
 int ParallaxDialog::current() const {
@@ -359,6 +391,7 @@ void ParallaxDialog::makeSeamless() {
     auto& l = m_set.layers[static_cast<std::size_t>(i)];
     auto r = makeSeamlessX(l.image, m_overlap->value());
     if (!r) { QMessageBox::warning(this, windowTitle(), qs(r.error().message)); return; }
+    pushUndo(i);
     l.image = std::move(r).value();
     refreshList();
 }
@@ -371,7 +404,7 @@ void ParallaxDialog::generate() {
         connect(m_job, &AiImageJob::finished, this, [this](const Image& pixel, const Image&) {
             m_generate->setText(tr("Generate Layer"));
             m_genStatus->setText(tr("Done. Use Clear Sky on a layer in front so the layers behind show through."));
-            addLayer(pixel, m_prompt->text().left(32));
+            addLayer(pixel, m_job->property("name").toString());
         });
         connect(m_job, &AiImageJob::failed, this, [this](const QString& msg) {
             m_generate->setText(tr("Generate Layer"));
@@ -391,6 +424,7 @@ void ParallaxDialog::generate() {
     r.pixelWidth = std::max(8, static_cast<int>(std::lround(m_set.viewHeight * 1344.0 / 768.0)));
     r.colors = 24;
     r.label = tr("Parallax: %1").arg(m_prompt->text().left(30));
+    m_job->setProperty("name", m_prompt->text().left(32));
     QString why;
     if (!m_job->start(r, &why)) { QMessageBox::information(this, windowTitle(), why); return; }
     m_generate->setText(tr("Cancel"));
@@ -759,11 +793,11 @@ SliceOptions SliceDialog::options() const {
 void SliceDialog::updateBackgroundLabel() {
     const auto bg = m_sheet.isNull() ? std::nullopt : sliceBackground(m_sheet, options());
     QString t;
-    if (!bg) t = tr("none found: click the background in the picture, or use Remove Background (AI)");
-    else if (bg->a == 0) t = tr("transparent");
+    // No colour means the sheet has transparency, which is the background.
+    if (!bg || bg->a == 0) t = tr("transparent");
     else t = tr("#%1%2%3").arg(bg->r, 2, 16, QLatin1Char('0')).arg(bg->g, 2, 16, QLatin1Char('0')).arg(bg->b, 2, 16, QLatin1Char('0'));
     if (m_key) t += tr(" (picked)");
-    else if (bg) t += tr(" (automatic; click the picture to pick another)");
+    else if (bg) t += tr(" (automatic; click the picture to pick another, or use Remove Background (AI) on a busy background)");
     m_bgLabel->setText(t);
     m_autoKey->setEnabled(m_key.has_value());
 }

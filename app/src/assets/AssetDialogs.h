@@ -47,9 +47,11 @@ private:
     void generate();
     void makeSeamless();
     void exportFiles();
+    void pushUndo(int layer);
     int current() const;
 
     AiService& m_ai;
+    std::vector<std::pair<int, Image>> m_undoStack;   // layer edits, newest last
     QPointer<DocumentView> m_view;
     ParallaxSet m_set;
     double m_camera = 0;
@@ -65,6 +67,7 @@ private:
     QSpinBox* m_skyTolerance = nullptr;
     QComboBox* m_skyMode = nullptr;
     QPushButton* m_aiCut = nullptr;
+    QPushButton* m_undo = nullptr;
     AiImageJob* m_cutJob = nullptr;
     QLineEdit* m_prompt = nullptr;
     QPushButton* m_generate = nullptr;
