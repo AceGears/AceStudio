@@ -729,6 +729,62 @@ Status Editor::removeFrame(int frame) {
         bytes));
 }
 
+Status Editor::setCelImage(LayerId layer, int frame, Image image, int x, int y) {
+    const Layer* l = m_doc.layer(layer);
+    if (!l || l->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Select a raster layer"};
+    if (!m_doc.isLayerEditable(layer)) return Error{ErrorCode::PermissionDenied, "The layer is locked"};
+    if (frame < 0 || frame >= m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
+    std::optional<Cel> before;
+    if (const Cel* c = m_doc.cel(layer, frame)) before = *c;
+    std::optional<Cel> after;
+    if (!image.isNull()) after = Cel{std::move(image), x, y};
+    const std::size_t bytes = (before ? celBytes(*before) : 0) + (after ? celBytes(*after) : 0);
+    return apply(std::make_unique<FnCommand>(
+        "Set Cel",
+        [=](Document& d) -> Status {
+            if (after) return d.setCel(layer, frame, *after);
+            d.clearCel(layer, frame);
+            return {};
+        },
+        [=](Document& d) {
+            if (before) (void)d.setCel(layer, frame, *before);
+            else d.clearCel(layer, frame);
+        },
+        bytes));
+}
+
+Result<LayerId> Editor::addAnimationLayer(std::string name, const std::vector<Image>& frames, int startFrame,
+                                          int durationMs, const std::string& tagName) {
+    if (frames.empty()) return Error{ErrorCode::InvalidArgument, "No frames to add"};
+    if (startFrame < 0 || startFrame > m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
+    if (startFrame + static_cast<int>(frames.size()) > Document::kMaxFrames) return Error{ErrorCode::InvalidArgument, "Frame limit reached"};
+    LayerId created = kNoLayer;
+    const std::string label = "Add " + name;
+    auto st = grouped(label, [&]() -> Status {
+        while (m_doc.frameCount() < startFrame + static_cast<int>(frames.size()))
+            if (auto r = insertFrame(m_doc.frameCount(), durationMs); !r) return r.error();
+        LayerId top = m_doc.layers().empty() ? kNoLayer : m_doc.layers().back().id;
+        while (top != kNoLayer && m_doc.layer(top)->parent != kNoLayer) top = m_doc.layer(top)->parent;   // top level
+        auto id = addLayer(name, LayerKind::Raster, top);
+        if (!id) return id.error();
+        created = id.value();
+        for (std::size_t i = 0; i < frames.size(); ++i) {
+            if (frames[i].isNull() || frames[i].isFullyTransparent()) continue;
+            if (auto s2 = setCelImage(created, startFrame + static_cast<int>(i), frames[i]); !s2) return s2;
+        }
+        if (!tagName.empty()) {
+            AnimationTag t;
+            t.name = tagName.substr(0, 64);
+            t.fromFrame = startFrame;
+            t.toFrame = startFrame + static_cast<int>(frames.size()) - 1;
+            if (auto r = addTag(t); !r) return r.error();
+        }
+        return {};
+    });
+    if (!st) return st.error();
+    return created;
+}
+
 Status Editor::linkCels(LayerId layer, const std::vector<int>& frames) {
     const Layer* l = m_doc.layer(layer);
     if (!l || l->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Select a raster layer to link its cels"};

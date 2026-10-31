@@ -31,6 +31,12 @@ add_executable(AceStudio WIN32
     src/ai/AiDialogs.cpp
     src/ai/AiPanel.h
     src/ai/AiPanel.cpp
+    src/ai/CharacterDialog.h
+    src/ai/CharacterDialog.cpp
+    src/ai/PoseEditor.h
+    src/ai/PoseEditor.cpp
+    src/ai/AnimationDialog.h
+    src/ai/AnimationDialog.cpp
     src/Shortcuts.h
     src/Shortcuts.cpp
     src/ToolState.h

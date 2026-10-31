@@ -12,6 +12,8 @@
 #include "panels/PreviewPanel.h"
 #include "AnimationDialogs.h"
 #include "ExportDialog.h"
+#include "ai/AnimationDialog.h"
+#include "ai/CharacterDialog.h"
 #include "ai/AiPanel.h"
 #include "ai/AiService.h"
 #include "panels/PropertiesPanel.h"
@@ -206,23 +208,7 @@ void MainWindow::buildDocks() {
     m_aiPanel = new AiPanel(*m_ai, m_ctx, this);
     connect(m_aiPanel, &AiPanel::statusMessage, this, [this](const QString& t) { statusBar()->showMessage(t, 6000); });
     connect(m_aiPanel, &AiPanel::resultAsDocument, this, [this](const Image& img, const QString& name) { openImageAsDocument(img, name); });
-    connect(m_aiPanel, &AiPanel::resultAsAnimation, this,
-            [this](const std::vector<Image>& frames, const std::vector<int>& durations, const QString& name) {
-                if (frames.empty()) return;
-                auto doc = Document::create(frames[0].width(), frames[0].height());
-                if (!doc) { report(doc.error()); return; }
-                Document& d = doc.value();
-                const LayerId l = d.addLayer(name.toStdString()).value();
-                for (std::size_t f = 0; f < frames.size(); ++f) {
-                    if (f > 0)
-                        if (auto r = d.insertFrame(static_cast<int>(f)); !r) { report(r.error()); return; }
-                    (void)d.setFrameDuration(static_cast<int>(f), durations[f]);
-                    (void)d.setCel(l, static_cast<int>(f), Cel{frames[f], 0, 0});
-                }
-                auto* view = new DocumentView(std::move(doc).value(), QString(), ProjectInfo{}, m_tools, m_tabs);
-                addView(view);
-                view->markNeverSaved();
-            });
+    connect(m_aiPanel, &AiPanel::resultAsAnimation, this, &MainWindow::openAnimationAsDocument);
     connect(m_aiPanel, &AiPanel::resultAsLayer, this, [this](DocumentView* v, const Image& img, const QString& name, LayerId above, int frame) {
         // The view may have been closed while the job ran.
         for (int i = 0; i < m_tabs->count(); ++i)
@@ -596,6 +582,17 @@ void MainWindow::buildMenus() {
     aiMenu->addAction(tr("&Generate Image…"), this, [showAi] { showAi(0); });
     aiMenu->addAction(tr("&Remove Background…"), this, [showAi] { showAi(1); });
     aiMenu->addAction(tr("AI &Upscale…"), this, [showAi] { showAi(2); });
+    aiMenu->addSeparator();
+    aiMenu->addAction(tr("&Characters…"), this, [this] {
+        CharacterDialog dlg(m_ctx.dataDir() / "characters", currentView(), this);
+        dlg.exec();
+    });
+    aiMenu->addAction(tr("Generate &Animation…"), this, [this] {
+        AnimationDialog dlg(m_ctx, *m_ai, currentView(), [this](const std::vector<Image>& frames, const std::vector<int>& durations,
+                                                               const QString& name) { openAnimationAsDocument(frames, durations, name); },
+                            this);
+        dlg.exec();
+    });
     aiMenu->addSeparator();
     aiMenu->addAction(tr("&Models…"), m_aiPanel, &AiPanel::showModels);
     aiMenu->addAction(tr("&Set Up AI Runtime…"), m_aiPanel, &AiPanel::showSetup);
@@ -1067,6 +1064,25 @@ void MainWindow::importPng(bool asLayer) {
     } else {
         openImageAsDocument(img.value(), name);
     }
+}
+
+DocumentView* MainWindow::openAnimationAsDocument(const std::vector<Image>& frames, const std::vector<int>& durations,
+                                                 const QString& name) {
+    if (frames.empty()) return nullptr;
+    auto doc = Document::create(frames[0].width(), frames[0].height());
+    if (!doc) { report(doc.error()); return nullptr; }
+    Document& d = doc.value();
+    const LayerId l = d.addLayer(name.toStdString()).value();
+    for (std::size_t f = 0; f < frames.size(); ++f) {
+        if (f > 0)
+            if (auto r = d.insertFrame(static_cast<int>(f)); !r) { report(r.error()); return nullptr; }
+        if (f < durations.size()) (void)d.setFrameDuration(static_cast<int>(f), durations[f]);
+        if (!frames[f].isNull()) (void)d.setCel(l, static_cast<int>(f), Cel{frames[f], 0, 0});
+    }
+    auto* view = new DocumentView(std::move(doc).value(), QString(), ProjectInfo{}, m_tools, m_tabs);
+    addView(view);
+    view->markNeverSaved();
+    return view;
 }
 
 DocumentView* MainWindow::openImageAsDocument(const Image& img, const QString& name) {

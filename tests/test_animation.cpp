@@ -287,3 +287,34 @@ TEST_CASE("Non-contiguous frame sets: delete and durations in one step", "[anima
     CHECK(e.document().frames()[5].durationMs == 105);
     CHECK_FALSE(e.removeFrames(std::vector<int>{0, 1, 2, 3, 4, 5}));
 }
+
+TEST_CASE("addAnimationLayer adds frames, a layer and a tag in one step", "[animation]") {
+    auto d = Document::create(4, 4).value();
+    (void)d.addLayer("Base");
+    Editor e(std::move(d));
+    const std::size_t steps = e.history().size();
+    std::vector<Image> frames;
+    for (int i = 0; i < 3; ++i) frames.push_back(Image(4, 4, Rgba8{static_cast<std::uint8_t>(50 * i + 10), 0, 0, 255}));
+    auto id = e.addAnimationLayer("Knight walk", frames, 0, 80, "walk");
+    REQUIRE(id);
+    CHECK(e.history().size() == steps + 1);
+    CHECK(e.history().undoLabel() == "Add Knight walk");
+    CHECK(e.document().frameCount() == 3);
+    CHECK(e.document().frames()[2].durationMs == 80);
+    CHECK(e.document().cel(id.value(), 2)->image.pixel(0, 0).r == 110);
+    REQUIRE(e.document().tags().size() == 1);
+    CHECK(e.document().tags()[0].name == "walk");
+    CHECK(e.document().tags()[0].toFrame == 2);
+    REQUIRE(e.undo());
+    CHECK(e.document().frameCount() == 1);
+    CHECK(e.document().layer(id.value()) == nullptr);
+    CHECK(e.document().tags().empty());
+    REQUIRE(e.redo());
+    CHECK(e.document().cel(id.value(), 1)->image.pixel(0, 0).r == 60);
+    CHECK_FALSE(e.addAnimationLayer("x", {}, 0, 100));
+    // setCelImage on its own
+    REQUIRE(e.setCelImage(id.value(), 0, Image()));
+    CHECK(e.document().cel(id.value(), 0) == nullptr);
+    REQUIRE(e.undo());
+    CHECK(e.document().cel(id.value(), 0) != nullptr);
+}

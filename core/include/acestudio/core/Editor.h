@@ -91,6 +91,12 @@ public:
     Result<int> duplicateFrames(int first, int last);
     // Moves the block so it starts at `to` (0 <= to <= frameCount - block size).
     Status moveFrames(int first, int last, int to);
+    // Replaces (or clears, with a null image) one cel, as an undo step.
+    Status setCelImage(LayerId layer, int frame, Image image, int x = 0, int y = 0);
+    // A new raster layer holding one image per frame from `startFrame` (frames
+    // are appended as needed with `durationMs`), optionally tagged; one undo step.
+    Result<LayerId> addAnimationLayer(std::string name, const std::vector<Image>& frames, int startFrame,
+                                      int durationMs, const std::string& tagName = {});
     // Frames of one layer share a cel (the first frame's) / stop sharing it.
     Status linkCels(LayerId layer, const std::vector<int>& frames);
     Status unlinkCels(LayerId layer, const std::vector<int>& frames);
