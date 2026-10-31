@@ -129,6 +129,21 @@ void CanvasWidget::setSelectionPreview(const QPainterPath& path) {
     update();
 }
 
+void CanvasWidget::setTint(const QImage& image) {
+    m_tint = image;
+    update();
+}
+
+void CanvasWidget::updateTintRegion(const QImage& patch, const QPoint& at) {
+    if (m_tint.isNull() || patch.isNull()) return;
+    {
+        QPainter p(&m_tint);
+        p.setCompositionMode(QPainter::CompositionMode_Source);
+        p.drawImage(at, patch);
+    }
+    update(imageToWidget(QRect(at, patch.size())).toAlignedRect().adjusted(-2, -2, 2, 2));
+}
+
 void CanvasWidget::setUnderlay(const QImage& image) {
     m_underlay = image;
     update();
@@ -164,6 +179,7 @@ void CanvasWidget::paintEvent(QPaintEvent*) {
     }
     if (!m_underlay.isNull() && m_underlay.size() == m_image.size()) p.drawImage(target, m_underlay);
     p.drawImage(target, m_image);
+    if (!m_tint.isNull() && m_tint.size() == m_image.size()) p.drawImage(target, m_tint);
 
     if (m_look.gridVisible && m_zoom >= m_look.gridMinZoom) {
         p.setPen(QPen(m_look.gridColor, 1));

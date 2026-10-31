@@ -37,6 +37,9 @@ public:
     // Drawn between the checkerboard and the image (onion-skin ghosts);
     // a null image clears it.
     void setUnderlay(const QImage& image);
+    // Translucent tint drawn over the image (mask editing); null clears it.
+    void setTint(const QImage& image);
+    void updateTintRegion(const QImage& patch, const QPoint& at);
     void setAppearance(const CanvasAppearance& a);
     const CanvasAppearance& appearance() const { return m_look; }
     double zoom() const { return m_zoom; }
@@ -96,6 +99,7 @@ private:
 
     QImage m_image;
     QImage m_underlay;
+    QImage m_tint;
     CanvasAppearance m_look;
     QPixmap m_checkerTile;
     double m_zoom = 1.0;

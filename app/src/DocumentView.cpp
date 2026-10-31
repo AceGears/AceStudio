@@ -71,6 +71,23 @@ void DocumentView::refreshCanvas() {
     m_composite = document().composite(m_frame);
     m_canvas->setImage(toQImage(m_composite));
     m_canvas->setUnderlay(m_onion ? toQImage(renderOnion()) : QImage());
+    m_canvas->setTint(m_editMask ? maskTint({0, 0, document().width(), document().height()}) : QImage());
+}
+
+QImage DocumentView::maskTint(const IntRect& r) const {
+    // Red where the mask hides the layer, strength following how much it hides.
+    QImage out(r.w, r.h, QImage::Format_ARGB32_Premultiplied);
+    out.fill(Qt::transparent);
+    for (int y = 0; y < r.h; ++y) {
+        auto* row = reinterpret_cast<QRgb*>(out.scanLine(y));
+        for (int x = 0; x < r.w; ++x) {
+            const int hidden = 255 - document().maskValue(m_layer, m_frame, r.x + x, r.y + y);
+            if (hidden == 0) continue;
+            const int a = hidden * 110 / 255;   // up to ~43% opacity
+            row[x] = qRgba(a * 230 / 255, a * 40 / 255, a * 60 / 255, a);   // premultiplied
+        }
+    }
+    return out;
 }
 
 Image DocumentView::renderOnion() {
@@ -102,6 +119,7 @@ void DocumentView::refreshRegion(const IntRect& region) {
     document().compositeRegion(m_frame, r, m_composite);
     m_frameCache.erase(m_frame);
     m_canvas->updateImageRegion(toQImage(m_composite.copy(r)), QPoint(r.x, r.y));
+    if (m_editMask) m_canvas->updateTintRegion(maskTint(r), QPoint(r.x, r.y));
 }
 
 void DocumentView::ensureValidLayer() {
@@ -154,6 +172,7 @@ void DocumentView::setCurrentLayer(LayerId id) {
     finishGesture(true);
     m_layer = id;
     if (m_editMask && !document().layer(id)->hasMask) setEditingMask(false);
+    else if (m_editMask) m_canvas->setTint(maskTint({0, 0, document().width(), document().height()}));
     Q_EMIT currentLayerChanged(m_layer);
 }
 
@@ -162,6 +181,7 @@ void DocumentView::setEditingMask(bool on) {
     if (on == m_editMask) return;
     finishGesture(true);
     m_editMask = on;
+    m_canvas->setTint(on ? maskTint({0, 0, document().width(), document().height()}) : QImage());
     Q_EMIT editingMaskChanged(on);
     Q_EMIT statusMessage(on ? tr("Painting on the layer mask: white shows, black hides") : tr("Painting on the layer"));
 }

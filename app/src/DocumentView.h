@@ -92,6 +92,7 @@ private:
     void onEditorChanged();
     void refreshCanvas();
     Image renderOnion();
+    QImage maskTint(const IntRect& r) const;
     std::map<int, Image> m_frameCache;   // composites of onion-skin ghost frames
     void refreshRegion(const IntRect& r);
     void ensureValidLayer();
