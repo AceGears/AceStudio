@@ -72,12 +72,23 @@ Rgba8 blendPixel(Rgba8 dst, Rgba8 src, BlendMode mode, std::uint8_t opacity) noe
 
 namespace {
 // Exact-integer source-over for straight alpha (normal mode), the hot path.
+// floor((v + 127) / 255) for v in [0, 65280], without a division (exact;
+// checked exhaustively).
+inline unsigned div255r(unsigned v) noexcept {
+    v += 128u;
+    return (v + (v >> 8)) >> 8;
+}
+
 inline Rgba8 normalOver(Rgba8 d, Rgba8 s, unsigned sa) noexcept {
     if (sa >= 255) return {s.r, s.g, s.b, 255};
     const unsigned inv = 255u - sa;
-    const unsigned dw = (d.a * inv + 127u) / 255u;          // backdrop weight
+    const unsigned dw = div255r(d.a * inv);                  // backdrop weight
     const unsigned oa = sa + dw;
     if (oa == 0) return Rgba8::transparent();
+    if (oa == 255) {   // opaque result (opaque backdrop): the common case
+        return {static_cast<std::uint8_t>(div255r(s.r * sa + d.r * dw)), static_cast<std::uint8_t>(div255r(s.g * sa + d.g * dw)),
+                static_cast<std::uint8_t>(div255r(s.b * sa + d.b * dw)), 255};
+    }
     auto ch = [&](unsigned cs, unsigned cd) {
         return static_cast<std::uint8_t>((cs * sa + cd * dw + oa / 2) / oa);
     };
@@ -100,7 +111,7 @@ void blendImage(Image& dst, const Image& src, int ox, int oy, BlendMode mode, st
             if (s.a == 0) continue;
             Rgba8& d = drow[x];
             if (mode == BlendMode::Normal) {
-                const unsigned sa = opacity == 255 ? s.a : (s.a * opacity + 127u) / 255u;
+                const unsigned sa = opacity == 255 ? s.a : div255r(s.a * opacity);
                 if (sa) d = normalOver(d, s, sa);
             } else {
                 d = blendPixel(d, s, mode, opacity);
