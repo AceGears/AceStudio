@@ -21,6 +21,8 @@ add_executable(acestudio_core_tests
     test_animation.cpp
     test_animation_qa.cpp
     test_export.cpp
+    test_atlas.cpp
+    test_autotile.cpp
     test_subprocess.cpp
     test_ai_worker.cpp
     test_model_catalog.cpp

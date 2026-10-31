@@ -2,6 +2,8 @@
 # CLI, MCP server, tests and plugins can all share it.
 add_library(acestudio_core STATIC
     src/Adjust.cpp
+    src/Atlas.cpp
+    src/Autotile.cpp
     src/AiWorker.cpp
     src/AnimCodec.cpp
     src/Animation.cpp
