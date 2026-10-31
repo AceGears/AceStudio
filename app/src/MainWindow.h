@@ -147,6 +147,11 @@ private:
     QAction* m_darkAction = nullptr;
     QAction* m_lightAction = nullptr;
     QByteArray m_defaultState;
+    QMenu* m_workspaceMenu = nullptr;
+    void rebuildWorkspaceMenu();
+    void applyBuiltinWorkspace(const QString& name);
+    void applyWorkspace(const QString& name);
+    void saveWorkspace();
     ShortcutRegistry m_shortcuts;
     std::unique_ptr<RecoveryStore> m_recovery;
     QTimer* m_autosaveTimer = nullptr;

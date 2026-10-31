@@ -43,6 +43,8 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QMenuBar>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPushButton>
@@ -627,6 +629,9 @@ void MainWindow::buildMenus() {
     for (QDockWidget* d : {m_toolsDock, m_layersDock, m_aiDock, m_propsDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock})
         window->addAction(d->toggleViewAction());
     window->addSeparator();
+    m_workspaceMenu = window->addMenu(tr("&Workspaces"));
+    connect(m_workspaceMenu, &QMenu::aboutToShow, this, &MainWindow::rebuildWorkspaceMenu);
+    rebuildWorkspaceMenu();
     window->addAction(tr("&Reset Layout"), this, &MainWindow::resetLayout);
 
     // Help
@@ -658,6 +663,87 @@ void MainWindow::resetLayout() {
         d->show();
     }
     restoreState(m_defaultState, kLayoutVersion);
+}
+
+// ------------------------------------------------------------------ workspaces
+
+namespace {
+const char* const kBuiltinWorkspaces[] = {"Painting", "Animation", "AI", "Minimal"};
+}
+
+void MainWindow::applyBuiltinWorkspace(const QString& name) {
+    resetLayout();   // every preset starts from the default arrangement
+    if (name == QLatin1String("Animation")) {
+        m_previewDock->show();
+        m_previewDock->raise();
+        resizeDocks({m_timelineDock}, {height() / 3}, Qt::Vertical);
+    } else if (name == QLatin1String("AI")) {
+        m_aiDock->show();
+        m_aiDock->raise();
+        m_logDock->show();
+        m_logDock->raise();
+        resizeDocks({m_aiDock}, {width() / 3}, Qt::Horizontal);
+    } else if (name == QLatin1String("Minimal")) {
+        for (QDockWidget* d : {m_aiDock, m_propsDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock}) d->hide();
+    } else {   // Painting
+        m_layersDock->raise();
+        m_paletteDock->raise();
+    }
+}
+
+void MainWindow::rebuildWorkspaceMenu() {
+    m_workspaceMenu->clear();
+    for (const char* n : kBuiltinWorkspaces) {
+        const QString name = QString::fromLatin1(n);
+        m_workspaceMenu->addAction(tr(n), this, [this, name] { applyBuiltinWorkspace(name); });
+    }
+    const nlohmann::json saved = m_ctx.settings().get("window.workspaces");
+    if (saved.is_object() && !saved.empty()) {
+        m_workspaceMenu->addSeparator();
+        for (auto it = saved.begin(); it != saved.end(); ++it) {
+            const QString name = QString::fromStdString(it.key());
+            m_workspaceMenu->addAction(name, this, [this, name] { applyWorkspace(name); });
+        }
+    }
+    m_workspaceMenu->addSeparator();
+    m_workspaceMenu->addAction(tr("&Save Current Layout…"), this, &MainWindow::saveWorkspace);
+    QMenu* del = m_workspaceMenu->addMenu(tr("&Delete"));
+    del->setEnabled(saved.is_object() && !saved.empty());
+    if (saved.is_object())
+        for (auto it = saved.begin(); it != saved.end(); ++it) {
+            const std::string key = it.key();
+            del->addAction(QString::fromStdString(key), this, [this, key] {
+                nlohmann::json w = m_ctx.settings().get("window.workspaces");
+                if (w.is_object()) w.erase(key);
+                (void)m_ctx.settings().set("window.workspaces", w);
+                m_ctx.saveSettings();
+            });
+        }
+}
+
+void MainWindow::saveWorkspace() {
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("Save Workspace"), tr("Name:"), QLineEdit::Normal, QString(), &ok).trimmed();
+    if (!ok || name.isEmpty()) return;
+    if (name.size() > 64) { statusBar()->showMessage(tr("Workspace names are limited to 64 characters"), 5000); return; }
+    nlohmann::json w = m_ctx.settings().get("window.workspaces");
+    if (!w.is_object()) w = nlohmann::json::object();
+    const std::string key = name.toStdString();
+    if (w.contains(key) && QMessageBox::question(this, tr("Save Workspace"), tr("Replace the workspace “%1”?").arg(name)) != QMessageBox::Yes)
+        return;
+    w[key] = saveState(kLayoutVersion).toBase64().toStdString();
+    (void)m_ctx.settings().set("window.workspaces", w);
+    m_ctx.saveSettings();
+    statusBar()->showMessage(tr("Workspace “%1” saved").arg(name), 4000);
+}
+
+void MainWindow::applyWorkspace(const QString& name) {
+    const nlohmann::json w = m_ctx.settings().get("window.workspaces");
+    const std::string key = name.toStdString();
+    if (!w.is_object() || !w.contains(key) || !w[key].is_string()) return;
+    const QByteArray state = QByteArray::fromBase64(QByteArray::fromStdString(w[key].get<std::string>()));
+    if (!restoreState(state, kLayoutVersion))
+        statusBar()->showMessage(tr("Workspace “%1” was saved by an older version and cannot be restored").arg(name), 6000);
 }
 
 // ------------------------------------------------------------------ documents
