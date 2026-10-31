@@ -1,4 +1,6 @@
 #include "LayersPanel.h"
+
+#include <QTimer>
 #include "DocumentView.h"
 #include "QtBridge.h"
 
@@ -132,10 +134,23 @@ void LayersPanel::setView(DocumentView* view) {
     if (m_view) disconnect(m_view, nullptr, this, nullptr);
     m_view = view;
     if (m_view) {
-        connect(m_view, &DocumentView::documentChanged, this, &LayersPanel::rebuild);
-        connect(m_view, &DocumentView::currentLayerChanged, this, &LayersPanel::rebuild);
+        // Deferred: these fire from inside the tree's own signals (current
+        // item changed, check box toggled); clearing the tree there deleted
+        // the item Qt was still delivering the signal for (use-after-free).
+        connect(m_view, &DocumentView::documentChanged, this, &LayersPanel::scheduleRebuild);
+        connect(m_view, &DocumentView::currentLayerChanged, this, &LayersPanel::scheduleRebuild);
+        connect(m_view, &DocumentView::editingMaskChanged, this, &LayersPanel::scheduleRebuild);
     }
     rebuild();
+}
+
+void LayersPanel::scheduleRebuild() {
+    if (m_rebuildPending) return;
+    m_rebuildPending = true;
+    QTimer::singleShot(0, this, [this] {
+        m_rebuildPending = false;
+        rebuild();
+    });
 }
 
 void LayersPanel::report(const Status& st) {
@@ -161,10 +176,24 @@ void LayersPanel::rebuild() {
         for (const Layer& l : layers) {
             auto* item = new QTreeWidgetItem;
             item->setText(0, qs(l.name));
-            QString mode = qs(std::string(toString(l.blend)));
+            QString mode = l.kind == LayerKind::Adjustment ? tr("adjust") : qs(std::string(toString(l.blend)));
             if (l.opacity != 255) mode += QStringLiteral(" · %1%").arg(qRound(l.opacity * 100.0 / 255.0));
             if (l.locked) mode += tr(" · locked");
+            QStringList flags;
+            if (l.clipped) flags << tr("↳ clip");
+            if (l.hasMask) {
+                const bool editing = l.id == m_view->currentLayer() && m_view->editingMask();
+                flags << (editing ? tr("■ MASK") : l.maskEnabled ? tr("□ mask") : tr("⊘ mask"));
+            }
+            if (!flags.isEmpty()) mode = flags.join(QStringLiteral(" ")) + QStringLiteral(" · ") + mode;
             item->setText(1, mode);
+            if (l.kind == LayerKind::Adjustment) {
+                QFont f = item->font(0);
+                f.setItalic(true);
+                item->setFont(0, f);
+                item->setToolTip(1, tr("Adjustment layer: changes the layers below it. Layer › Adjustment Settings to edit."));
+            }
+            if (l.hasMask) item->setToolTip(1, tr("Layer mask: Layer › Layer Mask › Edit Mask (Ctrl+\\) to paint on it"));
             item->setData(0, kIdRole, l.id);
             item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsUserCheckable | Qt::ItemIsEditable);
             item->setCheckState(0, l.visible ? Qt::Checked : Qt::Unchecked);

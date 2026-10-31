@@ -20,6 +20,7 @@ add_executable(AceStudio WIN32
     src/QtBridge.h
     src/ImageDialogs.h
     src/ImageDialogs.cpp
+    src/LayerDialogs.cpp
     src/AnimationDialogs.h
     src/AnimationDialogs.cpp
     src/ExportDialog.h

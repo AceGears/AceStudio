@@ -148,6 +148,20 @@ void CanvasWidget::paintEvent(QPaintEvent*) {
 
     p.setRenderHint(QPainter::SmoothPixmapTransform, false);
     p.setRenderHint(QPainter::Antialiasing, false);
+    if (m_tileX || m_tileY) {
+        // Neighbouring repeats (dimmed) so seams are visible while drawing.
+        p.save();
+        p.setOpacity(0.55);
+        for (int ty = m_tileY ? -1 : 0; ty <= (m_tileY ? 1 : 0); ++ty)
+            for (int tx = m_tileX ? -1 : 0; tx <= (m_tileX ? 1 : 0); ++tx) {
+                if (tx == 0 && ty == 0) continue;
+                const QRectF r = target.translated(tx * target.width(), ty * target.height());
+                if (!r.intersects(QRectF(rect()))) continue;
+                p.fillRect(r, QBrush(m_checkerTile));
+                p.drawImage(r, m_image);
+            }
+        p.restore();
+    }
     if (!m_underlay.isNull() && m_underlay.size() == m_image.size()) p.drawImage(target, m_underlay);
     p.drawImage(target, m_image);
 
@@ -190,6 +204,20 @@ void CanvasWidget::paintEvent(QPaintEvent*) {
         dash.setDashPattern({4, 4});
         p.setPen(dash);
         p.drawPath(*path);
+        p.restore();
+    }
+    if (!m_overlay.isEmpty()) {
+        p.save();
+        QTransform t;
+        t.translate(m_offset.x(), m_offset.y());
+        t.scale(m_zoom, m_zoom);
+        p.setTransform(t);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        QPen pen(QColor(80, 200, 255), 0);
+        pen.setCosmetic(true);
+        p.setPen(pen);
+        p.setBrush(Qt::NoBrush);
+        p.drawPath(m_overlay);
         p.restore();
     }
     // Brush footprint preview (hidden while panning).
@@ -275,11 +303,48 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* e) {
     QWidget::mouseReleaseEvent(e);
 }
 
+void CanvasWidget::mouseDoubleClickEvent(QMouseEvent* e) {
+    if (e->button() == Qt::LeftButton && !m_panning && !m_spaceHeld && !m_handMode) {
+        Q_EMIT toolDoubleClicked(pixelAt(e->position()));
+        e->accept();
+        return;
+    }
+    QWidget::mouseDoubleClickEvent(e);
+}
+
+void CanvasWidget::setOverlay(const QPainterPath& path) {
+    m_overlay = path;
+    update();
+}
+
+void CanvasWidget::setTiling(bool horizontal, bool vertical) {
+    if (m_tileX == horizontal && m_tileY == vertical) return;
+    m_tileX = horizontal;
+    m_tileY = vertical;
+    update();
+}
+
 void CanvasWidget::keyPressEvent(QKeyEvent* e) {
     if (e->key() == Qt::Key_Space && !e->isAutoRepeat()) {
         m_spaceHeld = true;
         setCursor(Qt::OpenHandCursor);
         return;
+    }
+    switch (e->key()) {
+    case Qt::Key_Return:
+    case Qt::Key_Enter: Q_EMIT commitRequested(); return;
+    case Qt::Key_Escape: Q_EMIT cancelRequested(); return;
+    default: break;
+    }
+    if (!(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))) {
+        const int step = (e->modifiers() & Qt::ShiftModifier) ? 10 : 1;
+        switch (e->key()) {
+        case Qt::Key_Left: Q_EMIT nudgeRequested(-step, 0); return;
+        case Qt::Key_Right: Q_EMIT nudgeRequested(step, 0); return;
+        case Qt::Key_Up: Q_EMIT nudgeRequested(0, -step); return;
+        case Qt::Key_Down: Q_EMIT nudgeRequested(0, step); return;
+        default: break;
+        }
     }
     QWidget::keyPressEvent(e);
 }

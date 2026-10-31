@@ -18,6 +18,7 @@
 #include "panels/TimelinePanel.h"
 #include "panels/ToolsPanel.h"
 #include "ImageDialogs.h"
+#include "LayerDialogs.h"
 #include "acestudio/core/PaletteIO.h"
 #include "ToolState.h"
 #include "acestudio/core/PngCodec.h"
@@ -106,6 +107,7 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
     rebuildRecentMenus();
 
     m_recovery = std::make_unique<RecoveryStore>(m_ctx.dataDir() / "recovery");
+    loadBrushTips();
     m_autosaveTimer = new QTimer(this);
     connect(m_autosaveTimer, &QTimer::timeout, this, &MainWindow::autosaveTick);
     // Buffered log lines reach the disk within a second even when nothing
@@ -277,9 +279,43 @@ void MainWindow::buildMenus() {
     docAction(edit, tr("D&elete Selection / Clear Layer"), QKeySequence::Delete, [this] { currentView()->clearSelectionContents(); });
     docAction(edit, tr("&Invert Selection"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_I), [this] {
         auto* v = currentView();
-        Mask all(v->document().width(), v->document().height(), true);
-        if (v->hasSelection()) { Mask inv = *v->selection(); inv.invert(); v->deselect(); v->applySelection(inv, SelectionOp::Replace); }
-        else v->applySelection(all, SelectionOp::Replace);
+        Mask inv = v->hasSelection() ? *v->selection() : Mask(v->document().width(), v->document().height());
+        inv.invert();
+        report(v->editor().setSelection(std::move(inv), "Invert Selection"));   // one undo step
+    });
+    edit->addSeparator();
+    QMenu* brushes = edit->addMenu(tr("&Brush Tips"));
+    docAction(brushes, tr("New Brush from &Selection"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_B), [this] {
+        auto* v = currentView();
+        const Image src = v->editingMask() ? v->document().renderMask(v->currentLayer(), v->currentFrame())
+                                           : v->document().renderLayer(v->currentLayer(), v->currentFrame());
+        auto tip = brushTipFromSelection(src, v->hasSelection() ? *v->selection() : Mask());
+        if (!tip) { report(tip.error()); return; }
+        addBrushTip(tr("Brush %1").arg(m_tools->tips().size() + 1), std::move(tip).value());
+    });
+    brushes->addAction(tr("&Import Brush Tip…"), this, [this] {
+        const QStringList files = QFileDialog::getOpenFileNames(this, tr("Import Brush Tips"), QString(), tr("PNG images (*.png)"));
+        for (const QString& f : files) {
+            auto tip = loadBrushTip(toPath(f));
+            if (!tip) { report(tip.error()); continue; }
+            addBrushTip(QFileInfo(f).completeBaseName(), std::move(tip).value());
+        }
+    });
+    brushes->addAction(tr("&Export Current Brush Tip…"), this, [this] {
+        const int i = m_tools->currentTip();
+        if (i < 0) { report(Error{ErrorCode::InvalidArgument, "No brush tip is selected"}); return; }
+        const auto& tip = m_tools->tips()[static_cast<std::size_t>(i)];
+        const QString f = QFileDialog::getSaveFileName(this, tr("Export Brush Tip"), tip.name + QStringLiteral(".png"), tr("PNG images (*.png)"));
+        if (!f.isEmpty()) report(saveBrushTip(*tip.image, toPath(f)));
+    });
+    brushes->addAction(tr("&Delete Current Brush Tip"), this, [this] {
+        const int i = m_tools->currentTip();
+        if (i < 0) return;
+        const QString name = m_tools->tips()[static_cast<std::size_t>(i)].name;
+        if (QMessageBox::question(this, tr("Delete Brush Tip"), tr("Delete the brush tip \"%1\"?").arg(name)) != QMessageBox::Yes) return;
+        std::error_code ec;
+        std::filesystem::remove(brushDir() / toPath(name + QStringLiteral(".png")), ec);
+        m_tools->removeTip(i);
     });
     edit->addSeparator();
     edit->addAction(tr("&Keyboard Shortcuts…"), this, &MainWindow::editShortcuts);
@@ -300,6 +336,16 @@ void MainWindow::buildMenus() {
         for (int i = 0; i < m_tabs->count(); ++i)
             static_cast<DocumentView*>(m_tabs->widget(i))->canvas()->setGridVisible(on);
     });
+    QMenu* tiled = view->addMenu(tr("&Tiled Mode"));
+    m_tileGroup = new QActionGroup(this);
+    const std::pair<TileMode, QString> tileModes[] = {{TileMode::None, tr("&Off")}, {TileMode::Horizontal, tr("&Horizontal")},
+                                                       {TileMode::Vertical, tr("&Vertical")}, {TileMode::Both, tr("&Both")}};
+    for (const auto& [mode, label] : tileModes) {
+        QAction* a = docAction(tiled, label, QKeySequence(), [this, mode = mode] { report(currentView()->editor().setTileMode(mode)); });
+        a->setCheckable(true);
+        a->setData(static_cast<int>(mode));
+        m_tileGroup->addAction(a);
+    }
     view->addSeparator();
     QMenu* theme = view->addMenu(tr("&Theme"));
     auto* themeGroup = new QActionGroup(this);
@@ -393,8 +439,69 @@ void MainWindow::buildMenus() {
         auto r = v->editor().duplicateLayer(v->currentLayer());
         if (r) v->setCurrentLayer(r.value()); else report(r.error());
     });
-    docAction(layer, tr("&Merge Down"), QKeySequence(Qt::CTRL | Qt::Key_E), [this] {
+    m_mergeDownAction = docAction(layer, tr("&Merge Down"), QKeySequence(Qt::CTRL | Qt::Key_E), [this] {
         report(currentView()->editor().mergeDown(currentView()->currentLayer()));
+    });
+    layer->addSeparator();
+    QMenu* maskMenu = layer->addMenu(tr("Layer &Mask"));
+    m_addMaskAction = docAction(maskMenu, tr("&Add Mask (Reveal All)"), QKeySequence(), [this] {
+        auto* v = currentView();
+        if (report(v->editor().addLayerMask(v->currentLayer()))) v->setEditingMask(true);
+    });
+    m_addMaskSelAction = docAction(maskMenu, tr("Add Mask from &Selection"), QKeySequence(), [this] {
+        auto* v = currentView();
+        if (!v->hasSelection()) { report(Error{ErrorCode::InvalidArgument, "Make a selection first"}); return; }
+        if (report(v->editor().addLayerMask(v->currentLayer(), v->selection()))) v->setEditingMask(true);
+    });
+    m_editMaskAction = docAction(maskMenu, tr("&Edit Mask"), QKeySequence(Qt::CTRL | Qt::Key_Backslash), [this] {
+        currentView()->setEditingMask(!currentView()->editingMask());
+    });
+    m_editMaskAction->setCheckable(true);
+    m_disableMaskAction = docAction(maskMenu, tr("&Disable Mask"), QKeySequence(), [this] {
+        auto* v = currentView();
+        const Layer* l = v->document().layer(v->currentLayer());
+        if (l) report(v->editor().setLayerMaskEnabled(l->id, !l->maskEnabled));
+    });
+    m_disableMaskAction->setCheckable(true);
+    m_applyMaskAction = docAction(maskMenu, tr("A&pply Mask"), QKeySequence(), [this] {
+        report(currentView()->editor().removeLayerMask(currentView()->currentLayer(), true));
+    });
+    m_deleteMaskAction = docAction(maskMenu, tr("De&lete Mask"), QKeySequence(), [this] {
+        report(currentView()->editor().removeLayerMask(currentView()->currentLayer(), false));
+    });
+    m_clipAction = docAction(layer, tr("&Clipping Mask"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_G), [this] {
+        auto* v = currentView();
+        const Layer* l = v->document().layer(v->currentLayer());
+        if (l) report(v->editor().setLayerClipped(l->id, !l->clipped));
+    });
+    m_clipAction->setCheckable(true);
+    m_clipAction->setToolTip(tr("Show this layer only where the layer below it has pixels"));
+    QMenu* adjMenu = layer->addMenu(tr("New &Adjustment Layer"));
+    const std::pair<AdjustmentType, QString> adjTypes[] = {
+        {AdjustmentType::BrightnessContrast, tr("&Brightness / Contrast…")}, {AdjustmentType::HueSaturation, tr("&Hue / Saturation…")},
+        {AdjustmentType::Invert, tr("&Invert")}, {AdjustmentType::Posterize, tr("&Posterize…")}, {AdjustmentType::Threshold, tr("&Threshold…")}};
+    for (const auto& [type, label] : adjTypes) {
+        docAction(adjMenu, label, QKeySequence(), [this, type = type] {
+            auto* v = currentView();
+            const std::size_t before = v->editor().history().index();
+            Adjustment adj{type};
+            if (type == AdjustmentType::Posterize) adj.a = 4;
+            if (type == AdjustmentType::Threshold) adj.a = 128;
+            auto id = v->editor().addAdjustmentLayer(adj, v->currentLayer());
+            if (!id) { report(id.error()); return; }
+            v->setCurrentLayer(id.value());
+            if (type == AdjustmentType::Invert) return;
+            AdjustmentDialog dlg(v->editor(), id.value(), this);
+            if (dlg.exec() != QDialog::Accepted)
+                while (v->editor().history().index() > before && v->editor().history().canUndo()) (void)v->editor().undo();
+        });
+    }
+    m_adjSettingsAction = docAction(layer, tr("Adjustment &Settings…"), QKeySequence(), [this] {
+        auto* v = currentView();
+        const Layer* l = v->document().layer(v->currentLayer());
+        if (!l || l->kind != LayerKind::Adjustment) { report(Error{ErrorCode::InvalidArgument, "Select an adjustment layer"}); return; }
+        AdjustmentDialog dlg(v->editor(), l->id, this);
+        dlg.exec();
     });
     layer->addSeparator();
     docAction(layer, tr("De&lete Layer"), QKeySequence(), [this] {
@@ -403,7 +510,11 @@ void MainWindow::buildMenus() {
 
     // Animation
     QMenu* anim = menuBar()->addMenu(tr("&Animation"));
-    docAction(anim, tr("&Play / Pause"), QKeySequence(Qt::Key_Return), [this] { m_timeline->togglePlayback(); });
+    docAction(anim, tr("&Play / Pause"), QKeySequence(Qt::Key_Return), [this] {
+        // Enter also finishes a curve, polygon or move in progress.
+        if (auto* v = currentView(); v && v->hasGesture()) { v->finishGesture(true); return; }
+        m_timeline->togglePlayback();
+    });
     docAction(anim, tr("&Next Frame"), QKeySequence(Qt::Key_Period), [this] { m_timeline->stepFrame(1); });
     docAction(anim, tr("P&revious Frame"), QKeySequence(Qt::Key_Comma), [this] { m_timeline->stepFrame(-1); });
     anim->addSeparator();
@@ -531,6 +642,8 @@ void MainWindow::addView(DocumentView* view) {
 
     connect(view, &DocumentView::modifiedChanged, this, [this, view] { updateTabTitle(view); });
     connect(view, &DocumentView::documentChanged, this, [this, view] { if (view == currentView()) updateActions(); });
+    connect(view, &DocumentView::editingMaskChanged, this, [this, view] { if (view == currentView()) updateActions(); });
+    connect(view, &DocumentView::currentLayerChanged, this, [this, view] { if (view == currentView()) updateActions(); });
     connect(view, &DocumentView::statusMessage, this, [this](const QString& m) { statusBar()->showMessage(m, 4000); });
     connect(view, &DocumentView::cursorMoved, this, [this](int x, int y, bool inside) {
         m_statusCursor->setText(inside ? QStringLiteral("X %1  Y %2").arg(x).arg(y) : QString());
@@ -577,6 +690,29 @@ void MainWindow::updateActions() {
     DocumentView* v = currentView();
     const bool hasDoc = v != nullptr;
     for (QAction* a : m_docActions) a->setEnabled(hasDoc);
+    if (hasDoc) {
+        const Layer* l = v->document().layer(v->currentLayer());
+        const bool mask = l && l->hasMask;
+        m_editMaskAction->setEnabled(mask);
+        m_editMaskAction->setChecked(v->editingMask());
+        m_disableMaskAction->setEnabled(mask);
+        m_applyMaskAction->setEnabled(mask && l->kind == LayerKind::Raster);
+        m_deleteMaskAction->setEnabled(mask);
+        const bool canMask = l && !mask;
+        m_addMaskAction->setEnabled(canMask);
+        m_addMaskSelAction->setEnabled(canMask);
+        m_adjSettingsAction->setEnabled(l && l->kind == LayerKind::Adjustment);
+        bool canMerge = false;
+        if (l && l->kind != LayerKind::Group) {
+            const auto& layers = v->document().layers();
+            for (std::size_t i = *v->document().layerIndex(l->id); i-- > 0;)
+                if (layers[i].parent == l->parent) { canMerge = layers[i].kind == LayerKind::Raster; break; }
+        }
+        m_mergeDownAction->setEnabled(canMerge);
+        m_disableMaskAction->setChecked(mask && !l->maskEnabled);
+        m_clipAction->setChecked(l && l->clipped);
+        for (QAction* a : m_tileGroup->actions()) a->setChecked(a->data().toInt() == static_cast<int>(v->document().tileMode()));
+    }
     if (m_undoAction && m_redoAction) {
         const auto& h = hasDoc ? &v->editor().history() : nullptr;
         m_undoAction->setEnabled(h && h->canUndo());
@@ -584,6 +720,32 @@ void MainWindow::updateActions() {
         m_undoAction->setText(h && h->canUndo() ? tr("&Undo %1").arg(qs(h->undoLabel())) : tr("&Undo"));
         m_redoAction->setText(h && h->canRedo() ? tr("&Redo %1").arg(qs(h->redoLabel())) : tr("&Redo"));
     }
+}
+
+std::filesystem::path MainWindow::brushDir() const { return m_ctx.dataDir() / "brushes"; }
+
+void MainWindow::loadBrushTips() {
+    std::error_code ec;
+    if (!std::filesystem::is_directory(brushDir(), ec)) return;
+    std::vector<std::filesystem::path> files;
+    for (const auto& e : std::filesystem::directory_iterator(brushDir(), ec))
+        if (e.path().extension() == ".png") files.push_back(e.path());
+    std::sort(files.begin(), files.end());
+    for (const auto& f : files) {
+        auto tip = loadBrushTip(f);
+        if (tip) m_tools->addTip(fromPath(f.stem()), std::move(tip).value());
+        else ACE_LOG_WARN("ui", "Skipping brush tip " + fromPath(f).toStdString() + ": " + tip.error().message);
+    }
+}
+
+void MainWindow::addBrushTip(const QString& name, Image tip) {
+    std::error_code ec;
+    std::filesystem::create_directories(brushDir(), ec);
+    if (auto st = saveBrushTip(tip, brushDir() / toPath(name + QStringLiteral(".png"))); !st) report(st);
+    const int w = tip.width(), h = tip.height();
+    m_tools->addTip(name, std::move(tip));
+    m_tools->setBrushShape(BrushShape::Custom);
+    statusBar()->showMessage(tr("Brush tip \"%1\" added (%2×%3)").arg(name).arg(w).arg(h), 4000);
 }
 
 void MainWindow::newProject() {
@@ -760,8 +922,9 @@ void MainWindow::showNotices() {
     box.exec();
 }
 
-void MainWindow::report(const Status& st) {
+bool MainWindow::report(const Status& st) {
     if (!st) statusBar()->showMessage(qs(st.error().message), 4000);
+    return st.ok();
 }
 
 void MainWindow::report(const Error& e) { statusBar()->showMessage(qs(e.message), 4000); }

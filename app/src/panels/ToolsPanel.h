@@ -44,7 +44,12 @@ private:
     QWidget* m_gradBox = nullptr;
     QComboBox* m_gradShape = nullptr;
     QComboBox* m_gradDither = nullptr;
+    QComboBox* m_ink = nullptr;
+    QComboBox* m_tip = nullptr;
+    QCheckBox* m_tipColors = nullptr;
+    QWidget* m_tipRow = nullptr;
     bool m_syncing = false;
+    void rebuildTips();
 };
 
 } // namespace acestudio::ui

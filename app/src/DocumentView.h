@@ -44,13 +44,19 @@ public:
     void setOnionSkin(std::optional<OnionSkin> opts);
     const std::optional<OnionSkin>& onionSkin() const { return m_onion; }
 
-    // Selection (rectangular for now). Empty mask = no selection.
-    bool hasSelection() const { return !m_selection.isNull(); }
-    const Mask* selection() const { return hasSelection() ? &m_selection : nullptr; }
-    // Combines a new selection shape into the current one.
+    // Selection lives in the document and is part of the undo history.
+    bool hasSelection() const { return document().hasSelection(); }
+    const Mask* selection() const { return hasSelection() ? &document().selection() : nullptr; }
+    // Combines a new selection shape into the current one (one undo step).
     void applySelection(const Mask& shape, SelectionOp op);
     void selectAll();
     void deselect();
+
+    // Mask editing: painting goes to the current layer's mask.
+    bool editingMask() const { return m_editMask; }
+    void setEditingMask(bool on);
+    // Commits or cancels a multi-click tool (curve, polygon) in progress.
+    void finishGesture(bool commit);
     // Erases the selection on the current layer, or the whole cel if none.
     void clearSelectionContents();
 
@@ -66,6 +72,10 @@ public:
     void markAutosaved() { m_autosavedSerial = m_changeSerial; }
     // True while a stroke or selection drag is in progress.
     bool isBusy() const { return m_session != nullptr || m_selecting; }
+    // A curve, polygon or move is in progress (Enter/Escape finish it).
+    bool hasGesture() const { return m_curveStage >= 0 || !m_polygon.empty() || m_moving; }
+    // Moves the selected pixels (or the layer) by (dx, dy) in one step.
+    void nudge(int dx, int dy);
 
 Q_SIGNALS:
     void documentChanged();
@@ -75,6 +85,7 @@ Q_SIGNALS:
     void cursorMoved(int x, int y, bool inside);
     void zoomChanged(double zoom);
     void statusMessage(const QString& text);
+    void editingMaskChanged(bool on);
 
 private:
     void onEditorChanged();
@@ -88,7 +99,15 @@ private:
     void updateSelectionOutline();
     SelectionOp opFor(Qt::KeyboardModifiers mods) const;
     void applyToolTo(PaintSession& s, Point from, Point to, bool first);
-    bool beginSession(const QString& label);
+    bool beginSession(const QString& label, Qt::MouseButton button = Qt::LeftButton, bool useSelection = true);
+    void onToolDoubleClicked(QPoint px);
+    void onHover(int x, int y, bool inside);
+    void endSession(bool commit);
+    void redrawCurve();
+    void redrawPolygonPreview(std::optional<Point> cursor);
+    void beginMove(Point at, bool copy);
+    void updateMove(Point to);
+    void finishMove(bool commit);
 
     Editor m_editor;
     QString m_path;
@@ -97,7 +116,7 @@ private:
     CanvasWidget* m_canvas = nullptr;
     int m_frame = 0;
     LayerId m_layer = kNoLayer;
-    Mask m_selection;
+    bool m_editMask = false;
     bool m_lastModified = false;
     bool m_neverSaved = false;
     std::optional<OnionSkin> m_onion;
@@ -117,6 +136,19 @@ private:
     SelectionOp m_gestureOp = SelectionOp::Replace;
     std::vector<Point> m_lasso;
     Rgba8 m_gradientEnd;
+    // Curve: 0 = dragging the line, 1 = first control point, 2 = second.
+    int m_curveStage = -1;
+    Point m_curveA, m_curveB, m_curveC1, m_curveC2;
+    std::vector<Point> m_polygon;
+    std::optional<Point> m_cloneSource;
+    std::optional<Point> m_cloneOffset;
+    std::unique_ptr<CloneStroke> m_clone;
+    // Move tool: the lifted pixels (canvas-sized), their mask and the offset.
+    Image m_moveImage;
+    Mask m_moveMask;
+    Point m_moveOffset;
+    bool m_moveCopy = false;
+    bool m_moving = false;
 };
 
 } // namespace acestudio::ui

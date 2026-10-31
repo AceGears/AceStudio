@@ -48,6 +48,10 @@ public:
     void setSelectionOutline(const QPainterPath& path);
     // In-progress selection shape (rect drag, lasso path) in image coordinates.
     void setSelectionPreview(const QPainterPath& path);
+    // Tool guides (curve control handles, polygon edges) in image coordinates.
+    void setOverlay(const QPainterPath& path);
+    // Tiled preview: neighbouring repeats of the image drawn dimmed around it.
+    void setTiling(bool horizontal, bool vertical);
 
 public Q_SLOTS:
     void zoomIn();
@@ -63,6 +67,11 @@ Q_SIGNALS:
     void toolPressed(QPoint pixel, Qt::MouseButton button, Qt::KeyboardModifiers mods);
     void toolMoved(QPoint pixel, Qt::MouseButtons buttons, Qt::KeyboardModifiers mods);
     void toolReleased(QPoint pixel, Qt::MouseButton button, Qt::KeyboardModifiers mods);
+    void toolDoubleClicked(QPoint pixel);
+    // Enter / Escape / arrow keys while the canvas has focus.
+    void commitRequested();
+    void cancelRequested();
+    void nudgeRequested(int dx, int dy);
 
 protected:
     void paintEvent(QPaintEvent*) override;
@@ -72,6 +81,7 @@ protected:
     void mousePressEvent(QMouseEvent*) override;
     void mouseMoveEvent(QMouseEvent*) override;
     void mouseReleaseEvent(QMouseEvent*) override;
+    void mouseDoubleClickEvent(QMouseEvent*) override;
     void keyPressEvent(QKeyEvent*) override;
     void keyReleaseEvent(QKeyEvent*) override;
     void leaveEvent(QEvent*) override;
@@ -99,6 +109,8 @@ private:
     QRect m_brushOutline;
     QPainterPath m_selection;
     QPainterPath m_selectionPreview;
+    QPainterPath m_overlay;
+    bool m_tileX = false, m_tileY = false;
 };
 
 } // namespace acestudio::ui

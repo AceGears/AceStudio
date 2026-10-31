@@ -6,6 +6,8 @@
 #include <QComboBox>
 #include <QFormLayout>
 #include <QGridLayout>
+#include <QStandardItemModel>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
@@ -90,6 +92,32 @@ QIcon toolIcon(Tool t, const QColor& fg) {
         p.drawRect(QRectF(4.5, 5.5, 15, 13));
         break;
     }
+    case Tool::Curve: {
+        QPainterPath path;
+        path.moveTo(4, 19);
+        path.cubicTo(6, 4, 18, 20, 20, 5);
+        p.drawPath(path);
+        break;
+    }
+    case Tool::Polygon: {
+        QPolygonF poly;
+        poly << QPointF(5, 18) << QPointF(4, 8) << QPointF(12, 4) << QPointF(20, 10) << QPointF(15, 19);
+        p.drawPolygon(poly);
+        break;
+    }
+    case Tool::Clone:
+        p.drawRect(QRectF(5, 15, 14, 5));
+        p.drawLine(QPointF(12, 15), QPointF(12, 10));
+        p.drawEllipse(QRectF(8, 3, 8, 7));
+        break;
+    case Tool::Move:
+        p.drawLine(QPointF(12, 3), QPointF(12, 21));
+        p.drawLine(QPointF(3, 12), QPointF(21, 12));
+        p.drawLine(QPointF(12, 3), QPointF(9, 6)); p.drawLine(QPointF(12, 3), QPointF(15, 6));
+        p.drawLine(QPointF(12, 21), QPointF(9, 18)); p.drawLine(QPointF(12, 21), QPointF(15, 18));
+        p.drawLine(QPointF(3, 12), QPointF(6, 9)); p.drawLine(QPointF(3, 12), QPointF(6, 15));
+        p.drawLine(QPointF(21, 12), QPointF(18, 9)); p.drawLine(QPointF(21, 12), QPointF(18, 15));
+        break;
     case Tool::Hand:
         p.drawLine(QPointF(8, 12), QPointF(8, 6));
         p.drawLine(QPointF(11, 11), QPointF(11, 4));
@@ -166,7 +194,7 @@ ToolsPanel::ToolsPanel(ToolState* state, QWidget* parent) : QWidget(parent), m_s
         b->setFixedSize(34, 34);
         b->setToolTip(QStringLiteral("%1 (%2)").arg(toolName(t), toolShortcut(t)));
         m_group->addButton(b, static_cast<int>(t));
-        grid->addWidget(b, i / 3, i % 3);
+        grid->addWidget(b, i / 4, i % 4);   // 4 columns keep the panel short on small screens
         ++i;
     }
     connect(m_group, &QButtonGroup::idClicked, this, [this](int id) { m_state->setTool(static_cast<Tool>(id)); });
@@ -187,6 +215,25 @@ ToolsPanel::ToolsPanel(ToolState* state, QWidget* parent) : QWidget(parent), m_s
     m_shape = new QComboBox(m_brushBox);
     m_shape->addItem(tr("Square"), static_cast<int>(BrushShape::Square));
     m_shape->addItem(tr("Circle"), static_cast<int>(BrushShape::Circle));
+    m_shape->addItem(tr("Custom"), static_cast<int>(BrushShape::Custom));
+    m_shape->setToolTip(tr("Custom uses a brush tip: Edit › Brush from Selection, or Import in the tip list"));
+    m_ink = new QComboBox(m_brushBox);
+    m_ink->addItem(tr("Simple"), static_cast<int>(Ink::Simple));
+    m_ink->addItem(tr("Blend"), static_cast<int>(Ink::Blend));
+    m_ink->addItem(tr("Shading"), static_cast<int>(Ink::Shading));
+    m_ink->setToolTip(tr("Simple: exact colour (pixel art)\nBlend: composite translucent colours over existing pixels\n"
+                         "Shading: step existing pixels along the palette ramp between the primary and secondary colour "
+                         "(left button: towards secondary, right button: towards primary)"));
+    m_tipRow = new QWidget(m_brushBox);
+    auto* tipLayout = new QHBoxLayout(m_tipRow);
+    tipLayout->setContentsMargins(0, 0, 0, 0);
+    m_tip = new QComboBox(m_tipRow);
+    m_tip->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_tip->setMinimumContentsLength(6);
+    m_tipColors = new QCheckBox(tr("Colours"), m_tipRow);
+    m_tipColors->setToolTip(tr("Stamp the tip's own colours instead of the paint colour"));
+    tipLayout->addWidget(m_tip, 1);
+    tipLayout->addWidget(m_tipColors);
     m_mirror = new QComboBox(m_brushBox);
     m_mirror->addItem(tr("Off"), static_cast<int>(MirrorMode::None));
     m_mirror->addItem(tr("Left ↔ Right"), static_cast<int>(MirrorMode::Horizontal));
@@ -201,6 +248,8 @@ ToolsPanel::ToolsPanel(ToolState* state, QWidget* parent) : QWidget(parent), m_s
     m_filled = new QCheckBox(tr("Filled shape"), m_brushBox);
     bf->addRow(tr("Size"), m_size);
     bf->addRow(tr("Shape"), m_shape);
+    bf->addRow(tr("Tip"), m_tipRow);
+    bf->addRow(tr("Ink"), m_ink);
     bf->addRow(tr("Mirror"), m_mirror);
     bf->addRow(tr("Density"), m_dither);
     bf->addRow(m_pixelPerfect);
@@ -258,7 +307,13 @@ ToolsPanel::ToolsPanel(ToolState* state, QWidget* parent) : QWidget(parent), m_s
     connect(m_contiguous, &QCheckBox::toggled, this, [this](bool on) { if (!m_syncing) m_state->setFillContiguous(on); });
     connect(m_tolerance, &QSpinBox::valueChanged, this, [this](int v) { if (!m_syncing) m_state->setFillTolerance(v); });
     connect(m_sampleMerged, &QCheckBox::toggled, this, [this](bool on) { if (!m_syncing) m_state->setSampleMerged(on); });
+    connect(m_ink, &QComboBox::currentIndexChanged, this,
+            [this] { if (!m_syncing) m_state->setInk(static_cast<Ink>(m_ink->currentData().toInt())); });
+    connect(m_tip, &QComboBox::currentIndexChanged, this, [this](int index) { if (!m_syncing) m_state->setCurrentTip(index); });
+    connect(m_tipColors, &QCheckBox::toggled, this, [this](bool on) { if (!m_syncing) m_state->setTipColors(on); });
+    connect(m_state, &ToolState::tipsChanged, this, &ToolsPanel::rebuildTips);
     connect(m_state, &ToolState::changed, this, &ToolsPanel::syncFromState);
+    rebuildTips();
 
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(8, 8, 8, 8);
@@ -273,6 +328,29 @@ ToolsPanel::ToolsPanel(ToolState* state, QWidget* parent) : QWidget(parent), m_s
     root->addWidget(m_gradBox);
     root->addWidget(m_sampleMerged);
     root->addStretch();
+    // Combos would otherwise size to their longest item and widen the dock as tools change.
+    for (QComboBox* c : findChildren<QComboBox*>()) {
+        c->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        c->setMinimumContentsLength(8);
+        c->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    }
+    syncFromState();
+}
+
+void ToolsPanel::rebuildTips() {
+    m_syncing = true;
+    m_tip->clear();
+    for (const auto& t : m_state->tips()) {
+        QImage thumb = QImage(t.image->width(), t.image->height(), QImage::Format_RGBA8888);
+        for (int y = 0; y < t.image->height(); ++y)
+            for (int x = 0; x < t.image->width(); ++x) {
+                const Rgba8 c = t.image->pixel(x, y);
+                thumb.setPixelColor(x, y, QColor(c.r, c.g, c.b, c.a));
+            }
+        m_tip->addItem(QIcon(QPixmap::fromImage(thumb.scaled(16, 16, Qt::KeepAspectRatio, Qt::FastTransformation))),
+                       QStringLiteral("%1 (%2×%3)").arg(t.name).arg(t.image->width()).arg(t.image->height()));
+    }
+    m_syncing = false;
     syncFromState();
 }
 
@@ -284,6 +362,15 @@ void ToolsPanel::syncFromState() {
     const BrushSettings br = m_state->brush();
     m_size->setValue(br.size);
     m_shape->setCurrentIndex(m_shape->findData(static_cast<int>(br.shape)));
+    m_ink->setCurrentIndex(m_ink->findData(static_cast<int>(br.ink)));
+    if (m_state->currentTip() >= 0 && m_state->currentTip() < m_tip->count()) m_tip->setCurrentIndex(m_state->currentTip());
+    m_tipColors->setChecked(br.tipColors);
+    const bool custom = br.shape == BrushShape::Custom;
+    m_tipRow->setVisible(custom && isBrushTool(t));
+    if (auto* lbl = qobject_cast<QFormLayout*>(m_brushBox->layout())->labelForField(m_tipRow)) lbl->setVisible(custom && isBrushTool(t));
+    m_size->setEnabled(!custom);
+    if (auto* item = qobject_cast<QStandardItemModel*>(m_shape->model())->item(m_shape->findData(static_cast<int>(BrushShape::Custom))))
+        item->setEnabled(!m_state->tips().empty());
     m_mirror->setCurrentIndex(m_mirror->findData(static_cast<int>(br.mirror)));
     m_pixelPerfect->setChecked(m_state->pixelPerfect());
     m_filled->setChecked(m_state->fillShapes());
@@ -295,12 +382,15 @@ void ToolsPanel::syncFromState() {
     m_gradShape->setCurrentIndex(m_gradShape->findData(static_cast<int>(m_state->gradientShape())));
     m_gradDither->setCurrentIndex(m_gradDither->findData(static_cast<int>(m_state->gradientDither())));
 
-    const bool brushTool = t == Tool::Pencil || t == Tool::Eraser || t == Tool::Line || t == Tool::Rectangle || t == Tool::Ellipse;
+    const bool brushTool = isBrushTool(t);
     m_brushBox->setVisible(brushTool);
     m_pixelPerfect->setVisible(t == Tool::Pencil || t == Tool::Eraser);
-    m_filled->setVisible(t == Tool::Rectangle || t == Tool::Ellipse);
+    m_filled->setVisible(t == Tool::Rectangle || t == Tool::Ellipse || t == Tool::Polygon);
+    const bool inkTool = brushTool && t != Tool::Eraser;
+    m_ink->setVisible(inkTool);
+    if (auto* lbl = qobject_cast<QFormLayout*>(m_brushBox->layout())->labelForField(m_ink)) lbl->setVisible(inkTool);
     m_fillBox->setVisible(t == Tool::Fill || t == Tool::MagicWand);
-    m_sampleMerged->setVisible(t == Tool::Eyedropper || t == Tool::MagicWand);
+    m_sampleMerged->setVisible(t == Tool::Eyedropper || t == Tool::MagicWand || t == Tool::Clone);
     m_selBox->setVisible(isSelectionTool(t));
     m_gradBox->setVisible(t == Tool::Gradient);
     m_dither->setVisible(t == Tool::Pencil);

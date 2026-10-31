@@ -27,6 +27,8 @@ public:
     void setView(DocumentView* view);
 
 private:
+    void scheduleRebuild();
+    bool m_rebuildPending = false;
     void rebuild();
     void syncControls();
     void onItemChanged(QTreeWidgetItem* item, int column);

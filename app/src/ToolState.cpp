@@ -16,6 +16,10 @@ QString toolName(Tool t) {
     case Tool::Eyedropper: return QObject::tr("Eyedropper");
     case Tool::Select: return QObject::tr("Rectangle Select");
     case Tool::Hand: return QObject::tr("Hand");
+    case Tool::Curve: return QObject::tr("Curve");
+    case Tool::Polygon: return QObject::tr("Polygon");
+    case Tool::Clone: return QObject::tr("Clone Stamp");
+    case Tool::Move: return QObject::tr("Move");
     }
     return {};
 }
@@ -34,6 +38,10 @@ QString toolShortcut(Tool t) {
     case Tool::Eyedropper: return QStringLiteral("I");
     case Tool::Select: return QStringLiteral("M");
     case Tool::Hand: return QStringLiteral("H");
+    case Tool::Curve: return QStringLiteral("C");
+    case Tool::Polygon: return QStringLiteral("P");
+    case Tool::Clone: return QStringLiteral("S");
+    case Tool::Move: return QStringLiteral("V");
     }
     return {};
 }

@@ -13,6 +13,7 @@
 #include <memory>
 
 class QAction;
+class QActionGroup;
 class QDockWidget;
 class QLabel;
 class QListWidget;
@@ -87,7 +88,7 @@ private:
     void editOnionSkin();
     OnionSkin onionSkinFromSettings() const;
     void applyOnionSkin();
-    void report(const Status& st);
+    bool report(const Status& st);   // true when it succeeded
     void report(const Error& e);
     void autosaveTick();
     void discardRecovery(DocumentView* view);
@@ -129,6 +130,19 @@ private:
 
     QList<QAction*> m_docActions;          // enabled only with an open document
     QAction* m_gridAction = nullptr;
+    QAction* m_editMaskAction = nullptr;
+    QAction* m_disableMaskAction = nullptr;
+    QAction* m_addMaskAction = nullptr;
+    QAction* m_addMaskSelAction = nullptr;
+    QAction* m_applyMaskAction = nullptr;
+    QAction* m_deleteMaskAction = nullptr;
+    QAction* m_mergeDownAction = nullptr;
+    QAction* m_adjSettingsAction = nullptr;
+    QAction* m_clipAction = nullptr;
+    QActionGroup* m_tileGroup = nullptr;
+    std::filesystem::path brushDir() const;
+    void loadBrushTips();
+    void addBrushTip(const QString& name, Image tip);
     QAction* m_darkAction = nullptr;
     QAction* m_lightAction = nullptr;
     QByteArray m_defaultState;
