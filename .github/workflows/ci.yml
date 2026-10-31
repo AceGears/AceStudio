@@ -47,8 +47,34 @@ jobs:
           cache: true
           setup-python: false
           aqtversion: '>=3.1.0'
-      - name: Diagnose Qt 6.12 availability
+      # download.qt.io failed checksum downloads for 6.11/6.12 metadata; try
+      # official mirrors (aqtinstall --base) before falling back.
+      - name: Install Qt 6.12 from a mirror (constant.com)
+        id: qt612m1
         if: steps.qt612.outcome == 'failure'
+        continue-on-error: true
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.12.*'
+          arch: win64_msvc2022_64
+          cache: true
+          setup-python: false
+          aqtversion: '>=3.1.0'
+          extra: '--base https://qt.mirror.constant.com/'
+      - name: Install Qt 6.12 from a mirror (ocf.berkeley.edu)
+        id: qt612m2
+        if: steps.qt612.outcome == 'failure' && steps.qt612m1.outcome == 'failure'
+        continue-on-error: true
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.12.*'
+          arch: win64_msvc2022_64
+          cache: true
+          setup-python: false
+          aqtversion: '>=3.1.0'
+          extra: '--base https://mirrors.ocf.berkeley.edu/qt/'
+      - name: Diagnose Qt 6.12 availability
+        if: steps.qt612.outcome == 'failure' && steps.qt612m1.outcome == 'failure' && steps.qt612m2.outcome == 'failure'
         continue-on-error: true
         shell: pwsh
         run: |
@@ -62,7 +88,7 @@ jobs:
           Write-Host "::warning::aqtinstall version: $(python -m aqt version 2>&1 | Out-String)"
       - name: Install Qt 6.11 (fallback while 6.12 is not yet in the aqt index)
         id: qt611
-        if: steps.qt612.outcome == 'failure'
+        if: steps.qt612.outcome == 'failure' && steps.qt612m1.outcome == 'failure' && steps.qt612m2.outcome == 'failure'
         continue-on-error: true
         uses: jurplel/install-qt-action@v4
         with:
@@ -72,7 +98,7 @@ jobs:
           setup-python: false
           aqtversion: '>=3.1.0'
       - name: Install Qt 6.8 LTS (last-resort fallback)
-        if: steps.qt612.outcome == 'failure' && steps.qt611.outcome == 'failure'
+        if: steps.qt612.outcome == 'failure' && steps.qt612m1.outcome == 'failure' && steps.qt612m2.outcome == 'failure' && steps.qt611.outcome == 'failure'
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.*'
