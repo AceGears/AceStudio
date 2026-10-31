@@ -264,12 +264,15 @@ QWidget* AiPanel::buildUpscaleTab() {
     auto* w = new QWidget(this);
     m_upModel = new QComboBox(w);
     m_upButton = new QPushButton(tr("&Upscale ×4"), w);
-    m_upButton->setToolTip(tr("Upscales the visible frame into a new document"));
+    m_upButton->setToolTip(tr("Upscales into a new document"));
     connect(m_upButton, &QPushButton::clicked, this, &AiPanel::runUpscale);
+    m_upAllFrames = new QCheckBox(tr("All frames (keeps the animation)"), w);
+    m_upAllFrames->setToolTip(tr("Upscale every frame in one job; the result is a new animated document with the same durations"));
     auto* note = new QLabel(tr("For painted or HD art. Pixel art keeps crisp pixels with Image › Scale (nearest neighbour) instead."), w);
     note->setWordWrap(true);
     auto* f = new QFormLayout(w);
     f->addRow(tr("Model:"), m_upModel);
+    f->addRow(QString(), m_upAllFrames);
     f->addRow(note);
     return w;
 }
@@ -442,12 +445,27 @@ void AiPanel::runUpscale() {
     if (!m_view) return;
     const QString model = modelPath(m_upModel);
     if (model.isEmpty()) return showModels();
-    const Image src = m_view->document().composite(m_view->currentFrame());
+    const Document& d = m_view->document();
     json p = {{"model", toUtf8(toPath(model))}, {"model_id", m_upModel->currentData().toString().toStdString()}};
     Pending pend;
     pend.kind = Pending::Kind::Upscale;
     pend.view = m_view;
     pend.name = m_view->displayName() + tr(" ×4");
+    if (m_upAllFrames->isChecked() && d.frameCount() > 1) {
+        std::vector<Image> frames;
+        frames.reserve(static_cast<std::size_t>(d.frameCount()));
+        for (int f = 0; f < d.frameCount(); ++f) {
+            frames.push_back(d.composite(f));
+            pend.durations.push_back(d.frames()[static_cast<std::size_t>(f)].durationMs);
+        }
+        std::vector<std::pair<std::string, const Image*>> inputs;
+        for (std::size_t f = 0; f < frames.size(); ++f) inputs.emplace_back("input" + std::to_string(f), &frames[f]);
+        p["frames"] = d.frameCount();
+        submit("upscale.esrgan", std::move(p), tr("Upscale %n frame(s): %1", nullptr, d.frameCount()).arg(m_view->displayName()),
+               std::move(pend), inputs);
+        return;
+    }
+    const Image src = d.composite(m_view->currentFrame());
     submit("upscale.esrgan", std::move(p), tr("Upscale: %1").arg(m_view->displayName()), std::move(pend), {{"input", &src}});
 }
 
@@ -552,7 +570,18 @@ void AiPanel::onJobFinished(const QString& qid) {
         break;
     case Pending::Kind::Upscale:
         Q_EMIT statusMessage(tr("Upscaled%1").arg(ranOn(*j)));
-        if (auto img = load("image")) Q_EMIT resultAsDocument(*img, pend.name);
+        if (!pend.durations.empty()) {
+            std::vector<Image> frames;
+            for (std::size_t f = 0; f < pend.durations.size(); ++f) {
+                auto img = load("image" + std::to_string(f));
+                if (!img) break;
+                frames.push_back(std::move(*img));
+            }
+            if (frames.size() == pend.durations.size()) Q_EMIT resultAsAnimation(frames, pend.durations, pend.name);
+            else Q_EMIT statusMessage(tr("Upscale returned %1 of %2 frames").arg(frames.size()).arg(pend.durations.size()));
+        } else if (auto img = load("image")) {
+            Q_EMIT resultAsDocument(*img, pend.name);
+        }
         break;
     case Pending::Kind::Other: break;
     }

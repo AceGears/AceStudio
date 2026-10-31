@@ -204,6 +204,23 @@ void MainWindow::buildDocks() {
     m_aiPanel = new AiPanel(*m_ai, m_ctx, this);
     connect(m_aiPanel, &AiPanel::statusMessage, this, [this](const QString& t) { statusBar()->showMessage(t, 6000); });
     connect(m_aiPanel, &AiPanel::resultAsDocument, this, [this](const Image& img, const QString& name) { openImageAsDocument(img, name); });
+    connect(m_aiPanel, &AiPanel::resultAsAnimation, this,
+            [this](const std::vector<Image>& frames, const std::vector<int>& durations, const QString& name) {
+                if (frames.empty()) return;
+                auto doc = Document::create(frames[0].width(), frames[0].height());
+                if (!doc) { report(doc.error()); return; }
+                Document& d = doc.value();
+                const LayerId l = d.addLayer(name.toStdString()).value();
+                for (std::size_t f = 0; f < frames.size(); ++f) {
+                    if (f > 0)
+                        if (auto r = d.insertFrame(static_cast<int>(f)); !r) { report(r.error()); return; }
+                    (void)d.setFrameDuration(static_cast<int>(f), durations[f]);
+                    (void)d.setCel(l, static_cast<int>(f), Cel{frames[f], 0, 0});
+                }
+                auto* view = new DocumentView(std::move(doc).value(), QString(), ProjectInfo{}, m_tools, m_tabs);
+                addView(view);
+                view->markNeverSaved();
+            });
     connect(m_aiPanel, &AiPanel::resultAsLayer, this, [this](DocumentView* v, const Image& img, const QString& name, LayerId above, int frame) {
         // The view may have been closed while the job ran.
         for (int i = 0; i < m_tabs->count(); ++i)
@@ -370,6 +387,9 @@ void MainWindow::buildMenus() {
     connect(m_lightAction, &QAction::triggered, this, [this] { setThemeAndPersist(QStringLiteral("light")); });
 
     QMenu* image = menuBar()->addMenu(tr("&Image"));
+    docAction(image, tr("&Fit Canvas to Content"), QKeySequence(), [this] {
+        report(currentView()->editor().fitCanvasToContent());
+    })->setToolTip(tr("Resize the canvas to the pixels on every layer and frame, including pixels past the edges"));
     docAction(image, tr("&Canvas Size…"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_C), [this] {
         auto* v = currentView();
         CanvasSizeDialog dlg(v->document().width(), v->document().height(), this);
@@ -717,12 +737,9 @@ void MainWindow::updateActions() {
         m_addMaskAction->setEnabled(canMask);
         m_addMaskSelAction->setEnabled(canMask);
         m_adjSettingsAction->setEnabled(l && l->kind == LayerKind::Adjustment);
-        bool canMerge = false;
-        if (l && l->kind != LayerKind::Group) {
-            const auto& layers = v->document().layers();
-            for (std::size_t i = *v->document().layerIndex(l->id); i-- > 0;)
-                if (layers[i].parent == l->parent) { canMerge = layers[i].kind == LayerKind::Raster; break; }
-        }
+        std::string why;
+        const bool canMerge = l && v->editor().canMergeDown(l->id, &why);
+        m_mergeDownAction->setToolTip(canMerge ? tr("Merge into the layer below") : QString::fromStdString(why));
         m_mergeDownAction->setEnabled(canMerge);
         m_disableMaskAction->setChecked(mask && !l->maskEnabled);
         m_clipAction->setChecked(l && l->clipped);

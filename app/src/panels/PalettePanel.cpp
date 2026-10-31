@@ -89,7 +89,9 @@ private:
 PalettePanel::PalettePanel(ToolState* tools, QWidget* parent) : QWidget(parent), m_tools(tools) {
     m_name = new QLabel(this);
     m_grid = new SwatchGrid(this);
-    m_selected = new QLabel(tr("Left-click: primary · Right-click: secondary · Double-click: edit"), this);
+    m_grid->setToolTip(tr("Left-click: primary · Right-click: secondary · Double-click: edit"));
+    m_selected = new QLabel(this);
+    m_selected->hide();   // shown once a swatch is picked
     m_selected->setWordWrap(true);
     m_selected->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_selected->setEnabled(false);
@@ -175,6 +177,7 @@ PalettePanel::PalettePanel(ToolState* tools, QWidget* parent) : QWidget(parent),
         if (button == Qt::RightButton) m_tools->setSecondary(toQColor(c));
         else m_tools->setPrimary(toQColor(c));
         m_selected->setEnabled(true);
+        m_selected->show();
         m_selected->setText(tr("Index %1   %2   RGBA(%3, %4, %5, %6)")
                                 .arg(i).arg(qs(c.toHex(true))).arg(c.r).arg(c.g).arg(c.b).arg(c.a));
     });

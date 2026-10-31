@@ -392,3 +392,24 @@ TEST_CASE("Layer transforms keep pixels past the canvas edge", "[editor][transfo
     REQUIRE(ed2.undo());
     CHECK(ed2.document().cel(l2, 0)->image.width() == 8);
 }
+
+TEST_CASE("Fit canvas to content brings off-canvas pixels into view", "[editor][canvas]") {
+    auto d = Document::create(8, 8).value();
+    const LayerId l = d.addLayer("L").value();
+    Image img(12, 3);
+    img.setPixel(0, 0, Rgba8::opaque(255, 0, 0));
+    img.setPixel(11, 2, Rgba8::opaque(0, 255, 0));
+    REQUIRE(d.setCel(l, 0, Cel{img, -2, 5}));
+    Editor ed(std::move(d));
+    CHECK(ed.contentBounds() == IntRect{-2, 5, 12, 3});
+    REQUIRE(ed.fitCanvasToContent());
+    CHECK(ed.document().width() == 12);
+    CHECK(ed.document().height() == 3);
+    const Image out = ed.document().composite(0);
+    CHECK(out.pixel(0, 0) == Rgba8::opaque(255, 0, 0));
+    CHECK(out.pixel(11, 2) == Rgba8::opaque(0, 255, 0));
+    REQUIRE(ed.undo());
+    CHECK(ed.document().width() == 8);
+    auto empty = Editor(Document::create(4, 4).value());
+    CHECK_FALSE(empty.fitCanvasToContent());
+}

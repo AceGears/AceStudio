@@ -150,9 +150,10 @@ LayersPanel::LayersPanel(QWidget* parent) : QWidget(parent) {
         auto r = m_view->editor().duplicateLayer(m_view->currentLayer());
         if (r) m_view->setCurrentLayer(r.value()); else report(r.error());
     }));
-    buttons->addWidget(makeButton(LayerGlyph::Merge, tr("Merge down into the layer below (Ctrl+E)"), [this] {
+    m_mergeButton = makeButton(LayerGlyph::Merge, tr("Merge down into the layer below (Ctrl+E)"), [this] {
         if (m_view) report(m_view->editor().mergeDown(m_view->currentLayer()));
-    }));
+    });
+    buttons->addWidget(m_mergeButton);
     buttons->addWidget(makeButton(LayerGlyph::Up, tr("Move up"), [this] { moveCurrent(+1); }));
     buttons->addWidget(makeButton(LayerGlyph::Down, tr("Move down"), [this] { moveCurrent(-1); }));
     buttons->addWidget(makeButton(LayerGlyph::Delete, tr("Delete layer"), [this] {
@@ -280,6 +281,10 @@ void LayersPanel::syncControls() {
         m_alphaLock->setEnabled(l->kind == LayerKind::Raster);
     }
     m_opacityLabel->setText(QStringLiteral("%1%").arg(qRound(m_opacity->value() * 100.0 / 255.0)));
+    std::string why;
+    const bool canMerge = l && m_view->editor().canMergeDown(l->id, &why);
+    m_mergeButton->setEnabled(canMerge);
+    m_mergeButton->setToolTip(canMerge ? tr("Merge down into the layer below (Ctrl+E)") : QString::fromStdString(why));
     m_rebuilding = false;
 }
 

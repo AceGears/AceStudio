@@ -1,5 +1,7 @@
 #include "acestudio/core/Editor.h"
 
+#include <climits>
+
 #include <algorithm>
 
 namespace acestudio {
@@ -329,20 +331,31 @@ Result<LayerId> Editor::duplicateLayer(LayerId id) {
     return copies->layers.front().layer.id;
 }
 
-Status Editor::mergeDown(LayerId id) {
+bool Editor::canMergeDown(LayerId id, std::string* why) const {
+    auto fail = [&](const char* m) { if (why) *why = m; return false; };
     const Layer* top = m_doc.layer(id);
-    if (!top) return Error{ErrorCode::NotFound, "No such layer"};
-    if (top->kind == LayerKind::Group) return Error{ErrorCode::InvalidArgument, "Groups cannot be merged down yet; merge their layers first"};
-    if (!top->visible) return Error{ErrorCode::InvalidArgument, "Show the layer before merging it"};
-    // Nearest sibling below.
+    if (!top) return fail("No such layer");
+    if (top->kind == LayerKind::Group) return fail("Groups cannot be merged down yet; merge their layers first");
+    if (!top->visible) return fail("Show the layer before merging it");
     const auto& layers = m_doc.layers();
-    const std::size_t topIdx = *m_doc.layerIndex(id);
     const Layer* below = nullptr;
-    for (std::size_t i = topIdx; i-- > 0;)
+    for (std::size_t i = *m_doc.layerIndex(id); i-- > 0;)
         if (layers[i].parent == top->parent) { below = &layers[i]; break; }
-    if (!below) return Error{ErrorCode::InvalidArgument, "There is no layer below to merge into"};
-    if (below->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Can only merge into a raster layer"};
-    if (!m_doc.isLayerEditable(below->id)) return Error{ErrorCode::PermissionDenied, "The layer below is locked"};
+    if (!below) return fail("There is no layer below to merge into");
+    if (below->kind != LayerKind::Raster) return fail("Can only merge into a raster layer");
+    if (!m_doc.isLayerEditable(below->id)) return fail("The layer below is locked");
+    return true;
+}
+
+Status Editor::mergeDown(LayerId id) {
+    if (std::string why; !canMergeDown(id, &why))
+        return Error{m_doc.layer(id) ? (why == "The layer below is locked" ? ErrorCode::PermissionDenied : ErrorCode::InvalidArgument)
+                                     : ErrorCode::NotFound, why};
+    const Layer* top = m_doc.layer(id);
+    const auto& layers = m_doc.layers();
+    const Layer* below = nullptr;
+    for (std::size_t i = *m_doc.layerIndex(id); i-- > 0;)
+        if (layers[i].parent == top->parent) { below = &layers[i]; break; }
 
     const LayerId belowId = below->id;
     // Masks, clipping and adjustments are baked: the merged pixels are what
@@ -753,6 +766,30 @@ Status Editor::resizeCanvas(int width, int height, int offsetX, int offsetY) {
     return applyCanvasTransform(*this, "Canvas Size", width, height, [=](const Cel& c, int, int) {
         return Cel{c.image, c.x + offsetX, c.y + offsetY};
     });
+}
+
+IntRect Editor::contentBounds() const {
+    int x0 = INT_MAX, y0 = INT_MAX, x1 = INT_MIN, y1 = INT_MIN;
+    for (const auto& [key, cel] : m_doc.cels()) {
+        const Layer* l = m_doc.layer(key.layer);
+        if (!l || l->kind != LayerKind::Raster) continue;
+        const IntRect b = cel.image.opaqueBounds();
+        if (b.empty()) continue;
+        x0 = std::min(x0, cel.x + b.x);
+        y0 = std::min(y0, cel.y + b.y);
+        x1 = std::max(x1, cel.x + b.x + b.w);
+        y1 = std::max(y1, cel.y + b.y + b.h);
+    }
+    if (x1 <= x0 || y1 <= y0) return {};
+    return {x0, y0, x1 - x0, y1 - y0};
+}
+
+Status Editor::fitCanvasToContent() {
+    const IntRect b = contentBounds();
+    if (b.empty()) return Error{ErrorCode::InvalidArgument, "The document has no pixels to fit"};
+    if (b.w > Image::kMaxDimension || b.h > Image::kMaxDimension)
+        return Error{ErrorCode::InvalidArgument, "The content is larger than the maximum canvas size"};
+    return resizeCanvas(b.w, b.h, -b.x, -b.y);
 }
 
 Status Editor::cropCanvas(const IntRect& rect) {

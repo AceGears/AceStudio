@@ -46,6 +46,7 @@ private:
     QCheckBox* m_lock = nullptr;
     QCheckBox* m_alphaLock = nullptr;
     QList<QToolButton*> m_layerButtons;
+    QToolButton* m_mergeButton = nullptr;
     bool m_rebuilding = false;
 };
 

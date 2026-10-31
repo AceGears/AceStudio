@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <map>
+#include <vector>
 
 class QCheckBox;
 class QComboBox;
@@ -46,6 +47,8 @@ Q_SIGNALS:
     // even if the playhead moved while it ran).
     void resultAsLayer(DocumentView* view, const acestudio::Image& image, const QString& name, acestudio::LayerId above, int frame);
     void resultAsDocument(const acestudio::Image& image, const QString& name);
+    // One image per frame, with each frame's duration in ms.
+    void resultAsAnimation(const std::vector<acestudio::Image>& frames, const std::vector<int>& durations, const QString& name);
     void statusMessage(const QString& text);
 
 private:
@@ -56,6 +59,7 @@ private:
         int frame = 0;
         bool pixel = false;
         QString name;
+        std::vector<int> durations;   // upscaling every frame: one entry per frame
     };
 
     QWidget* buildGenerateTab();
@@ -107,6 +111,7 @@ private:
     QPushButton* m_bgButton = nullptr;
     // Upscale
     QComboBox* m_upModel = nullptr;
+    QCheckBox* m_upAllFrames = nullptr;
     QPushButton* m_upButton = nullptr;
     // Queue
     QTreeWidget* m_queue = nullptr;

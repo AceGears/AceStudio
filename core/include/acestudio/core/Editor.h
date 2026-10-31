@@ -52,6 +52,8 @@ public:
     // composites to: blend mode, opacity, masks and clipping are baked, and
     // the merged layer has no mask.
     Status mergeDown(LayerId id);
+    // Whether mergeDown(id) would succeed; `why` receives the reason if not.
+    bool canMergeDown(LayerId id, std::string* why = nullptr) const;
 
     // ---- Masks, clipping, adjustment layers ----
     // New mask: all white, or white only inside `reveal` (from a selection).
@@ -96,6 +98,11 @@ public:
     // New size; existing content is shifted by (offsetX, offsetY).
     Status resizeCanvas(int width, int height, int offsetX, int offsetY);
     Status cropCanvas(const IntRect& rect);
+    // Bounds of every visible-or-hidden raster pixel (alpha > 0) on any frame,
+    // in canvas coordinates; empty when the document has no pixels.
+    IntRect contentBounds() const;
+    // Resizes the canvas to contentBounds() (pixels off the canvas come into view).
+    Status fitCanvasToContent();
     Status flipCanvas(bool horizontal);
     Status rotateCanvas90(bool clockwise);
     Status rotateCanvas180();

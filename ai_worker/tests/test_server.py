@@ -486,5 +486,63 @@ class DriverTests(unittest.TestCase):
         self.assertFalse(gpu.supports_cuda13("566.36"))
         self.assertFalse(gpu.supports_cuda13(None))
 
+
+@unittest.skipUnless(_has("PIL", "numpy"), "needs Pillow and NumPy")
+class UpscaleFramesTests(unittest.TestCase):
+    def test_several_frames_in_one_job(self):
+        sys.path.insert(0, ROOT)
+        import numpy as np
+        from PIL import Image
+        from acestudio_worker.tasks import upscale
+        tmp = tempfile.mkdtemp()
+        model = os.path.join(tmp, "x2.onnx")
+        open(model, "wb").close()
+        paths = []
+        for i in range(3):
+            p = os.path.join(tmp, "f%d.png" % i)
+            Image.new("RGBA", (40, 20), (50 * i, 10, 200, 255 if i else 128)).save(p)
+            paths.append(p)
+
+        def fake_run_onnx(ctx, model_path, device, fn):
+            def infer(x):
+                return np.repeat(np.repeat(x, 2, axis=2), 2, axis=3)     # exact ×2 nearest
+            return (infer, 2), "CPUExecutionProvider"
+
+        class Ctx:
+            def __init__(self):
+                self.params = {"model": model, "frames": 3, "tile": 32}
+                self.params.update({"input%d" % i: p for i, p in enumerate(paths)})
+                self.progressed = []
+
+            def param(self, name, default=None, required=False, kind=None):
+                if required and name not in self.params:
+                    raise KeyError(name)
+                return self.params.get(name, default)
+
+            def progress(self, v, msg="", **k):
+                self.progressed.append(v)
+
+            def check_cancel(self):
+                pass
+
+            def path(self, name):
+                return os.path.join(tmp, name)
+
+        real_run, real_req = upscale.run_onnx, upscale.require
+        upscale.run_onnx, upscale.require = fake_run_onnx, lambda *m: None
+        try:
+            ctx = Ctx()
+            res = upscale.run(ctx)
+        finally:
+            upscale.run_onnx, upscale.require = real_run, real_req
+        self.assertEqual(sorted(res["outputs"]), ["image0", "image1", "image2"])
+        self.assertEqual(res["info"]["frames"], 3)
+        for i in range(3):
+            out = Image.open(res["outputs"]["image%d" % i])
+            self.assertEqual(out.size, (80, 40))
+            self.assertEqual(out.getpixel((5, 5))[:3], (50 * i, 10, 200))
+        self.assertEqual(ctx.progressed, sorted(ctx.progressed))   # monotonic across frames
+        self.assertLessEqual(max(ctx.progressed), 0.96)
+
 if __name__ == "__main__":
     unittest.main()

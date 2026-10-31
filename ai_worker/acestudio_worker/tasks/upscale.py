@@ -4,12 +4,14 @@ Pixel art should be scaled with nearest neighbour instead (done in the
 editor itself, no model needed); this task is for HD/painted assets.
 
 params:
-  input     path to the source PNG
+  input     path to the source PNG, or
+  frames    n, with input0..input{n-1}: several images upscaled in one job (one model load)
   model     .pth (official Real-ESRGAN, needs torch) or .onnx (needs onnxruntime)
   tile      tile size in input pixels (default 192; lower uses less memory)
   device    auto | cpu
 outputs:
   image     RGBA PNG at the model's scale; alpha is resized with Lanczos
+  image0..  one per input when `frames` is given
 """
 
 import os
@@ -36,7 +38,7 @@ def _tiles(w, h, tile):
             yield x, y, min(tile, w - x), min(tile, h - y)
 
 
-def upscale_rgb(ctx, rgb, infer, scale, tile):
+def upscale_rgb(ctx, rgb, infer, scale, tile, base=0.1, span=0.85, label=""):
     """Runs `infer` (float32 1x3xhxw in [0,1] -> 1x3x(h*s)x(w*s)) over
     overlapping tiles and stitches the centres. rgb: HxWx3 float32."""
     import numpy as np
@@ -51,7 +53,7 @@ def upscale_rgb(ctx, rgb, infer, scale, tile):
         res = infer(np.ascontiguousarray(patch))[0].transpose(1, 2, 0)
         oy, ox = (y - y0) * scale, (x - x0) * scale
         out[y * scale:(y + th) * scale, x * scale:(x + tw) * scale] = res[oy:oy + th * scale, ox:ox + tw * scale]
-        ctx.progress(0.1 + 0.85 * (i + 1) / len(tiles), "Tile %d of %d" % (i + 1, len(tiles)),
+        ctx.progress(base + span * (i + 1) / len(tiles), "%sTile %d of %d" % (label, i + 1, len(tiles)),
                      step=i + 1, steps=len(tiles))
     return np.clip(out, 0.0, 1.0)
 
@@ -60,14 +62,20 @@ def run(ctx):
     require("numpy", "PIL")
     import numpy as np
     from PIL import Image
-    img = load_rgba(ctx.param("input", required=True, kind=str))
+    frames = ctx.param("frames")
+    if frames is None:
+        paths = [ctx.param("input", required=True, kind=str)]
+    else:
+        if not isinstance(frames, int) or not 1 <= frames <= 10000:
+            raise JobError("frames must be an integer between 1 and 10000", kind="invalid_input")
+        paths = [ctx.param("input%d" % i, required=True, kind=str) for i in range(frames)]
+    images = [load_rgba(p) for p in paths]
     model = ctx.param("model", required=True, kind=str)
     tile = int(ctx.param("tile", 192))
     if tile < 32:
         raise JobError("tile must be at least 32", kind="invalid_input")
     if not os.path.exists(model):
         raise JobError("Model file not found: %s. Download it in AI Studio > Models." % model, kind="missing_model")
-    rgb = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
     ctx.progress(0.02, "Loading model", force=True)
     if model.lower().endswith(".onnx"):
         require("onnxruntime")
@@ -100,9 +108,17 @@ def run(ctx):
     if scale not in (1, 2, 3, 4, 8):
         raise JobError("Model produced an unexpected scale (%s)" % scale)
     ctx.progress(0.1, "Upscaling ×%d on %s" % (scale, device), force=True)
-    up = upscale_rgb(ctx, rgb, infer, scale, tile)
-    alpha = img.getchannel("A").resize((img.width * scale, img.height * scale), Image.LANCZOS)
-    out = Image.fromarray((up * 255.0 + 0.5).astype(np.uint8), mode="RGB")
-    out.putalpha(alpha)
-    return {"outputs": {"image": save_png(out, ctx.path("image.png"))},
-            "info": {"scale": scale, "device": str(device)}}
+    outputs = {}
+    n = len(images)
+    for k, img in enumerate(images):
+        rgb = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
+        label = "Frame %d of %d · " % (k + 1, n) if n > 1 else ""
+        up = upscale_rgb(ctx, rgb, infer, scale, tile, base=0.1 + 0.85 * k / n, span=0.85 / n, label=label)
+        alpha = img.getchannel("A").resize((img.width * scale, img.height * scale), Image.LANCZOS)
+        out = Image.fromarray((up * 255.0 + 0.5).astype(np.uint8), mode="RGB")
+        out.putalpha(alpha)
+        if frames is None:
+            outputs["image"] = save_png(out, ctx.path("image.png"))
+        else:
+            outputs["image%d" % k] = save_png(out, ctx.path("image%d.png" % k))
+    return {"outputs": outputs, "info": {"scale": scale, "device": str(device), "frames": n}}

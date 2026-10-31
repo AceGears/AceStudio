@@ -46,10 +46,11 @@ TEST_CASE("Shipped model catalogue is valid and fully licensed", "[ai][models]")
     CHECK(cat.value().forTask("upscale.esrgan").size() == 2);
     const ModelEntry* sdxl = cat.value().find("sdxl-base-1.0");
     REQUIRE(sdxl);
-    // Checked against the Hugging Face API on 2026-10-31: the file list is
-    // known and the large files are pinned, but the small config files have
-    // no published SHA-256 (not LFS), so they are hashed on first download.
-    CHECK_FALSE(sdxl->pinned);
+    // Every file pinned (2026-10-31): LFS weights from the Hugging Face API;
+    // the small config files hashed from a verified download whose git blob
+    // IDs match the pinned commit.
+    CHECK(sdxl->pinned);
+    for (const auto& f : sdxl->files) CHECK(f.sha256.size() == 64);
     CHECK(sdxl->fileListVerified);
     CHECK(sdxl->knownSize() > 6'900'000'000ull);
     const ModelEntry* lora = cat.value().find("pixel-art-xl");
