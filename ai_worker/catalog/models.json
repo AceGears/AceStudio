@@ -29,6 +29,13 @@
       "commercialUse": true,
       "summary": "Commercial use of the model and its outputs is allowed, subject to use-based restrictions.",
       "obligations": "The use restrictions of Attachment A apply to you and to anyone you share the model with."
+    },
+    "Apache-2.0": {
+      "name": "Apache License 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "commercialUse": true,
+      "summary": "Free to use, including commercially. Generated outputs are yours.",
+      "obligations": "Keep the licence text and any NOTICE file with redistributed copies; state changes you make to the files."
     }
   },
   "models": [
@@ -300,6 +307,76 @@
       ],
       "revision": "b20258aaef75ef61e659c1e0f14f251cf0ad153e",
       "verificationNote": "Weights: SHA-256 from the Hugging Face LFS pointer. config.json: content matches git blob accadb8be0fabedda0082b4d83b698f4835a8a80 at this commit."
+    },
+    {
+      "id": "controlnet-openpose-sdxl",
+      "name": "OpenPose ControlNet for SDXL",
+      "task": "image.generate",
+      "kind": "controlnet",
+      "requiresModel": "sdxl-base-1.0",
+      "description": "Makes SDXL follow a body pose drawn with AceStudio's skeleton editor. Used by pose-guided and animation generation.",
+      "license": "Apache-2.0",
+      "copyright": "xinsir",
+      "source": "https://huggingface.co/xinsir/controlnet-openpose-sdxl-1.0",
+      "entry": ".",
+      "runtime": "diffusion",
+      "vramMb": 2600,
+      "verification": "pinned",
+      "fileListVerified": true,
+      "files": [
+        {
+          "path": "config.json",
+          "url": "https://huggingface.co/xinsir/controlnet-openpose-sdxl-1.0/resolve/23f966cd5cfdd3f7729c903e243d87152162d2b7/config.json",
+          "size": 1235,
+          "sha256": "b5b8f9a7619c9452f19407ef73a01ce3f061fcf932de43ddbaca336d12d02801"
+        },
+        {
+          "path": "diffusion_pytorch_model.safetensors",
+          "url": "https://huggingface.co/xinsir/controlnet-openpose-sdxl-1.0/resolve/23f966cd5cfdd3f7729c903e243d87152162d2b7/diffusion_pytorch_model.safetensors",
+          "size": 2502139104,
+          "sha256": "b8524e557a7df60d081f5d4a0eb109967d107df217943bf88c2d99b9ebcc06c5"
+        }
+      ],
+      "revision": "23f966cd5cfdd3f7729c903e243d87152162d2b7",
+      "verificationNote": "Weights: SHA-256 from the Hugging Face LFS pointer. config.json: content matches git blob e29898b0c956a26ad864b93b1cae8bd7385d6985 at this commit."
+    },
+    {
+      "id": "ip-adapter-plus-sdxl",
+      "name": "IP-Adapter Plus for SDXL (reference images)",
+      "task": "image.generate",
+      "kind": "ip_adapter",
+      "requiresModel": "sdxl-base-1.0",
+      "description": "Keeps a character's look across generations by conditioning on reference images from its profile. Includes the OpenCLIP ViT-H/14 image encoder.",
+      "license": "Apache-2.0",
+      "copyright": "Tencent AI Lab (IP-Adapter authors); image encoder: LAION OpenCLIP",
+      "source": "https://huggingface.co/h94/IP-Adapter",
+      "entry": ".",
+      "runtime": "diffusion",
+      "vramMb": 2400,
+      "verification": "pinned",
+      "fileListVerified": true,
+      "files": [
+        {
+          "path": "sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors",
+          "url": "https://huggingface.co/h94/IP-Adapter/resolve/018e402774aeeddd60609b4ecdb7e298259dc729/sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors",
+          "size": 847517512,
+          "sha256": "3f5062b8400c94b7159665b21ba5c62acdcd7682262743d7f2aefedef00e6581"
+        },
+        {
+          "path": "models/image_encoder/config.json",
+          "url": "https://huggingface.co/h94/IP-Adapter/resolve/018e402774aeeddd60609b4ecdb7e298259dc729/models/image_encoder/config.json",
+          "size": 560,
+          "sha256": "625d37b31afbf2f0792a87846b3654ee23f20568409e35b78a1f795b04e1a7a1"
+        },
+        {
+          "path": "models/image_encoder/model.safetensors",
+          "url": "https://huggingface.co/h94/IP-Adapter/resolve/018e402774aeeddd60609b4ecdb7e298259dc729/models/image_encoder/model.safetensors",
+          "size": 2528373448,
+          "sha256": "6ca9667da1ca9e0b0f75e46bb030f7e011f44f86cbfb8d5a36590fcd7507b030"
+        }
+      ],
+      "revision": "018e402774aeeddd60609b4ecdb7e298259dc729",
+      "verificationNote": "Weights: SHA-256 from the Hugging Face LFS pointers. Encoder config.json: content matches git blob 9c841dd0314e27141ed01a24df1734e407a95c4a at this commit."
     }
   ]
 }

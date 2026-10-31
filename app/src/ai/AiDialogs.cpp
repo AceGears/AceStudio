@@ -278,6 +278,8 @@ void ModelsDialog::rebuild() {
                            : m.task == "upscale.esrgan"    ? tr("Upscale")
                            : m.kind == "lora"              ? tr("Generation style")
                            : m.kind == "preview"           ? tr("Live preview")
+                           : m.kind == "controlnet"        ? tr("Pose control")
+                           : m.kind == "ip_adapter"        ? tr("Reference images")
                                                            : tr("Generate");
         const QStringList cells{qs(m.name), used, qs(m.license.name), formatBytes(m.knownSize()), status};
         for (int c = 0; c < cells.size(); ++c) m_table->setItem(r, c, new QTableWidgetItem(cells[c]));

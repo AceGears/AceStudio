@@ -73,6 +73,11 @@ Pose cyclePose(PoseCycle cycle, double t);
 // `frames` evenly spaced poses of a cycle.
 std::vector<Pose> cyclePoses(PoseCycle cycle, int frames);
 
+// One crop box (normalised x0, y0, x1, y1) that frames every pose, padded by
+// `margin` (fraction of the figure height) and grown to `aspect` (w/h),
+// clamped to the image. The same box for all frames keeps scale and ground line.
+std::array<double, 4> poseFramingBox(const std::vector<Pose>& poses, double aspect, double margin = 0.12);
+
 nlohmann::json poseToJson(const Pose& p);
 Result<Pose> poseFromJson(const nlohmann::json& j);
 

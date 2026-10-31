@@ -81,3 +81,24 @@ TEST_CASE("Mirroring, transforms and JSON round trip", "[pose]") {
     CHECK(poseCycleFromString("run") == PoseCycle::Run);
     CHECK_FALSE(poseCycleFromString("fly"));
 }
+
+TEST_CASE("Framing box covers every pose at the target aspect", "[pose]") {
+    const auto poses = cyclePoses(PoseCycle::Walk, 8);
+    const auto b = poseFramingBox(poses, 1.0);
+    CHECK(b[2] - b[0] == Approx(b[3] - b[1]));          // square
+    for (const Pose& p : poses)
+        for (const Keypoint& k : p.points)
+            if (k.visible) {
+                CHECK(k.x > b[0]);
+                CHECK(k.x < b[2]);
+                CHECK(k.y > b[1]);
+                CHECK(k.y < b[3]);
+            }
+    CHECK(b[0] >= 0.0);
+    CHECK(b[3] <= 1.0);
+    const auto wide = poseFramingBox(poses, 2.0);
+    CHECK((wide[2] - wide[0]) / (wide[3] - wide[1]) == Approx(2.0));
+    Pose none;
+    for (auto& k : none.points) k.visible = false;
+    CHECK(poseFramingBox({none}, 1.0) == std::array<double, 4>{0, 0, 1, 1});
+}

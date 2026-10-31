@@ -21,7 +21,8 @@ params:
   ip_adapter        optional {"dir": IP-Adapter folder, "weight": file under sdxl_models/,
                     "encoder": image encoder folder relative to "dir", "images": [PNG paths], "scale": 0..1}
   pixel             optional post-process {"width": w, "height": h, "colors": n | "palette": ["#RRGGBB", ...],
-                    "crop": true to frame the subject before reducing (plain backdrops only)}
+                    "crop": true to frame the subject before reducing (plain backdrops only),
+                    "box": [x0, y0, x1, y1] fixed normalised crop instead (animation frames)}
 outputs:
   image0..imageN    PNGs (post-processed when `pixel` is given)
   raw0..rawN        the full-size generations when `pixel` is given
@@ -215,14 +216,21 @@ def preview_image(decoder, latents, max_side=256):
     return img
 
 
-def pixelate(img, width, height, colors=None, palette=None, crop=False):
+def pixelate(img, width, height, colors=None, palette=None, crop=False, box=None):
     """Nearest-neighbour downscale (centre sampling) and palette reduction
     without dithering, so the result is editable pixel art."""
     from PIL import Image
-    if crop:
-        box = subject_box(img, width, height)
-        if box:
-            img = img.crop(box)
+    if box is not None:
+        # A fixed crop (normalised x0, y0, x1, y1), the same for every frame of
+        # an animation so scale and ground line stay put.
+        x0, y0, x1, y1 = [float(v) for v in box]
+        if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
+            raise JobError("pixel.box must be 0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1", kind="invalid_input")
+        img = img.crop((round(x0 * img.width), round(y0 * img.height), round(x1 * img.width), round(y1 * img.height)))
+    elif crop:
+        sb = subject_box(img, width, height)
+        if sb:
+            img = img.crop(sb)
     small = img.convert("RGB").resize((width, height), Image.NEAREST, reducing_gap=None)
     if palette:
         pal_img = Image.new("P", (1, 1))
@@ -346,7 +354,7 @@ def run(ctx):
             if pixel:
                 outputs["raw%d" % i] = save_png(img, ctx.path("raw%d.png" % i))
                 img = pixelate(img, int(pixel["width"]), int(pixel["height"]), pixel.get("colors"), pixel.get("palette"),
-                               crop=bool(pixel.get("crop", False)))
+                               crop=bool(pixel.get("crop", False)), box=pixel.get("box"))
             outputs["image%d" % i] = save_png(img, ctx.path("image%d.png" % i))
     except Cancelled:
         raise

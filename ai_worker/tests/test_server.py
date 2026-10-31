@@ -318,6 +318,16 @@ class SubjectCropTests(unittest.TestCase):
         empty = Image.new("RGB", (256, 256), (90, 90, 90))
         self.assertIsNone(self.g.subject_box(empty, 64, 64))
 
+    def test_fixed_box_crop(self):
+        from PIL import Image
+        from acestudio_worker.jobs import JobError
+        img = Image.new("RGB", (100, 100), (0, 0, 0))
+        img.paste((255, 0, 0), (50, 50, 100, 100))
+        out = self.g.pixelate(img, 10, 10, box=[0.5, 0.5, 1.0, 1.0])
+        self.assertEqual(out.getpixel((0, 0))[:3], (255, 0, 0))   # only the red quarter remains
+        with self.assertRaises(JobError):
+            self.g.pixelate(img, 10, 10, box=[0.6, 0.5, 0.4, 1.0])
+
     def test_wide_canvas_gets_wide_box_inside_image(self):
         from PIL import Image
         img = Image.new("RGB", (1024, 1024), (0, 0, 0))

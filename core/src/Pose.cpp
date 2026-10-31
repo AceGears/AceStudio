@@ -239,6 +239,28 @@ std::vector<Pose> cyclePoses(PoseCycle cycle, int frames) {
     return out;
 }
 
+std::array<double, 4> poseFramingBox(const std::vector<Pose>& poses, double aspect, double margin) {
+    double x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+    for (const Pose& p : poses)
+        for (const Keypoint& k : p.points)
+            if (k.visible) { x0 = std::min(x0, k.x); y0 = std::min(y0, k.y); x1 = std::max(x1, k.x); y1 = std::max(y1, k.y); }
+    if (x1 <= x0 || y1 <= y0) return {0, 0, 1, 1};
+    // The head extends above the eyes/ears and the feet below the ankles.
+    const double h = y1 - y0;
+    y0 -= 0.08 * h;
+    y1 += 0.04 * h;
+    const double pad = margin * (y1 - y0);
+    x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;
+    double w = x1 - x0, hh = y1 - y0;
+    aspect = aspect > 0 ? aspect : 1.0;
+    const double cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    if (w / hh < aspect) w = hh * aspect; else hh = w / aspect;
+    if (w > 1) { w = 1; hh = std::min(1.0, w / aspect); }
+    if (hh > 1) { hh = 1; w = std::min(1.0, hh * aspect); }
+    double bx = std::clamp(cx - w / 2, 0.0, 1.0 - w), by = std::clamp(cy - hh / 2, 0.0, 1.0 - hh);
+    return {bx, by, bx + w, by + hh};
+}
+
 nlohmann::json poseToJson(const Pose& p) {
     nlohmann::json pts = nlohmann::json::object();
     for (int j = 0; j < kJointCount; ++j) {
