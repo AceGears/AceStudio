@@ -16,6 +16,10 @@ params:
   device            auto | cuda | cpu
   offload           auto | none | model   (model = enable_model_cpu_offload, for <10 GB VRAM)
   preview           optional {"dir": TAESD-XL folder, "every": n}: a small preview PNG every n steps
+  controlnet        optional {"dir": SDXL ControlNet folder, "image": conditioning PNG (e.g. a pose),
+                    "scale": 0..2 (default 0.8)} (text-to-image only)
+  ip_adapter        optional {"dir": IP-Adapter folder, "weight": file under sdxl_models/,
+                    "encoder": image encoder folder relative to "dir", "images": [PNG paths], "scale": 0..1}
   pixel             optional post-process {"width": w, "height": h, "colors": n | "palette": ["#RRGGBB", ...],
                     "crop": true to frame the subject before reducing (plain backdrops only)}
 outputs:
@@ -60,7 +64,11 @@ def _lora_scale(lora):
     return scale
 
 
-def _pipelines(ctx, model_dir, vae_dir, lora, device, offload):
+def _ip_key(ip):
+    return (ip.get("dir"), ip.get("weight"), ip.get("encoder")) if ip else None
+
+
+def _pipelines(ctx, model_dir, vae_dir, lora, device, offload, controlnet=None, ip=None):
     import os
     import torch
     from diffusers import AutoencoderKL, StableDiffusionXLImg2ImgPipeline, StableDiffusionXLPipeline
@@ -69,7 +77,8 @@ def _pipelines(ctx, model_dir, vae_dir, lora, device, offload):
                        kind="missing_model")
     # The LoRA strength is not part of the key: it is set per run on the
     # cached pipeline, so changing it does not reload SDXL.
-    key = (model_dir, vae_dir, lora.get("path") if lora else None, device, offload)
+    key = (model_dir, vae_dir, lora.get("path") if lora else None, device, offload,
+           controlnet.get("dir") if controlnet else None, _ip_key(ip))
     with _cache_lock:
         if _cache["key"] == key:
             if lora:
@@ -93,6 +102,26 @@ def _pipelines(ctx, model_dir, vae_dir, lora, device, offload):
         folder, name = os.path.split(lora["path"])
         pipe.load_lora_weights(folder, weight_name=name, adapter_name="style")
         pipe.set_adapters(["style"], adapter_weights=[_lora_scale(lora)])
+    if ip:
+        # Reference-image conditioning (IP-Adapter, Apache-2.0). The image
+        # encoder is loaded from the adapter folder's own layout.
+        ip_dir, weight, encoder = ip.get("dir", ""), ip.get("weight", ""), ip.get("encoder", "")
+        if not os.path.exists(os.path.join(ip_dir, "sdxl_models", weight)):
+            raise JobError("IP-Adapter weights not found: %s" % os.path.join(ip_dir, "sdxl_models", weight),
+                           kind="missing_model")
+        if not os.path.exists(os.path.join(ip_dir, encoder, "config.json")):
+            raise JobError("IP-Adapter image encoder not found in %s" % os.path.join(ip_dir, encoder), kind="missing_model")
+        ctx.progress(0.03, "Loading the reference-image adapter", force=True)
+        pipe.load_ip_adapter(ip_dir, subfolder="sdxl_models", weight_name=weight, image_encoder_folder=encoder)
+    if controlnet:
+        from diffusers import ControlNetModel, StableDiffusionXLControlNetPipeline
+        cn_dir = controlnet.get("dir", "")
+        if not os.path.exists(os.path.join(cn_dir, "config.json")):
+            raise JobError("ControlNet not found in %s. Download it in AI Studio > Models." % cn_dir, kind="missing_model")
+        ctx.progress(0.04, "Loading the pose ControlNet", force=True)
+        cn = ControlNetModel.from_pretrained(cn_dir, torch_dtype=dtype, use_safetensors=True)
+        pipe = StableDiffusionXLControlNetPipeline(**pipe.components, controlnet=cn)
+        pipe.set_progress_bar_config(disable=True)
     if device == "cuda" and offload == "model":
         pipe.enable_model_cpu_offload()
     else:
@@ -103,8 +132,10 @@ def _pipelines(ctx, model_dir, vae_dir, lora, device, offload):
         pipe.vae.enable_tiling()
     elif hasattr(pipe, "enable_vae_tiling"):
         pipe.enable_vae_tiling()
-    img2img = StableDiffusionXLImg2ImgPipeline(**pipe.components)
-    img2img.set_progress_bar_config(disable=True)
+    img2img = None
+    if not controlnet:
+        img2img = StableDiffusionXLImg2ImgPipeline(**pipe.components)
+        img2img.set_progress_bar_config(disable=True)
     with _cache_lock:
         _cache.update(key=key, pipe=pipe, img2img=img2img)
     return pipe, img2img
@@ -236,8 +267,29 @@ def run(ctx):
     lora = ctx.param("lora")
     if lora:
         _lora_scale(lora)   # reject a bad value before loading anything
+    controlnet = ctx.param("controlnet")
+    ip = ctx.param("ip_adapter")
+    cn_image = ip_images = None
+    if controlnet is not None:
+        if not isinstance(controlnet, dict) or not isinstance(controlnet.get("image"), str):
+            raise JobError("controlnet needs a conditioning image", kind="invalid_input")
+        cn_scale = float(controlnet.get("scale", 0.8))
+        if not 0.0 <= cn_scale <= 2.0:
+            raise JobError("controlnet scale must be between 0 and 2", kind="invalid_input")
+        if ctx.param("init_image"):
+            raise JobError("Pose control works with text-to-image only", kind="invalid_input")
+        cn_image = load_rgba(controlnet["image"]).convert("RGB").resize((width, height))
+    if ip is not None:
+        if not isinstance(ip, dict) or not ip.get("images"):
+            raise JobError("ip_adapter needs at least one reference image", kind="invalid_input")
+        ip_scale = float(ip.get("scale", 0.6))
+        if not 0.0 <= ip_scale <= 1.0:
+            raise JobError("ip_adapter scale must be between 0 and 1", kind="invalid_input")
+        ip_images = [load_rgba(pth).convert("RGB") for pth in ip["images"][:4]]
     pipe, img2img = _pipelines(ctx, ctx.param("model_dir", required=True, kind=str), ctx.param("vae_dir"),
-                               lora, device, offload)
+                               lora, device, offload, controlnet, ip)
+    if ip is not None:
+        pipe.set_ip_adapter_scale(ip_scale)
     init_path = ctx.param("init_image")
     total_steps = steps * count
     done_steps = [0]
@@ -276,6 +328,11 @@ def run(ctx):
             common = dict(prompt=prompt, negative_prompt=ctx.param("negative_prompt") or None,
                           num_inference_steps=steps, guidance_scale=guidance, generator=gen,
                           callback_on_step_end=on_step)
+            if ip_images:
+                # One adapter; several references are combined.
+                common["ip_adapter_image"] = [ip_images] if len(ip_images) > 1 else ip_images
+            if cn_image is not None:
+                common.update(image=cn_image, controlnet_conditioning_scale=cn_scale)
             if init_path:
                 init = load_rgba(init_path).convert("RGB").resize((width, height))
                 strength = float(ctx.param("strength", 0.6))
@@ -301,4 +358,5 @@ def run(ctx):
                        kind="oom")
     return {"outputs": outputs,
             "info": {"seed": seed, "device": device, "offload": offload, "steps": steps, "width": width,
-                     "height": height, "img2img": bool(init_path)}}
+                     "height": height, "img2img": bool(init_path), "controlnet": cn_image is not None,
+                     "ip_adapter": bool(ip_images)}}

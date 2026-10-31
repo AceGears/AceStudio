@@ -165,6 +165,56 @@ def build_tiny_sdxl(path):
     pipe.save_pretrained(path, safe_serialization=True)
 
 
+def build_tiny_controlnet(model_dir, path):
+    """A random ControlNet derived from the tiny SDXL UNet."""
+    from diffusers import ControlNetModel, UNet2DConditionModel
+    import torch
+    unet = UNet2DConditionModel.from_pretrained(os.path.join(model_dir, "unet"))
+    cn = ControlNetModel.from_unet(unet, conditioning_embedding_out_channels=(8, 16))
+    # A fresh ControlNet's output convolutions are zero (it starts as a no-op);
+    # randomise them so the conditioning image really affects the result.
+    torch.manual_seed(2)
+    with torch.no_grad():
+        for m in list(cn.controlnet_down_blocks) + [cn.controlnet_mid_block, cn.controlnet_cond_embedding.conv_out]:
+            m.weight.normal_(0, 0.5)
+    cn.save_pretrained(path)
+
+
+def build_tiny_ip_adapter(model_dir, path):
+    """A random IP-Adapter (ImageProjection format) for the tiny UNet, plus a tiny
+    CLIP vision encoder, in the folder layout of the h94/IP-Adapter repository."""
+    import torch
+    from diffusers import UNet2DConditionModel
+    from transformers import CLIPVisionConfig, CLIPVisionModelWithProjection
+    torch.manual_seed(1)
+    unet = UNet2DConditionModel.from_pretrained(os.path.join(model_dir, "unet"))
+    cross = unet.config.cross_attention_dim
+    clip_dim = 32
+    channels = list(unet.config.block_out_channels)
+    ip = {}
+    key_id = 1
+    for name in unet.attn_processors.keys():
+        if name.endswith("attn1.processor"):
+            continue
+        if name.startswith("mid_block"):
+            hidden = channels[-1]
+        elif name.startswith("up_blocks"):
+            hidden = list(reversed(channels))[int(name[len("up_blocks.")])]
+        else:
+            hidden = channels[int(name[len("down_blocks.")])]
+        ip["%d.to_k_ip.weight" % key_id] = torch.randn(hidden, cross) * 0.02
+        ip["%d.to_v_ip.weight" % key_id] = torch.randn(hidden, cross) * 0.02
+        key_id += 2
+    proj = {"proj.weight": torch.randn(4 * cross, clip_dim) * 0.02, "proj.bias": torch.zeros(4 * cross),
+            "norm.weight": torch.ones(cross), "norm.bias": torch.zeros(cross)}
+    os.makedirs(os.path.join(path, "sdxl_models"), exist_ok=True)
+    torch.save({"image_proj": proj, "ip_adapter": ip}, os.path.join(path, "sdxl_models", "ip-adapter_tiny.bin"))
+    enc = CLIPVisionModelWithProjection(CLIPVisionConfig(hidden_size=32, intermediate_size=37, projection_dim=clip_dim,
+                                                         num_attention_heads=4, num_hidden_layers=2, image_size=224,
+                                                         patch_size=32))
+    enc.save_pretrained(os.path.join(path, "models", "image_encoder"))
+
+
 @unittest.skipUnless(has("torch", "diffusers", "transformers", "numpy", "PIL"), "diffusers stack missing")
 class TinySdxlPlumbingTest(unittest.TestCase):
     @classmethod
@@ -221,6 +271,44 @@ class TinySdxlPlumbingTest(unittest.TestCase):
             self.assertIn("multiples of 8", f["params"]["error"])
             g = run_job(w_, self.tmp, "g7", "image.generate", dict(base, model_dir=os.path.join(self.tmp, "nope")))
             self.assertEqual(g["params"]["kind"], "missing_model")
+        finally:
+            w_.close()
+
+    def test_pose_controlnet_and_reference_adapter(self):
+        from PIL import Image
+        cn = os.path.join(self.tmp, "tiny-controlnet")
+        ipd = os.path.join(self.tmp, "tiny-ip")
+        build_tiny_controlnet(self.model, cn)
+        build_tiny_ip_adapter(self.model, ipd)
+        pose = os.path.join(self.tmp, "pose.png")
+        Image.new("RGB", (64, 64), (0, 0, 0)).save(pose)
+        ref = os.path.join(self.tmp, "ref.png")
+        Image.new("RGBA", (40, 40), (200, 30, 30, 255)).save(ref)
+        w_ = Worker()
+        try:
+            base = {"model_dir": self.model, "prompt": "a red knight", "width": 64, "height": 64, "steps": 3,
+                    "device": "cpu", "guidance": 5.0, "seed": 11}
+            a = run_job(w_, self.tmp, "c1", "image.generate", dict(base, controlnet={"dir": cn, "image": pose, "scale": 0.9}))
+            self.assertEqual(a["method"], "job.done", a)
+            self.assertTrue(a["params"]["info"]["controlnet"])
+            # A different pose image changes the result (the ControlNet is wired in).
+            pose2 = os.path.join(self.tmp, "pose2.png")
+            Image.new("RGB", (64, 64), (255, 255, 255)).save(pose2)
+            b = run_job(w_, self.tmp, "c2", "image.generate", dict(base, controlnet={"dir": cn, "image": pose2, "scale": 0.9}))
+            with open(a["params"]["outputs"]["image0"], "rb") as fa, open(b["params"]["outputs"]["image0"], "rb") as fb:
+                self.assertNotEqual(fa.read(), fb.read())
+            ipp = {"dir": ipd, "weight": "ip-adapter_tiny.bin", "encoder": "models/image_encoder", "images": [ref], "scale": 0.7}
+            c = run_job(w_, self.tmp, "c3", "image.generate", dict(base, controlnet={"dir": cn, "image": pose}, ip_adapter=ipp))
+            self.assertEqual(c["method"], "job.done", c)
+            self.assertTrue(c["params"]["info"]["ip_adapter"])
+            two = dict(ipp, images=[ref, ref])
+            d = run_job(w_, self.tmp, "c4", "image.generate", dict(base, ip_adapter=two))
+            self.assertEqual(d["method"], "job.done", d)
+            # Bad parameters are reported, not fatal.
+            e = run_job(w_, self.tmp, "c5", "image.generate", dict(base, controlnet={"dir": cn}))
+            self.assertEqual(e["method"], "job.failed")
+            f = run_job(w_, self.tmp, "c6", "image.generate", dict(base, ip_adapter=dict(ipp, weight="missing.bin")))
+            self.assertEqual(f["params"]["kind"], "missing_model")
         finally:
             w_.close()
 
