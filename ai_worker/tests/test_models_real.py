@@ -224,6 +224,33 @@ class TinySdxlPlumbingTest(unittest.TestCase):
         finally:
             w_.close()
 
+    def test_live_preview_and_lora_free_paths(self):
+        from diffusers import AutoencoderTiny
+        from PIL import Image
+        tae = os.path.join(self.tmp, "tiny-taesd")
+        AutoencoderTiny(encoder_block_out_channels=(8, 8, 8, 8), decoder_block_out_channels=(8, 8, 8, 8),
+                        num_encoder_blocks=(1, 1, 1, 1), num_decoder_blocks=(1, 1, 1, 1)).save_pretrained(tae)
+        w_ = Worker()
+        try:
+            base = {"model_dir": self.model, "prompt": "a red knight", "width": 64, "height": 64, "steps": 4,
+                    "device": "cpu", "guidance": 5.0, "seed": 7}
+            a = run_job(w_, self.tmp, "p1", "image.generate", dict(base, preview={"dir": tae, "every": 2}))
+            self.assertEqual(a["method"], "job.done", a)
+            previews = [m["params"]["preview"] for m in w_.lines if m.get("method") == "job.progress"
+                        and m["params"].get("job") == "p1" and "preview" in m["params"]]
+            self.assertEqual(len(previews), 2)                       # steps 2 and 4
+            for pth in previews:
+                self.assertTrue(pth.startswith(os.path.join(self.tmp, "p1")))
+                im = Image.open(pth)
+                self.assertEqual(im.mode, "RGB")
+                self.assertEqual(im.size[0], im.size[1])
+                self.assertLessEqual(max(im.size), 256)              # previews are capped at 256 px
+            # A missing preview model never fails the generation.
+            b = run_job(w_, self.tmp, "p2", "image.generate", dict(base, preview={"dir": os.path.join(self.tmp, "none")}))
+            self.assertEqual(b["method"], "job.done", b)
+        finally:
+            w_.close()
+
 
 if __name__ == "__main__":
     unittest.main()

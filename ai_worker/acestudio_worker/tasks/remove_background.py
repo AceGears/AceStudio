@@ -5,6 +5,8 @@ params:
   model       path to a BiRefNet .onnx file (input 1x3xSxS, output 1x1xSxS logits)
   threshold   optional 0..1: hard alpha cut for pixel art (default: soft matte)
   device      auto | cpu
+  cpu_memory_mb  optional: free RAM needed on the CPU path; the job fails early with a
+              clear message instead of being killed when less is free
 outputs:
   image       RGBA PNG with the matte applied to the original alpha
   mask        8-bit grayscale matte
@@ -57,7 +59,9 @@ def run(ctx):
         ctx.progress(0.3, "Segmenting on %s" % provider.replace("ExecutionProvider", ""), force=True)
         return matte(sess, img)
 
-    m, provider = run_onnx(ctx, ctx.param("model", required=True, kind=str), ctx.param("device", "auto"), segment)
+    cpu_mb = ctx.param("cpu_memory_mb")
+    m, provider = run_onnx(ctx, ctx.param("model", required=True, kind=str), ctx.param("device", "auto"), segment,
+                           cpu_memory_mb=cpu_mb if isinstance(cpu_mb, int) and cpu_mb > 0 else None)
     ctx.check_cancel()
     threshold = ctx.param("threshold")
     if threshold is not None:

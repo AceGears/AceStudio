@@ -104,7 +104,20 @@ def _next_gpu_provider():
     return gpus[1] if len(gpus) > 1 else None
 
 
-def run_onnx(ctx, model_path, device, fn):
+def _check_cpu_memory(cpu_memory_mb):
+    """Fails fast, with a clear message, when running on the CPU would need more
+    RAM than is free (instead of the process being killed part-way)."""
+    if not cpu_memory_mb:
+        return
+    from .gpu import available_memory
+    free = available_memory()
+    if free is not None and free < cpu_memory_mb * 2**20:
+        raise JobError("Running this model on the CPU needs about %.1f GB of free memory; %.1f GB is free. "
+                       "Close other programs, or use a supported GPU (AI Studio > Set Up AI Runtime)."
+                       % (cpu_memory_mb / 1024.0, free / 2**30), kind="oom")
+
+
+def run_onnx(ctx, model_path, device, fn, cpu_memory_mb=None):
     """Runs fn(session, provider) on the best provider. A GPU provider that
     cannot create a session (e.g. CUDA DLLs missing) or fails while running
     (some DirectML/driver combinations reject fused nodes) is retried with
@@ -148,6 +161,8 @@ def run_onnx(ctx, model_path, device, fn):
             continue
         if first_gpu is None and used != "CPUExecutionProvider":
             first_gpu = used
+        if used == "CPUExecutionProvider":
+            _check_cpu_memory(cpu_memory_mb)
         try:
             t0 = time.monotonic()
             result = fn(sess, used)

@@ -544,5 +544,33 @@ class UpscaleFramesTests(unittest.TestCase):
         self.assertEqual(ctx.progressed, sorted(ctx.progressed))   # monotonic across frames
         self.assertLessEqual(max(ctx.progressed), 0.96)
 
+
+class CpuMemoryCheckTests(unittest.TestCase):
+    def test_fails_fast_with_a_clear_message(self):
+        sys.path.insert(0, ROOT)
+        from acestudio_worker import gpu, imaging
+        from acestudio_worker.jobs import JobError
+        real = gpu.available_memory
+        try:
+            gpu.available_memory = lambda: 3 * 2**30
+            with self.assertRaises(JobError) as cm:
+                imaging._check_cpu_memory(6500)
+            self.assertEqual(cm.exception.kind, "oom")
+            self.assertIn("6.3 GB", str(cm.exception))
+            self.assertIn("3.0 GB", str(cm.exception))
+            gpu.available_memory = lambda: 8 * 2**30
+            imaging._check_cpu_memory(6500)          # enough: no error
+            gpu.available_memory = lambda: None
+            imaging._check_cpu_memory(6500)          # unknown: no error
+            imaging._check_cpu_memory(None)
+        finally:
+            gpu.available_memory = real
+
+    def test_available_memory_is_sane(self):
+        sys.path.insert(0, ROOT)
+        from acestudio_worker import gpu
+        v = gpu.available_memory()
+        self.assertTrue(v is None or v > 0)
+
 if __name__ == "__main__":
     unittest.main()

@@ -326,6 +326,17 @@ void WorkerSupervisor::handleNotification(const std::string& method, const json&
         if (!j->cancelRequested) j->message = p.value("message", j->message);
         j->step = p.value("step", j->step);
         j->steps = p.value("steps", j->steps);
+        if (p.contains("preview") && p["preview"].is_string()) {
+            // Only files inside the job's own folder are accepted.
+            std::error_code ec;
+            const fs::path pv = fs::weakly_canonical(fromUtf8(p["preview"].get<std::string>()), ec);
+            const fs::path dir = fs::weakly_canonical(j->dir, ec);
+            const auto rel = pv.lexically_relative(dir);
+            if (!ec && !rel.empty() && *rel.begin() != "..") {
+                j->preview = pv;
+                ++j->previewSerial;
+            }
+        }
         ev.push_back({Event::Kind::Job, j->id, {}, LogLevel::Info});
     } else if (method == "job.done") {
         j->outputs.clear();

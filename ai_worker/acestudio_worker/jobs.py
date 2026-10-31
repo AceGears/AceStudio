@@ -42,7 +42,7 @@ class Context:
             raise Cancelled()
 
     # Reporting
-    def progress(self, fraction=None, message="", step=None, steps=None, force=False):
+    def progress(self, fraction=None, message="", step=None, steps=None, force=False, preview=None):
         """Report progress. Rate-limited to ~20/s unless forced, so tight loops
         cannot flood the pipe."""
         now = time.monotonic()
@@ -56,6 +56,8 @@ class Context:
             p["step"] = int(step)
         if steps is not None:
             p["steps"] = int(steps)
+        if preview is not None:
+            p["preview"] = str(preview)   # a PNG inside the job folder
         self._server.notify("job.progress", p)
 
     def log(self, message, level="info"):

@@ -51,7 +51,8 @@
           "size": 224005088,
           "sha256": "5600024376f572a557870a5eb0afb1e5961636bef4e1e22132025467d0f03333"
         }
-      ]
+      ],
+      "cpuMemoryMb": 6500
     },
     {
       "id": "birefnet-general",
@@ -72,7 +73,8 @@
           "size": 972666916,
           "sha256": "58f621f00f5d756097615970a88a791584600dcf7c45b18a0a6267535a1ebd3c"
         }
-      ]
+      ],
+      "cpuMemoryMb": 12000
     },
     {
       "id": "realesrgan-x4plus",
@@ -266,6 +268,38 @@
         }
       ],
       "revision": "8bf4a4d9ea283e00a51fafda8e0539f8248ea037"
+    },
+    {
+      "id": "taesdxl",
+      "name": "TAESD-XL (live preview)",
+      "task": "image.generate",
+      "kind": "preview",
+      "requiresModel": "sdxl-base-1.0",
+      "description": "Tiny SDXL decoder used only to show previews while an image generates. Optional; 10 MB.",
+      "license": "MIT",
+      "copyright": "Ollin Boer Bohan",
+      "source": "https://huggingface.co/madebyollin/taesdxl",
+      "entry": ".",
+      "runtime": "diffusion",
+      "vramMb": 100,
+      "verification": "pinned",
+      "fileListVerified": true,
+      "files": [
+        {
+          "path": "config.json",
+          "url": "https://huggingface.co/madebyollin/taesdxl/resolve/b20258aaef75ef61e659c1e0f14f251cf0ad153e/config.json",
+          "size": 597,
+          "sha256": "3ebefd1aa96ac474cc6430fe6ea81febccf7ee82461715691ee9315c884adeef"
+        },
+        {
+          "path": "diffusion_pytorch_model.safetensors",
+          "url": "https://huggingface.co/madebyollin/taesdxl/resolve/b20258aaef75ef61e659c1e0f14f251cf0ad153e/diffusion_pytorch_model.safetensors",
+          "size": 9793292,
+          "sha256": "ff4824aca94dd6111e0340fa749347fb74101060d9712cb5ef1ca8f1cf17502f"
+        }
+      ],
+      "revision": "b20258aaef75ef61e659c1e0f14f251cf0ad153e",
+      "verificationNote": "Weights: SHA-256 from the Hugging Face LFS pointer. config.json: content matches git blob accadb8be0fabedda0082b4d83b698f4835a8a80 at this commit."
     }
   ]
 }

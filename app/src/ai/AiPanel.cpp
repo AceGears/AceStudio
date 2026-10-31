@@ -21,6 +21,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
@@ -238,6 +239,12 @@ QWidget* AiPanel::buildGenerateTab() {
     f->addRow(tr("Images:"), m_count);
     f->addRow(QString(), m_img2img);
     f->addRow(tr("Strength:"), m_strength);
+    m_genPreview = new QLabel(w);
+    m_genPreview->setAlignment(Qt::AlignCenter);
+    m_genPreview->setMinimumHeight(0);
+    m_genPreview->setToolTip(tr("Live preview of the image being generated"));
+    m_genPreview->hide();
+    f->addRow(m_genPreview);
     return w;
 }
 
@@ -408,6 +415,9 @@ void AiPanel::runGenerate() {
     if (m_genLora->isChecked() && m_ai.catalog())
         if (const ModelEntry* l = m_ai.catalog()->find("pixel-art-xl"))
             p["lora"] = {{"path", toUtf8(m_ai.store()->entryPath(*l))}, {"scale", m_genLoraStrength->value() / 100.0}};
+    if (m_ai.catalog() && m_ai.store())
+        if (const ModelEntry* tae = m_ai.catalog()->find("taesdxl"); tae && m_ai.store()->state(*tae) == InstallState::Installed)
+            p["preview"] = {{"dir", toUtf8(m_ai.store()->entryPath(*tae))}, {"every", 5}};
     std::optional<Image> init;
     if (m_img2img->isChecked() && m_view) {
         init = m_view->document().composite(m_view->currentFrame());
@@ -432,6 +442,9 @@ void AiPanel::runRemoveBackground() {
     if (src.isFullyTransparent()) return void(Q_EMIT statusMessage(tr("There is nothing to process on this frame.")));
     json p = {{"model", toUtf8(toPath(model))}, {"model_id", m_bgModel->currentData().toString().toStdString()}};
     if (m_bgHard->isChecked()) p["threshold"] = 0.5;
+    if (m_ai.catalog())
+        if (const ModelEntry* e = m_ai.catalog()->find(m_bgModel->currentData().toString().toStdString()); e && e->cpuMemoryMb > 0)
+            p["cpu_memory_mb"] = e->cpuMemoryMb;
     Pending pend;
     pend.kind = Pending::Kind::RemoveBackground;
     pend.view = m_view;
@@ -510,6 +523,22 @@ void AiPanel::refreshJob(const QString& qid) {
     if (!j->message.empty()) tip += QStringLiteral(" — ") + qs(j->message);
     if (!j->error.empty()) tip += QStringLiteral("\n") + qs(j->error);
     item->setToolTip(0, tip);
+    // Live preview of a running generation.
+    if (j->task == "image.generate") {
+        auto pit = m_previewSerial.find(id);
+        if (j->state == JobState::Running && j->previewSerial > 0 && (pit == m_previewSerial.end() || pit->second != j->previewSerial)) {
+            m_previewSerial[id] = j->previewSerial;
+            QPixmap pm;
+            if (pm.load(fromPath(j->preview))) {
+                m_genPreview->setPixmap(pm.scaled(QSize(192, 192), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                m_genPreview->show();
+            }
+        } else if (j->state != JobState::Running && j->state != JobState::Queued) {
+            m_previewSerial.erase(id);
+            m_genPreview->hide();
+            m_genPreview->clear();
+        }
+    }
     auto* bar = qobject_cast<QProgressBar*>(m_queue->itemWidget(item, 1));
     if (!bar) return;
     switch (j->state) {

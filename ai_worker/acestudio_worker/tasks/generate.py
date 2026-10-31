@@ -15,6 +15,7 @@ params:
   strength          img2img strength 0..1 (default 0.6)
   device            auto | cuda | cpu
   offload           auto | none | model   (model = enable_model_cpu_offload, for <10 GB VRAM)
+  preview           optional {"dir": TAESD-XL folder, "every": n}: a small preview PNG every n steps
   pixel             optional post-process {"width": w, "height": h, "colors": n | "palette": ["#RRGGBB", ...],
                     "crop": true to frame the subject before reducing (plain backdrops only)}
 outputs:
@@ -151,6 +152,38 @@ def subject_box(img, width, height, threshold=40, pad=0.08):
     return (x0, y0, x1, y1)
 
 
+_preview_cache = {"dir": None, "device": None, "model": None}
+
+
+def _preview_decoder(folder, device):
+    """TAESD-XL (MIT) decodes latents in milliseconds, for live previews."""
+    import os
+    import torch
+    from diffusers import AutoencoderTiny
+    if not os.path.exists(os.path.join(folder, "config.json")):
+        raise JobError("Live preview model not found in %s" % folder, kind="missing_model")
+    if _preview_cache["dir"] != folder or _preview_cache["device"] != device:
+        dtype = torch.float16 if device == "cuda" else torch.float32
+        model = AutoencoderTiny.from_pretrained(folder, torch_dtype=dtype, use_safetensors=True).to(device)
+        model.eval()
+        _preview_cache.update(dir=folder, device=device, model=model)
+    return _preview_cache["model"]
+
+
+def preview_image(decoder, latents, max_side=256):
+    """Latents (1x4xhxw, the pipeline's own scale) -> small RGB PIL image."""
+    import torch
+    from PIL import Image
+    with torch.inference_mode():
+        x = decoder.decode(latents.to(decoder.device, decoder.dtype)).sample[0]
+    x = ((x.float().clamp(-1, 1) + 1) * 127.5).round().byte().permute(1, 2, 0).cpu().numpy()
+    img = Image.fromarray(x, mode="RGB")
+    scale = max_side / float(max(img.size))
+    if scale < 1:
+        img = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.BILINEAR)
+    return img
+
+
 def pixelate(img, width, height, colors=None, palette=None, crop=False):
     """Nearest-neighbour downscale (centre sampling) and palette reduction
     without dithering, so the result is editable pixel art."""
@@ -208,13 +241,30 @@ def run(ctx):
     init_path = ctx.param("init_image")
     total_steps = steps * count
     done_steps = [0]
+    preview = ctx.param("preview")
+    decoder, every = None, 0
+    if preview:
+        try:
+            every = max(1, int(preview.get("every", 5)))
+            decoder = _preview_decoder(preview["dir"], "cuda" if device == "cuda" else "cpu")
+        except JobError as e:
+            ctx.log("Live preview off: %s" % e, "warning")   # never fails the generation
+        except Exception as e:   # noqa: BLE001 - an optional feature must not stop the job
+            ctx.log("Live preview off: %s" % e, "warning")
+            decoder = None
 
     def on_step(p, step, timestep, kwargs):
         done_steps[0] += 1
         if ctx.cancelled():
             p._interrupt = True
+        path = None
+        if decoder is not None and "latents" in kwargs and (step + 1) % every == 0:
+            try:
+                path = save_png(preview_image(decoder, kwargs["latents"]), ctx.path("preview_%d.png" % done_steps[0]))
+            except Exception as e:   # noqa: BLE001
+                ctx.log("Preview failed: %s" % e, "warning")
         ctx.progress(0.05 + 0.9 * done_steps[0] / total_steps, "Step %d of %d" % (done_steps[0], total_steps),
-                     step=done_steps[0], steps=total_steps, force=True)
+                     step=done_steps[0], steps=total_steps, force=True, preview=path)
         return kwargs
 
     outputs = {}

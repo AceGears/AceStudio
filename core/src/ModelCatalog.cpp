@@ -73,6 +73,7 @@ Result<ModelCatalog> ModelCatalog::parse(const json& j) {
             e.entry = m.value("entry", std::string("."));
             e.runtime = m.value("runtime", std::string());
             e.vramMb = m.value("vramMb", 0);
+            e.cpuMemoryMb = m.value("cpuMemoryMb", 0);
             e.fileListVerified = m.value("fileListVerified", true);
             const std::string lic = m.at("license").get<std::string>();
             if (!licenses.contains(lic)) return Error{ErrorCode::CorruptData, "Model " + e.id + " names unknown licence " + lic};

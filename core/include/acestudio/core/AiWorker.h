@@ -53,6 +53,8 @@ struct Job {
     int step = 0;
     int steps = 0;
     std::map<std::string, std::filesystem::path> outputs;
+    std::filesystem::path preview;             // latest in-progress preview PNG (inside `dir`), if any
+    int previewSerial = 0;                     // increments with every new preview
     nlohmann::json info;
     std::string error;
     FailureKind failure = FailureKind::None;

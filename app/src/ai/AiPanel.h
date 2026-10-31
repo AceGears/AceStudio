@@ -95,6 +95,8 @@ private:
     QCheckBox* m_pixelMode = nullptr;
     QCheckBox* m_usePalette = nullptr;
     QCheckBox* m_cropSubject = nullptr;
+    QLabel* m_genPreview = nullptr;
+    std::map<std::string, int> m_previewSerial;   // job id -> preview last shown
     QSpinBox* m_width = nullptr;
     QSpinBox* m_height = nullptr;
     QSpinBox* m_steps = nullptr;

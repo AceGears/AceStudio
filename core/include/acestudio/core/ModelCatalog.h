@@ -46,6 +46,7 @@ struct ModelEntry {
     std::string entry;         // file or folder (".") handed to the task
     std::string runtime;       // onnx | torch | diffusion
     int vramMb = 0;
+    int cpuMemoryMb = 0;   // free RAM needed when the model runs on the CPU (0 = not stated)
     bool pinned = false;       // every file has a known size and hash
     bool fileListVerified = true;
     std::vector<ModelFile> files;

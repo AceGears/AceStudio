@@ -277,6 +277,7 @@ void ModelsDialog::rebuild() {
         const QString used = m.task == "background.remove" ? tr("Remove background")
                            : m.task == "upscale.esrgan"    ? tr("Upscale")
                            : m.kind == "lora"              ? tr("Generation style")
+                           : m.kind == "preview"           ? tr("Live preview")
                                                            : tr("Generate");
         const QStringList cells{qs(m.name), used, qs(m.license.name), formatBytes(m.knownSize()), status};
         for (int c = 0; c < cells.size(); ++c) m_table->setItem(r, c, new QTableWidgetItem(cells[c]));
