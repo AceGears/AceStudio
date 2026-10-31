@@ -201,3 +201,21 @@ TEST_CASE("Colour checks work without a profile palette; identity catches an off
     CHECK(bad.frames[0].needsRegeneration());
     CHECK(describe(bad.frames[0]).find("reference images") != std::string::npos);
 }
+
+TEST_CASE("One badly drawn frame does not fail the good frame after it", "[qa]") {
+    const Image ref = figure(64, 64, 32, 55);
+    Image wide(64, 64);
+    wide.fillRect({12, 30, 40, 26}, kShirt);   // a blob, not the figure
+    const std::vector<Image> frames = {ref, figure(64, 64, 30, 55), wide, figure(64, 64, 34, 55), ref};
+    const QAReport r = evaluateFrames(frames, ref, pal());
+    CHECK(r.frames[1].ok());
+    CHECK((r.frames[2].flags & QASilhouette));
+    INFO(describe(r.frames[3]));
+    CHECK(r.frames[3].ok());                    // matches frame 5 even though frame 3 is bad
+    CHECK(r.toRegenerate() == std::vector<int>{2});
+    // Without a loop, the last frame only has its previous neighbour.
+    QAOptions once;
+    once.cyclic = false;
+    const std::vector<Image> tail = {ref, figure(64, 64, 30, 55), wide};
+    CHECK((evaluateFrames(tail, ref, pal(), once).frames[2].flags & QASilhouette));
+}

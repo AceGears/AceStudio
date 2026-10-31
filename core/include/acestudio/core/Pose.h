@@ -71,7 +71,14 @@ std::optional<PoseCycle> poseCycleFromString(std::string_view s) noexcept;
 // on the ground line except while jumping.
 Pose cyclePose(PoseCycle cycle, double t);
 // `frames` evenly spaced poses of a cycle.
+// `frames` poses evenly spread over one cycle, fitted into the image
+// together (see fitPoses), so no frame's head or hands leave the frame.
 std::vector<Pose> cyclePoses(PoseCycle cycle, int frames);
+
+// Scales and shifts all poses by one transform so every visible joint (and
+// room for the head above it) lies within [margin, 1 - margin]. Poses that
+// already fit are unchanged. Relative motion between frames is kept.
+void fitPoses(std::vector<Pose>& poses, double margin = 0.03);
 
 // One crop box (normalised x0, y0, x1, y1) that frames every pose, padded by
 // `margin` (fraction of the figure height) and grown to `aspect` (w/h),

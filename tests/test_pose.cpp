@@ -102,3 +102,28 @@ TEST_CASE("Framing box covers every pose at the target aspect", "[pose]") {
     for (auto& k : none.points) k.visible = false;
     CHECK(poseFramingBox({none}, 1.0) == std::array<double, 4>{0, 0, 1, 1});
 }
+
+TEST_CASE("Cycles fit in the image: a jump's raised hands and head stay inside", "[pose]") {
+    for (PoseCycle c : {PoseCycle::Idle, PoseCycle::Walk, PoseCycle::Run, PoseCycle::Jump}) {
+        const auto poses = cyclePoses(c, 8);
+        for (const Pose& p : poses)
+            for (const Keypoint& k : p.points) {
+                if (!k.visible) continue;
+                INFO(toString(c));
+                CHECK(k.x >= 0.03 - 1e-9);
+                CHECK(k.x <= 0.97 + 1e-9);
+                CHECK(k.y >= 0.07);          // margin + head room (scaled with the figure) above the eyes
+                CHECK(k.y <= 0.97 + 1e-9);
+            }
+    }
+    // The jump still rises: some frame's feet are well above the first frame's.
+    const auto jump = cyclePoses(PoseCycle::Jump, 6);
+    double highest = jump[0].groundY();
+    for (const Pose& p : jump) highest = std::min(highest, p.groundY());
+    CHECK(jump[0].groundY() - highest > 0.08);
+    // Poses that already fit are unchanged.
+    auto walk = std::vector<Pose>{cyclePose(PoseCycle::Walk, 0.0)};
+    const Pose before = walk[0];
+    fitPoses(walk);
+    CHECK(walk[0] == before);
+}

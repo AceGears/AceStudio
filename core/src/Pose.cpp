@@ -232,10 +232,32 @@ Pose cyclePose(PoseCycle cycle, double t) {
     return build(r);
 }
 
+void fitPoses(std::vector<Pose>& poses, double margin) {
+    // The head is drawn above the eyes and ears: reserve room for it.
+    double x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const Pose& p : poses)
+        for (const Keypoint& k : p.points)
+            if (k.visible) { x0 = std::min(x0, k.x); y0 = std::min(y0, k.y); x1 = std::max(x1, k.x); y1 = std::max(y1, k.y); }
+    if (x1 < x0) return;
+    y0 -= 0.06;   // top of the head above the eye/ear keypoints
+    const double lo = margin, hi = 1.0 - margin;
+    if (x0 >= lo && y0 >= lo && x1 <= hi && y1 <= hi) return;
+    // One scale for all frames about the shared bottom-centre, so relative
+    // motion (a jump's height) is kept; then shift inside the frame.
+    const double s = std::min({1.0, (hi - lo) / std::max(1e-6, x1 - x0), (hi - lo) / std::max(1e-6, y1 - y0)});
+    const double cx = (x0 + x1) / 2, by = y1;
+    for (Pose& p : poses)
+        for (Keypoint& k : p.points) {
+            k.x = 0.5 + (k.x - cx) * s;
+            k.y = hi + (k.y - by) * s;
+        }
+}
+
 std::vector<Pose> cyclePoses(PoseCycle cycle, int frames) {
     std::vector<Pose> out;
     frames = std::clamp(frames, 1, 256);
     for (int i = 0; i < frames; ++i) out.push_back(cyclePose(cycle, static_cast<double>(i) / frames));
+    fitPoses(out);
     return out;
 }
 

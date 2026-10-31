@@ -9,8 +9,8 @@
 //   height        the figure's height should match the reference
 //   palette drift how far the frame's colours are from the profile palette,
 //                 and how different its colour mix is from the reference
-//   silhouette    overlap with the previous frame (bottom-centre aligned):
-//                 sudden shape changes mean the model drew something else
+//   silhouette    overlap with the neighbouring frames (bottom-centre aligned):
+//                 a frame that matches neither neighbour was drawn as something else
 // Corrections fix what can be fixed exactly (ground, height, centring,
 // palette); frames whose silhouette jumps are flagged for regeneration.
 
@@ -78,7 +78,8 @@ struct QAOptions {
     double heightTolerance = 0.08;    // relative to the reference height
     double paletteTolerance = 0.06;   // paletteDistance
     double colorMixTolerance = 0.36;  // colourProfileDistance vs the reference frame
-    double minIoU = 0.55;             // silhouette overlap with the previous frame
+    double minIoU = 0.55;             // silhouette overlap with the closer-matching neighbour frame
+    bool cyclic = true;               // the last frame leads into frame 1 (walk, run, idle; not a jump)
     double flipThreshold = -0.35;     // facing agreement below this = drawn facing the wrong way
     std::vector<FrameExpectation> expected;   // per frame; empty = every frame stands like the reference
     // The character's reference images: every frame (frame 1 included) is
@@ -109,7 +110,7 @@ struct FrameQA {
                                      // reference (+1 same facing, -1 mirrored; 1 when undecidable)
     double paletteDistance = 0.0;
     double colorMix = 0.0;           // colourProfileDistance vs the reference frame
-    double iouPrevious = 1.0;        // vs the previous frame (1 for the first)
+    double iouPrevious = 1.0;        // best overlap with a neighbouring frame (1 for the first)
     std::uint32_t flags = 0;
     double score = 1.0;              // 0..1, 1 = consistent
     bool ok() const noexcept { return flags == 0; }

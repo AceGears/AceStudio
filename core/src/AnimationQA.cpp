@@ -261,18 +261,18 @@ QAReport evaluateFrames(const std::vector<Image>& frames, const Image& reference
     r.referenceGround = rb.empty() ? reference.height() - 1 : rb.y + rb.h - 1;
     r.referenceHeight = rb.empty() ? 0 : rb.h;
     r.referenceCentreX = rb.empty() ? reference.width() / 2 : rb.x + rb.w / 2;
-    Mask previous;
-    for (std::size_t i = 0; i < frames.size(); ++i) {
+    const std::size_t n = frames.size();
+    r.frames.resize(n);
+    // Pass 1: per-frame checks, and each frame's shape as it will be after
+    // correction (mirrored back when drawn facing the wrong way).
+    std::vector<Mask> shapes(n);
+    for (std::size_t i = 0; i < n; ++i) {
         const Image& f = frames[i];
-        FrameQA q;
-        Mask m = silhouette(f);
-        q.bounds = m.bounds();
+        FrameQA& q = r.frames[i];
+        shapes[i] = silhouette(f);
+        q.bounds = shapes[i].bounds();
         if (q.bounds.empty()) {
             q.flags = QAEmpty;
-            q.score = 0;
-            q.iouPrevious = 0;
-            r.frames.push_back(q);
-            previous = m;
             continue;
         }
         if (i < o.expected.size()) q.expected = o.expected[i];
@@ -286,23 +286,39 @@ QAReport evaluateFrames(const std::vector<Image>& frames, const Image& reference
             q.identity = 1.0;
             for (const Image& id : o.identity) q.identity = std::min(q.identity, colourProfileDistance(f, id));
         }
-        q.iouPrevious = i == 0 ? silhouetteIoU(m, refMask) : silhouetteIoU(m, previous);
         if (std::abs(q.groundOffset) > o.groundTolerance) q.flags |= QAGround;
         if (std::abs(q.heightRatio - 1.0) > o.heightTolerance) q.flags |= QAHeight;
         if (q.paletteDistance > o.paletteTolerance) q.flags |= QAPalette;
         if (q.colorMix > o.colorMixTolerance) q.flags |= QAColorMix;
         if (!o.identity.empty() && q.identity > o.identityTolerance) q.flags |= QAOffModel;
-        if (q.iouPrevious < o.minIoU) q.flags |= QASilhouette;
         if (q.facing < o.flipThreshold) {
-            // A mirrored frame also fails the silhouette check against its
-            // neighbour; flipping fixes both, so judge the shape after flipping.
             q.flags |= QAFlipped;
-            Mask mm = silhouette(flipHorizontal(f));
-            const double iouFlipped = silhouetteIoU(mm, previous);
-            if (iouFlipped >= o.minIoU) q.flags &= ~static_cast<std::uint32_t>(QASilhouette);
-            q.iouPrevious = std::max(q.iouPrevious, iouFlipped);
-            m = std::move(mm);   // the next frame is compared with the corrected shape
+            shapes[i] = silhouette(flipHorizontal(f));
         }
+    }
+    // Pass 2: shape continuity. A frame is fine if it matches either
+    // neighbour (the last frame's next is frame 1 in a looping cycle), so one
+    // badly drawn frame does not also fail the good frame after it.
+    for (std::size_t i = 0; i < n; ++i) {
+        FrameQA& q = r.frames[i];
+        if (q.flags & QAEmpty) {
+            q.score = 0;
+            q.iouPrevious = 0;
+            continue;
+        }
+        if (i == 0) {
+            q.iouPrevious = 1.0;   // the reference itself
+        } else {
+            double best = 0;
+            auto consider = [&](std::size_t j) {
+                if (j != i && !r.frames[j].bounds.empty()) best = std::max(best, silhouetteIoU(shapes[i], shapes[j]));
+            };
+            consider(i - 1);
+            if (i + 1 < n) consider(i + 1);
+            else if (o.cyclic && n > 2) consider(0);
+            q.iouPrevious = best;
+        }
+        if (q.iouPrevious < o.minIoU) q.flags |= QASilhouette;
         // Score: each check contributes; silhouette and colour mix weigh most.
         auto clamp01 = [](double v) { return std::clamp(v, 0.0, 1.0); };
         const double sGround = clamp01(1.0 - std::abs(q.groundOffset) / 8.0);
@@ -312,8 +328,6 @@ QAReport evaluateFrames(const std::vector<Image>& frames, const Image& reference
         const double sIoU = clamp01(q.iouPrevious);
         q.score = 0.15 * sGround + 0.15 * sHeight + 0.1 * sPal + 0.25 * sMix + 0.35 * sIoU;
         if (q.flags & QAFlipped) q.score *= 0.7;
-        r.frames.push_back(q);
-        previous = m;
     }
     return r;
 }

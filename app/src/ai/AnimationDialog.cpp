@@ -476,6 +476,9 @@ QAOptions AnimationDialog::qaOptions() const {
     // Each frame is judged against what its pose asks for (a jump leaves the
     // ground, a crouch is shorter), not against standing still.
     if (m_profile && m_box) o.expected = expectationsFromPoses(m_poses, *m_box, m_profile->height);
+    // A jump does not loop back to its first frame; the other cycles do.
+    o.cyclic = m_action->currentData().toString() != QLatin1String("jump");
+    if (m_profile && m_useRefs->isChecked()) o.identity = m_profile->references;
     return o;
 }
 
