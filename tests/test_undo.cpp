@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "acestudio/core/Document.h"
+#include "acestudio/core/Editor.h"
 #include "acestudio/core/UndoStack.h"
 
 using namespace acestudio;
@@ -115,4 +116,54 @@ TEST_CASE("Step and memory limits drop the oldest steps", "[undo]") {
     // A single command larger than the budget is still kept (newest wins).
     REQUIRE(mem.push(doc, std::make_unique<AddDuration>(1, 500)));
     CHECK(mem.size() == 1);
+}
+
+TEST_CASE("squash groups commands into one undo step", "[undo]") {
+    auto d = Document::create(4, 4).value();
+    Editor ed(std::move(d));
+    const LayerId base = ed.addLayer("Base").value();
+    const std::size_t mark = ed.history().mark();
+    REQUIRE(ed.resizeCanvas(8, 6, 0, 0));
+    Image img(8, 6, Rgba8{255, 0, 0, 255});
+    const LayerId l = ed.addImageLayer("Pic", img, base, 0).value();
+    const std::size_t before = ed.history().size();
+    REQUIRE(ed.history().squash(mark, "Insert Pic"));
+    CHECK(ed.history().size() == before - 1);
+    CHECK(ed.history().undoLabel() == "Insert Pic");
+    REQUIRE(ed.undo());
+    CHECK(ed.document().width() == 4);
+    CHECK(ed.document().layer(l) == nullptr);
+    CHECK(ed.document().layer(base) != nullptr);
+    REQUIRE(ed.redo());
+    CHECK(ed.document().width() == 8);
+    REQUIRE(ed.document().cel(l, 0));
+    CHECK(ed.document().cel(l, 0)->image == img);
+    // Fewer than two steps since the mark: nothing to group.
+    const std::size_t m2 = ed.history().mark();
+    REQUIRE(ed.addLayer("One"));
+    REQUIRE(ed.history().squash(m2, "x"));
+    CHECK(ed.history().undoLabel() != "x");
+    // After undoing past the mark, squashing fails.
+    const std::size_t m3 = ed.history().mark();
+    REQUIRE(ed.undo());
+    CHECK_FALSE(ed.history().squash(m3, "y"));
+}
+
+TEST_CASE("addImageLayer keeps oversized images and is one undo step", "[undo]") {
+    auto d = Document::create(4, 4).value();
+    Editor ed(std::move(d));
+    const std::size_t n = ed.history().size();
+    Image big(10, 3, Rgba8{0, 0, 255, 255});
+    const LayerId l = ed.addImageLayer("Big", big, kNoLayer, 0, -2, 1).value();
+    CHECK(ed.history().size() == n + 1);
+    REQUIRE(ed.document().cel(l, 0));
+    CHECK(ed.document().cel(l, 0)->image.width() == 10);
+    CHECK(ed.document().cel(l, 0)->x == -2);
+    CHECK(ed.document().composite(0).pixel(0, 1) == Rgba8{0, 0, 255, 255});
+    REQUIRE(ed.undo());
+    CHECK(ed.document().layer(l) == nullptr);
+    REQUIRE(ed.redo());
+    CHECK(ed.document().cel(l, 0)->image == big);
+    CHECK_FALSE(ed.addImageLayer("Bad", Image(), kNoLayer, 0));
+    CHECK_FALSE(ed.addImageLayer("Bad", big, kNoLayer, 5));
 }

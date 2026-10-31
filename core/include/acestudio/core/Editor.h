@@ -55,6 +55,9 @@ public:
 
     // ---- Masks, clipping, adjustment layers ----
     // New mask: all white, or white only inside `reveal` (from a selection).
+    // New raster layer above `above` holding `image` at (x, y) on `frame`, as
+    // one undo step. The cel may extend past the canvas (nothing is cropped).
+    Result<LayerId> addImageLayer(std::string name, Image image, LayerId above, int frame, int x = 0, int y = 0);
     Status addLayerMask(LayerId id, const Mask* reveal = nullptr);
     // Removes the mask; with applyToPixels its values are multiplied into
     // the layer's alpha first (raster layers).

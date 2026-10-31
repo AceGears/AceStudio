@@ -29,7 +29,11 @@ public:
 Q_SIGNALS:
     void zoomChanged(int zoom);
 
+protected:
+    void showEvent(QShowEvent* e) override;
+
 private:
+    bool m_stale = false;   // a frame was skipped while hidden
     void rebuildTags();
     void restart();
     void showFrame();

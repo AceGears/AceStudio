@@ -369,6 +369,7 @@ void AiPanel::runGenerate() {
         }
         pend.pixel = true;
         pend.layer = m_view->currentLayer();
+        pend.frame = m_view->currentFrame();
     } else {
         p["width"] = m_width->value() / 8 * 8;
         p["height"] = m_height->value() / 8 * 8;
@@ -485,7 +486,7 @@ void AiPanel::onJobFinished(const QString& qid) {
             ++n;
             const QString name = tr("AI %1%2").arg(pend.name).arg(i ? QStringLiteral(" %1").arg(i + 1) : QString());
             if (pend.pixel && pend.view && img->width() == pend.view->document().width() && img->height() == pend.view->document().height())
-                Q_EMIT resultAsLayer(pend.view, *img, name, pend.layer);
+                Q_EMIT resultAsLayer(pend.view, *img, name, pend.layer, pend.frame);
             else
                 Q_EMIT resultAsDocument(*img, name);
         }
@@ -495,7 +496,7 @@ void AiPanel::onJobFinished(const QString& qid) {
     }
     case Pending::Kind::RemoveBackground:
         if (auto img = load("image")) {
-            if (pend.view) Q_EMIT resultAsLayer(pend.view, *img, pend.name, pend.layer);
+            if (pend.view) Q_EMIT resultAsLayer(pend.view, *img, pend.name, pend.layer, pend.frame);
             else Q_EMIT resultAsDocument(*img, pend.name);
         }
         break;

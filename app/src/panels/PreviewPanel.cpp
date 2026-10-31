@@ -126,8 +126,17 @@ void PreviewPanel::restart() {
     if (m_playing) tick();
 }
 
+void PreviewPanel::showEvent(QShowEvent* e) {
+    QWidget::showEvent(e);
+    if (m_stale) showFrame();
+}
+
 void PreviewPanel::showFrame() {
     if (!m_view || m_player.sequence().empty()) return;
+    // Compositing a large canvas is expensive; skip it while the panel is hidden
+    // (e.g. behind another tab) and catch up when it is shown again.
+    if (!isVisible()) { m_stale = true; return; }
+    m_stale = false;
     const Document& d = m_view->document();
     const int f = std::clamp(m_player.currentFrame(), 0, d.frameCount() - 1);
     const QImage img = toQImage(d.composite(f));

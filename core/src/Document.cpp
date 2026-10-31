@@ -3,6 +3,10 @@
 
 #include <algorithm>
 #include <set>
+#include <exception>
+#include <system_error>
+#include <thread>
+#include <vector>
 
 namespace acestudio {
 
@@ -525,19 +529,61 @@ void Document::compositeChildren(LayerId parent, int frame, Image& out, int ox, 
     }
 }
 
+namespace {
+// Large areas are split into horizontal bands composited on worker threads.
+// The compositor is per-pixel and Document is read-only here, so bands are
+// independent and the result is identical to a single-threaded pass.
+constexpr long long kParallelMinPixels = 256LL * 256LL;
+constexpr int kMinBandRows = 16;
+
+int compositeThreads(const IntRect& r) {
+    if (static_cast<long long>(r.w) * r.h < kParallelMinPixels) return 1;
+    const unsigned hw = std::thread::hardware_concurrency();
+    const int cores = hw == 0 ? 1 : static_cast<int>(std::min(hw, 16u));
+    return std::max(1, std::min(cores, r.h / kMinBandRows));
+}
+} // namespace
+
 Image Document::composite(int frame) const {
     Image out(m_width, m_height);
     if (frame < 0 || frame >= frameCount()) return out;
-    compositeChildren(kNoLayer, frame, out, 0, 0, 0);
+    compositeRegion(frame, {0, 0, m_width, m_height}, out);
     return out;
 }
 
 void Document::compositeRegion(int frame, const IntRect& region, Image& canvas) const {
     const IntRect r = region.intersected({0, 0, m_width, m_height}).intersected(canvas.bounds());
     if (r.empty()) return;
-    Image part(r.w, r.h);
-    if (frame >= 0 && frame < frameCount()) compositeChildren(kNoLayer, frame, part, r.x, r.y, 0);
-    canvas.blit(part, r.x, r.y);
+    if (frame < 0 || frame >= frameCount()) return;
+    auto band = [&](int y0, int y1) {
+        Image part(r.w, y1 - y0);
+        compositeChildren(kNoLayer, frame, part, r.x, y0, 0);
+        canvas.blit(part, r.x, y0);       // bands cover disjoint rows of `canvas`
+    };
+    const int n = compositeThreads(r);
+    if (n == 1) { band(r.y, r.y + r.h); return; }
+    const auto edge = [&](int i) { return r.y + static_cast<int>(static_cast<long long>(r.h) * i / n); };
+    std::vector<std::exception_ptr> errors(static_cast<std::size_t>(n));
+    std::vector<std::thread> workers;
+    workers.reserve(static_cast<std::size_t>(n - 1));
+    int started = 1;
+    try {
+        for (; started < n; ++started)
+            workers.emplace_back([&, i = started] {
+                try { band(edge(i), edge(i + 1)); } catch (...) { errors[static_cast<std::size_t>(i)] = std::current_exception(); }
+            });
+    } catch (const std::system_error&) {
+        // Could not start another thread: this thread does the remaining bands.
+    }
+    try {
+        band(edge(0), edge(1));
+        for (int i = started; i < n; ++i) band(edge(i), edge(i + 1));
+    } catch (...) {
+        errors[0] = std::current_exception();
+    }
+    for (auto& t : workers) t.join();
+    for (const auto& e : errors)
+        if (e) std::rethrow_exception(e);
 }
 
 Image Document::renderLayer(LayerId id, int frame) const {

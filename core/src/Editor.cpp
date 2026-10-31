@@ -190,6 +190,43 @@ Result<LayerId> Editor::addLayerWith(std::string name, LayerKind kind, LayerId a
     return (*created)->id;
 }
 
+Result<LayerId> Editor::addImageLayer(std::string name, Image image, LayerId above, int frame, int x, int y) {
+    if (image.isNull()) return Error{ErrorCode::InvalidArgument, "The image is empty"};
+    if (frame < 0 || frame >= m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
+    if (name.size() > 256) return Error{ErrorCode::InvalidArgument, "Layer name is too long"};
+    LayerId parent = kNoLayer;
+    std::size_t index = m_doc.layers().size();
+    if (above != kNoLayer) {
+        const Layer* a = m_doc.layer(above);
+        if (!a) return Error{ErrorCode::NotFound, "Reference layer not found"};
+        parent = a->parent;
+        index = *m_doc.layerIndex(above) + 1;
+    }
+    auto created = std::make_shared<std::optional<Layer>>();
+    auto pixels = std::make_shared<const Image>(std::move(image));
+    const std::size_t bytes = pixels->byteSize();
+    auto cmd = std::make_unique<FnCommand>(
+        "Insert " + name,
+        [=, name = std::move(name)](Document& d) -> Status {
+            LayerId id = kNoLayer;
+            if (*created) {
+                if (auto st = d.insertLayerAt(**created, index); !st) return st;
+                id = (*created)->id;
+            } else {
+                auto r = d.addLayer(name, LayerKind::Raster, parent);
+                if (!r) return r.error();
+                id = r.value();
+                if (auto st = d.moveLayer(id, index); !st) { (void)d.removeLayer(id); return st; }
+                *created = *d.layer(id);
+            }
+            if (auto st = d.setCel(id, frame, Cel{*pixels, x, y}); !st) { (void)d.removeLayer(id); return st; }
+            return {};
+        },
+        [created](Document& d) { (void)d.removeLayer((*created)->id); }, bytes);
+    if (auto st = apply(std::move(cmd)); !st) return st.error();
+    return (*created)->id;
+}
+
 Status Editor::removeLayer(LayerId id) {
     if (!m_doc.layer(id)) return Error{ErrorCode::NotFound, "No such layer"};
     auto snap = std::make_shared<LayerSnapshot>(LayerSnapshot::capture(m_doc, id));

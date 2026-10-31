@@ -80,7 +80,8 @@ private:
 public:
     // Used by AI Studio for results.
     DocumentView* openImageAsDocument(const Image& img, const QString& name);
-    bool insertImageAsLayer(DocumentView* view, const Image& img, const QString& name, std::optional<LayerId> above = {});
+    bool insertImageAsLayer(DocumentView* view, const Image& img, const QString& name, std::optional<LayerId> above = {},
+                            int frame = -1);
 private:
     void exportPng();
     void exportAnimation(int kind);   // ExportKind

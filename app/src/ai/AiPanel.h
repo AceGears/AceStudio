@@ -42,7 +42,9 @@ public Q_SLOTS:
     void focusTab(int index);   // 0 generate, 1 remove background, 2 upscale
 
 Q_SIGNALS:
-    void resultAsLayer(DocumentView* view, const acestudio::Image& image, const QString& name, acestudio::LayerId above);
+    // `frame` is the frame the job was started from (the result belongs there
+    // even if the playhead moved while it ran).
+    void resultAsLayer(DocumentView* view, const acestudio::Image& image, const QString& name, acestudio::LayerId above, int frame);
     void resultAsDocument(const acestudio::Image& image, const QString& name);
     void statusMessage(const QString& text);
 

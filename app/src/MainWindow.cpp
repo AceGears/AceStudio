@@ -192,12 +192,13 @@ void MainWindow::buildDocks() {
     m_aiPanel = new AiPanel(*m_ai, m_ctx, this);
     connect(m_aiPanel, &AiPanel::statusMessage, this, [this](const QString& t) { statusBar()->showMessage(t, 6000); });
     connect(m_aiPanel, &AiPanel::resultAsDocument, this, [this](const Image& img, const QString& name) { openImageAsDocument(img, name); });
-    connect(m_aiPanel, &AiPanel::resultAsLayer, this, [this](DocumentView* v, const Image& img, const QString& name, LayerId above) {
+    connect(m_aiPanel, &AiPanel::resultAsLayer, this, [this](DocumentView* v, const Image& img, const QString& name, LayerId above, int frame) {
         // The view may have been closed while the job ran.
         for (int i = 0; i < m_tabs->count(); ++i)
             if (m_tabs->widget(i) == v) {
                 m_tabs->setCurrentIndex(i);
-                insertImageAsLayer(v, img, name, v->document().layer(above) ? std::optional<LayerId>(above) : std::nullopt);
+                insertImageAsLayer(v, img, name, v->document().layer(above) ? std::optional<LayerId>(above) : std::nullopt,
+                                   frame < v->document().frameCount() ? frame : -1);
                 return;
             }
         openImageAsDocument(img, name);
@@ -957,19 +958,41 @@ DocumentView* MainWindow::openImageAsDocument(const Image& img, const QString& n
     return view;
 }
 
-bool MainWindow::insertImageAsLayer(DocumentView* v, const Image& src, const QString& name, std::optional<LayerId> above) {
-    // Pasted at the top-left; images larger than the canvas are clipped.
-    auto layerId = v->editor().addLayer(name.toStdString(), LayerKind::Raster, above.value_or(v->currentLayer()));
-    if (!layerId) { report(layerId.error()); return false; }
-    auto session = PaintSession::begin(v->editor(), layerId.value(), v->currentFrame(), "Insert " + name.toStdString());
-    if (!session) { report(session.error()); return false; }
-    for (int y = 0; y < std::min(src.height(), v->document().height()); ++y)
-        for (int x = 0; x < std::min(src.width(), v->document().width()); ++x)
-            if (src.pixel(x, y).a) session.value()->writePixel(x, y, src.pixel(x, y));
-    session.value()->commit();
+bool MainWindow::insertImageAsLayer(DocumentView* v, const Image& src, const QString& name, std::optional<LayerId> above, int frame) {
+    // Placed at the top-left as one undo step. A larger image can grow the
+    // canvas (also part of that step) or keep its full pixels past the edges.
+    Editor& ed = v->editor();
+    const int f = frame >= 0 ? frame : v->currentFrame();
+    const bool larger = src.width() > v->document().width() || src.height() > v->document().height();
+    bool expand = false;
+    if (larger) {
+        QMessageBox box(QMessageBox::Question, tr("Insert Image"),
+                        tr("The image (%1×%2) is larger than the canvas (%3×%4).")
+                            .arg(src.width()).arg(src.height()).arg(v->document().width()).arg(v->document().height()),
+                        QMessageBox::NoButton, this);
+        box.setInformativeText(tr("Expand the canvas to fit it, or keep the canvas size? Pixels outside the canvas are kept "
+                                  "on the layer and reappear if the canvas grows later."));
+        QPushButton* grow = box.addButton(tr("Expand Canvas"), QMessageBox::AcceptRole);
+        box.addButton(tr("Keep Canvas Size"), QMessageBox::RejectRole);
+        QPushButton* cancel = box.addButton(QMessageBox::Cancel);
+        box.setDefaultButton(grow);
+        box.exec();
+        if (box.clickedButton() == cancel) return false;
+        expand = box.clickedButton() == grow;
+    }
+    const std::size_t mark = ed.history().mark();
+    if (expand && !report(ed.resizeCanvas(std::max(src.width(), v->document().width()),
+                                          std::max(src.height(), v->document().height()), 0, 0)))
+        return false;
+    auto layerId = ed.addImageLayer(name.toStdString(), src, above.value_or(v->currentLayer()), f);
+    if (!layerId) {
+        if (expand) (void)ed.undo();
+        report(layerId.error());
+        return false;
+    }
+    if (expand) (void)ed.history().squash(mark, "Insert " + name.toStdString());
     v->setCurrentLayer(layerId.value());
-    if (src.width() > v->document().width() || src.height() > v->document().height())
-        statusBar()->showMessage(tr("Image was larger than the canvas and has been cropped."), 5000);
+    updateActions();   // the undo label changes when steps are grouped
     return true;
 }
 

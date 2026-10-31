@@ -204,3 +204,45 @@ TEST_CASE("Tile mode names", "[layers][tile]") {
     CHECK_FALSE(wrapsY(TileMode::Horizontal));
     CHECK(adjustmentTypeFromString("posterize") == AdjustmentType::Posterize);
 }
+
+TEST_CASE("Banded multi-threaded compositing matches row-by-row compositing", "[layers][composite]") {
+    // 300x300 is above the threading threshold; 1-row regions always run on one thread.
+    Document d = makeDoc(300, 300);
+    std::uint32_t seed = 7;
+    auto rnd = [&] { seed = seed * 1664525u + 1013904223u; return static_cast<std::uint8_t>(seed >> 24); };
+    for (int i = 0; i < 6; ++i) {
+        const LayerId id = d.addLayer("L").value();
+        Image img(300, 300);
+        for (int y = 0; y < 300; ++y)
+            for (int x = 0; x < 300; ++x)
+                if (rnd() % 3 == 0) img.setPixel(x, y, {rnd(), rnd(), rnd(), static_cast<std::uint8_t>(i % 2 ? 255 : 120)});
+        REQUIRE(d.setCel(id, 0, Cel{img, 0, 0}));
+        Layer* l = d.layer(id);
+        if (i == 2) l->blend = BlendMode::Multiply;
+        if (i == 3) l->clipped = true;
+        if (i == 4) l->opacity = 140;
+        if (i == 5) {
+            l->hasMask = true;
+            Image m(300, 300);
+            for (int y = 0; y < 300; ++y)
+                for (int x = 0; x < 300; ++x) { const std::uint8_t v = rnd(); m.setPixel(x, y, {v, v, v, 255}); }
+            REQUIRE(d.setMaskCel(id, 0, Cel{m, 0, 0}));
+        }
+    }
+    const LayerId adj = d.addLayer("Adjust", LayerKind::Adjustment).value();
+    d.layer(adj)->adjustment = Adjustment{AdjustmentType::Invert, 0, 0, 0};
+    d.layer(adj)->opacity = 100;
+
+    const Image full = d.composite(0);
+    Image rows(300, 300);
+    for (int y = 0; y < 300; ++y) d.compositeRegion(0, {0, y, 300, 1}, rows);
+    CHECK(full == rows);
+
+    Image region(300, 300);
+    d.compositeRegion(0, {13, 7, 280, 290}, region);
+    bool same = true;
+    for (int y = 7; y < 297; ++y)
+        for (int x = 13; x < 293; ++x) same = same && region.pixel(x, y) == full.pixel(x, y);
+    CHECK(same);
+    CHECK(region.pixel(5, 5).a == 0);   // outside the region stays untouched
+}

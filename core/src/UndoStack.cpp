@@ -3,6 +3,35 @@
 
 namespace acestudio {
 
+namespace {
+class CompositeCommand final : public Command {
+public:
+    CompositeCommand(std::string label, std::vector<std::unique_ptr<Command>> parts)
+        : m_label(std::move(label)), m_parts(std::move(parts)) {}
+    std::string label() const override { return m_label; }
+    Status redo(Document& doc) override {
+        for (std::size_t i = 0; i < m_parts.size(); ++i)
+            if (auto st = m_parts[i]->redo(doc); !st) {
+                while (i-- > 0) m_parts[i]->undo(doc);
+                return st;
+            }
+        return {};
+    }
+    void undo(Document& doc) override {
+        for (std::size_t i = m_parts.size(); i-- > 0;) m_parts[i]->undo(doc);
+    }
+    std::size_t memoryBytes() const override {
+        std::size_t b = 0;
+        for (const auto& p : m_parts) b += p->memoryBytes();
+        return b;
+    }
+
+private:
+    std::string m_label;
+    std::vector<std::unique_ptr<Command>> m_parts;
+};
+} // namespace
+
 UndoStack::UndoStack(std::size_t memoryBudgetBytes, std::size_t maxSteps)
     : m_budget(memoryBudgetBytes), m_maxSteps(maxSteps == 0 ? 1 : maxSteps) {}
 
@@ -58,6 +87,7 @@ void UndoStack::trim() {
     m_commands.erase(m_commands.begin(), m_commands.begin() + static_cast<std::ptrdiff_t>(drop));
     m_bytes = bytes;
     m_index -= drop;
+    m_dropped += drop;
     if (m_cleanValid) {
         if (m_clean < drop) m_cleanValid = false;
         else m_clean -= drop;
@@ -76,6 +106,25 @@ Status UndoStack::redo(Document& doc) {
     if (!canRedo()) return Error{ErrorCode::InvalidArgument, "Nothing to redo"};
     if (auto st = m_commands[m_index]->redo(doc); !st) return st;
     ++m_index;
+    notify();
+    return {};
+}
+
+Status UndoStack::squash(std::size_t mark, std::string label) {
+    if (mark > m_dropped + m_index) return Error{ErrorCode::InvalidArgument, "Commands since the mark were undone"};
+    const std::size_t from = mark < m_dropped ? 0 : mark - m_dropped;   // older steps may have been trimmed
+    const std::size_t end = m_index;
+    if (end - from < 2) return {};
+    if (m_commands.size() != end) return Error{ErrorCode::InvalidArgument, "Cannot group commands with a redo branch"};
+    std::vector<std::unique_ptr<Command>> parts;
+    for (std::size_t i = from; i < end; ++i) parts.push_back(std::move(m_commands[i]));
+    m_commands.erase(m_commands.begin() + static_cast<std::ptrdiff_t>(from), m_commands.end());
+    m_commands.push_back(std::make_unique<CompositeCommand>(std::move(label), std::move(parts)));
+    m_index = m_commands.size();
+    if (m_cleanValid) {
+        if (m_clean == end) m_clean = m_index;
+        else if (m_clean > from) m_cleanValid = false;   // saved state was inside the group
+    }
     notify();
     return {};
 }

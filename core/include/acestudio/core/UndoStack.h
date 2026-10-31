@@ -48,6 +48,12 @@ public:
     std::string undoLabel() const;
     std::string redoLabel() const;
 
+    // Combines every command recorded since `mark()` into one undo step
+    // (e.g. "expand canvas + insert layer"). A no-op if fewer than two
+    // commands were recorded; fails if commands since the mark were undone.
+    std::size_t mark() const noexcept { return m_dropped + m_index; }
+    Status squash(std::size_t mark, std::string label);
+
     std::size_t size() const noexcept { return m_commands.size(); }
     std::size_t index() const noexcept { return m_index; }
     std::size_t memoryBytes() const noexcept { return m_bytes; }
@@ -66,6 +72,7 @@ private:
 
     std::vector<std::unique_ptr<Command>> m_commands;
     std::size_t m_index = 0;            // commands [0, m_index) are applied
+    std::size_t m_dropped = 0;          // commands trimmed from the front so far
     std::size_t m_clean = 0;
     bool m_cleanValid = true;
     std::size_t m_bytes = 0;
