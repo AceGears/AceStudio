@@ -67,7 +67,7 @@ SHA-256:
 | Disk: AI job folders | ❌ 47 kept forever; **fixed**: folders older than 7 days are pruned at start-up |
 | 0.6.0 build re-test: cancel an 8-frame run during model loading | ✅ all 8 frames and queue rows show Cancelled, dialog idle; worker restarted after the 10 s grace (loading cannot be interrupted). ❌ Status said "Some frames failed"; **fixed** wording |
 | 0.6.0: 4-frame idle committed into a document with a generated image on frame 1 | ✅ appended as frames 2–5 with tag `idle (2–5)`; 98% consistency; 52 s per warm frame |
-| 0.6.0: live preview in the AI panel | ✅ visible while generating, hidden when done. ❌ Its fixed 128 px raised the dock's minimum height and pushed the status bar off a 1080p screen; **fixed**: the preview scales to the free space |
+| 0.6.0: live preview in the AI panel | ✅ visible while generating, hidden when done. ❌ Its fixed 128 px raised the dock's minimum height and pushed the status bar off a 1080p screen; **fixed** and re-verified in a 940×770 window: the preview shrinks to the free space (~56 px), status bar and bottom tabs stay visible |
 
 ### 2026-10-31 — Phases 1–4 completion, version 0.5.1
 
