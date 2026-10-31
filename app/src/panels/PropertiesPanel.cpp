@@ -3,6 +3,7 @@
 #include "QtBridge.h"
 
 #include <QDir>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QLabel>
 
@@ -31,6 +32,7 @@ void PropertiesPanel::rebuild() {
         auto* value = new QLabel(v);
         value->setTextInteractionFlags(Qt::TextSelectableByMouse);
         value->setWordWrap(true);
+        value->setMinimumWidth(0);
         m_form->addRow(k, value);
     };
     if (!m_view) {
@@ -48,7 +50,15 @@ void PropertiesPanel::rebuild() {
     row(tr("Frames"), tr("%1 (%2 ms total)").arg(d.frameCount()).arg(totalMs));
     row(tr("Layers"), QString::number(d.layers().size()));
     row(tr("Tags"), QString::number(d.tags().size()));
-    row(tr("File"), m_view->filePath().isEmpty() ? tr("Not saved yet") : QDir::toNativeSeparators(m_view->filePath()));
+    if (m_view->filePath().isEmpty()) {
+        row(tr("File"), tr("Not saved yet"));
+    } else {
+        // Paths have no spaces to wrap at: show the name, full path on hover.
+        const QFileInfo fi(m_view->filePath());
+        row(tr("File"), fi.fileName());
+        if (auto* label = qobject_cast<QLabel*>(m_form->itemAt(m_form->rowCount() - 1, QFormLayout::FieldRole)->widget()))
+            label->setToolTip(QDir::toNativeSeparators(fi.absoluteFilePath()));
+    }
     row(tr("Status"), m_view->isModified() ? tr("Unsaved changes") : tr("Saved"));
 }
 

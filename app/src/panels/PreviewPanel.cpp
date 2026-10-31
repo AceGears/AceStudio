@@ -57,7 +57,7 @@ PreviewPanel::PreviewPanel(QWidget* parent) : QWidget(parent) {
     auto* scroll = new QScrollArea(this);
     scroll->setWidget(m_image);
     scroll->setWidgetResizable(true);
-    scroll->setMinimumSize(120, 120);
+    scroll->setMinimumSize(96, 64);
     m_status = new QLabel(this);
 
     auto* layout = new QVBoxLayout(this);

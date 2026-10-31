@@ -180,17 +180,29 @@ bool WorkerSupervisor::runUntil(Pred pred, std::chrono::milliseconds timeout, st
 
 struct PythonInfo {
     std::filesystem::path executable;
-    std::vector<std::string> prefixArgs;   // e.g. {"-3"} for the Windows py launcher
+    std::vector<std::string> prefixArgs;   // e.g. {"-3.13"} for the Windows py launcher
     std::string version;                   // "3.12.4"
+    int minor = 0;                         // 12 for 3.12
+    // Newer than the AI packages support (see kNewestAiPythonMinor): the
+    // worker runs, but some runtime profiles cannot be installed.
+    bool newerThanAiPackages() const noexcept;
 };
+
+// Newest Python minor version every pinned AI package publishes Windows
+// wheels for (checked 2026-10-30: onnxruntime 1.31.1 and
+// onnxruntime-directml 1.24.4 stop at 3.14; torch 2.15.0 has 3.15).
+inline constexpr int kNewestAiPythonMinor = 14;
 
 // Runs `python -c` to read the version; requires >= 3.10.
 Result<PythonInfo> probePython(const std::filesystem::path& exe, const std::vector<std::string>& prefixArgs = {});
-// Configured path first, then (Windows) py -3, python; (POSIX) python3, python.
+// Configured path first. Otherwise prefers the newest version the AI
+// packages support (3.14 down to 3.10: "py -3.14" ... on Windows,
+// python3.14 ... on POSIX), then any Python 3.10+ (py -3, python, python3).
 Result<PythonInfo> findPython(const std::filesystem::path& configured = {});
 // The interpreter inside a virtual environment folder.
 std::filesystem::path venvPython(const std::filesystem::path& venvDir);
-// Creates (or reuses) a virtual environment. Blocking; up to a few minutes.
+// Creates (or reuses) a virtual environment; one made from a different
+// Python minor version is rebuilt. Blocking; up to a few minutes.
 Result<std::filesystem::path> ensureVenv(const PythonInfo& base, const std::filesystem::path& venvDir);
 // ProcessSpec that runs the worker package found in `workerDir`.
 ProcessSpec workerProcess(const std::filesystem::path& python, const std::filesystem::path& workerDir, bool diagnostics = false);

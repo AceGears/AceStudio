@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 
 from ..jobs import Cancelled, JobError
 
@@ -34,19 +35,30 @@ def available():
 
 
 def _pip(ctx, args, label):
+    # --only-binary: never compile from source (no compiler on most user
+    # PCs); a missing wheel fails fast with a clear message instead.
     cmd = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-input",
-           "--progress-bar", "off"] + args
+           "--progress-bar", "off", "--only-binary", ":all:"] + args
     ctx.log("Running: " + " ".join(cmd))
     env = dict(os.environ, PYTHONUNBUFFERED="1")
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
                             text=True, encoding="utf-8", errors="replace")
     tail = []
     stop = threading.Event()
+    started = time.monotonic()
+    last = {"msg": "starting pip"}
 
     def watch():
+        # Cancels pip on request, and reports elapsed time so a slow step
+        # (a large download, or a package building from source) is visible.
+        beat = 0.0
         while not stop.wait(0.2):
             if ctx.cancelled() and proc.poll() is None:
                 proc.terminate()
+            elapsed = time.monotonic() - started
+            if elapsed - beat >= 5:
+                beat = elapsed
+                ctx.progress(None, "%s: %s (%d s)" % (label, last["msg"][:100], elapsed), force=True)
 
     watcher = threading.Thread(target=watch, daemon=True)
     watcher.start()
@@ -56,9 +68,11 @@ def _pip(ctx, args, label):
             if not line:
                 continue
             tail = (tail + [line])[-30:]
-            m = re.match(r"(Collecting|Downloading|Installing collected packages|Successfully installed)\s*(.*)", line)
+            ctx.log("pip: " + line[:500])   # everything pip says reaches the app's log
+            m = re.match(r"(Collecting|Downloading|Building|Installing collected packages|Successfully installed|ERROR)\s*(.*)", line)
             if m:
-                ctx.progress(None, "%s: %s %s" % (label, m.group(1), m.group(2)[:120]), force=True)
+                last["msg"] = "%s %s" % (m.group(1), m.group(2))
+                ctx.progress(None, "%s: %s" % (label, last["msg"][:120]), force=True)
         code = proc.wait()
     finally:
         stop.set()

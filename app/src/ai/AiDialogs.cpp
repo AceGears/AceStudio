@@ -119,7 +119,16 @@ void AiSetupDialog::detectPython() {
     const QString configured = m_pythonPath->text().trimmed();
     auto py = findPython(configured.isEmpty() ? std::filesystem::path() : toPath(configured));
     if (py) {
-        m_python->setText(tr("Found Python %1 at %2").arg(qs(py.value().version), QDir::toNativeSeparators(fromPath(py.value().executable))));
+        QString text = tr("Found Python %1 at %2").arg(qs(py.value().version), QDir::toNativeSeparators(fromPath(py.value().executable)));
+        if (py.value().newerThanAiPackages())
+            text += tr("<br><b>This Python is newer than the AI packages support</b> (ONNX Runtime has no build for it "
+                       "yet, so background removal cannot be installed). Install Python 3.%1 from "
+                       "<a href=\"https://www.python.org/downloads/\">python.org</a>; AceStudio picks it automatically.")
+                        .arg(kNewestAiPythonMinor);
+        m_python->setText(text);
+        m_python->setOpenExternalLinks(true);
+        m_onnx->setEnabled(!py.value().newerThanAiPackages());
+        if (py.value().newerThanAiPackages()) m_onnx->setChecked(false);
         m_install->setEnabled(true);
     } else {
         m_python->setText(tr("<b>No Python 3.10+ found.</b> Install Python from "

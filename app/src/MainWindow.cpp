@@ -29,6 +29,8 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
+#include <QGuiApplication>
+#include <QScreen>
 #include <QCloseEvent>
 #include <QDesktopServices>
 #include <QDir>
@@ -60,11 +62,21 @@ QColor settingColor(const Settings& s, const std::string& key, const char* fallb
 }
 } // namespace
 
+namespace {
+// Bump when the default dock arrangement changes, so saved layouts from older
+// versions are not restored over it.
+constexpr int kLayoutVersion = 2;
+} // namespace
+
 MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), m_ctx(ctx) {
     setWindowTitle(QStringLiteral("AceStudio"));
     setAcceptDrops(true);
     setDockNestingEnabled(true);
-    resize(1440, 900);
+    // Default size, but never larger than the screen (minus the taskbar).
+    QSize size(1440, 900);
+    if (QScreen* scr = QGuiApplication::primaryScreen())
+        size = size.boundedTo(scr->availableGeometry().size() * 0.9);
+    resize(size);
 
     m_tabs = new QTabWidget(this);
     m_tabs->setDocumentMode(true);
@@ -107,7 +119,11 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
     m_shortcuts.apply(m_ctx.settings().get("keyboard.shortcuts"));
     for (const QString& c : m_shortcuts.conflicts()) ACE_LOG_WARN("shortcuts", "Conflicting shortcut " + c.toStdString());
 
-    m_defaultState = saveState();
+    m_defaultState = saveState(kLayoutVersion);
+    if (qEnvironmentVariableIsSet("ACESTUDIO_DEBUG_LAYOUT"))
+        for (QDockWidget* d : findChildren<QDockWidget*>())
+            ACE_LOG_INFO("layout", d->objectName().toStdString() + " min " + std::to_string(d->minimumSizeHint().width()) + "x" +
+                                       std::to_string(d->minimumSizeHint().height()));
     restoreWindowState();
     onCurrentTabChanged();
 }
@@ -199,7 +215,11 @@ void MainWindow::buildDocks() {
     m_aiDock = makeDock(tr("AI Studio"), QStringLiteral("dock.ai"), m_aiPanel, Qt::RightDockWidgetArea);
     tabifyDockWidget(m_layersDock, m_aiDock);
     m_layersDock->raise();
+    // Two tab groups on the right keep the column's minimum height small
+    // enough for 1366x768-class screens (four stacked docks did not fit a
+    // 1456x819 logical desktop: found on a real Windows PC).
     tabifyDockWidget(m_paletteDock, m_previewDock);
+    tabifyDockWidget(m_paletteDock, m_propsDock);
     m_paletteDock->raise();
     tabifyDockWidget(m_timelineDock, m_logDock);
     m_timelineDock->raise();
@@ -474,12 +494,13 @@ void MainWindow::restoreWindowState() {
     const auto geom = QByteArray::fromBase64(QByteArray::fromStdString(m_ctx.settings().get<std::string>("window.geometry")));
     const auto state = QByteArray::fromBase64(QByteArray::fromStdString(m_ctx.settings().get<std::string>("window.state")));
     if (!geom.isEmpty()) restoreGeometry(geom);
-    if (!state.isEmpty() && !restoreState(state)) ACE_LOG_WARN("ui", "Saved window layout was not usable; using default");
+    if (!state.isEmpty() && !restoreState(state, kLayoutVersion))
+        ACE_LOG_INFO("ui", "Saved window layout is from an older version or not usable; using the default layout");
 }
 
 void MainWindow::saveWindowState() {
     (void)m_ctx.settings().set("window.geometry", saveGeometry().toBase64().toStdString());
-    (void)m_ctx.settings().set("window.state", saveState().toBase64().toStdString());
+    (void)m_ctx.settings().set("window.state", saveState(kLayoutVersion).toBase64().toStdString());
 }
 
 void MainWindow::resetLayout() {
@@ -487,7 +508,7 @@ void MainWindow::resetLayout() {
         d->setFloating(false);
         d->show();
     }
-    restoreState(m_defaultState);
+    restoreState(m_defaultState, kLayoutVersion);
 }
 
 // ------------------------------------------------------------------ documents

@@ -77,14 +77,14 @@ AiPanel::AiPanel(AiService& ai, AppContext& ctx, QWidget* parent) : QWidget(pare
     m_tabs->addTab(scrolled(buildGenerateTab()), tr("Generate"));
     m_tabs->addTab(scrolled(buildRemoveTab()), tr("Remove BG"));
     m_tabs->addTab(scrolled(buildUpscaleTab()), tr("Upscale"));
-    m_tabs->setMinimumHeight(160);
+    m_tabs->setMinimumHeight(80);   // pages scroll; keep the dock short enough for small screens
 
     m_queue = new QTreeWidget(this);
     m_queue->setColumnCount(2);
     m_queue->setHeaderLabels({tr("Job"), tr("Progress")});
     m_queue->setRootIsDecorated(false);
     m_queue->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_queue->setMinimumHeight(70);
+    m_queue->setMinimumHeight(40);
     m_queue->setMaximumHeight(180);
     m_queue->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_queue, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {

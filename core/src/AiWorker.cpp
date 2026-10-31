@@ -498,7 +498,7 @@ Result<PythonInfo> probePython(const fs::path& exe, const std::vector<std::strin
     if (!code) return Error{ErrorCode::IoError, exe.string() + " did not respond"};
     auto lines = p.value()->takeLines(Subprocess::Stream::Stdout);
     if (*code != 0 || lines.empty()) return Error{ErrorCode::IoError, exe.string() + " is not a working Python"};
-    PythonInfo info{exe, prefixArgs, lines.back()};
+    PythonInfo info{exe, prefixArgs, lines.back(), 0};
     // "3.12.4" -> major 3, minor 12
     int major = 0, minor = 0;
     const char* b = info.version.data();
@@ -508,6 +508,7 @@ Result<PythonInfo> probePython(const fs::path& exe, const std::vector<std::strin
     if (parsed) parsed = std::from_chars(r1.ptr + 1, e, minor).ec == std::errc();
     if (!parsed || major != 3 || minor < 10)
         return Error{ErrorCode::UnsupportedVersion, "Python " + info.version + " found; AceStudio needs Python 3.10 or newer"};
+    info.minor = minor;
     return info;
 }
 
@@ -521,6 +522,20 @@ Result<PythonInfo> findPython(const fs::path& configured) {
     };
     if (!configured.empty())
         if (auto r = attempt(configured, {})) return *r;
+    // First choice: a version the AI packages support, newest first.
+    for (int minor = kNewestAiPythonMinor; minor >= 10; --minor) {
+#ifdef _WIN32
+        if (auto py = findExecutable("py")) {
+            const std::string flag = "-3." + std::to_string(minor);
+            auto r = probePython(*py, {flag});   // silently skip versions that are not installed
+            if (r) return r.value();
+        }
+#else
+        if (auto exe = findExecutable("python3." + std::to_string(minor)))
+            if (auto r = probePython(*exe, {})) return r.value();
+#endif
+    }
+    // Otherwise any Python 3.10+, possibly newer than the AI packages support.
 #ifdef _WIN32
     if (auto py = findExecutable("py"))
         if (auto r = attempt(*py, {"-3"})) return *r;
@@ -533,6 +548,8 @@ Result<PythonInfo> findPython(const fs::path& configured) {
     return Error{ErrorCode::NotFound, "No suitable Python (3.10+) was found." + tried};
 }
 
+bool PythonInfo::newerThanAiPackages() const noexcept { return minor > kNewestAiPythonMinor; }
+
 fs::path venvPython(const fs::path& venvDir) {
 #ifdef _WIN32
     return venvDir / "Scripts" / "python.exe";
@@ -544,7 +561,16 @@ fs::path venvPython(const fs::path& venvDir) {
 Result<fs::path> ensureVenv(const PythonInfo& base, const fs::path& venvDir) {
     const fs::path py = venvPython(venvDir);
     std::error_code ec;
-    if (fs::exists(py, ec) && probePython(py)) return py;
+    if (fs::exists(py, ec)) {
+        auto existing = probePython(py);
+        // Reuse it only if it was made from the same Python minor version;
+        // otherwise (e.g. it was built on a Python too new for the AI
+        // packages) rebuild it. It is AceStudio's own folder: no user data.
+        if (existing && existing.value().minor == base.minor) return py;
+        ACE_LOG_INFO("ai", "Rebuilding the AI Python environment for Python " + base.version);
+        fs::remove_all(venvDir, ec);
+        if (ec) return Error{ErrorCode::IoError, "Cannot replace " + venvDir.string() + ": " + ec.message()};
+    }
     ProcessSpec spec;
     spec.program = base.executable;
     spec.args = base.prefixArgs;
