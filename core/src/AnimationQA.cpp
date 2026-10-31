@@ -85,6 +85,54 @@ Image removeBorderBackground(const Image& src, int tolerance) {
     return out;
 }
 
+Image removeDetachedBelow(const Image& src) {
+    const int w = src.width(), h = src.height();
+    std::vector<int> label(static_cast<std::size_t>(w) * static_cast<std::size_t>(h), -1);
+    struct Comp { int top, bottom; long n; };
+    std::vector<Comp> comps;
+    std::deque<std::pair<int, int>> q;
+    auto at = [&](int x, int y) -> int& { return label[static_cast<std::size_t>(y) * static_cast<std::size_t>(w) + static_cast<std::size_t>(x)]; };
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            if (src.pixel(x, y).a == 0 || at(x, y) >= 0) continue;
+            const int id = static_cast<int>(comps.size());
+            comps.push_back({y, y, 0});
+            at(x, y) = id;
+            q.emplace_back(x, y);
+            while (!q.empty()) {
+                const auto [cx, cy] = q.front();
+                q.pop_front();
+                Comp& c = comps[static_cast<std::size_t>(id)];
+                c.top = std::min(c.top, cy);
+                c.bottom = std::max(c.bottom, cy);
+                ++c.n;
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int nx = cx + dx, ny = cy + dy;
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h || src.pixel(nx, ny).a == 0 || at(nx, ny) >= 0) continue;
+                        at(nx, ny) = id;
+                        q.emplace_back(nx, ny);
+                    }
+            }
+        }
+    if (comps.size() < 2) return src;
+    std::size_t main = 0;
+    for (std::size_t i = 1; i < comps.size(); ++i) if (comps[i].n > comps[main].n) main = i;
+    // Parts entirely below the figure (a floor line or shadow under a jump)
+    // are not part of the character; a detached sword beside it is kept.
+    Image out = src;
+    bool changed = false;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const int id = at(x, y);
+            if (id >= 0 && static_cast<std::size_t>(id) != main && comps[static_cast<std::size_t>(id)].top > comps[main].bottom) {
+                out.setPixel(x, y, Rgba8::transparent());
+                changed = true;
+            }
+        }
+    return changed ? out : src;
+}
+
 Mask silhouette(const Image& img) {
     Mask m(img.width(), img.height());
     for (int y = 0; y < img.height(); ++y)
@@ -250,6 +298,39 @@ std::vector<FrameExpectation> expectationsFromPoses(const std::vector<Pose>& pos
         out[i].groundOffset = static_cast<int>(std::lround((b - b0) * pxPerUnit));
         out[i].heightRatio = h0 > 1e-6 ? (b - t) / h0 : 1.0;
     }
+    // Thick skeletons in sprite space (limbs as capsules about a fifth of the
+    // figure's width), to know how much consecutive poses overlap.
+    const int side = std::max(16, spriteHeight);
+    const double bw = box[2] - box[0], bh = box[3] - box[1];
+    const double radius = std::max(1.5, 0.05 * h0 * side / std::max(1e-6, bh));
+    auto body = [&](const Pose& p) {
+        Mask m(side, side);
+        auto map = [&](const Keypoint& k) { return std::pair<double, double>{(k.x - box[0]) / bw * side, (k.y - box[1]) / bh * side}; };
+        for (const auto& [a, bj] : poseLimbs()) {
+            const Keypoint &ka = p[a], &kb = p[bj];
+            if (!ka.visible || !kb.visible) continue;
+            const auto [x1, y1] = map(ka);
+            const auto [x2, y2] = map(kb);
+            const int minx = static_cast<int>(std::floor(std::min(x1, x2) - radius)), maxx = static_cast<int>(std::ceil(std::max(x1, x2) + radius));
+            const int miny = static_cast<int>(std::floor(std::min(y1, y2) - radius)), maxy = static_cast<int>(std::ceil(std::max(y1, y2) + radius));
+            const double dx = x2 - x1, dy = y2 - y1, len2 = dx * dx + dy * dy;
+            for (int y = std::max(0, miny); y <= std::min(side - 1, maxy); ++y)
+                for (int x = std::max(0, minx); x <= std::min(side - 1, maxx); ++x) {
+                    const double t = len2 > 0 ? std::clamp(((x + 0.5 - x1) * dx + (y + 0.5 - y1) * dy) / len2, 0.0, 1.0) : 0.0;
+                    const double ex = x1 + t * dx - (x + 0.5), ey = y1 + t * dy - (y + 0.5);
+                    if (ex * ex + ey * ey <= radius * radius) m.set(x, y, true);
+                }
+        }
+        return m;
+    };
+    std::vector<Mask> bodies;
+    bodies.reserve(poses.size());
+    for (const Pose& p : poses) bodies.push_back(body(p));
+    for (std::size_t i = 0; i < poses.size(); ++i) {
+        if (i > 0) out[i].poseOverlapPrev = silhouetteIoU(bodies[i], bodies[i - 1]);
+        if (i + 1 < poses.size()) out[i].poseOverlapNext = silhouetteIoU(bodies[i], bodies[i + 1]);
+        else if (poses.size() > 2) out[i].poseOverlapNext = silhouetteIoU(bodies[i], bodies[0]);   // looping cycles
+    }
     return out;
 }
 
@@ -306,19 +387,27 @@ QAReport evaluateFrames(const std::vector<Image>& frames, const Image& reference
             q.iouPrevious = 0;
             continue;
         }
+        bool shapeOk = true;
         if (i == 0) {
             q.iouPrevious = 1.0;   // the reference itself
         } else {
+            // Fine if the frame matches either neighbour as well as their
+            // poses allow (a big motion overlaps less).
             double best = 0;
-            auto consider = [&](std::size_t j) {
-                if (j != i && !r.frames[j].bounds.empty()) best = std::max(best, silhouetteIoU(shapes[i], shapes[j]));
+            shapeOk = false;
+            auto consider = [&](std::size_t j, double poseOverlap) {
+                if (j == i || r.frames[j].bounds.empty()) return;
+                const double iou = silhouetteIoU(shapes[i], shapes[j]);
+                best = std::max(best, iou);
+                const double need = std::min(o.minIoU, o.poseOverlapFactor * poseOverlap);
+                if (iou >= need) shapeOk = true;
             };
-            consider(i - 1);
-            if (i + 1 < n) consider(i + 1);
-            else if (o.cyclic && n > 2) consider(0);
+            consider(i - 1, q.expected.poseOverlapPrev);
+            if (i + 1 < n) consider(i + 1, q.expected.poseOverlapNext);
+            else if (o.cyclic && n > 2) consider(0, q.expected.poseOverlapNext);
             q.iouPrevious = best;
         }
-        if (q.iouPrevious < o.minIoU) q.flags |= QASilhouette;
+        if (!shapeOk) q.flags |= QASilhouette;
         // Score: each check contributes; silhouette and colour mix weigh most.
         auto clamp01 = [](double v) { return std::clamp(v, 0.0, 1.0); };
         const double sGround = clamp01(1.0 - std::abs(q.groundOffset) / 8.0);
@@ -383,11 +472,15 @@ std::vector<Image> correctFrames(const std::vector<Image>& frames, const QARepor
         // Place: feet where the pose expects them (the reference ground, or
         // above it for a jump). The horizontal centre is the frame's own (a
         // stride's bounds move with the legs; re-centring would jitter).
+        // Never push the figure off the canvas: a correction that would clip
+        // it is limited (the frame then stays flagged) instead of cutting
+        // off the head or feet.
+        if (figure.height() > f.height() || figure.width() > f.width()) figure = f.copy(q.bounds);
         Image placed(f.width(), f.height());
-        const int x = q.bounds.x + q.bounds.w / 2 - figure.width() / 2;
+        const int x = std::clamp(q.bounds.x + q.bounds.w / 2 - figure.width() / 2, 0, f.width() - figure.width());
         const int ground = (q.flags & QAGround) ? report.referenceGround + q.expected.groundOffset
                                                 : q.bounds.y + q.bounds.h - 1;
-        const int y = ground - (figure.height() - 1);
+        const int y = std::clamp(ground - (figure.height() - 1), 0, f.height() - figure.height());
         placed.blit(figure, x, y);
         out.push_back(std::move(placed));
     }

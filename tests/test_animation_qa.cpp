@@ -219,3 +219,41 @@ TEST_CASE("One badly drawn frame does not fail the good frame after it", "[qa]")
     const std::vector<Image> tail = {ref, figure(64, 64, 30, 55), wide};
     CHECK((evaluateFrames(tail, ref, pal(), once).frames[2].flags & QASilhouette));
 }
+
+TEST_CASE("Floor shadows below the figure are removed; corrections never clip the figure", "[qa]") {
+    Image f = figure(64, 64, 32, 40);               // feet at row 40
+    f.fillRect({20, 50, 24, 2}, Rgba8{120, 120, 120, 255});   // floor line under an airborne figure
+    f.fillRect({44, 25, 2, 16}, Rgba8{200, 200, 210, 255});   // detached sword beside it
+    const Image cleaned = removeDetachedBelow(f);
+    CHECK(cleaned.pixel(30, 50).a == 0);           // floor gone
+    CHECK(cleaned.pixel(44, 30).a == 255);         // sword kept
+    CHECK(silhouette(cleaned).bounds().y + silhouette(cleaned).bounds().h - 1 == 40);
+    CHECK(removeDetachedBelow(figure(64, 64, 32, 40)).pixel(32, 30) == figure(64, 64, 32, 40).pixel(32, 30));
+
+    // A frame whose pose wants it 12 px higher, but whose top is 4 px from the
+    // edge: it is moved only as far as fits, so nothing is cut off.
+    const Image ref = figure(64, 64, 32, 63, 60);
+    const Image tall = figure(64, 64, 32, 63, 60);
+    QAOptions o;
+    o.expected = {{0, 1.0}, {-12, 1.0}};
+    const QAReport r = evaluateFrames({ref, tall}, ref, pal(), o);
+    REQUIRE((r.frames[1].flags & QAGround));
+    const auto fixed = correctFrames({ref, tall}, r, pal(), o);
+    CHECK(silhouette(fixed[1]).count() == silhouette(tall).count());   // no pixel lost
+    CHECK(silhouette(fixed[1]).bounds().y == 0);
+}
+
+TEST_CASE("Pose overlap expectations: big motions may overlap less", "[qa]") {
+    const auto walk = cyclePoses(PoseCycle::Walk, 8);
+    const auto ew = expectationsFromPoses(walk, poseFramingBox(walk, 1.0), 64);
+    const auto jump = cyclePoses(PoseCycle::Jump, 6);
+    const auto ej = expectationsFromPoses(jump, poseFramingBox(jump, 1.0), 64);
+    double walkMin = 1, jumpMin = 1;
+    for (std::size_t i = 1; i < ew.size(); ++i) walkMin = std::min(walkMin, ew[i].poseOverlapPrev);
+    for (std::size_t i = 1; i < ej.size(); ++i) jumpMin = std::min(jumpMin, ej[i].poseOverlapPrev);
+    CHECK(walkMin > jumpMin);
+    CHECK(ew[1].poseOverlapPrev > 0.3);
+    // Identical poses overlap fully.
+    const auto same = expectationsFromPoses({standingPose(), standingPose()}, poseFramingBox({standingPose()}, 1.0), 64);
+    CHECK(same[1].poseOverlapPrev == Approx(1.0));
+}

@@ -66,6 +66,7 @@ private:
     std::vector<std::optional<Image>> m_results;
     std::vector<QString> m_errors;
     std::map<std::string, int> m_jobs;        // job id -> frame
+    std::map<int, int> m_dupOf;               // frame -> frame whose job it shares (same pose and attempt)
     std::vector<int> m_attempts;
     std::optional<QAReport> m_report;
     std::int64_t m_seed = -1;

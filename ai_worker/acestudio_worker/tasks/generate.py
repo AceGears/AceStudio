@@ -31,6 +31,7 @@ outputs:
 """
 
 import random
+import time
 import threading
 
 from ..imaging import load_rgba, require, save_png
@@ -332,13 +333,17 @@ def run(ctx):
                                lora, device, offload, controlnet, ip, weights)
     # Loading is over: a cancel that arrived meanwhile is honoured now, with
     # the pipeline cached for the next job.
-    ctx.progress(0.05, "Generating", force=True)
+    # Full-precision ControlNet with model offload spills past VRAM (slow
+    # steps): mark the first step uninterruptible too.
+    slow_start = bool(controlnet) and device == "cuda" and offload == "model" and not getattr(pipe, "_acestudio_fp8", False)
+    ctx.progress(0.05, "Generating", force=True, uninterruptible=slow_start)
     ctx.check_cancel()
     if ip is not None:
         pipe.set_ip_adapter_scale(ip_scale)
     init_path = ctx.param("init_image")
     total_steps = steps * count
     done_steps = [0]
+    last_step = [time.monotonic()]
     preview = ctx.param("preview")
     decoder, every = None, 0
     if preview:
@@ -361,8 +366,14 @@ def run(ctx):
                 path = save_png(preview_image(decoder, kwargs["latents"]), ctx.path("preview_%d.png" % done_steps[0]))
             except Exception as e:   # noqa: BLE001
                 ctx.log("Preview failed: %s" % e, "warning")
+        # Cancellation is checked between steps. When steps are slow (full
+        # precision spilling past VRAM: 25-45 s each), say so, so a cancel
+        # waits for the step instead of restarting the worker.
+        now = time.monotonic()
+        slow = now - last_step[0] > 5.0
+        last_step[0] = now
         ctx.progress(0.05 + 0.9 * done_steps[0] / total_steps, "Step %d of %d" % (done_steps[0], total_steps),
-                     step=done_steps[0], steps=total_steps, force=True, preview=path)
+                     step=done_steps[0], steps=total_steps, force=True, preview=path, uninterruptible=slow)
         return kwargs
 
     outputs = {}

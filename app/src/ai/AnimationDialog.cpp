@@ -279,6 +279,7 @@ void AnimationDialog::resetPoses() {
     m_attempts.assign(m_poses.size(), 0);
     m_report.reset();
     m_box.reset();
+    m_dupOf.clear();
     m_corrected = false;
     refreshStrip();
 }
@@ -290,6 +291,7 @@ void AnimationDialog::refreshStrip() {
         QString label = tr("Frame %1").arg(i + 1), tip;
         bool pending = false;
         for (const auto& [id, f] : m_jobs) pending = pending || f == static_cast<int>(i);
+        pending = pending || m_dupOf.count(static_cast<int>(i)) > 0;
         if (m_results[i]) {
             QColor border;
             if (m_report && i < m_report->frames.size()) {
@@ -384,8 +386,27 @@ void AnimationDialog::generate(const std::vector<int>& frames, bool newSeed) {
     std::string negative = c.negative;
     negative += std::string(negative.empty() ? "" : ", ") + "multiple characters, sprite sheet, cropped, shadow, floor, text, watermark";
 
+    // Frames with the same pose and attempt as one already submitted here
+    // (a jump's rise and fall, an idle that returns to its start) would give
+    // the same image: reuse that job's result instead of running SDXL again.
+    std::vector<int> submitted;
     for (int f : frames) {
         if (f < 0 || f >= static_cast<int>(m_poses.size())) continue;
+        const auto fi = static_cast<std::size_t>(f);
+        bool dup = false;
+        for (int g : submitted) {
+            const auto gi = static_cast<std::size_t>(g);
+            if (m_poses[gi] == m_poses[fi] && m_attempts[gi] == m_attempts[fi] + 1) {
+                m_dupOf[f] = g;
+                ++m_attempts[fi];
+                m_results[fi].reset();
+                m_errors[fi].clear();
+                dup = true;
+                break;
+            }
+        }
+        if (dup) continue;
+        submitted.push_back(f);
         const fs::path posePng = m_session / ("pose" + std::to_string(f) + "_" + std::to_string(m_attempts[static_cast<std::size_t>(f)]) + ".png");
         if (auto st = writePng(renderPose(m_poses[static_cast<std::size_t>(f)], gw, gh), posePng); !st) {
             m_errors[static_cast<std::size_t>(f)] = qs(st.error().message);
@@ -437,13 +458,19 @@ void AnimationDialog::onJobFinished(const QString& qid) {
         auto img = o != j->outputs.end() ? readPng(o->second) : Result<Image>(Error{ErrorCode::NotFound, "no image"});
         if (img) {
             Image frame = std::move(img).value();
-            if (m_removeBg->isChecked()) frame = removeBorderBackground(frame);
+            if (m_removeBg->isChecked()) frame = removeDetachedBelow(removeBorderBackground(frame));
             m_results[static_cast<std::size_t>(f)] = std::move(frame);
         } else {
             m_errors[static_cast<std::size_t>(f)] = qs(img.error().message);
         }
     } else if (j) {
         m_errors[static_cast<std::size_t>(f)] = j->state == JobState::Cancelled ? tr("Cancelled") : qs(j->error).section(QLatin1Char('\n'), 0, 0);
+    }
+    for (auto d = m_dupOf.begin(); d != m_dupOf.end();) {
+        if (d->second != f) { ++d; continue; }
+        m_results[static_cast<std::size_t>(d->first)] = m_results[static_cast<std::size_t>(f)];
+        m_errors[static_cast<std::size_t>(d->first)] = m_errors[static_cast<std::size_t>(f)];
+        d = m_dupOf.erase(d);
     }
     if (m_jobs.empty()) {
         bool all = true;

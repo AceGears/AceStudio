@@ -267,9 +267,11 @@ std::array<double, 4> poseFramingBox(const std::vector<Pose>& poses, double aspe
         for (const Keypoint& k : p.points)
             if (k.visible) { x0 = std::min(x0, k.x); y0 = std::min(y0, k.y); x1 = std::max(x1, k.x); y1 = std::max(y1, k.y); }
     if (x1 <= x0 || y1 <= y0) return {0, 0, 1, 1};
-    // The head extends above the eyes/ears and the feet below the ankles.
+    // The head extends above the eyes/ears and the feet below the ankles;
+    // SDXL also draws plumes, hair and raised weapons above the skeleton, so
+    // leave more room on top.
     const double h = y1 - y0;
-    y0 -= 0.08 * h;
+    y0 -= 0.16 * h;
     y1 += 0.04 * h;
     const double pad = margin * (y1 - y0);
     x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;

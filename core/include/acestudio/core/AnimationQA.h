@@ -31,6 +31,11 @@ namespace acestudio {
 // colour. Interior pixels of the same colour (enclosed by the subject) stay.
 Image removeBorderBackground(const Image& src, int tolerance = 24);
 
+// Removes opaque parts that lie entirely below the largest one (a floor line
+// or shadow drawn under an airborne character). Parts beside or above it (a
+// detached sword) are kept.
+Image removeDetachedBelow(const Image& src);
+
 // Alpha > 0 pixels.
 Mask silhouette(const Image& img);
 
@@ -57,6 +62,10 @@ double colorMixDistance(const Image& a, const Image& b, const Palette& palette);
 struct FrameExpectation {
     int groundOffset = 0;      // px, + = lower than the reference ground (negative = airborne)
     double heightRatio = 1.0;  // expected height / reference height
+    // How much this frame's pose overlaps the previous / next frame's pose
+    // (thick skeletons, bottom-centre aligned). Big motions (a jump, a run)
+    // overlap less, so their frames are allowed to as well.
+    double poseOverlapPrev = 1.0, poseOverlapNext = 1.0;
 };
 
 // Expectations for frames generated from `poses` and cropped with
@@ -78,7 +87,8 @@ struct QAOptions {
     double heightTolerance = 0.08;    // relative to the reference height
     double paletteTolerance = 0.06;   // paletteDistance
     double colorMixTolerance = 0.36;  // colourProfileDistance vs the reference frame
-    double minIoU = 0.55;             // silhouette overlap with the closer-matching neighbour frame
+    double minIoU = 0.55;             // silhouette overlap with the closer-matching neighbour frame...
+    double poseOverlapFactor = 0.8;   // ...or this share of the poses' own overlap, if lower
     bool cyclic = true;               // the last frame leads into frame 1 (walk, run, idle; not a jump)
     double flipThreshold = -0.35;     // facing agreement below this = drawn facing the wrong way
     std::vector<FrameExpectation> expected;   // per frame; empty = every frame stands like the reference
