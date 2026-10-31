@@ -133,8 +133,22 @@ struct ParallaxSet {
 //   Gradient pixels connected to the top edge, each within `tolerance` of the
 //            neighbour it was reached from (follows gradients and soft clouds)
 //   Every    every pixel within `tolerance` of the sky colour, also enclosed gaps
-enum class SkyClear { Flat, Gradient, Every };
-Image clearSky(const Image& img, int tolerance, SkyClear mode);
+//   Split    sky against ground, no tolerance: the top row seeds the sky, the
+//            bottom row the ground, and each pixel goes to the side it reaches
+//            across the smallest colour step. Handles banded, palette-reduced
+//            skies with clouds; when unsure it keeps pixels rather than clears.
+// wrapX: the layer repeats, so the left and right edges are neighbours.
+enum class SkyClear { Flat, Gradient, Every, Split };
+Image clearSky(const Image& img, int tolerance, SkyClear mode, bool wrapX = false);
+
+// Cleans up an AI cut-out (BiRefNet) of pixel art: pixels the mask kept become
+// opaque in their original colour (hard edges), and pixels the mask dropped
+// come back when their colour clearly differs from the background around
+// them (median of the pixels within `radius` that the mask is sure about, by
+// more than `tolerance` or 3x that background's own spread) and they touch
+// what was kept. Recovers a dark leg the mask missed; specks of a busy
+// background stay out.
+Image refineCutout(const Image& original, const Image& cut, int tolerance = 48, int radius = 8);
 
 // Rows in the longest clear step where the right edge wraps into the left
 // (and, in `typical`, the most it changes between neighbouring columns:

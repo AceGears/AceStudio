@@ -279,3 +279,31 @@ TEST_CASE("Seam check: the template's grid lines count as seams", "[autotile]") 
     const auto rep = checkSeams(t).value();
     CHECK(rep.issues.size() * 2 > static_cast<std::size_t>(rep.pairsChecked));
 }
+
+TEST_CASE("Levels: painting keeps a margin of the levels in between", "[autotile]") {
+    LevelMap m(12, 12);                 // all water (0)
+    m.paint(6, 6, 2, 0, true);           // grass in the middle
+    CHECK(m.at(6, 6) == 2);
+    for (int y = 5; y <= 7; ++y)
+        for (int x = 5; x <= 7; ++x)
+            if (x != 6 || y != 6) CHECK(m.at(x, y) == 1);   // a ring of sand
+    CHECK(m.at(3, 3) == 0);
+    // No two neighbours ever differ by more than one level.
+    m.paint(2, 2, 3, 1, true);
+    m.paint(9, 9, 0, 0, true);
+    for (int y = 0; y < 12; ++y)
+        for (int x = 0; x + 1 < 12; ++x) {
+            CHECK(std::abs(m.at(x, y) - m.at(x + 1, y)) <= 1);
+            if (y + 1 < 12) CHECK(std::abs(m.at(x, y) - m.at(x + 1, y + 1)) <= 1);
+        }
+    // limitSteps applies the same rule to a whole map.
+    LevelMap steep(6, 1);
+    steep.set(3, 0, 3);
+    steep.limitSteps();
+    CHECK(steep.at(3, 0) == 1);
+    // Without margins only the brush changes.
+    LevelMap n(5, 5);
+    n.paint(2, 2, 3, 0, false);
+    CHECK(n.at(2, 2) == 3);
+    CHECK(n.at(1, 2) == 0);
+}

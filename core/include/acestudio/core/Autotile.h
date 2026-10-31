@@ -167,6 +167,14 @@ public:
     void set(int x, int y, int level) noexcept;      // clamped to 0..255
     void fill(int level) noexcept;
     TerrainMap atLeast(int level) const;             // cells with at(x, y) >= level
+    // Sets the square of cells within `radius` of (x, y) to `level`. With
+    // `margins`, cells around it change too so that neighbouring cells never
+    // differ by more than one level: grass painted on water gets a ring of
+    // sand, and water dug into grass a ring of sand inside it.
+    void paint(int x, int y, int level, int radius = 0, bool margins = true) noexcept;
+    // Lowers cells until no two neighbours (8-way) differ by more than one
+    // level: the margins rule for a whole map.
+    void limitSteps() noexcept;
     int maxLevel() const noexcept;
     bool operator==(const LevelMap&) const = default;
 

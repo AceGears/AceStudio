@@ -104,6 +104,7 @@ private:
     QSpinBox* m_h = nullptr;
     QSpinBox* m_brush = nullptr;
     QComboBox* m_level = nullptr;
+    QCheckBox* m_margins = nullptr;
     QLabel* m_status = nullptr;
 };
 

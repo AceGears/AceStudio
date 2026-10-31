@@ -211,3 +211,89 @@ TEST_CASE("Slicer: a picked background colour and a frame around the sheet", "[a
     for (const auto& b : boxes)
         CHECK(std::any_of(found.begin(), found.end(), [&](const SlicedSprite& s) { return s.rect == b; }));
 }
+
+TEST_CASE("Clear Sky, Split: banded pixel-art sky against a silhouette", "[assets]") {
+    // Sky in 6 bands, each 30 brighter than the one below, over a castle
+    // with a tower that reaches the top edge.
+    auto scene = [](int castleShade) {
+        Image img(60, 48);
+        for (int y = 0; y < 48; ++y)
+            for (int x = 0; x < 60; ++x) {
+                const int band = y / 6;   // 0..7
+                const auto v = static_cast<std::uint8_t>(230 - band * 30 < 40 ? 40 : 230 - band * 30);
+                img.setPixel(x, y, {v, static_cast<std::uint8_t>(v * 3 / 4), static_cast<std::uint8_t>(v / 2 + 60), 255});
+            }
+        const auto c = static_cast<std::uint8_t>(castleShade);
+        for (int y = 30; y < 48; ++y)
+            for (int x = 0; x < 60; ++x) img.setPixel(x, y, {c, c, static_cast<std::uint8_t>(c + 10), 255});   // hill
+        for (int y = 14; y < 30; ++y)
+            for (int x = 20; x < 32; ++x) img.setPixel(x, y, {c, c, static_cast<std::uint8_t>(c + 10), 255});  // keep
+        for (int y = 0; y < 14; ++y)
+            for (int x = 40; x < 44; ++x) img.setPixel(x, y, {c, c, static_cast<std::uint8_t>(c + 10), 255});  // tower to the top
+        for (int y = 14; y < 30; ++y)
+            for (int x = 40; x < 44; ++x) img.setPixel(x, y, {c, c, static_cast<std::uint8_t>(c + 10), 255});
+        return img;
+    };
+    for (int shade : {30, 70}) {
+        INFO("castle shade " << shade);
+        const Image src = scene(shade);
+        const Image out = clearSky(src, 0, SkyClear::Split);
+        // Every castle pixel stays.
+        bool castleKept = true;
+        for (int y = 0; y < 48; ++y)
+            for (int x = 0; x < 60; ++x) {
+                const bool castle = y >= 30 || (x >= 20 && x < 32 && y >= 14) || (x >= 40 && x < 44);
+                if (castle && out.pixel(x, y).a != 255) castleKept = false;
+            }
+        CHECK(castleKept);
+        // The upper sky goes (bands are small steps compared with the edge).
+        int cleared = 0, sky = 0;
+        for (int y = 0; y < 14; ++y)
+            for (int x = 0; x < 20; ++x) { ++sky; cleared += out.pixel(x, y).a == 0; }
+        CHECK(cleared == sky);
+    }
+    // Flood by tolerance would either stop at the first band or eat the castle.
+    CHECK(clearSky(scene(70), 6, SkyClear::Gradient).pixel(5, 10).a == 255);
+    // Wrapping: a repeating layer is split the same at both edges.
+    const Image wrapped = clearSky(scene(30), 0, SkyClear::Split, true);
+    for (int y = 0; y < 48; ++y) CHECK((wrapped.pixel(0, y).a == 0) == (wrapped.pixel(59, y).a == 0));
+}
+
+TEST_CASE("refineCutout: brings back sprite parts the mask missed, not the background", "[assets]") {
+    // A noisy gradient background with a knight-like sprite: grey body,
+    // dark legs.
+    Image sheet(40, 40);
+    std::uint32_t r = 7;
+    for (int y = 0; y < 40; ++y)
+        for (int x = 0; x < 40; ++x) {
+            r = r * 1664525u + 1013904223u;
+            const int n = static_cast<int>(r >> 27) - 16;   // -16..15
+            sheet.setPixel(x, y, {static_cast<std::uint8_t>(100 + y + n), static_cast<std::uint8_t>(140 - y + n), static_cast<std::uint8_t>(170 + n), 255});
+        }
+    const IntRect body{14, 8, 12, 16}, legs{16, 24, 8, 8};
+    sheet.fillRect(body, {150, 150, 160, 255});
+    sheet.fillRect(legs, {25, 20, 30, 255});
+    // The AI mask: the body with soft alpha, the legs lost, a stray speck.
+    Image cut(40, 40);
+    for (int y = body.y; y < body.y + body.h; ++y)
+        for (int x = body.x; x < body.x + body.w; ++x) {
+            Rgba8 p = sheet.pixel(x, y);
+            p.a = (x == body.x || y == body.y) ? 140 : 255;
+            cut.setPixel(x, y, p);
+        }
+    const Image out = refineCutout(sheet, cut);
+    int legsBack = 0, bgKept = 0;
+    for (int y = 0; y < 40; ++y)
+        for (int x = 0; x < 40; ++x) {
+            const bool inBody = x >= body.x && x < body.x + body.w && y >= body.y && y < body.y + body.h;
+            const bool inLegs = x >= legs.x && x < legs.x + legs.w && y >= legs.y && y < legs.y + legs.h;
+            const std::uint8_t a = out.pixel(x, y).a;
+            if (inLegs) legsBack += a == 255;
+            else if (inBody) CHECK(a == 255);           // soft edge snapped to opaque
+            else bgKept += a != 0;
+        }
+    CHECK(legsBack == legs.w * legs.h);
+    CHECK(bgKept == 0);
+    // Original colours are kept.
+    CHECK(out.pixel(18, 28) == sheet.pixel(18, 28));
+}

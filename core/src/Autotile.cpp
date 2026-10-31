@@ -205,6 +205,35 @@ void LevelMap::set(int x, int y, int level) noexcept {
 
 void LevelMap::fill(int level) noexcept { std::fill(m_cells.begin(), m_cells.end(), static_cast<std::uint8_t>(std::clamp(level, 0, 255))); }
 
+void LevelMap::paint(int cx, int cy, int level, int radius, bool margins) noexcept {
+    level = std::clamp(level, 0, 255);
+    radius = std::max(0, radius);
+    for (int y = 0; y < m_h; ++y)
+        for (int x = 0; x < m_w; ++x) {
+            // Chebyshev distance to the brush square.
+            const int d = std::max({0, std::abs(x - cx) - radius, std::abs(y - cy) - radius});
+            if (d == 0) { set(x, y, level); continue; }
+            if (!margins) continue;
+            set(x, y, std::clamp(at(x, y), level - d, level + d));
+        }
+}
+
+void LevelMap::limitSteps() noexcept {
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (int y = 0; y < m_h; ++y)
+            for (int x = 0; x < m_w; ++x) {
+                int low = at(x, y);
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int nx = x + dx, ny = y + dy;
+                        if ((dx || dy) && nx >= 0 && ny >= 0 && nx < m_w && ny < m_h) low = std::min(low, at(nx, ny));
+                    }
+                if (at(x, y) > low + 1) { set(x, y, low + 1); changed = true; }
+            }
+    }
+}
+
 TerrainMap LevelMap::atLeast(int level) const {
     TerrainMap m(m_w, m_h);
     for (int y = 0; y < m_h; ++y)

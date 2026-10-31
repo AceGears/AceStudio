@@ -115,11 +115,13 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
     m_skyTolerance->setValue(24);
     m_skyTolerance->setToolTip(tr("How far from the sky colour a pixel may be and still be cleared"));
     m_skyMode = new QComboBox(this);
+    m_skyMode->addItem(tr("Sky against ground"), static_cast<int>(SkyClear::Split));
     m_skyMode->addItem(tr("Flat colour"), static_cast<int>(SkyClear::Flat));
     m_skyMode->addItem(tr("Follow gradient"), static_cast<int>(SkyClear::Gradient));
     m_skyMode->addItem(tr("Every matching pixel"), static_cast<int>(SkyClear::Every));
-    m_skyMode->setToolTip(tr("Flat: one colour touching the top. Follow gradient: also skies that change colour or have clouds. "
-                             "Every matching pixel: also gaps between trees"));
+    m_skyMode->setToolTip(tr("Sky against ground: the top edge is sky, the bottom edge ground, every pixel goes to the side it "
+                             "reaches more easily; handles banded skies, no tolerance. Flat: one colour touching the top. "
+                             "Follow gradient: smooth skies. Every matching pixel: also gaps between trees"));
     m_undo = new QPushButton(tr("Undo"), this);
     m_undo->setToolTip(tr("Undo the last Clear Sky, Make Seamless or background removal"));
     m_undo->setEnabled(false);
@@ -248,7 +250,7 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
         if (i < 0) return;
         auto& l = m_set.layers[static_cast<std::size_t>(i)];
         pushUndo(i);
-        l.image = clearSky(l.image, m_skyTolerance->value(), static_cast<SkyClear>(m_skyMode->currentData().toInt()));
+        l.image = clearSky(l.image, m_skyTolerance->value(), static_cast<SkyClear>(m_skyMode->currentData().toInt()), l.repeatX);
         redraw();
     });
     connect(m_undo, &QPushButton::clicked, this, [this] {
@@ -262,8 +264,11 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
     // Following a gradient compares neighbouring pixels, so it needs a much
     // smaller step than matching one flat colour.
     connect(m_skyMode, &QComboBox::currentIndexChanged, this, [this] {
-        m_skyTolerance->setValue(static_cast<SkyClear>(m_skyMode->currentData().toInt()) == SkyClear::Gradient ? 6 : 24);
+        const auto mode = static_cast<SkyClear>(m_skyMode->currentData().toInt());
+        m_skyTolerance->setValue(mode == SkyClear::Gradient ? 6 : 24);
+        m_skyTolerance->setEnabled(mode != SkyClear::Split);
     });
+    m_skyTolerance->setEnabled(false);   // Split, the first mode, needs none
     connect(m_aiCut, &QPushButton::clicked, this, [this] {
         if (m_cutJob && m_cutJob->running()) { m_cutJob->cancel(); return; }
         const int i = current();
@@ -274,12 +279,17 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
             connect(m_cutJob, &AiImageJob::finished, this, [this](const Image& cut, const Image&) {
                 m_aiCut->setText(tr("Remove Background (AI)"));
                 const int k = m_cutJob->property("layer").toInt();
-                if (k >= 0 && k < static_cast<int>(m_set.layers.size()) && cut.width() == m_set.layers[static_cast<std::size_t>(k)].image.width()) {
-                    pushUndo(k);
-                    m_set.layers[static_cast<std::size_t>(k)].image = cut;
-                    m_genStatus->setText(tr("Background removed."));
-                    redraw();
-                }
+                const int pad = m_cutPad;
+                if (k < 0 || k >= static_cast<int>(m_set.layers.size()) || cut.width() != m_cutSource.width() + 2 * pad) return;
+                auto& layer = m_set.layers[static_cast<std::size_t>(k)];
+                if (layer.image.width() != m_cutSource.width() || layer.image.height() != m_cutSource.height()) return;
+                // Crop the wrapped context away, then give the pixel art hard
+                // edges and recover parts the mask missed.
+                const Image mid = cut.copy({pad, 0, m_cutSource.width(), m_cutSource.height()});
+                pushUndo(k);
+                layer.image = refineCutout(m_cutSource, mid);
+                m_genStatus->setText(tr("Background removed."));
+                refreshList();
             });
             connect(m_cutJob, &AiImageJob::failed, this, [this](const QString& msg) {
                 m_aiCut->setText(tr("Remove Background (AI)"));
@@ -288,7 +298,19 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
         }
         QString why;
         m_cutJob->setProperty("layer", i);
-        if (!m_cutJob->startRemoveBackground(m_set.layers[static_cast<std::size_t>(i)].image, tr("Parallax: remove background"), &why)) {
+        // A repeating layer is cut with a quarter of its other end on each
+        // side, so the mask at the left edge sees what continues it on the
+        // right and the cut-out still wraps.
+        const auto& src = m_set.layers[static_cast<std::size_t>(i)];
+        m_cutSource = src.image;
+        m_cutPad = src.repeatX ? std::max(1, src.image.width() / 4) : 0;
+        Image padded(src.image.width() + 2 * m_cutPad, src.image.height());
+        padded.blit(src.image, m_cutPad, 0);
+        if (m_cutPad > 0) {
+            padded.blit(src.image.copy({src.image.width() - m_cutPad, 0, m_cutPad, src.image.height()}), 0, 0);
+            padded.blit(src.image.copy({0, 0, m_cutPad, src.image.height()}), m_cutPad + src.image.width(), 0);
+        }
+        if (!m_cutJob->startRemoveBackground(padded, tr("Parallax: remove background"), &why)) {
             QMessageBox::information(this, windowTitle(), why);
             return;
         }
@@ -744,7 +766,8 @@ SliceDialog::SliceDialog(AiService& ai, DocumentView* view, OpenFramesFn openFra
             connect(m_job, &AiImageJob::finished, this, [this](const Image& cut, const Image&) {
                 m_aiRemove->setText(tr("Remove Background (AI)"));
                 if (cut.width() != m_original.width() || cut.height() != m_original.height()) return;
-                m_sheet = cut;
+                // Hard pixel-art edges, and sprite parts the mask missed back.
+                m_sheet = refineCutout(m_original, cut);
                 m_key.reset();
                 m_restore->setVisible(true);
                 reslice();

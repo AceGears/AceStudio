@@ -52,6 +52,8 @@ private:
 
     AiService& m_ai;
     std::vector<std::pair<int, Image>> m_undoStack;   // layer edits, newest last
+    Image m_cutSource;                                 // the layer sent for background removal
+    int m_cutPad = 0;                                  // wrapped context on each side of it
     QPointer<DocumentView> m_view;
     ParallaxSet m_set;
     double m_camera = 0;

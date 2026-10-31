@@ -8,6 +8,7 @@
 #include <cmath>
 #include <deque>
 #include <map>
+#include <queue>
 #include <tuple>
 
 namespace acestudio {
@@ -453,9 +454,68 @@ int maxChannelDiff(Rgba8 a, Rgba8 b) {
 //   Gradient pixels connected to the top edge, each close to the cleared
 //            neighbour it was reached from (follows gradients and clouds)
 //   Every    every pixel matching the top-left colour, also enclosed gaps
-Image clearSky(const Image& src, int tolerance, SkyClear mode) {
+namespace {
+Rgba8 medianColour(const std::vector<Rgba8>& v) {
+    if (v.empty()) return {};
+    auto ch = [&](auto get) {
+        std::vector<int> c;
+        for (const Rgba8& p : v) c.push_back(get(p));
+        std::nth_element(c.begin(), c.begin() + static_cast<std::ptrdiff_t>(c.size() / 2), c.end());
+        return static_cast<std::uint8_t>(c[c.size() / 2]);
+    };
+    return {ch([](Rgba8 p) { return p.r; }), ch([](Rgba8 p) { return p.g; }), ch([](Rgba8 p) { return p.b; }), 255};
+}
+
+// Sky against ground: the top row seeds the sky, the bottom row the ground,
+// and every pixel joins the side it reaches across the smallest colour step
+// (a minimax path, as in a seeded watershed). The bands of a palette-reduced
+// sky are small steps inside the sky; the silhouette is reached more cheaply
+// from the ground through its own body than across its edge from the sky.
+Image splitSky(const Image& src, bool wrapX) {
+    const int w = src.width(), h = src.height();
+    std::vector<Rgba8> top, bottom;
+    for (int x = 0; x < w; ++x) { top.push_back(src.pixel(x, 0)); bottom.push_back(src.pixel(x, h - 1)); }
+    const Rgba8 skyMed = medianColour(top), groundMed = medianColour(bottom);
+    const auto W = static_cast<std::size_t>(w);
+    std::vector<std::uint8_t> label(W * static_cast<std::size_t>(h), 0);   // 0 none, 1 sky, 2 ground
+    // Cost, then ground before sky on ties (keep rather than clear), then order.
+    using Entry = std::tuple<int, int, std::size_t>;   // cost, side (0 ground, 1 sky), index
+    std::priority_queue<Entry, std::vector<Entry>, std::greater<Entry>> q;
+    for (int x = 0; x < w; ++x) {
+        // A tower touching the top edge is not sky; a sky-coloured bottom is not ground.
+        if (maxChannelDiff(top[static_cast<std::size_t>(x)], skyMed) <= maxChannelDiff(top[static_cast<std::size_t>(x)], groundMed))
+            q.emplace(0, 1, static_cast<std::size_t>(x));
+        if (maxChannelDiff(bottom[static_cast<std::size_t>(x)], groundMed) < maxChannelDiff(bottom[static_cast<std::size_t>(x)], skyMed))
+            q.emplace(0, 0, static_cast<std::size_t>(h - 1) * W + static_cast<std::size_t>(x));
+    }
+    while (!q.empty()) {
+        const auto [cost, side, i] = q.top();
+        q.pop();
+        if (label[i]) continue;
+        label[i] = side ? 1 : 2;
+        const int x = static_cast<int>(i % W), y = static_cast<int>(i / W);
+        const Rgba8 here = src.pixel(x, y);
+        for (auto [dx, dy] : {std::pair{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+            int nx = x + dx;
+            const int ny = y + dy;
+            if (wrapX) nx = (nx + w) % w;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const std::size_t ni = static_cast<std::size_t>(ny) * W + static_cast<std::size_t>(nx);
+            if (label[ni]) continue;
+            q.emplace(std::max(cost, maxChannelDiff(here, src.pixel(nx, ny))), side, ni);
+        }
+    }
+    Image img = src;
+    for (std::size_t i = 0; i < label.size(); ++i)
+        if (label[i] == 1) img.pixels()[i] = Rgba8::transparent();
+    return img;
+}
+} // namespace
+
+Image clearSky(const Image& src, int tolerance, SkyClear mode, bool wrapX) {
     Image img = src;
     if (img.isNull()) return img;
+    if (mode == SkyClear::Split) return img.height() < 2 ? img : splitSky(src, wrapX);
     const Rgba8 key = img.pixel(0, 0);
     if (mode == SkyClear::Every) {
         for (auto& p : img.pixels())
@@ -468,8 +528,9 @@ Image clearSky(const Image& src, int tolerance, SkyClear mode) {
     std::deque<std::tuple<int, int, Rgba8>> q;
     for (int x = 0; x < img.width(); ++x) q.emplace_back(x, 0, key);
     while (!q.empty()) {
-        const auto [x, y, ref] = q.front();
+        auto [x, y, ref] = q.front();
         q.pop_front();
+        if (wrapX) x = (x + img.width()) % img.width();
         if (!img.contains(x, y)) continue;
         auto& s = seen[static_cast<std::size_t>(y) * W + static_cast<std::size_t>(x)];
         if (s) continue;
@@ -484,6 +545,84 @@ Image clearSky(const Image& src, int tolerance, SkyClear mode) {
         q.emplace_back(x, y - 1, next);
     }
     return img;
+}
+
+Image refineCutout(const Image& original, const Image& cut, int tolerance, int radius) {
+    if (original.isNull() || cut.width() != original.width() || cut.height() != original.height()) return cut;
+    const int w = original.width(), h = original.height();
+    const auto W = static_cast<std::size_t>(w);
+    auto idx = [&](int x, int y) { return static_cast<std::size_t>(y) * W + static_cast<std::size_t>(x); };
+    // 0 background, 1 kept by the mask, 2 restored by colour.
+    std::vector<std::uint8_t> state(W * static_cast<std::size_t>(h), 0);
+    // Only pixels near what the mask kept can come back: distance by BFS.
+    std::vector<int> dist(state.size(), -1);
+    {
+        std::deque<std::size_t> dq;
+        for (std::size_t i = 0; i < state.size(); ++i)
+            if (cut.pixels()[i].a >= 128) { dist[i] = 0; dq.push_back(i); }
+        while (!dq.empty()) {
+            const std::size_t i = dq.front();
+            dq.pop_front();
+            if (dist[i] >= 2 * radius) continue;
+            const int x = static_cast<int>(i % W), y = static_cast<int>(i / W);
+            for (auto [dx, dy] : {std::pair{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                const int nx = x + dx, ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                const std::size_t ni = idx(nx, ny);
+                if (dist[ni] < 0) { dist[ni] = dist[i] + 1; dq.push_back(ni); }
+            }
+        }
+    }
+    std::vector<Rgba8> bg;
+    std::vector<int> dev;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const std::uint8_t a = cut.pixel(x, y).a;
+            if (a >= 128) { state[idx(x, y)] = 1; continue; }
+            if (dist[idx(x, y)] < 0) continue;
+            bg.clear();
+            // The local background: pixels the mask is sure about.
+            for (int dy = -radius; dy <= radius; ++dy)
+                for (int dx = -radius; dx <= radius; ++dx) {
+                    const int nx = x + dx, ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    if (cut.pixel(nx, ny).a < 32) bg.push_back(original.pixel(nx, ny));
+                }
+            if (bg.size() < 4) continue;
+            const Rgba8 med = medianColour(bg);
+            dev.clear();
+            for (const Rgba8& b : bg) dev.push_back(maxChannelDiff(b, med));
+            std::nth_element(dev.begin(), dev.begin() + static_cast<std::ptrdiff_t>(dev.size() / 2), dev.end());
+            const int spread = dev[dev.size() / 2];
+            if (maxChannelDiff(original.pixel(x, y), med) > std::max(tolerance, 3 * spread)) state[idx(x, y)] = 2;
+        }
+    // Restored pixels must connect to what the mask kept: specks of a busy
+    // background do not come back.
+    std::vector<std::uint8_t> keep(state.size(), 0);
+    std::deque<std::size_t> q;
+    for (std::size_t i = 0; i < state.size(); ++i)
+        if (state[i] == 1) { keep[i] = 1; q.push_back(i); }
+    while (!q.empty()) {
+        const std::size_t i = q.front();
+        q.pop_front();
+        const int x = static_cast<int>(i % W), y = static_cast<int>(i / W);
+        for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx) {
+                const int nx = x + dx, ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                const std::size_t ni = idx(nx, ny);
+                if (state[ni] == 2 && !keep[ni]) { keep[ni] = 1; q.push_back(ni); }
+            }
+    }
+    // Pixel art has hard edges: kept pixels are opaque, in their original colour.
+    Image out(w, h);
+    for (std::size_t i = 0; i < keep.size(); ++i)
+        if (keep[i]) {
+            Rgba8 p = original.pixels()[i];
+            p.a = 255;
+            out.pixels()[i] = original.pixels()[i].a == 0 ? Rgba8::transparent() : p;
+        }
+    return out;
 }
 
 std::vector<std::string> checkParallax(const ParallaxSet& set) {

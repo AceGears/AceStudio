@@ -66,17 +66,14 @@ LevelMap sampleMap(int levels) {
     m.set(15, 1, 1);
     m.set(15, 8, 1);
     m.set(14, 8, 1);
+    // Higher levels painted with margins, so each sits on the one below.
     if (levels >= 2) {
-        for (int y = 2; y < 8; ++y)
-            for (int x = 3; x < 6; ++x) m.set(x, y, 2);
-        m.set(8, 3, 2);
-        m.set(8, 2, 2);
-        for (int y = 3; y < 7; ++y) m.set(13, y, 2);
+        m.paint(4, 4, 2, 1);
+        m.paint(4, 6, 2, 0);
+        m.paint(8, 2, 2, 0);
+        m.paint(13, 4, 2, 0);
     }
-    if (levels >= 3) {
-        for (int y = 3; y < 7; ++y) m.set(4, y, 3);
-        m.set(3, 4, 3);
-    }
+    if (levels >= 3) m.paint(4, 5, 3, 0);
     return m;
 }
 
@@ -497,6 +494,10 @@ TerrainSandbox::TerrainSandbox(std::vector<Tileset> levels, QWidget* parent) : Q
     for (std::size_t i = 1; i <= m_levels.size(); ++i) m_level->addItem(tr("Level %1").arg(i), static_cast<int>(i));
     m_level->setCurrentIndex(0);
     m_level->setVisible(m_levels.size() > 1);
+    m_margins = new QCheckBox(tr("Margins"), this);
+    m_margins->setToolTip(tr("Keep a ring of each level in between: grass painted on water gets a beach of sand"));
+    m_margins->setChecked(true);
+    m_margins->setVisible(m_levels.size() > 1);
     m_status = new QLabel(this);
     auto* clear = new QPushButton(tr("Clear"), this);
     auto* fill = new QPushButton(tr("Fill"), this);
@@ -544,6 +545,7 @@ TerrainSandbox::TerrainSandbox(std::vector<Tileset> levels, QWidget* parent) : Q
                 }
                 m_map.set(x, y, level);
             }
+        if (m_margins->isChecked()) m_map.limitSteps();
         redraw();
     });
     connect(exportBtn, &QPushButton::clicked, this, &TerrainSandbox::exportMap);
@@ -566,6 +568,7 @@ TerrainSandbox::TerrainSandbox(std::vector<Tileset> levels, QWidget* parent) : Q
     bar->addWidget(new QLabel(tr("Brush"), this));
     bar->addWidget(m_brush);
     bar->addWidget(m_level);
+    bar->addWidget(m_margins);
     bar->addWidget(clear);
     bar->addWidget(fill);
     bar->addWidget(noise);
@@ -589,8 +592,7 @@ void TerrainSandbox::paintAt(QPoint p, bool erase) {
     if (p.x() < 0 || p.y() < 0) return;
     const int cx = p.x() / T, cy = p.y() / T, r = m_brush->value() - 1;
     const int level = erase ? 0 : m_level->currentData().toInt();
-    for (int y = cy - r; y <= cy + r; ++y)
-        for (int x = cx - r; x <= cx + r; ++x) m_map.set(x, y, level);
+    m_map.paint(cx, cy, level, r, m_margins->isChecked());
     redraw();
 }
 
