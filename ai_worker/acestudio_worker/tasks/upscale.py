@@ -14,7 +14,7 @@ outputs:
 
 import os
 
-from ..imaging import load_rgba, onnx_session, require, save_png
+from ..imaging import load_rgba, require, run_onnx, save_png
 from ..jobs import JobError
 
 NAME = "upscale.esrgan"
@@ -71,15 +71,18 @@ def run(ctx):
     ctx.progress(0.02, "Loading model", force=True)
     if model.lower().endswith(".onnx"):
         require("onnxruntime")
-        sess, device = onnx_session(model, ctx.param("device", "auto"))
-        inp = sess.get_inputs()[0]
-        half = inp.type == "tensor(float16)"
 
-        def infer(x):
-            y = sess.run(None, {inp.name: x.astype(np.float16) if half else x})[0]
-            return np.asarray(y, dtype=np.float32)
-        probe = infer(np.zeros((1, 3, 16, 16), dtype=np.float32))
-        scale = probe.shape[-1] // 16
+        def make_infer(sess, _provider):
+            inp = sess.get_inputs()[0]
+            half = inp.type == "tensor(float16)"
+
+            def infer(x):
+                y = sess.run(None, {inp.name: x.astype(np.float16) if half else x})[0]
+                return np.asarray(y, dtype=np.float32)
+            # A small probe run: a provider that cannot run the model fails
+            # here, inside run_onnx, which then falls back.
+            return infer, infer(np.zeros((1, 3, 16, 16), dtype=np.float32)).shape[-1] // 16
+        (infer, scale), device = run_onnx(ctx, model, ctx.param("device", "auto"), make_infer)
     else:
         require("torch")
         import torch

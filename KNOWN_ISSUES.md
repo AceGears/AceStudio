@@ -53,6 +53,12 @@ Current as of 0.5.0 (Phase 4).
   warns when only a newer Python is installed (background removal cannot be set up then).
   It must also be a **64-bit** Python: ONNX Runtime and PyTorch publish no 32-bit Windows
   wheels, so a 32-bit Python is skipped, or refused when it is the only one.
+- **DirectML and BiRefNet:** on the first tested NVIDIA PC, onnxruntime-directml 1.24.4 fails
+  inside a fused DirectML node when running BiRefNet; AceStudio falls back to the CPU (~16 s per
+  image at 1024²). The AI Studio status line still says "DirectML GPU" because that is the
+  provider available, not the one that ran. CUDA through onnxruntime-gpu is not offered yet.
+- **AI Studio panel on short screens:** the Remove BG / Upscale controls sit in a small scroll
+  area; the Run button may need scrolling.
 - **Python is not bundled yet:** AI features need Python 3.10+ installed (or configured in Set
   Up AI Runtime). Bundling an embeddable Python is planned for packaging (Phase 8). Choosing a
   specific Python installs packages into that environment.

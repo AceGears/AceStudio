@@ -95,6 +95,13 @@ Re-check on the same PC with nightly build c57e5c2 (portable mode, data in `<exe
 | Properties "File" row shows `knight.acestudio` | ✅ |
 | Palette buttons with no document open are clipped vertically (cosmetic) | ⚠️ known issue |
 | Python 3.14.10 installed by the user: found and accepted, but it was the **32-bit** build (win32 wheels; no ONNX Runtime or PyTorch builds exist) | ❌ fixed: 32-bit detection |
+| Build a3c7faf with 64-bit Python 3.14.10 also installed: picked the 64-bit one, rebuilt the AI environment that had been made from the 32-bit one | ✅ |
+| Install `onnx-windows` (a3c7faf): pip output streamed into the Log, `win_amd64` wheels, finished in 29 s | ✅ |
+| BiRefNet Lite download (224 MB, licence accepted by the user's instruction): SHA-256 verified, state Installed | ✅ |
+| Remove background, DirectML (onnxruntime-directml 1.24.4): `RUNTIME_EXCEPTION` in `DmlFusedNode_17_58` | ❌ on this GPU/driver; fixed by falling back (below) |
+| Remove background with the fallback: DirectML failed, the retry ran on the CPU; ~16 s for BiRefNet at 1024², result added as a layer | ✅ (CPU) |
+| BiRefNet quality on the synthetic `scene.png`: background gradient removed and figure kept, but many flat circles kept as foreground (IoU 0.60 vs the intended mask) | ⚠️ synthetic image is a weak test for a photo-trained model |
+| Remove BG tab: the Run button is below the fold of a ~80 px tab area on a 819 px screen; needs scrolling | ⚠️ usability |
 | Install `onnx-windows`: no pip output for 4+ minutes. Same pip from a console (PIP-CHECK.cmd) reached PyPI in 0.8 s and downloaded numpy in under a second | ❌ fixed: pip inherited the worker's protocol stdin and stalled at startup; it now gets DEVNULL (unit-tested; Windows re-check pending) |
 
 **Not yet verified:** anything on an NVIDIA GPU (SDXL quality and speed, CUDA wheels from the

@@ -25,6 +25,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - Windows: AI runtime installs hung with no output. pip inherited the worker's protocol stdin,
   which the worker's main thread is blocked reading, and stalled at startup. pip now gets an
   empty stdin.
+- ONNX models (BiRefNet, ONNX upscalers) fall back when the GPU provider fails at run time:
+  fewer graph fusions first, then the CPU; the working choice is remembered for the worker's
+  lifetime and logged as a warning. DirectML sessions now use the settings its documentation
+  requires (no memory pattern, sequential execution).
 - 32-bit Python is detected: Set Up skips it in favour of a 64-bit interpreter and, if it is the
   only one, says the 64-bit build is needed instead of starting an install that cannot succeed.
 - Log lines below warning level could stay in the buffer indefinitely; the log now flushes on

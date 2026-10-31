@@ -320,3 +320,61 @@ class RuntimeInstallTests(unittest.TestCase):
         self.assertIs(seen.get("stdin"), subprocess.DEVNULL)
         self.assertIn("--only-binary", seen["cmd"])
         self.assertTrue(any(m.startswith("pip: Collecting") for m in ctx.logs))
+
+
+class OnnxFallbackTests(unittest.TestCase):
+    """A GPU provider that fails while running falls back: fewer graph
+    fusions first, then the CPU; the working choice is remembered."""
+
+    def test_falls_back_and_remembers(self):
+        sys.path.insert(0, ROOT)
+        from acestudio_worker import imaging
+
+        calls = []
+
+        def fake_session(path, device="auto", provider=None, optimization="all"):
+            used = provider or "DmlExecutionProvider"
+            calls.append((used, optimization))
+            return object(), used
+
+        def fn(sess, used):
+            if used == "DmlExecutionProvider":
+                raise RuntimeError("RUNTIME_EXCEPTION in DmlFusedNode")
+            return "ok"
+
+        class Ctx:
+            def __init__(self):
+                self.logs = []
+
+            def log(self, m, level="info"):
+                self.logs.append((level, m))
+
+        real = imaging.onnx_session
+        imaging.onnx_session = fake_session
+        imaging._working.clear()
+        try:
+            ctx = Ctx()
+            result, used = imaging.run_onnx(ctx, "m.onnx", "auto", fn)
+            self.assertEqual((result, used), ("ok", "CPUExecutionProvider"))
+            self.assertEqual(calls, [("DmlExecutionProvider", "all"), ("DmlExecutionProvider", "basic"),
+                                     ("DmlExecutionProvider", "none"), ("CPUExecutionProvider", "all")])
+            self.assertTrue(any(level == "warning" for level, _ in ctx.logs))
+            calls.clear()
+            self.assertEqual(imaging.run_onnx(ctx, "m.onnx", "auto", fn), ("ok", "CPUExecutionProvider"))
+            self.assertEqual(calls, [("CPUExecutionProvider", "all")])   # remembered
+        finally:
+            imaging.onnx_session = real
+            imaging._working.clear()
+
+    def test_cpu_errors_are_not_swallowed(self):
+        sys.path.insert(0, ROOT)
+        from acestudio_worker import imaging
+
+        real = imaging.onnx_session
+        imaging.onnx_session = lambda *a, **k: (object(), "CPUExecutionProvider")
+        imaging._working.clear()
+        try:
+            with self.assertRaises(ValueError):
+                imaging.run_onnx(None, "m.onnx", "cpu", lambda s, u: (_ for _ in ()).throw(ValueError("bad")))
+        finally:
+            imaging.onnx_session = real

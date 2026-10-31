@@ -10,7 +10,7 @@ outputs:
   mask        8-bit grayscale matte
 """
 
-from ..imaging import load_rgba, onnx_session, require, save_png
+from ..imaging import load_rgba, require, run_onnx, save_png
 from ..jobs import JobError
 
 NAME = "background.remove"
@@ -51,10 +51,13 @@ def run(ctx):
     from PIL import Image
     img = load_rgba(ctx.param("input", required=True, kind=str))
     ctx.progress(0.05, "Loading BiRefNet", force=True)
-    sess, provider = onnx_session(ctx.param("model", required=True, kind=str), ctx.param("device", "auto"))
-    ctx.check_cancel()
-    ctx.progress(0.3, "Segmenting on %s" % provider.replace("ExecutionProvider", ""), force=True)
-    m = matte(sess, img)
+
+    def segment(sess, provider):
+        ctx.check_cancel()
+        ctx.progress(0.3, "Segmenting on %s" % provider.replace("ExecutionProvider", ""), force=True)
+        return matte(sess, img)
+
+    m, provider = run_onnx(ctx, ctx.param("model", required=True, kind=str), ctx.param("device", "auto"), segment)
     ctx.check_cancel()
     threshold = ctx.param("threshold")
     if threshold is not None:
