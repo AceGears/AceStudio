@@ -32,6 +32,10 @@ AiService::AiService(AppContext& ctx, QObject* parent) : QObject(parent), m_ctx(
         if (cat) m_catalog = std::move(cat).value();
         else m_envError = tr("Model catalogue: %1").arg(qs(cat.error().message));
         m_store = std::make_unique<ModelStore>(m_env->modelsDir);
+        // Job folders (inputs, raw 1024² outputs, previews) would otherwise
+        // grow without limit; a week is long enough to recover a raw output.
+        if (const int n = pruneJobFolders(m_env->jobsDir, std::chrono::hours(24 * 7)); n > 0)
+            ACE_LOG_INFO("ai", "Removed " + std::to_string(n) + " AI job folder(s) older than 7 days");
     }
     m_timer = new QTimer(this);
     m_timer->setInterval(50);

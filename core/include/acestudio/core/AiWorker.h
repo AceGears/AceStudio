@@ -237,6 +237,12 @@ Result<AiEnvironment> resolveAiEnvironment(const std::filesystem::path& dataDir,
 
 // Worker options for this environment: the venv's Python if it exists.
 // `python` overrides the interpreter (e.g. a configured path).
+// Removes job folders under `jobsRoot` whose newest file is older than
+// `maxAge` (job inputs and raw outputs; results are already in the documents
+// they were applied to). Returns how many folders were removed. Anything that
+// is not a job folder ("j<number>-<suffix>") is left alone.
+int pruneJobFolders(const std::filesystem::path& jobsRoot, std::chrono::hours maxAge);
+
 Result<WorkerOptions> workerOptionsFor(const AiEnvironment& env, const std::filesystem::path& python = {});
 
 } // namespace acestudio::ai

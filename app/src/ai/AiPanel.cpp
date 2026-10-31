@@ -94,6 +94,14 @@ AiPanel::AiPanel(AiService& ai, AppContext& ctx, QWidget* parent) : QWidget(pare
     connect(m_tabs, &QTabWidget::currentChanged, this, showRun);
     showRun(m_tabs->currentIndex());
 
+    // Live preview of a running generation. It sits outside the scrolling
+    // pages so it is visible however short the dock is (found on a 1080p
+    // laptop screen, where the Generate page shows only two rows).
+    m_genPreview = new QLabel(this);
+    m_genPreview->setAlignment(Qt::AlignCenter);
+    m_genPreview->setToolTip(tr("Live preview of the image being generated"));
+    m_genPreview->hide();
+
     m_queue = new QTreeWidget(this);
     m_queue->setColumnCount(2);
     m_queue->setHeaderLabels({tr("Job"), tr("Progress")});
@@ -136,6 +144,7 @@ AiPanel::AiPanel(AiService& ai, AppContext& ctx, QWidget* parent) : QWidget(pare
     layout->addLayout(top);
     layout->addWidget(m_tabs, 3);
     layout->addLayout(runRow);
+    layout->addWidget(m_genPreview);
     layout->addLayout(queueHeader);
     layout->addWidget(m_queue, 1);
 
@@ -239,12 +248,6 @@ QWidget* AiPanel::buildGenerateTab() {
     f->addRow(tr("Images:"), m_count);
     f->addRow(QString(), m_img2img);
     f->addRow(tr("Strength:"), m_strength);
-    m_genPreview = new QLabel(w);
-    m_genPreview->setAlignment(Qt::AlignCenter);
-    m_genPreview->setMinimumHeight(0);
-    m_genPreview->setToolTip(tr("Live preview of the image being generated"));
-    m_genPreview->hide();
-    f->addRow(m_genPreview);
     return w;
 }
 
@@ -530,7 +533,7 @@ void AiPanel::refreshJob(const QString& qid) {
             m_previewSerial[id] = j->previewSerial;
             QPixmap pm;
             if (pm.load(fromPath(j->preview))) {
-                m_genPreview->setPixmap(pm.scaled(QSize(192, 192), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                m_genPreview->setPixmap(pm.scaled(QSize(128, 128), Qt::KeepAspectRatio, Qt::SmoothTransformation));
                 m_genPreview->show();
             }
         } else if (j->state != JobState::Running && j->state != JobState::Queued) {

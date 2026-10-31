@@ -233,3 +233,31 @@ TEST_CASE("AI worker that cannot start is reported, not retried forever", "[ai]"
     CHECK(sup.state() == WorkerState::Failed);
     CHECK(sup.lastError().find("Could not start") != std::string::npos);
 }
+
+TEST_CASE("Old AI job folders are pruned; recent ones and other files are kept", "[ai]") {
+    namespace fs = std::filesystem;
+    TempDir dir;
+    const fs::path root = dir.path();
+    auto make = [&](const std::string& name, std::chrono::hours age) {
+        fs::create_directories(root / name);
+        const fs::path f = root / name / "image0.png";
+        std::ofstream(f) << "x";
+        const auto t = fs::file_time_type::clock::now() - age;
+        fs::last_write_time(f, t);
+        fs::last_write_time(root / name, t);
+    };
+    make("j1-aaaaaa", std::chrono::hours(24 * 10));   // old job: removed
+    make("j2-bbbbbb", std::chrono::hours(1));         // recent job: kept
+    make("notes", std::chrono::hours(24 * 30));       // not a job folder: kept
+    make("jx-cccccc", std::chrono::hours(24 * 30));   // not a job id: kept
+    // An old folder with one recent file counts as recent.
+    make("j3-dddddd", std::chrono::hours(24 * 10));
+    std::ofstream(root / "j3-dddddd" / "preview_5.png") << "y";
+    CHECK(pruneJobFolders(root, std::chrono::hours(24 * 7)) == 1);
+    CHECK_FALSE(fs::exists(root / "j1-aaaaaa"));
+    CHECK(fs::exists(root / "j2-bbbbbb"));
+    CHECK(fs::exists(root / "notes"));
+    CHECK(fs::exists(root / "jx-cccccc"));
+    CHECK(fs::exists(root / "j3-dddddd"));
+    CHECK(pruneJobFolders(root / "missing", std::chrono::hours(1)) == 0);
+}

@@ -664,6 +664,35 @@ Result<AiEnvironment> resolveAiEnvironment(const fs::path& dataDir, const std::s
     return env;
 }
 
+int pruneJobFolders(const fs::path& jobsRoot, std::chrono::hours maxAge) {
+    std::error_code ec;
+    if (!fs::is_directory(jobsRoot, ec)) return 0;
+    const auto cutoff = fs::file_time_type::clock::now() - maxAge;
+    auto isJobName = [](const std::string& n) {
+        if (n.size() < 4 || n[0] != 'j') return false;
+        const auto dash = n.find('-');
+        if (dash == std::string::npos || dash < 2) return false;
+        for (std::size_t i = 1; i < dash; ++i)
+            if (n[i] < '0' || n[i] > '9') return false;
+        return dash + 1 < n.size();
+    };
+    int removed = 0;
+    for (fs::directory_iterator it(jobsRoot, ec), end; !ec && it != end; it.increment(ec)) {
+        if (!it->is_directory(ec) || !isJobName(it->path().filename().string())) continue;
+        auto newest = it->last_write_time(ec);
+        for (fs::recursive_directory_iterator f(it->path(), ec), fe; !ec && f != fe; f.increment(ec)) {
+            const auto t = f->last_write_time(ec);
+            if (!ec && t > newest) newest = t;
+        }
+        ec.clear();
+        if (newest >= cutoff) continue;
+        std::error_code rm;
+        fs::remove_all(it->path(), rm);
+        if (!rm) ++removed;
+    }
+    return removed;
+}
+
 Result<WorkerOptions> workerOptionsFor(const AiEnvironment& env, const fs::path& python) {
     fs::path py = python;
     std::error_code ec;
