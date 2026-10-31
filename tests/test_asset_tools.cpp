@@ -4,6 +4,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "acestudio/core/AssetTools.h"
+#include "acestudio/core/PngCodec.h"
+
+#include <filesystem>
 #include "acestudio/core/Autotile.h"
 
 #include <nlohmann/json.hpp>
@@ -296,4 +299,48 @@ TEST_CASE("refineCutout: brings back sprite parts the mask missed, not the backg
     CHECK(bgKept == 0);
     // Original colours are kept.
     CHECK(out.pixel(18, 28) == sheet.pixel(18, 28));
+
+    // The reverse: the mask filled in the gap between two legs.
+    Image sheet2 = sheet;
+    sheet2.fillRect({16, 24, 3, 8}, {25, 20, 30, 255});
+    sheet2.fillRect({21, 24, 3, 8}, {25, 20, 30, 255});
+    for (int y = 24; y < 32; ++y)
+        for (int x = 19; x < 21; ++x) sheet2.setPixel(x, y, sheet.pixel(x - 6, y));   // background between them
+    Image cut2(40, 40);
+    for (int y = 8; y < 32; ++y)
+        for (int x = 14; x < 26; ++x) {
+            const bool sprite = y < 24 || (x >= 16 && x < 24);
+            if (sprite) { Rgba8 p = sheet2.pixel(x, y); p.a = 255; cut2.setPixel(x, y, p); }
+        }
+    const Image out2 = refineCutout(sheet2, cut2);
+    CHECK(out2.pixel(19, 30).a == 0);       // the gap is open again
+    CHECK(out2.pixel(17, 30).a == 255);     // the legs stay
+    CHECK(out2.pixel(22, 30).a == 255);
+    CHECK(out2.pixel(20, 15).a == 255);     // the body stays
+}
+
+TEST_CASE("refineCutout on a real BiRefNet cut-out from the test PC", "[assets]") {
+    // Four knights over a noisy gradient (tests/data/phase6_busy_sheet.png)
+    // and what BiRefNet Lite returned for it on the RTX 4070 Laptop
+    // (phase6_busy_cut.png): it filled the gap between one knight's legs.
+    const std::filesystem::path dir = std::filesystem::path(ACESTUDIO_SOURCE_DIR) / "tests" / "data";
+    const Image sheet = readPng(dir / "phase6_busy_sheet.png").value();
+    const Image cut = readPng(dir / "phase6_busy_cut.png").value();
+    int gapBefore = 0;
+    for (int y = 90; y < 100; ++y)
+        for (int x = 188; x < 192; ++x) gapBefore += cut.pixel(x, y).a >= 128;
+    CHECK(gapBefore > 10);
+    const Image out = refineCutout(sheet, cut);
+    int gapAfter = 0;
+    for (int y = 90; y < 100; ++y)
+        for (int x = 188; x < 192; ++x) gapAfter += out.pixel(x, y).a != 0;
+    CHECK(gapAfter == 0);
+    const auto sprites = detectSprites(out);
+    CHECK(sprites.size() == 4);
+    // Every kept pixel is opaque and in its original colour.
+    bool exact = true;
+    for (int y = 0; y < out.height(); ++y)
+        for (int x = 0; x < out.width(); ++x)
+            if (out.pixel(x, y).a && !(out.pixel(x, y) == sheet.pixel(x, y))) exact = false;
+    CHECK(exact);
 }

@@ -575,27 +575,67 @@ Image refineCutout(const Image& original, const Image& cut, int tolerance, int r
     }
     std::vector<Rgba8> bg;
     std::vector<int> dev;
+    // Median colour and spread of the background around (x, y): pixels the
+    // mask is sure about, without those found to be sprite in the first pass.
+    auto background = [&](int x, int y, Rgba8& med, int& spread) {
+        bg.clear();
+        for (int dy = -radius; dy <= radius; ++dy)
+            for (int dx = -radius; dx <= radius; ++dx) {
+                const int nx = x + dx, ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                if (cut.pixel(nx, ny).a < 32 && state[idx(nx, ny)] != 2) bg.push_back(original.pixel(nx, ny));
+            }
+        if (bg.size() < 4) return false;
+        med = medianColour(bg);
+        dev.clear();
+        for (const Rgba8& b : bg) dev.push_back(maxChannelDiff(b, med));
+        std::nth_element(dev.begin(), dev.begin() + static_cast<std::ptrdiff_t>(dev.size() / 2), dev.end());
+        spread = dev[dev.size() / 2];
+        return true;
+    };
+    // Pass 1: dropped pixels that are clearly not background come back (2).
     for (int y = 0; y < h; ++y)
         for (int x = 0; x < w; ++x) {
             const std::uint8_t a = cut.pixel(x, y).a;
             if (a >= 128) { state[idx(x, y)] = 1; continue; }
             if (dist[idx(x, y)] < 0) continue;
-            bg.clear();
-            // The local background: pixels the mask is sure about.
-            for (int dy = -radius; dy <= radius; ++dy)
-                for (int dx = -radius; dx <= radius; ++dx) {
-                    const int nx = x + dx, ny = y + dy;
-                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-                    if (cut.pixel(nx, ny).a < 32) bg.push_back(original.pixel(nx, ny));
-                }
-            if (bg.size() < 4) continue;
-            const Rgba8 med = medianColour(bg);
-            dev.clear();
-            for (const Rgba8& b : bg) dev.push_back(maxChannelDiff(b, med));
-            std::nth_element(dev.begin(), dev.begin() + static_cast<std::ptrdiff_t>(dev.size() / 2), dev.end());
-            const int spread = dev[dev.size() / 2];
-            if (maxChannelDiff(original.pixel(x, y), med) > std::max(tolerance, 3 * spread)) state[idx(x, y)] = 2;
+            Rgba8 med;
+            int spread = 0;
+            if (background(x, y, med, spread) && maxChannelDiff(original.pixel(x, y), med) > std::max(tolerance, 3 * spread))
+                state[idx(x, y)] = 2;
         }
+    // Pass 2: kept pixels with the background's colour (a gap between legs
+    // the mask filled in) are candidates to go (3).
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            if (state[idx(x, y)] != 1) continue;
+            Rgba8 med;
+            int spread = 0;
+            if (background(x, y, med, spread) && maxChannelDiff(original.pixel(x, y), med) <= std::max(tolerance / 2, 2 * spread))
+                state[idx(x, y)] = 3;
+        }
+    // Background-coloured pixels the mask kept go only where they connect to
+    // the background the mask is sure about (not a same-coloured detail
+    // enclosed inside the sprite).
+    {
+        std::deque<std::size_t> bq;
+        for (std::size_t i = 0; i < state.size(); ++i)
+            if (state[i] == 0) bq.push_back(i);   // everything that ends up background
+        std::vector<std::uint8_t> reached(state.size(), 0);
+        while (!bq.empty()) {
+            const std::size_t i = bq.front();
+            bq.pop_front();
+            const int x = static_cast<int>(i % W), y = static_cast<int>(i / W);
+            for (auto [dx, dy] : {std::pair{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                const int nx = x + dx, ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                const std::size_t ni = idx(nx, ny);
+                if (state[ni] == 3 && !reached[ni]) { reached[ni] = 1; bq.push_back(ni); }
+            }
+        }
+        for (std::size_t i = 0; i < state.size(); ++i)
+            if (state[i] == 3) state[i] = reached[i] ? 0 : 1;
+    }
     // Restored pixels must connect to what the mask kept: specks of a busy
     // background do not come back.
     std::vector<std::uint8_t> keep(state.size(), 0);

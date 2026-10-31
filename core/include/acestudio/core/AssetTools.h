@@ -147,7 +147,8 @@ Image clearSky(const Image& img, int tolerance, SkyClear mode, bool wrapX = fals
 // them (median of the pixels within `radius` that the mask is sure about, by
 // more than `tolerance` or 3x that background's own spread) and they touch
 // what was kept. Recovers a dark leg the mask missed; specks of a busy
-// background stay out.
+// background stay out. The reverse too: pixels the mask kept that have the
+// background's colour and connect to it (the gap between two legs) go.
 Image refineCutout(const Image& original, const Image& cut, int tolerance = 48, int radius = 8);
 
 // Rows in the longest clear step where the right edge wraps into the left

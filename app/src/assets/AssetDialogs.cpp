@@ -250,7 +250,14 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
         if (i < 0) return;
         auto& l = m_set.layers[static_cast<std::size_t>(i)];
         pushUndo(i);
+        const Image before = l.image;
         l.image = clearSky(l.image, m_skyTolerance->value(), static_cast<SkyClear>(m_skyMode->currentData().toInt()), l.repeatX);
+        long cleared = 0;
+        for (std::size_t k = 0; k < before.pixels().size(); ++k) cleared += before.pixels()[k].a != 0 && l.image.pixels()[k].a == 0;
+        const int pct = static_cast<int>(100 * cleared / std::max<long>(1, static_cast<long>(before.pixels().size())));
+        m_genStatus->setText(pct < 15 ? tr("Cleared %1% of the layer. If the sky is still there (mist or a scene that fades into the sky), "
+                                           "Undo and use Remove Background (AI).").arg(pct)
+                                      : tr("Cleared %1% of the layer.").arg(pct));
         redraw();
     });
     connect(m_undo, &QPushButton::clicked, this, [this] {
