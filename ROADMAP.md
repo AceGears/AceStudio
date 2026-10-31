@@ -68,14 +68,18 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | Adobe .ase palettes (RGB/CMYK/LAB/Gray read, RGB write) | ✅ unit-tested with hand-built files |
 | Project schema 2 (backwards compatible: schema 1 written when no new feature is used) | ✅ round-trip tests |
 | Group duplication (whole subtree) | ✅ unit-tested |
-| Large-canvas compositing | ✅ multi-threaded bands with identical output, 1024²×20 layers: 115 → 67 ms on 2 vCPUs. GPU compositing is not implemented (KNOWN_ISSUES) |
+| Large-canvas compositing | ✅ multi-threaded bands with identical output, 1024²×20 layers: 115 → 63 ms on 2 vCPUs (42 ms with normal blending); CPU kept by design (KNOWN_ISSUES) |
+| Free Transform with handles (move, scale, rotate; one undo step; keeps off-canvas pixels) | ✅ core unit-tested; scale, rotate and undo driven in the app |
+| Levels and Curves adjustment layers; mask-editing tint; Fit Canvas to Content; workspaces | ✅ unit-tested where core; curve drag, live preview, undo, tint and workspace save/apply driven in the app |
+| Painting keeps cel pixels beyond the canvas | ✅ unit-tested (stroke, undo, redo) |
 
 ## Phase 3 — Animation · ✅ (delivered in 0.4.0; extended in 0.5.1)
 
 | Criterion | Status |
 |---|---|
 | Frame insert / delete / duplicate / reorder (drag, Alt+←/→, context menu) with exact undo; durations travel with frames | ✅ unit-tested; drag and undo driven in the app |
-| Multi-frame selection: duplicate, delete, move, drag and durations for a block, one undo step each | ✅ unit-tested; Shift-click, drag and undo driven in the app (0.5.1) |
+| Multi-frame selection: duplicate, delete, move, drag and durations for a block, one undo step each; delete, durations and linking for selections with gaps | ✅ unit-tested; Shift/Ctrl-click, drag and undo driven in the app (0.5.1) |
+| Linked cels (shared pixels across frames) kept in sync through painting, undo, frame and layer operations; saved once per group | ✅ unit-tested incl. file round trip; linked by context menu and painted through in the app |
 | Per-frame durations; set all durations at once | ✅ |
 | Tags: name, range, colour, forward/reverse/ping-pong, repeat count; validated and undoable; shown tinted in the timeline | ✅ tag created through the dialog in the app |
 | Playback honours the tag under the playhead (direction, repeats) and per-frame durations | ✅ `AnimationPlayer` unit-tested; driven in the app |
@@ -100,6 +104,7 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | Real-ESRGAN upscaling | ✅ CPU (64→256 px in 6 s) and CUDA on the RTX 4070 Laptop: 512→2048 px in 3.1 s per job including model load |
 | Nearest-neighbour upscaling | ✅ Image › Scale (core, since 0.3.0) |
 | AI results: one undo step, placed on the frame the job started from; status shows where it ran and how long it took; LoRA strength and subject framing | ✅ (0.5.1) worker tests for framing and strength validation |
+| Live generation preview (optional TAESD-XL), all-frame upscaling, CPU memory pre-check | ✅ preview through real Diffusers with a tiny random model; multi-frame upscale with a stub model; memory check fails in 5 s on a 6 GB container instead of being killed |
 | Benchmarks recorded from real runs | ✅ CPU and RTX 4070 Laptop numbers for every model (TESTING.md); other GPUs are Phase 9's GPU matrix |
 
 ## Phase 5 — Advanced AI Generation · ⬜

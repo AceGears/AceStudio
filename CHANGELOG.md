@@ -4,6 +4,27 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ## [0.5.1] — 2026-10-31 — Phases 1–4 completed (unreleased)
 
+### Added — known-issue fixes
+- **Free Transform** (Edit › Free Transform, Ctrl+T): handles scale about the centre (Shift
+  keeps proportions), a knob rotates (Shift: 15° steps), and dragging inside moves. Enter
+  applies RotSprite, keeps pixels past the canvas and records one undo step.
+- **Linked cels:** frames of a layer can share one cel (timeline context menu › Link / Unlink
+  Cels). Painting, transforms, undo, frame moves and deletes, layer duplicate and delete, and
+  merge-down all keep them in sync. Schema 3 stores each group's PNG once.
+- **Frame selections with gaps** (Ctrl-click): delete, durations and linking work on any
+  selection.
+- **Levels** and **Curves** adjustment layers, with a curve editor and live preview. Schema 3
+  is used only when a file contains them.
+- **Mask editing tint:** areas the mask hides are shown in red while editing the mask.
+- **Workspaces** (Window › Workspaces): Painting, Animation, AI and Minimal presets, plus
+  saved, applied and deleted layouts of your own.
+- **Image › Fit Canvas to Content** brings pixels past the canvas into view.
+- **Upscale › All frames** upscales a whole animation in one job, keeping durations.
+- **Live generation preview** with the optional TAESD-XL decoder (MIT, 10 MB, pinned).
+- The CPU memory check for ONNX models fails early with a clear message instead of the
+  worker being killed.
+- SDXL is fully pinned: SHA-256 for all 18 files.
+
 ### Added — Phase 2c editor
 - **Tools:** Curve (C; line, then two control points), Polygon (P; click points, close on the
   first point, double-click or Enter), Clone Stamp (S; Alt-click sets an aligned source),
@@ -56,6 +77,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   short screens instead of clipping their controls.
 
 ### Fixed
+- Painting on a layer whose pixels reached past the canvas dropped those pixels.
+- Moving a selection took two undo steps (pixels, then outline).
+- The Layers panel's Merge button stayed enabled when nothing could be merged.
+- New adjustment types could produce a garbled layer name; a compile-time check now covers it.
 - Intermittent crash when a layer row was edited (the Layers panel rebuilt itself inside the
   tree's own signal handler); rebuilds are now deferred.
 - Layer transforms dropped pixels that lay outside the canvas.
