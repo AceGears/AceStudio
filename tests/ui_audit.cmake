@@ -5,9 +5,10 @@ file(REMOVE_RECURSE "${WORKDIR}")
 file(MAKE_DIRECTORY "${WORKDIR}")
 set(ENV{ACESTUDIO_DATA_DIR} "${WORKDIR}/data")
 set(ENV{QT_QPA_PLATFORM} "offscreen")
+# 400 px, above Animate Sprite's preview size (its reduced-copy path), and
 # 24 one-frame tags, like a character pack (one tag per action and direction):
 # a long tag list once widened the window past the screen.
-file(WRITE "${WORKDIR}/make.lua" "local d = ace.new_document(16, 16, 24)\nfor f = 0, 23 do d:set_cel(0, f, ace.image(16, 16, '#ff8800')) end\nd:add_tag('walk', 0, 2)\nfor f = 3, 23 do d:add_tag('attack_southwest_' .. f, f, f) end\nd:save('audit.acestudio')\n")
+file(WRITE "${WORKDIR}/make.lua" "local d = ace.new_document(400, 400, 24)\nfor f = 0, 23 do d:set_cel(0, f, ace.image(400, 400, '#ff8800')) end\nd:add_tag('walk', 0, 2)\nfor f = 3, 23 do d:add_tag('attack_southwest_' .. f, f, f) end\nd:save('audit.acestudio')\n")
 execute_process(COMMAND "${CLI}" run "${WORKDIR}/make.lua" --base "${WORKDIR}" RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
     message(FATAL_ERROR "could not make the audit project")

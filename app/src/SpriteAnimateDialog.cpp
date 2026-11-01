@@ -7,6 +7,8 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <cmath>
+#include <QApplication>
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
@@ -45,6 +47,22 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     m_name = name;
     setWindowTitle(tr("Animate Sprite"));
     m_subject = ::acestudio::motion::analyzeSubject(m_sprite);
+    // Rendering every chosen action of a 1,000 px sprite took seconds per
+    // change on the test PC; the preview works on a copy at most kPreview px.
+    constexpr int kPreview = 320;
+    const int longest = std::max(m_sprite.width(), m_sprite.height());
+    if (longest > kPreview) {
+        m_previewScale = static_cast<double>(kPreview) / longest;
+        const int sw = std::max(1, static_cast<int>(std::lround(m_sprite.width() * m_previewScale)));
+        const int sh = std::max(1, static_cast<int>(std::lround(m_sprite.height() * m_previewScale)));
+        m_small = fromQImage(toQImage(m_sprite).scaled(sw, sh, Qt::IgnoreAspectRatio, Qt::FastTransformation));
+        if (!m_wingMask.isNull()) {
+            m_smallMask = Mask(sw, sh);
+            for (int y = 0; y < sh; ++y)
+                for (int x = 0; x < sw; ++x)
+                    m_smallMask.set(x, y, m_wingMask.get(x * m_wingMask.width() / sw, y * m_wingMask.height() / sh));
+        }
+    }
 
     auto* root = new QHBoxLayout(this);
     auto* left = new QVBoxLayout;
@@ -224,19 +242,33 @@ std::vector<::acestudio::motion::Action> SpriteAnimateDialog::checkedActions() c
     return out;
 }
 
-::acestudio::motion::Options SpriteAnimateDialog::options() const {
+::acestudio::motion::Options SpriteAnimateDialog::options(bool full) const {
     ::acestudio::motion::Options o;
     o.frames = m_frames->value();
     o.amount = m_amount->value() / 100.0;
     const QString body = m_body->currentData().toString();
     if (!body.isEmpty()) o.body = ::acestudio::motion::bodyFromString(body.toStdString());
+    // The reduced copy moves like the full sprite: same measured body.
+    else if (!full && m_previewScale < 1.0) o.body = m_subject.body;
     o.faceLeft = m_face->currentIndex() == 1;
     o.custom = {m_bob->value(), m_sway->value(), m_squash->value(), m_tilt->value(), m_legSwing->value()};
     o.wingLine = m_wingLine->value() / 100.0;
     o.wingFrom = m_wingFrom->value() / 100.0;
     o.wingTo = m_wingTo->value() / 100.0;
-    o.wingMask = m_wingMask;
+    o.wingMask = full || m_previewScale >= 1.0 ? m_wingMask : m_smallMask;
     return o;
+}
+
+std::vector<::acestudio::motion::Clip> SpriteAnimateDialog::fullClips() {
+    if (m_previewScale >= 1.0 || m_clips.empty()) return m_clips;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    auto pack = ::acestudio::motion::animatePack(m_sprite, checkedActions(), options(true));
+    QApplication::restoreOverrideCursor();
+    if (!pack) {
+        QMessageBox::warning(this, windowTitle(), qs(pack.error().message));
+        return {};
+    }
+    return std::move(pack).value();
 }
 
 void SpriteAnimateDialog::rebuild() {
@@ -256,7 +288,7 @@ void SpriteAnimateDialog::rebuild() {
         m_info->setText(tr("Tick one or more actions."));
         return;
     }
-    auto pack = ::acestudio::motion::animatePack(m_sprite, list, options());
+    auto pack = ::acestudio::motion::animatePack(m_previewScale < 1.0 ? m_small : m_sprite, list, options(false));
     if (!pack) {
         m_timer->stop();
         m_preview->clear();
@@ -274,8 +306,9 @@ void SpriteAnimateDialog::rebuild() {
     }
     QString text = tr("%n action(s), %1 frames of %2 × %3 px.", nullptr, static_cast<int>(m_clips.size()))
                        .arg(frames)
-                       .arg(m_clips.front().frames.front().width())
-                       .arg(m_clips.front().frames.front().height());
+                       .arg(std::lround(m_clips.front().frames.front().width() / m_previewScale))
+                       .arg(std::lround(m_clips.front().frames.front().height() / m_previewScale));
+    if (m_previewScale < 1.0) text += tr(" (previewed at reduced size)");
     text += problems.isEmpty() ? tr(" Checks passed.") : QStringLiteral("<br>") + problems.join(QStringLiteral("<br>"));
     m_info->setText(text);
     showFrame();
@@ -300,11 +333,12 @@ void SpriteAnimateDialog::showFrame() {
 }
 
 void SpriteAnimateDialog::openDocument() {
-    if (m_clips.empty()) return;
+    const std::vector<::acestudio::motion::Clip> clips = fullClips();
+    if (clips.empty()) return;
     std::vector<Image> frames;
     std::vector<int> durations;
     std::vector<AnimationTag> tags;
-    for (const ::acestudio::motion::Clip& c : m_clips) {
+    for (const ::acestudio::motion::Clip& c : clips) {
         AnimationTag t;
         t.name = c.name;
         t.fromFrame = static_cast<int>(frames.size());
@@ -328,8 +362,9 @@ void SpriteAnimateDialog::exportStrips() {
     const QString dir = QFileDialog::getExistingDirectory(this, tr("Export Animation Strips"), start);
     if (dir.isEmpty()) return;
     lastDir = dir;
+    const std::vector<::acestudio::motion::Clip> clips = fullClips();
     QStringList written;
-    for (const ::acestudio::motion::Clip& c : m_clips) {
+    for (const ::acestudio::motion::Clip& c : clips) {
         const int fw = c.frames[0].width(), fh = c.frames[0].height();
         Image strip(fw * static_cast<int>(c.frames.size()), fh);
         for (std::size_t i = 0; i < c.frames.size(); ++i) strip.blit(c.frames[i], static_cast<int>(i) * fw, 0);

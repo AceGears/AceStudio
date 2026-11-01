@@ -32,7 +32,10 @@ public:
     SpriteAnimateDialog(const Image& sprite, const QString& name, OpenFn open, QWidget* parent = nullptr, const Mask& wingMask = {});
 
 private:
-    ::acestudio::motion::Options options() const;
+    ::acestudio::motion::Options options(bool full) const;
+    // The clips at the sprite's own size: the preview's, or rendered again
+    // when the preview uses a reduced copy.
+    std::vector<::acestudio::motion::Clip> fullClips();
     std::vector<::acestudio::motion::Action> checkedActions() const;
     void rebuild();
     void showFrame();
@@ -41,6 +44,11 @@ private:
 
     Image m_sprite;
     Mask m_wingMask;
+    // Large (HD) sprites are previewed from a reduced copy so every change
+    // stays quick; opening and exporting render at full size.
+    Image m_small;
+    Mask m_smallMask;
+    double m_previewScale = 1.0;   // reduced / full
     QString m_name;
     OpenFn m_open;
     ::acestudio::motion::Subject m_subject;
