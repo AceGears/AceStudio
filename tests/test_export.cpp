@@ -253,3 +253,39 @@ TEST_CASE("Sheet and animation file writers refuse to overwrite", "[export]") {
     CHECK_FALSE(writeAnimation(d, {}, AnimFormat::Webp, dir.path() / "w.gif"));
     CHECK(writeAnimation(d, {}, AnimFormat::Apng, dir.path() / "w.gif", 1, 0, true));
 }
+
+TEST_CASE("GIF decoder matches Pillow on interlaced, animated and multi-palette GIFs", "[export]") {
+    // tests/data/gif: GIFs written by Pillow 12.3, and Pillow's own decoded frames.
+    const std::filesystem::path dir = std::filesystem::path(ACESTUDIO_SOURCE_DIR) / "tests" / "data" / "gif";
+    struct Case {
+        const char* name;
+        std::vector<int> durations;
+        int loop;
+    };
+    for (const Case& c : {Case{"interlaced", {100}, 0}, Case{"anim", {50, 120, 70, 200, 30}, 3}, Case{"local_palettes", {100, 100, 100}, 0}}) {
+        INFO(c.name);
+        auto bytes = readFileBytes(dir / (std::string(c.name) + ".gif"), 1u << 20);
+        REQUIRE(bytes);
+        auto gif = decodeGif(bytes.value());
+        REQUIRE(gif);
+        REQUIRE(gif.value().frames.size() == c.durations.size());
+        CHECK(gif.value().loopCount == c.loop);
+        for (std::size_t i = 0; i < c.durations.size(); ++i) {
+            INFO("frame " << i);
+            CHECK(gif.value().frames[i].durationMs == c.durations[i]);
+            auto want = readPng(dir / (std::string(c.name) + "_" + std::to_string(i) + ".png"));
+            REQUIRE(want);
+            const Image& got = gif.value().frames[i].image;
+            REQUIRE(got.width() == want.value().width());
+            REQUIRE(got.height() == want.value().height());
+            int diff = 0;
+            for (int y = 0; y < got.height(); ++y)
+                for (int x = 0; x < got.width(); ++x) {
+                    const Rgba8 a = got.pixel(x, y), b = want.value().pixel(x, y);
+                    if (a.a == 0 && b.a == 0) continue;   // transparent: colour does not matter
+                    if (!(a == b)) ++diff;
+                }
+            CHECK(diff == 0);
+        }
+    }
+}

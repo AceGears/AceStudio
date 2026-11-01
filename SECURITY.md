@@ -37,8 +37,9 @@ downloads the user starts.
 
 Fuzzing: libFuzzer with AddressSanitizer and UndefinedBehaviorSanitizer (clang 18) on nine
 targets (`tests/fuzz`): project files, PNG, GIF, APNG, WebP, palettes, licence keys, Lua
-scripts and MCP messages. Each target ran 10 minutes from seed files; the targets that found
-problems ran 10 more minutes after the fix.
+scripts and MCP messages. Each target ran 10 minutes from seed files (about 12 million
+inputs in all); GIF, MCP, WebP, Lua, PNG and APNG ran a second 10 minutes on the grown corpus
+after the first fixes, and the new GIF decoder 20 more minutes.
 
 Found and fixed:
 
@@ -55,6 +56,14 @@ Found and fixed:
    block structure is now read first and the import refused above 1 GB of decoded pixels or
    10000 frames. The same budget now applies to WebP and APNG.
 4. **Bearer token compared with `!=`** (review): now constant-time.
+5. **Heap use-after-free in stb_image's GIF loader** (fuzzing, second round). A crafted GIF
+   made stb_image (the pinned version) read freed memory while compositing frames: a real
+   memory-safety bug in third-party code, reachable by importing a GIF. GIF decoding now
+   uses AceStudio's own bounds-checked decoder (LZW with chain-length checks, interlacing,
+   disposal 0–3, local palettes, transparency, NETSCAPE loop count), and stb_image is built
+   with PNG support only. The new decoder matches Pillow 12.3 pixel for pixel on interlaced,
+   animated and multi-palette test GIFs (`tests/data/gif`) and ran 20 more minutes under the
+   fuzzer.
 
 Third-party notes: UBSan reports "applying zero offset to null pointer" inside miniz's
 inflate (`miniz.c:474`, `miniz_tinfl.c:202`) on APNG input. This is pointer arithmetic on a

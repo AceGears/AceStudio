@@ -2,7 +2,6 @@
 #include "acestudio/core/Document.h"
 #include "acestudio/core/PaletteIO.h"
 
-#include "StbImage.h"
 #include <miniz.h>
 #include <webp/decode.h>
 #include <webp/demux.h>
@@ -201,8 +200,8 @@ Result<std::vector<std::uint8_t>> encodeGif(const std::vector<AnimFrame>& frames
 namespace {
 
 // The GIF's screen size and frame count, read from its block structure before
-// decoding: stb_image keeps every frame at screen size in memory, so a small
-// file can otherwise ask for gigabytes (found by fuzzing).
+// decoding: every frame is kept at screen size, so a small file could
+// otherwise ask for gigabytes (found by fuzzing).
 struct GifShape {
     int width = 0, height = 0, frames = 0;
 };
@@ -247,6 +246,202 @@ constexpr std::uint64_t kMaxDecodedGifBytes = 1ull << 30;   // all frames of an 
 
 } // namespace
 
+
+namespace {
+
+// A bounds-checked GIF decoder (Phase 8: replaces stb_image's GIF loader,
+// in which fuzzing found a heap use-after-free). Frames are composited on a
+// screen-sized canvas with the GIF disposal methods: 0/1 keep, 2 clear the
+// frame's rectangle to transparent, 3 restore what was there before.
+class GifReader {
+public:
+    explicit GifReader(std::span<const std::uint8_t> b) : m_b(b) {}
+    bool has(std::size_t n) const { return m_pos + n <= m_b.size(); }
+    std::uint8_t u8() {
+        if (has(1)) return m_b[m_pos++];
+        m_bad = true;
+        return 0;
+    }
+    int u16() {
+        const int lo = u8(), hi = u8();
+        return lo | (hi << 8);
+    }
+    void skip(std::size_t n) {
+        if (!has(n)) m_bad = true;
+        m_pos = std::min(m_b.size(), m_pos + n);
+    }
+    // The data sub-blocks that follow an extension or image, concatenated.
+    std::vector<std::uint8_t> subBlocks() {
+        std::vector<std::uint8_t> out;
+        for (;;) {
+            const std::size_t len = u8();
+            if (m_bad || len == 0) return out;
+            if (!has(len)) {   // truncated: keep what is there
+                out.insert(out.end(), m_b.begin() + static_cast<std::ptrdiff_t>(m_pos), m_b.end());
+                m_pos = m_b.size();
+                m_bad = true;
+                return out;
+            }
+            out.insert(out.end(), m_b.begin() + static_cast<std::ptrdiff_t>(m_pos), m_b.begin() + static_cast<std::ptrdiff_t>(m_pos + len));
+            m_pos += len;
+        }
+    }
+    bool bad() const { return m_bad; }
+    bool atEnd() const { return m_pos >= m_b.size(); }
+
+private:
+    std::span<const std::uint8_t> m_b;
+    std::size_t m_pos = 0;
+    bool m_bad = false;
+};
+
+// LZW decoding of one image's indices; stops at `count` pixels. Missing data
+// leaves the rest 0 (as browsers do), a broken code stream ends the image.
+std::vector<std::uint8_t> gifLzw(const std::vector<std::uint8_t>& data, int minCodeSize, std::size_t count) {
+    std::vector<std::uint8_t> out;
+    out.reserve(count);
+    if (minCodeSize < 2 || minCodeSize > 8) return out;
+    const int clear = 1 << minCodeSize, end = clear + 1;
+    std::vector<std::uint16_t> prefix(4096);
+    std::vector<std::uint8_t> suffix(4096), stack;
+    stack.reserve(4097);
+    for (int i = 0; i < clear; ++i) suffix[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(i);
+    int codeSize = minCodeSize + 1, next = end + 1, prev = -1;
+    std::uint8_t first = 0;
+    std::uint32_t bits = 0;
+    int nbits = 0;
+    std::size_t pos = 0;
+    while (out.size() < count) {
+        while (nbits < codeSize) {
+            if (pos >= data.size()) return out;
+            bits |= static_cast<std::uint32_t>(data[pos++]) << nbits;
+            nbits += 8;
+        }
+        const int code = static_cast<int>(bits & ((1u << codeSize) - 1));
+        bits >>= codeSize;
+        nbits -= codeSize;
+        if (code == clear) {
+            codeSize = minCodeSize + 1;
+            next = end + 1;
+            prev = -1;
+            continue;
+        }
+        if (code == end) break;
+        if (prev < 0) {
+            if (code >= clear) break;   // must start with a literal
+            out.push_back(static_cast<std::uint8_t>(code));
+            first = static_cast<std::uint8_t>(code);
+            prev = code;
+            continue;
+        }
+        int c = code;
+        stack.clear();
+        if (code >= next) {   // the KwKwK case
+            if (code > next) break;   // invalid
+            stack.push_back(first);
+            c = prev;
+        }
+        while (c >= clear) {
+            if (c >= next || stack.size() > 4096) return out;   // corrupt chain
+            stack.push_back(suffix[static_cast<std::size_t>(c)]);
+            c = prefix[static_cast<std::size_t>(c)];
+        }
+        stack.push_back(static_cast<std::uint8_t>(c));
+        first = static_cast<std::uint8_t>(c);
+        for (auto it = stack.rbegin(); it != stack.rend() && out.size() < count; ++it) out.push_back(*it);
+        if (next < 4096) {
+            prefix[static_cast<std::size_t>(next)] = static_cast<std::uint16_t>(prev);
+            suffix[static_cast<std::size_t>(next)] = first;
+            ++next;
+            if (next == (1 << codeSize) && codeSize < 12) ++codeSize;
+        }
+        prev = code;
+    }
+    return out;
+}
+
+Result<DecodedAnimation> decodeGifFrames(std::span<const std::uint8_t> bytes, const GifShape& shape) {
+    GifReader r(bytes);
+    r.skip(6);
+    const int W = r.u16(), H = r.u16();
+    const std::uint8_t flags = r.u8();
+    r.u8();   // background colour index: AceStudio uses transparency
+    r.u8();   // aspect ratio
+    std::vector<Rgba8> global;
+    if (flags & 0x80) {
+        const int n = 1 << ((flags & 7) + 1);
+        for (int i = 0; i < n; ++i) {
+            const std::uint8_t cr = r.u8(), cg = r.u8(), cb = r.u8();
+            global.push_back({cr, cg, cb, 255});
+        }
+    }
+    if (r.bad() || W != shape.width || H != shape.height) return Error{ErrorCode::CorruptData, "Damaged GIF header"};
+    DecodedAnimation out;
+    Image canvas(W, H);
+    int delayCs = 10, dispose = 0, transparent = -1;
+    while (!r.atEnd()) {
+        const std::uint8_t tag = r.u8();
+        if (r.bad() || tag == 0x3B) break;
+        if (tag == 0x21) {
+            const std::uint8_t label = r.u8();
+            const auto data = r.subBlocks();
+            if (label == 0xF9 && data.size() >= 4) {   // graphic control
+                dispose = (data[0] >> 2) & 7;
+                delayCs = data[1] | (data[2] << 8);
+                transparent = (data[0] & 1) ? data[3] : -1;
+            } else if (label == 0xFF && data.size() >= 14 && std::memcmp(data.data(), "NETSCAPE2.0", 11) == 0 && data[11] == 1) {
+                out.loopCount = data[12] | (data[13] << 8);
+            }
+            continue;
+        }
+        if (tag != 0x2C) break;   // unknown block: stop with what we have
+        const int x = r.u16(), y = r.u16(), w = r.u16(), h = r.u16();
+        const std::uint8_t f = r.u8();
+        std::vector<Rgba8> local;
+        if (f & 0x80) {
+            const int n = 1 << ((f & 7) + 1);
+            for (int i = 0; i < n; ++i) {
+                const std::uint8_t cr = r.u8(), cg = r.u8(), cb = r.u8();
+                local.push_back({cr, cg, cb, 255});
+            }
+        }
+        const int minCode = r.u8();
+        const auto data = r.subBlocks();
+        if (w <= 0 || h <= 0) continue;
+        const std::vector<Rgba8>& pal = local.empty() ? global : local;
+        const auto indices = gifLzw(data, minCode, static_cast<std::size_t>(w) * static_cast<std::size_t>(h));
+        const Image before = dispose == 3 ? canvas : Image();
+        // Interlaced rows come in four passes.
+        std::vector<int> rows;
+        rows.reserve(static_cast<std::size_t>(h));
+        if (f & 0x40) {
+            for (int start : {0, 4, 2, 1})
+                for (int row = start; row < h; row += start == 0 ? 8 : start == 4 ? 8 : start == 2 ? 4 : 2) rows.push_back(row);
+        } else {
+            for (int row = 0; row < h; ++row) rows.push_back(row);
+        }
+        for (std::size_t i = 0; i < indices.size(); ++i) {
+            const int row = rows[i / static_cast<std::size_t>(w)];
+            const int col = static_cast<int>(i % static_cast<std::size_t>(w));
+            const int idx = indices[i];
+            if (idx == transparent || idx >= static_cast<int>(pal.size())) continue;
+            if (canvas.contains(x + col, y + row)) canvas.setPixel(x + col, y + row, pal[static_cast<std::size_t>(idx)]);
+        }
+        if (out.frames.size() + 1 > static_cast<std::size_t>(Document::kMaxFrames))
+            return Error{ErrorCode::CorruptData, "The GIF has more than " + std::to_string(Document::kMaxFrames) + " frames"};
+        out.frames.push_back({canvas, std::max(10, delayCs * 10)});
+        if (dispose == 2) canvas.fillRect({x, y, w, h}, Rgba8::transparent());
+        else if (dispose == 3 && !before.isNull()) canvas = before;
+        delayCs = 10;
+        dispose = 0;
+        transparent = -1;
+    }
+    if (out.frames.empty()) return Error{ErrorCode::CorruptData, "The GIF contains no images"};
+    return out;
+}
+
+} // namespace
+
 Result<DecodedAnimation> decodeGif(std::span<const std::uint8_t> bytes) {
     if (bytes.size() < 6 || bytes.size() > static_cast<std::size_t>(INT_MAX))
         return Error{ErrorCode::CorruptData, "Not a GIF"};
@@ -260,22 +455,7 @@ Result<DecodedAnimation> decodeGif(std::span<const std::uint8_t> bytes) {
     if (static_cast<std::uint64_t>(shape->width) * static_cast<std::uint64_t>(shape->height) * 4u *
             static_cast<std::uint64_t>(shape->frames + 3) > kMaxDecodedGifBytes)
         return Error{ErrorCode::CorruptData, "The GIF is too large to import (more than 1 GB of pixels when decoded)"};
-    int* delays = nullptr;
-    int w = 0, h = 0, n = 0, comp = 0;
-    stbi_uc* data = stbi_load_gif_from_memory(bytes.data(), static_cast<int>(bytes.size()), &delays, &w, &h, &n, &comp, 4);
-    if (!data) return Error{ErrorCode::CorruptData, std::string("GIF decode failed: ") + stbi_failure_reason()};
-    std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> guard(data, &stbi_image_free);
-    std::unique_ptr<int, decltype(&stbi_image_free)> dguard(delays, &stbi_image_free);
-    if (w <= 0 || h <= 0 || w > Image::kMaxDimension || h > Image::kMaxDimension)
-        return Error{ErrorCode::CorruptData, "GIF dimensions exceed limits"};
-    DecodedAnimation out;
-    const std::size_t frameBytes = static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4;
-    for (int i = 0; i < n; ++i) {
-        auto img = Image::fromRgba(w, h, std::span<const std::uint8_t>(data + frameBytes * static_cast<std::size_t>(i), frameBytes));
-        if (!img) return img.error();
-        out.frames.push_back({std::move(img).value(), delays ? std::max(10, delays[i]) : 100});
-    }
-    return out;
+    return decodeGifFrames(bytes, *shape);
 }
 
 // ------------------------------------------------------------------ APNG

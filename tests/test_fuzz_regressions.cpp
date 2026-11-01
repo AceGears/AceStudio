@@ -31,6 +31,8 @@ TEST_CASE("Fuzz regression: a small GIF asking for gigabytes is refused quickly"
     // A GIF claiming 65535x65535 is refused before decoding.
     std::vector<std::uint8_t> big{'G', 'I', 'F', '8', '9', 'a', 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0x3b};
     CHECK_FALSE(decodeGif(big));
+    // stb_image's GIF loader read freed memory on this one; AceStudio's own decoder handles it.
+    (void)decodeGif(regression("gif-stb-use-after-free.gif"));
 }
 
 TEST_CASE("Fuzz regression: malformed MCP parameters give errors, not crashes", "[security]") {

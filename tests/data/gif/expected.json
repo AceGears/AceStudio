@@ -1,0 +1,29 @@
+{
+ "interlaced.gif": {
+  "frames": 1,
+  "durations": [
+   100
+  ],
+  "loop": null
+ },
+ "anim.gif": {
+  "frames": 5,
+  "durations": [
+   50,
+   120,
+   70,
+   200,
+   30
+  ],
+  "loop": 3
+ },
+ "local_palettes.gif": {
+  "frames": 3,
+  "durations": [
+   100,
+   100,
+   100
+  ],
+  "loop": 0
+ }
+}
