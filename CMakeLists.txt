@@ -19,10 +19,17 @@ option(ACESTUDIO_BUILD_CLI   "Build acestudio-cli"              ON)
 option(ACESTUDIO_BUILD_MCP   "Build acestudio-mcp (needs Qt Core/Network)" ON)
 option(ACESTUDIO_BUILD_TESTS "Build unit tests"                 ON)
 option(ACESTUDIO_BUILD_TOOLS "Build AceGears tools (licence keys)" ON)
+option(ACESTUDIO_FUZZ "Build libFuzzer targets (clang; instruments everything)" OFF)
 option(ACESTUDIO_BUILD_BENCH "Build micro-benchmarks"         ON)
 option(ACESTUDIO_WARNINGS_AS_ERRORS "Treat warnings as errors"  OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+if(ACESTUDIO_FUZZ)
+    # Coverage and sanitizers for every library the targets link.
+    add_compile_options(-fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 include(CompilerWarnings)
 include(Dependencies)
 
@@ -64,6 +71,10 @@ endif()
 
 if(ACESTUDIO_BUILD_BENCH)
     add_subdirectory(bench)
+endif()
+
+if(ACESTUDIO_FUZZ)
+    add_subdirectory(tests/fuzz)
 endif()
 
 if(ACESTUDIO_BUILD_TESTS)

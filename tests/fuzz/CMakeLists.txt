@@ -1,0 +1,13 @@
+# libFuzzer targets (clang only). See fuzz_targets.cpp.
+set(_fuzz_targets PROJECT PNG GIF APNG WEBP PALETTE LICENCE LUA MCP)
+foreach(t ${_fuzz_targets})
+    string(TOLOWER ${t} _name)
+    add_executable(fuzz_${_name} fuzz_targets.cpp)
+    target_compile_definitions(fuzz_${_name} PRIVATE FUZZ_${t})
+    target_compile_options(fuzz_${_name} PRIVATE -fsanitize=fuzzer,address,undefined)
+    target_link_options(fuzz_${_name} PRIVATE -fsanitize=fuzzer,address,undefined)
+    target_link_libraries(fuzz_${_name} PRIVATE AceStudio::core)
+    if(t STREQUAL "MCP")
+        target_link_libraries(fuzz_${_name} PRIVATE acestudio_mcp_proto)
+    endif()
+endforeach()
