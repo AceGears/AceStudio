@@ -112,4 +112,40 @@ if(NOT EXISTS "${WORKDIR}/eng.tres" OR NOT EXISTS "${WORKDIR}/eng.png.meta" OR N
     message(FATAL_ERROR "export --engines did not write the engine files")
 endif()
 
+
+# ---- Lua scripts (Phase 7)
+file(WRITE "${WORKDIR}/scripts/make.lua" [=[
+local img = ace.image(4, 4, arg[1])
+img:save("made.png")
+local d = ace.document()
+if d then
+  d:add_frame(90)
+  d:add_tag("lua", 0, d.frames - 1)
+end
+print("made", arg[1])
+]=])
+file(WRITE "${WORKDIR}/scripts/escape.lua" [=[ace.image(1, 1):save("../escaped.png")]=])
+file(WRITE "${WORKDIR}/scripts/io.lua" [=[io.open("x", "w")]=])
+file(WRITE "${WORKDIR}/scripts/loop.lua" [=[while true do pcall(function() while true do end end) end]=])
+run(0 --json run "${WORKDIR}/scripts/make.lua" "#ff0000")
+string(JSON out GET "${LAST_OUT}" output)
+if(NOT out STREQUAL "made\t#ff0000\n" OR NOT EXISTS "${WORKDIR}/scripts/made.png")
+    message(FATAL_ERROR "run make.lua: ${LAST_OUT}")
+endif()
+run(6 run "${WORKDIR}/scripts/escape.lua")
+if(EXISTS "${WORKDIR}/escaped.png")
+    message(FATAL_ERROR "a script wrote outside its folder")
+endif()
+run(0 run "${WORKDIR}/scripts/escape.lua" --allow "${WORKDIR}")   # the parent folder is allowed now
+run(6 run "${WORKDIR}/scripts/io.lua")
+run(6 run "${WORKDIR}/scripts/loop.lua" --timeout 1)
+run(1 run "${WORKDIR}/scripts/make.lua" --save "${WORKDIR}/x.acestudio")   # --save needs --doc
+run(0 --json run "${WORKDIR}/scripts/make.lua" "#00ff00" --doc "${P}" --save "${WORKDIR}/lua_out.acestudio")
+string(JSON changed GET "${LAST_OUT}" documentChanged)
+run(0 --json info "${WORKDIR}/lua_out.acestudio")
+string(JSON frames GET "${LAST_OUT}" frames)
+if(NOT changed OR NOT frames GREATER 1)
+    message(FATAL_ERROR "run --doc --save did not keep the script's frame: ${LAST_OUT}")
+endif()
+
 message(STATUS "cli_smoke passed")

@@ -1150,6 +1150,16 @@ Status Editor::replacePalette(Palette palette, const std::string& label) {
         [=](Document& d) { d.palette() = *before; }));
 }
 
+Status Editor::replaceDocument(Document next, const std::string& label) {
+    auto before = std::make_shared<Document>(m_doc);
+    auto after = std::make_shared<Document>(std::move(next));
+    std::size_t bytes = 0;
+    for (const Document* d : {before.get(), after.get()})
+        for (const auto& [key, cel] : d->cels()) bytes += cel.image.byteSize();
+    return apply(std::make_unique<FnCommand>(
+        label, [after](Document& d) { d = *after; return Status{}; }, [before](Document& d) { d = *before; }, bytes));
+}
+
 namespace {
 Rgba8 nearestOpaque(const std::vector<Rgba8>& cols, int r, int g, int b) {
     long best = -1;

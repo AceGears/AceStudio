@@ -19,7 +19,7 @@ namespace acestudio::cli {
 
 using nlohmann::json;
 
-enum Exit : int { kOk = 0, kUsage = 1, kIo = 2, kCorrupt = 3, kUnsupported = 4, kInternal = 5 };
+enum Exit : int { kOk = 0, kUsage = 1, kIo = 2, kCorrupt = 3, kUnsupported = 4, kInternal = 5, kScript = 6 };
 
 inline int exitFor(ErrorCode c) {
     switch (c) {
@@ -96,5 +96,6 @@ int cmdAtlas(const Args& a, Output& out);
 int cmdSlice(const Args& a, Output& out);
 int cmdUiKit(const Args& a, Output& out);
 int cmdTemplate(const Args& a, Output& out);
+int cmdRun(const Args& a, Output& out);
 
 } // namespace acestudio::cli

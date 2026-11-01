@@ -12,6 +12,8 @@ first paid release.
 | nlohmann/json | 3.12.0 | MIT | Header-only | Include copyright + license text | ✅ |
 | miniz | 3.1.2 | MIT | Static | Include copyright + license text | ✅ |
 | stb_image | commit 003501f | MIT / Public Domain (dual) | Compiled in | None required (MIT notice included anyway) | ✅ |
+| Lua | 5.4.9 (github.com/lua/lua tag v5.4.9) | MIT | Static, compiled as C++ | Include copyright + licence text (Lua.org, PUC-Rio) | ✅ |
+| sol2 | 3.3.0 (github.com/ThePhD/sol2 tag v3.3.0) | MIT | Header-only | Include copyright + licence text | ✅ |
 | libwebp (libwebp, libwebpdemux, libwebpmux) | 1.6.0 | BSD-3-Clause | Static | Include copyright notice, licence text and the PATENTS grant file in the notices; do not use WebM project names to endorse the product | ✅ |
 
 | AceStudio AI worker (`ai_worker/`, Python source) | 0.5.0 | Proprietary (ours) | Shipped as source next to the executable | Includes an independent implementation of the RRDBNet architecture compatible with the published Real-ESRGAN (BSD-3) weights | ✅ |
@@ -52,8 +54,6 @@ time only and must not ship.
 
 | Component | License | Phase |
 |---|---|---|
-| Lua 5.4.9 | MIT | 7 |
-| sol2 3.3.0 | MIT | 7 |
 | Inno Setup 7.x | Free for commercial use (keep notices) | 8 |
 | Qt Advanced Docking System | LGPL-2.1 (dynamic link) | optional |
 

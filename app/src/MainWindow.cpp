@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "scripting/ScriptDialog.h"
 
 #include "AppContext.h"
 #include "CanvasWidget.h"
@@ -41,6 +42,8 @@
 #include <QDir>
 #include <QDockWidget>
 #include <QFileDialog>
+
+#include <algorithm>
 #include <QFileInfo>
 #include <QShortcut>
 #include <QTimer>
@@ -629,6 +632,32 @@ void MainWindow::buildMenus() {
         AtlasDialog dlg(currentView(), this);
         dlg.exec();
     });
+    // Scripts
+    QMenu* scripts = menuBar()->addMenu(tr("S&cripts"));
+    auto runScript = [this](const std::filesystem::path& scriptFile) {
+        ScriptDialog dlg(scriptFile, currentView(), this);
+        dlg.start();
+        dlg.exec();
+    };
+    connect(scripts, &QMenu::aboutToShow, this, [this, scripts, runScript] {
+        scripts->clear();
+        const auto dir = scriptsFolder(m_ctx.dataDir());
+        scripts->addAction(tr("&Run Script…"), this, [this, dir, runScript] {
+            const QString f = QFileDialog::getOpenFileName(this, tr("Run Lua Script"), fromPath(dir), tr("Lua scripts (*.lua)"));
+            if (!f.isEmpty()) runScript(toPath(f));
+        });
+        std::vector<std::filesystem::path> found;
+        std::error_code ec;
+        for (const auto& e : std::filesystem::directory_iterator(dir, ec))
+            if (e.path().extension() == ".lua") found.push_back(e.path());
+        std::sort(found.begin(), found.end());
+        if (!found.empty()) scripts->addSeparator();
+        for (const auto& f : found)
+            scripts->addAction(fromPath(f.stem()), this, [f, runScript] { runScript(f); });
+        scripts->addSeparator();
+        scripts->addAction(tr("Open Scripts &Folder"), this, [dir] { QDesktopServices::openUrl(QUrl::fromLocalFile(fromPath(dir))); });
+    });
+    scripts->addAction(tr("&Run Script…"));   // replaced when the menu opens
     QMenu* toolsMenu = menuBar()->addMenu(tr("T&ools"));
     auto* toolGroup = new QActionGroup(this);
     for (Tool t : kAllTools) {
@@ -1060,6 +1089,8 @@ void MainWindow::showNotices() {
         "<li><b>stb_image</b> — MIT License / Public Domain</li>"
         "<li><b>libwebp 1.6.0</b> — BSD 3-Clause License, Copyright (c) 2010 Google Inc.; "
         "with the WebM project's additional patent grant</li>"
+        "<li><b>Lua 5.4.9</b> — MIT License, Copyright (C) 1994-2026 Lua.org, PUC-Rio</li>"
+        "<li><b>sol2 3.3.0</b> — MIT License, Copyright (c) 2013-2022 Rapptz, ThePhD, and contributors</li>"
         "</ul><p>Full license texts will ship in the installer's <i>licenses</i> folder "
         "(installer packaging is not built yet).</p>")
                     .arg(QString::fromLatin1(qVersion())));

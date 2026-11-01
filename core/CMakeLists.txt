@@ -11,6 +11,7 @@ add_library(acestudio_core STATIC
     src/AssetTools.cpp
     src/EngineExport.cpp
     src/AssetFiles.cpp
+    src/Script.cpp
     src/BlendMode.cpp
     src/Character.cpp
     src/Color.cpp
@@ -45,7 +46,7 @@ target_include_directories(acestudio_core
 find_package(Threads REQUIRED)
 target_link_libraries(acestudio_core
     PUBLIC  nlohmann_json::nlohmann_json
-    PRIVATE miniz acestudio_stb webp webpdemux libwebpmux Threads::Threads)
+    PRIVATE miniz acestudio_stb webp webpdemux libwebpmux Threads::Threads acestudio_sol2)
 
 # Lets development builds find ai_worker/ in the source tree.
 set_source_files_properties(src/AiWorker.cpp PROPERTIES

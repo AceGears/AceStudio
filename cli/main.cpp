@@ -2,7 +2,7 @@
 //
 // Every command supports --json for machine-readable output. Exit codes:
 //   0 success, 1 usage error, 2 I/O or not found, 3 corrupt or invalid data,
-//   4 unsupported (newer) version, 5 internal error.
+//   4 unsupported (newer) version, 5 internal error, 6 the Lua script failed.
 
 #include "CliCommon.h"
 #include "acestudio/core/AssetFiles.h"
@@ -73,6 +73,10 @@ const char* kUsageText =
     "  uikit --out ui.png [--scale 1] [--colors base,light,dark,outline,accent,text] [--square]\n"
     "        [--texture pattern.png] [--engines godot,unity]\n"
     "                                  Themed UI kit with 9-slice data (Godot StyleBoxTexture .tres)\n"
+    "  run <script.lua> [args...] [--allow dir;dir] [--doc in.acestudio [--save out.acestudio]]\n"
+    "        [--timeout 30] [--memory 512]\n"
+    "                                  Run a sandboxed Lua script (docs/lua-api.md). It may use\n"
+    "                                  files in its own folder and the --allow folders only.\n"
     "\n"
     "  ai status                       Show the AI runtime, GPU and available tasks\n"
     "  ai setup --profile P --yes      Create the AI Python environment and install packages\n"
@@ -310,6 +314,7 @@ int main(int argc, char** argv) {
         if (cmd == "atlas") return acestudio::cli::cmdAtlas(*args, out);
         if (cmd == "slice") return acestudio::cli::cmdSlice(*args, out);
         if (cmd == "uikit") return acestudio::cli::cmdUiKit(*args, out);
+        if (cmd == "run") return acestudio::cli::cmdRun(*args, out);
         return out.fail(kUsage, "Unknown command '" + cmd + "'. Run with --help.");
     } catch (const std::exception& e) {
         return out.fail(kInternal, std::string("Unexpected error: ") + e.what());

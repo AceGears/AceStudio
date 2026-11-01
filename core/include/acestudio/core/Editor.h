@@ -139,6 +139,10 @@ public:
     Status removePaletteColor(std::size_t index);
     Status replacePalette(Palette palette, const std::string& label = "Replace Palette");
 
+    // Replaces the whole document in one undo step (used by scripts, which
+    // edit a copy on a worker thread).
+    Status replaceDocument(Document next, const std::string& label);
+
     // ---- Colour mode ----
     // Converts every cel. Indexed: pixels snap to the nearest opaque palette
     // colour (alpha < 128 becomes transparent, else opaque); with `dither`

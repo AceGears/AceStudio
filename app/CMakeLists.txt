@@ -45,6 +45,8 @@ add_executable(AceStudio WIN32
     src/assets/TilesetDialog.cpp
     src/assets/AssetDialogs.h
     src/assets/AssetDialogs.cpp
+    src/scripting/ScriptDialog.h
+    src/scripting/ScriptDialog.cpp
     src/SingleInstance.h
     src/SingleInstance.cpp
     src/Shortcuts.h
