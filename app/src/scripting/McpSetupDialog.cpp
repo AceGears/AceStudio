@@ -36,8 +36,12 @@ McpSetupDialog::McpSetupDialog(QWidget* parent) : QDialog(parent) {
                              this);
     intro->setWordWrap(true);
     lay->addWidget(intro);
+    auto* clientLabel = new QLabel(tr("AI &assistant:"), this);
+    lay->addWidget(clientLabel);
     auto* client = new QComboBox(this);
     for (const auto& c : configs) client->addItem(qs(c.name));
+    client->setAccessibleName(tr("AI assistant"));
+    clientLabel->setBuddy(client);
     lay->addWidget(client);
     auto* where = new QLabel(this);
     where->setWordWrap(true);
