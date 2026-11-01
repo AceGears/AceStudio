@@ -14,6 +14,8 @@ add_executable(AceStudio WIN32
     src/ui/WorkspaceRail.h
     src/ui/WorkspaceRail.cpp
     src/ui/Workspaces.h
+    src/pages/GeneratorPage.h
+    src/pages/GeneratorPage.cpp
     src/pages/HomePage.h
     src/pages/HomePage.cpp
     src/pages/HubPage.h

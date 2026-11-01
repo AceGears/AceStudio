@@ -9,6 +9,7 @@ add_library(acestudio_core STATIC
     src/Animation.cpp
     src/AnimationQA.cpp
     src/AssetTools.cpp
+    src/AssetGen.cpp
     src/EngineExport.cpp
     src/AssetFiles.cpp
     src/Script.cpp

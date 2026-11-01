@@ -7,6 +7,7 @@
 #include "pages/SettingsPage.h"
 #include "pages/LibraryPage.h"
 #include "pages/HubPage.h"
+#include "pages/GeneratorPage.h"
 #include "pages/HomePage.h"
 #include "scripting/ScriptDialog.h"
 
@@ -873,10 +874,9 @@ void MainWindow::buildWorkspaces() {
         for (const WorkspaceInfo& w : workspaceInfos())
             if (key == QLatin1String(w.key)) showWorkspace(w.id);
     });
-    connect(m_home, &HomePage::generateRequested, this, [this](const QString& prompt, const QString&) {
+    connect(m_home, &HomePage::generateRequested, this, [this](const QString& prompt, const QString& type) {
         showWorkspace(Workspace::AiStudio);
-        m_aiPanel->focusTab(0);
-        m_aiPanel->setPrompt(prompt);
+        m_generator->setPrompt(prompt, type);
     });
     put(Workspace::Home, m_home);
 
@@ -884,25 +884,23 @@ void MainWindow::buildWorkspaces() {
     put(Workspace::Editor, m_stack);
     put(Workspace::Animation, m_stack);
 
-    // AI Studio: the generation panel, full page. (It also stays available as
-    // a dock inside the editor for working on the open document.)
-    auto* ai = new HubPage(tr("AI Studio"), tr("Generate assets"),
-                           tr("Text-to-image and image-to-image, background removal and upscaling run locally on this PC. "
-                              "Results open as new documents or arrive as layers in the open one."),
-                           m_pages);
-    ai->addCard({Glyph::Sparkle, tr("Generate"), tr("Pixel-art or detailed images from a description, at your canvas size and palette."),
-                 tr("Open Generator"), [this] { showWorkspace(Workspace::Editor); m_aiDock->show(); m_aiDock->raise(); m_aiPanel->focusTab(0); }});
-    ai->addCard({Glyph::Image, tr("Remove Background"), tr("Cut a sprite out of its background (BiRefNet), with hard pixel-art edges."),
-                 tr("Open"), [this] { showWorkspace(Workspace::Editor); m_aiDock->show(); m_aiDock->raise(); m_aiPanel->focusTab(1); }, true});
-    ai->addCard({Glyph::Grid, tr("Upscale"), tr("Real-ESRGAN ×4 for detailed art; for pixel art use Image › Scale."),
-                 tr("Open"), [this] { showWorkspace(Workspace::Editor); m_aiDock->show(); m_aiDock->raise(); m_aiPanel->focusTab(2); }, true});
-    ai->addSection(tr("Runtime"));
-    ai->addCard({Glyph::Settings, tr("Set Up AI"), tr("Installs the AI runtime into AceStudio's own folder; nothing else on the PC changes."),
-                 tr("Set Up…"), [this] { m_aiPanel->showSetup(); }});
-    ai->addCard({Glyph::Library, tr("Models"), tr("Download models after accepting their licences; each file is verified."),
-                 tr("Manage Models…"), [this] { m_aiPanel->showModels(); }});
-    m_hubs << ai;
-    put(Workspace::AiStudio, ai);
+    // AI Studio: the unified generator.
+    m_generator = new GeneratorPage(*m_ai, m_ctx, m_pages);
+    connect(m_generator, &GeneratorPage::openAsDocument, this, [this](const Image& img, const QString& name) { openImageAsDocument(img, name); });
+    connect(m_generator, &GeneratorPage::addAsLayer, this, [this](const Image& img, const QString& name) {
+        if (DocumentView* v = currentView()) {
+            insertImageAsLayer(v, img, name);
+            showWorkspace(Workspace::Editor);
+        }
+    });
+    connect(m_generator, &GeneratorPage::animateRequested, this, [this](const Image& img, const QString& name) {
+        openImageAsDocument(img, name);
+        showWorkspace(Workspace::Animation);
+    });
+    connect(m_generator, &GeneratorPage::showModelsRequested, this, [this] { m_aiPanel->showModels(); });
+    connect(m_generator, &GeneratorPage::showSetupRequested, this, [this] { m_aiPanel->showSetup(); });
+    connect(m_generator, &GeneratorPage::statusMessage, this, [this](const QString& t) { statusBar()->showMessage(t, 6000); });
+    put(Workspace::AiStudio, m_generator);
 
     // Characters.
     auto* chars = new HubPage(tr("Characters"), tr("Characters and animation"),
@@ -1214,6 +1212,7 @@ void MainWindow::onCurrentTabChanged() {
     if (m_bridge) m_bridge->documentsChanged();
     m_stack->setCurrentIndex(v ? 1 : 0);
     for (HubPage* h : m_hubs) h->setDocumentOpen(v != nullptr);
+    if (m_generator) m_generator->setView(v);
     m_layers->setView(v);
     m_props->setView(v);
     m_palette->setView(v);

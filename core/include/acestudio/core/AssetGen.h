@@ -1,0 +1,104 @@
+#pragma once
+// The unified asset generator's model-independent parts: what to ask the
+// model for (prompt composition by asset type, style and perspective), how
+// hard to work (quality presets), at what size to generate, and the automatic
+// checks every result gets before the user sees it.
+
+#include "acestudio/core/Image.h"
+#include "acestudio/core/Palette.h"
+
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace acestudio::gen {
+
+enum class AssetType {
+    Character, Npc, Monster, Boss, Pet, Animal, Weapon, Armor, Item, Loot, Building, Furniture, Prop,
+    Tileset, Terrain, Background, UiElement, Effect, Portrait, AnimatedObject
+};
+enum class ArtStyle { DetailedPixel, RpgPixel, PlatformerPixel, RetroPixel, HdPainted, HdCel };
+enum class Perspective { Side, Front, ThreeQuarter, TopDown, Isometric };
+enum class QualityPreset { FastDraft, Balanced, HighQuality, Maximum };
+enum class Backend { Klein, Sdxl };
+
+struct TypeInfo { AssetType type; const char* key; const char* label; };
+struct StyleInfo { ArtStyle style; const char* key; const char* label; };
+struct PerspectiveInfo { Perspective perspective; const char* key; const char* label; };
+const std::vector<TypeInfo>& assetTypes();
+const std::vector<StyleInfo>& artStyles();
+const std::vector<PerspectiveInfo>& perspectives();
+std::optional<AssetType> assetTypeFromKey(std::string_view key);
+std::optional<ArtStyle> artStyleFromKey(std::string_view key);
+std::optional<Perspective> perspectiveFromKey(std::string_view key);
+
+bool isPixelStyle(ArtStyle s);
+// Types drawn as one isolated subject (and cut out when transparency is on);
+// the others (tilesets, terrain, backgrounds) fill the frame.
+bool isSingleSubject(AssetType t);
+// Terrain and tileset textures should repeat seamlessly.
+bool wantsTileable(AssetType t);
+
+struct Spec {
+    std::string description;      // the user's words
+    AssetType type = AssetType::Character;
+    ArtStyle style = ArtStyle::DetailedPixel;
+    Perspective perspective = Perspective::Side;
+    bool transparent = true;
+    std::string styleNotes;       // from a locked style profile (palette, outline, shading words)
+};
+
+struct Prompt {
+    std::string positive;
+    std::string negative;         // SDXL only; FLUX.2 klein takes no negative prompt
+};
+Prompt composePrompt(const Spec& spec, Backend backend, bool styleLora);
+
+struct PresetInfo {
+    QualityPreset preset;
+    const char* key;
+    const char* label;
+    const char* description;
+    int kleinSteps, sdxlSteps;
+    int longSide;                 // generation size of the longer side, px
+};
+const std::vector<PresetInfo>& qualityPresets();
+const PresetInfo& presetInfo(QualityPreset p);
+std::optional<QualityPreset> presetFromKey(std::string_view key);
+
+// Generation size for an output of `outW` x `outH`: the target's aspect at
+// the preset's long side, rounded to multiples of 16 (SDXL needs 8, klein 16).
+std::pair<int, int> generationSize(int outW, int outH, QualityPreset p);
+
+// ------------------------------------------------------------------ checks
+
+enum class Severity { Info, Warning, Problem };
+struct Issue {
+    Severity severity;
+    std::string code;      // stable id: "cropped", "colors", "soft-alpha", "stray", "pieces", "opaque", "empty", "size", "palette"
+    std::string message;
+};
+struct QualityReport {
+    int width = 0, height = 0;
+    int colors = 0;               // distinct opaque colours
+    double coverage = 0;          // opaque fraction of the canvas
+    int pieces = 0;               // 8-connected opaque components larger than 2 px
+    double strayRatio = 0;        // opaque pixels with no opaque 4-neighbour, of all opaque
+    bool hardAlpha = true;        // every alpha is 0 or 255
+    bool touchesEdge = false;     // opaque pixels on the border
+    std::optional<double> paletteDistance;   // mean distance to the style palette (0..1), when given
+    std::vector<Issue> issues;
+    int score() const;            // 100 minus penalties, for sorting variations
+};
+struct CheckOptions {
+    bool pixelArt = true;
+    bool expectTransparent = true;
+    bool singleSubject = true;
+    int expectWidth = 0, expectHeight = 0;   // 0 = any
+    int maxColors = 0;                      // 0 = no limit
+    const Palette* stylePalette = nullptr;
+};
+QualityReport checkAsset(const Image& img, const CheckOptions& opt);
+
+} // namespace acestudio::gen

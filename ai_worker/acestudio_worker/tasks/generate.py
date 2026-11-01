@@ -298,8 +298,13 @@ def preview_image(decoder, latents, max_side=256):
 
 def pixelate(img, width, height, colors=None, palette=None, crop=False, box=None):
     """Nearest-neighbour downscale (centre sampling) and palette reduction
-    without dithering, so the result is editable pixel art."""
+    without dithering, so the result is editable pixel art. A transparent
+    input (after a cutout) keeps hard 1-bit alpha and is framed by its
+    opaque pixels."""
     from PIL import Image
+    alpha = None
+    if img.mode == "RGBA" and img.getchannel("A").getextrema()[0] < 255:
+        alpha = img.getchannel("A")
     if box is not None:
         # A fixed crop (normalised x0, y0, x1, y1), the same for every frame of
         # an animation so scale and ground line stay put.
@@ -308,9 +313,16 @@ def pixelate(img, width, height, colors=None, palette=None, crop=False, box=None
             raise JobError("pixel.box must be 0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1", kind="invalid_input")
         img = img.crop((round(x0 * img.width), round(y0 * img.height), round(x1 * img.width), round(y1 * img.height)))
     elif crop:
-        sb = subject_box(img, width, height)
+        if alpha is not None:
+            sb = _alpha_box(img, width, height)
+        else:
+            sb = subject_box(img, width, height)
         if sb:
             img = img.crop(sb)
+    small_alpha = None
+    if alpha is not None:
+        small_alpha = img.getchannel("A").resize((width, height), Image.NEAREST, reducing_gap=None).point(
+            lambda a: 255 if a >= 128 else 0)
     small = img.convert("RGB").resize((width, height), Image.NEAREST, reducing_gap=None)
     if palette:
         pal_img = Image.new("P", (1, 1))
@@ -323,7 +335,28 @@ def pixelate(img, width, height, colors=None, palette=None, crop=False, box=None
         small = small.quantize(palette=pal_img, dither=Image.Dither.NONE)
     elif colors:
         small = small.quantize(colors=int(colors), method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
-    return small.convert("RGBA")
+    out = small.convert("RGBA")
+    if small_alpha is not None:
+        out.putalpha(small_alpha)
+    return out
+
+
+def _alpha_box(img, width, height, pad=0.06):
+    """Square-ish box around the opaque pixels with the target's aspect ratio."""
+    bbox = img.getchannel("A").point(lambda a: 255 if a >= 128 else 0).getbbox()
+    if not bbox:
+        return None
+    x0, y0, x1, y1 = bbox
+    bw, bh = x1 - x0, y1 - y0
+    target = width / height
+    if bw / bh < target:
+        bw = bh * target
+    else:
+        bh = bw / target
+    bw *= 1 + 2 * pad
+    bh *= 1 + 2 * pad
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    return (round(cx - bw / 2), round(cy - bh / 2), round(cx + bw / 2), round(cy + bh / 2))
 
 
 def run(ctx):
@@ -457,6 +490,9 @@ def run(ctx):
                 result = pipe(width=width, height=height, **common)
             ctx.check_cancel()
             img = result.images[0]
+            if ctx.param("cutout"):
+                from .postprocess import apply_cutout
+                img = apply_cutout(ctx, img, ctx.param("cutout"))
             if pixel:
                 outputs["raw%d" % i] = save_png(img, ctx.path("raw%d.png" % i))
                 img = pixelate(img, int(pixel["width"]), int(pixel["height"]), pixel.get("colors"), pixel.get("palette"),

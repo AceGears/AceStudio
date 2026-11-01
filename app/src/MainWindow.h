@@ -123,6 +123,7 @@ private:
     class WorkspaceRail* m_rail = nullptr;
     QStackedWidget* m_pages = nullptr;
     class HomePage* m_home = nullptr;
+    class GeneratorPage* m_generator = nullptr;
     class LibraryPage* m_library = nullptr;
     QList<class HubPage*> m_hubs;
     std::array<QWidget*, kWorkspaceCount> m_pageFor{};

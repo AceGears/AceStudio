@@ -31,6 +31,7 @@ add_executable(acestudio_core_tests
     test_ai_worker.cpp
     test_model_catalog.cpp
     test_regression.cpp
+    test_asset_gen.cpp
 )
 add_executable(acestudio_test_child test_child.cpp)
 acestudio_set_warnings(acestudio_test_child)

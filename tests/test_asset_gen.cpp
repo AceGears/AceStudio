@@ -1,0 +1,95 @@
+#include "acestudio/core/AssetGen.h"
+
+#include <catch2/catch_test_macros.hpp>
+
+using namespace acestudio;
+using namespace acestudio::gen;
+
+TEST_CASE("Prompts carry type, perspective, style and isolation", "[gen]") {
+    Spec s;
+    s.description = "a dwarf blacksmith with a glowing hammer.";
+    s.type = AssetType::Character;
+    s.style = ArtStyle::DetailedPixel;
+    s.perspective = Perspective::Isometric;
+    const Prompt k = composePrompt(s, Backend::Klein, true);
+    CHECK(k.positive.rfind("pixel art sprite, a dwarf blacksmith with a glowing hammer, ", 0) == 0);
+    CHECK(k.positive.find("isometric view") != std::string::npos);
+    CHECK(k.positive.find("isolated on a plain white background") != std::string::npos);
+    CHECK(k.negative.empty());   // klein takes no negative prompt
+    const Prompt x = composePrompt(s, Backend::Sdxl, true);
+    CHECK(x.positive.rfind("pixel art, ", 0) == 0);
+    CHECK(x.negative.find("sprite sheet") != std::string::npos);
+
+    s.type = AssetType::Terrain;
+    const Prompt t = composePrompt(s, Backend::Klein, false);
+    CHECK(t.positive.find("seamless") != std::string::npos);
+    CHECK(t.positive.find("isolated") == std::string::npos);
+    CHECK(t.positive.find("isometric view") == std::string::npos);
+    s.style = ArtStyle::HdPainted;
+    s.type = AssetType::Monster;
+    CHECK(composePrompt(s, Backend::Klein, true).positive.rfind("pixel art", 0) != 0);   // no pixel trigger for HD
+}
+
+TEST_CASE("Generation sizes follow the target aspect at the preset size", "[gen]") {
+    CHECK(generationSize(64, 64, QualityPreset::Balanced) == std::pair{1024, 1024});
+    CHECK(generationSize(64, 64, QualityPreset::FastDraft) == std::pair{768, 768});
+    const auto [w, h] = generationSize(480, 270, QualityPreset::Balanced);
+    CHECK(w == 1024);
+    CHECK(h == 576);
+    CHECK(w % 16 == 0);
+    CHECK(h % 16 == 0);
+    const auto [w2, h2] = generationSize(16, 160, QualityPreset::Balanced);   // clamped aspect
+    CHECK(h2 == 1024);
+    CHECK(w2 == 256);
+}
+
+TEST_CASE("Asset checks find cut-off, opaque, noisy and soft-edged results", "[gen]") {
+    CheckOptions opt;
+    opt.expectWidth = 32;
+    opt.expectHeight = 32;
+    // A clean sprite: one blob in the middle, hard alpha, few colours.
+    Image good(32, 32);
+    good.fillRect({8, 6, 16, 22}, Rgba8::opaque(200, 40, 40));
+    good.fillRect({12, 10, 8, 4}, Rgba8::opaque(250, 220, 120));
+    QualityReport r = checkAsset(good, opt);
+    CHECK(r.issues.empty());
+    CHECK(r.colors == 2);
+    CHECK(r.pieces == 1);
+    CHECK(r.score() == 100);
+
+    Image opaque(32, 32, Rgba8::opaque(255, 255, 255));
+    r = checkAsset(opaque, opt);
+    REQUIRE_FALSE(r.issues.empty());
+    CHECK(r.issues.front().code == "opaque");
+
+    Image cut = good;
+    cut.fillRect({0, 10, 4, 4}, Rgba8::opaque(200, 40, 40));
+    cut.fillRect({4, 10, 4, 4}, Rgba8::opaque(200, 40, 40));
+    r = checkAsset(cut, opt);
+    CHECK(r.touchesEdge);
+    CHECK(r.score() < 100);
+
+    Image noisy = good;
+    for (int i = 0; i < 30; ++i) noisy.setPixel((i * 7) % 32, (i * 11) % 5 + 27, Rgba8::opaque(10, 10, 10));
+    noisy.setPixel(30, 1, Rgba8{255, 0, 0, 100});
+    r = checkAsset(noisy, opt);
+    bool stray = false, soft = false;
+    for (const Issue& i : r.issues) {
+        stray = stray || i.code == "stray";
+        soft = soft || i.code == "soft-alpha";
+    }
+    CHECK(stray);
+    CHECK(soft);
+
+    Palette pal;
+    REQUIRE(pal.add(Rgba8::opaque(0, 0, 255)));
+    opt.stylePalette = &pal;
+    r = checkAsset(good, opt);
+    REQUIRE(r.paletteDistance);
+    CHECK(*r.paletteDistance > 0.3);
+
+    CheckOptions sizeOpt;
+    sizeOpt.expectWidth = 64;
+    sizeOpt.expectHeight = 64;
+    CHECK(checkAsset(good, sizeOpt).issues.front().code == "size");
+}

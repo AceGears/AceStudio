@@ -130,8 +130,10 @@ HomePage::HomePage(AppContext& ctx, QWidget* parent) : QWidget(parent), m_ctx(ct
     m_prompt->setMinimumHeight(34);
     m_type = new QComboBox(gen);
     m_type->setAccessibleName(tr("Asset type"));
-    for (const char* t : {"Character", "Monster", "Item", "Prop", "Environment", "Tileset", "Effect", "UI element"})
-        m_type->addItem(tr(t), QString::fromLatin1(t));
+    for (const auto& [label, key] : {std::pair{"Character", "character"}, std::pair{"Monster", "monster"}, std::pair{"Weapon", "weapon"},
+                                     std::pair{"Item", "item"}, std::pair{"Prop", "prop"}, std::pair{"Background", "background"},
+                                     std::pair{"Terrain texture", "terrain"}, std::pair{"Effect", "effect"}, std::pair{"UI element", "ui"}})
+        m_type->addItem(tr(label), QString::fromLatin1(key));
     auto* go = new QPushButton(icon(Glyph::Sparkle), tr("Generate"), gen);
     go->setProperty("accent", true);
     go->setMinimumHeight(34);

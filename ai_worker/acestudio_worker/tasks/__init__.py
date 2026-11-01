@@ -18,6 +18,7 @@ _MODULES = [
     "acestudio_worker.tasks.upscale",
     "acestudio_worker.tasks.remove_background",
     "acestudio_worker.tasks.generate",
+    "acestudio_worker.tasks.klein",
 ]
 _DIAG_MODULES = ["acestudio_worker.tasks.diag"]
 
