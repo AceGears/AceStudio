@@ -183,7 +183,11 @@ not been run.
   is the only way to end a licence.
 
 ### Installer and distribution
-- The installer and executables are **not code-signed**: SmartScreen warns on first run.
+- The installer and executables are **not code-signed**. Seen on the test PC: SmartScreen
+  blocks the installer ("Windows protected your PC") until the user picks More info › Run
+  anyway. A code-signing certificate is required before release.
+- The interactive install (wizard pages) was exercised on the test PC only up to the EULA
+  page; the full install, AI setup and uninstall were tested silently in CI.
 - Per-user install only by default; an all-users install is possible from the command line
   (`/ALLUSERS`) but was not tested.
 - Nightly installers are attached to a GitHub release, public while the repository is.

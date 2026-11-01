@@ -60,7 +60,8 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 | Linux, GCC 13.3, Qt 6.4.2 | everything, Release | ✅ 269/269 CTest, including `ui_audit` (136 commands, 55 windows, 689 controls, 0 unnamed, 0 unreachable; autosave checked) and `perf_budget` |
 | Linux, clang 18, AddressSanitizer + LeakSanitizer | all core tests | ✅ 251 test cases, no errors or leaks |
 | Linux, clang 18, ThreadSanitizer | core tests except the Python-worker ones | ✅ 234 test cases, no data races (copy-on-write images, parallel compositing and cel compression) |
-| Windows CI (MSVC `/W4 /WX`, Qt 6.12), packaged build | everything | see the CI rows below |
+| Windows CI (MSVC `/W4 /WX`, Qt 6.12), packaged build, run 41314895908 (9d099a3) | everything | ✅ all CTest tests including `ui_audit` (136 commands, 691 controls, 0 unnamed) and `perf_budget`; MCP conformance and SDK clients; **installer test**: silent per-user install, files and association, CLI from the install folder, `ai setup --profile onnx-cpu` with the bundled Python → runtime **ready** (Python 3.12.10, ONNX CPU), silent uninstall with user data kept |
+| Test PC (Windows 11), nightly 9d099a3 installer | SHA-256 7a3d03ff… matches CI | 🔶 **SmartScreen blocks the unsigned installer** ("Windows protected your PC"); after Run anyway the wizard starts and shows the EULA page. The rest of the GUI install was not completed on the PC in this session (accepting the EULA is the owner's click); the same installer passed the silent install/uninstall test in CI |
 
 **Fuzzing** (libFuzzer, ASan + UBSan, clang 18):
 - First pass: all nine targets, 10 minutes each from seed files (about 12 million inputs).

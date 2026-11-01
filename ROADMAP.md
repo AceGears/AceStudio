@@ -157,13 +157,13 @@ in Unity).
 | Unity import verified in a real project | ✅ Unity 6000.6.7f1 on the test PC: every sprite (rects, 9-slice borders, pivots, PPU) and every clip (keys, lengths, loop) matches AceStudio's files; no import errors. With 2D Tilemap Extras, painting with AceStudio's Rule Tiles matches its placement in every cell |
 | Engine choice in the app | ✅ Godot / Unity / Tiled checkboxes in the sprite-sheet Export, Tileset, UI Kit and Atlas dialogs. Files that would be replaced are asked about once |
 
-## Phase 8 — Commercial Polish · 🔶 (0.9.0, 2026-11-01; PC checks below)
+## Phase 8 — Commercial Polish · ✅ code complete (0.9.0, 2026-11-01); release items open
 
 | Criterion | Status |
 |---|---|
 | Performance profiling | ✅ Benchmarks for editing, file and export paths. Fixed: blend loops per mode (composites −35%), parallel cel compression and decompression (load 3×), copy-on-write images (autosave snapshot 430 → 0.01 ms, strokes 2×), autosave off the UI thread (a 1.1–1.3 s pause removed). Numbers in TESTING |
 | Accessibility | ✅ Every control has a name and is reachable with Tab: `--ui-audit` over 136 commands, 55 windows, 689 controls, 0 failures (CTest). High Contrast theme with Windows detection, text size 100–200%, rebindable shortcuts. Screen readers not run (KNOWN_ISSUES) |
-| Inno Setup installer | ✅ Per-user, with association, licences, docs, EULA draft and bundled Python 3.12; CI installs, runs AI setup and uninstalls it |
+| Inno Setup installer | ✅ Per-user, with association, licences, docs, EULA draft and bundled Python 3.12; CI installs, runs AI setup and uninstalls it. On the test PC SmartScreen blocks it until it is signed; the wizard was checked up to the EULA page |
 | Licensing module | ✅ Offline Ed25519 keys, 14-day trial, read-only after it (app, CLI, Lua, MCP). The release key pair is the publisher's to generate |
 | Full docs | ✅ User guide, privacy policy (draft for legal review), SECURITY, ADR-006 to ADR-011, LICENSE_AUDIT, KNOWN_ISSUES, TESTING |
 | Security review | ✅ Threat model; 9 fuzz targets; 6 findings fixed (one in stb_image); residual risks listed in SECURITY.md |
