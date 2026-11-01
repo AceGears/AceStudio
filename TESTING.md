@@ -37,9 +37,37 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 | `test_model_catalog` | unit/integration | shipped catalogue valid and commercial-only, unsafe entries rejected, licence-gated downloads, install state, hash pinning, end-to-end download through the worker from a local HTTP server |
 | `ai_worker/tests/test_server.py` | integration (Python) | protocol, busy/next-job race, cancel, failures, stdout protection, crash exit, EOF, downloads with resume, hash mismatch, licence refusal, unsafe paths, pip stdin, ONNX provider fallback, NVIDIA driver threshold, subject framing, LoRA strength validation |
 | `ai_worker/tests/test_models_real.py` | integration (Python, optional) | BiRefNet IoU against a known mask; Real-ESRGAN reconstruction; tiny random SDXL through real Diffusers (seeds, cache, pixel post-process with exact palette, img2img, cancel, input errors) |
+| `test_engine_export` | unit | Godot TileSet/SpriteFrames/StyleBox text, Unity meta (bottom-left rects, borders, stable GUIDs) and AnimationClips, Tiled Wang sets, asset writers (no overwrite without permission, dry runs, engine-only sheets) |
+| `test_script` | unit | Lua: output and error locations, sandbox escapes (io, os.execute, require, loadfile, string.dump, bytecode), paths outside the allowed folders, memory and time limits, pcall-proof stops, cancel, image/document/asset API, host document as one undo step and rollback, `Editor::replaceDocument` |
+| `test_mcp` | unit | MCP protocol layer: discover, envelope and -32022 errors, resultType/serverInfo/ttl, legacy handshake, era locking both ways, argument checks as tool errors, progress and log notifications, base64, root checks |
+| `tests/mcp/` (CI, Windows) | end-to-end | conformance suite 0.1.16 with its baseline; Python SDK 2.3.0 (auto, 2026-07-28, legacy) and TypeScript SDK 1.32.2 over stdio and HTTP; the app bridge over a named pipe |
+| `tests/engine/` | end-to-end (manual) | Godot 4 headless and Unity imports of the engine fixture |
 | `cli_smoke` | end-to-end | every CLI command, JSON output, exit codes, overwrite protection, corrupt-file handling |
 
 ## Recorded results
+
+### 2026-11-01 — Phase 7, version 0.8.0
+
+| Environment | Build | Result |
+|---|---|---|
+| Linux, GCC 13.3, Qt 6.4.2 | everything, Release | ✅ 241/241 CTest |
+| Linux, GCC 13.3, no Qt | core + CLI + tests, `-Werror` | ✅ 241/241 |
+
+MCP on Linux:
+
+| Check | Result |
+|---|---|
+| Conformance 0.1.16, `--suite all` against `--http --conformance-fixtures` | ✅ 19 scenarios pass. The 16 in the baseline are features not offered: resources, prompts, completions, sampling/elicitation and SSE resumability. The suite found one real bug first: a session negotiated at 2025-11-25 refused a request whose header said 2025-03-26. It is fixed |
+| Python SDK 2.3.0: auto, `2026-07-28` and `legacy` modes, over stdio and HTTP | ✅ the era is negotiated as expected. Checked: 17 tools in a fixed order, file tools, PNG render, Lua, root limits, overwrite refusal, argument and unknown-tool errors, legacy ping |
+| TypeScript SDK 1.32.2, over stdio and HTTP | ✅ |
+| App bridge (offscreen app, local socket) | ✅ document info and image; `app_run_lua` change applied and visible; escapes refused; a failing script changes nothing; `app_open_file` |
+
+Engines:
+
+| Check | Result |
+|---|---|
+| Godot 4.6.2 headless | ✅ all resources load. AceStudio's placement matches Godot's own terrain painting for every cell (Blob47, Cardinal16) |
+| Unity 6000.6.7f1 on the Windows test PC | ✅ `compare_unity.py`: 11 textures, 190 sprites (rects, 9-slice borders, pivots, PPU), 3 clips and 13 keys all match; no import errors. The clip lengths equal the frame durations |
 
 ### 2026-10-31 — Phase 6 second review pass, version 0.7.0
 

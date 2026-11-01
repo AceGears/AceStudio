@@ -40,6 +40,9 @@ download starts. The catalogue only contains models whose licences allow commerc
 | Component | Version | License | Notes |
 |---|---|---|---|
 | Catch2 | 3.16.1 | BSL-1.0 | Tests only |
+| @modelcontextprotocol/conformance, @modelcontextprotocol/sdk (npm) | 0.1.16, 1.32.2 | MIT | MCP tests only (`tests/mcp`); installed by CI, not shipped |
+| mcp (Python SDK, PyPI) | 2.3.0 | MIT | MCP tests only (`tests/mcp`); installed by CI, not shipped |
+| Godot, Unity | 4.6.2, 6000.6.7f1 | MIT; Unity's own licence (the user's install) | Engine import checks only (`tests/engine`), never redistributed |
 | CMake | ≥ 3.25 | BSD-3 | Build tool |
 | jurplel/install-qt-action, ilammy/msvc-dev-cmd | v4 / v1 | MIT | CI only |
 

@@ -135,10 +135,17 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | Review pass (2026-10-31) | ✅ Several terrains as levels (base + up to 3: dirt, grass, rock, snow from SDXL on the PC, 0 seams in 1536 pairs); textures up to 4×4 tiles with phase variants; per-pixel seam check without false seams on noisy textures; slicer on busy backgrounds (picked colour, or BiRefNet: 4 of 4 knights found in 11 s on the PC); Clear Sky follows gradients, BiRefNet cut-out (9.6 s) and undo; atlas rotation. See TESTING.md |
 | Second review pass (2026-10-31) | ✅ Clear Sky "Sky against ground" for banded skies (no tolerance); AI cut-outs refined (hard edges, missed parts back, filled gaps opened: tested on the real BiRefNet output from the PC); repeating layers cut on a wrapped copy and still wrap (PC castle layer: no problems found); sandbox Margins (grass painted on water gets a beach) |
 
-## Phase 7 — Developer Integrations · ⬜
-CLI generation/export commands; Lua 5.4 API (sandboxed); MCP server (spec 2026-07-28 with
-fallback) passing conformance tests; config templates for Claude Code, Cursor, VS Code, Codex;
-Godot 4.x and Unity import verified in real engine projects.
+## Phase 7 — Developer Integrations · ✅ (0.8.0, 2026-11-01)
+
+| Criterion | Status |
+|---|---|
+| CLI generation/export commands | ✅ Commands: `tileset`, `seams`, `tileset-template`, `atlas`, `slice`, `uikit` and `run`, plus `export --engines` and `ai generate --tileable`, all with `--json`. Each is covered by `cli_smoke` (exit codes, overwrite refusal) |
+| Lua 5.4 API (sandboxed) | ✅ Lua 5.4.9 + sol2 3.3.0. The `ace` API covers images, documents and every asset tool ([docs/lua-api.md](docs/lua-api.md)). The sandbox has no io, os.execute, require or bytecode. Memory and time limits and cancel cannot be swallowed by `pcall`, and files stay inside the allowed folders. A script is one undo step, rolled back on error. Run it from the Scripts menu, `acestudio-cli run` or MCP |
+| MCP server, spec 2026-07-28 with fallback, passing conformance tests | ✅ `acestudio-mcp` speaks 2026-07-28 (`server/discover`, per-request envelope, -32022, resultType, ttlMs) and 2025-11-25 and older through `initialize`, over stdio and Streamable HTTP. It has 17 tools, including live tools on the app's open document. Conformance 0.1.16: every scenario passes except features not offered (baseline with reasons). The official Python SDK (dual-era, 3 modes) and TypeScript SDK clients pass over both transports. Windows CI runs all of this against the packaged build, plus the app bridge over a named pipe |
+| Config templates for Claude Code, Cursor, VS Code, Codex | ✅ **Scripts › Set Up AI Assistants** and `acestudio-mcp --print-config`. The formats were checked against each client's current documentation; the clients themselves were not run (KNOWN_ISSUES) |
+| Godot 4.x import verified in a real project | ✅ Godot 4.6.2: SpriteFrames, TileSet terrains and StyleBoxTexture load, and Godot's own terrain painting matches AceStudio's placement in every cell (Blob47, Cardinal16) |
+| Unity import verified in a real project | ✅ Unity 6000.6.7f1 on the test PC: every sprite (rects, 9-slice borders, pivots, PPU) and every clip (keys, lengths, loop) matches AceStudio's files; no import errors |
+| Engine choice in the app | ✅ Godot / Unity / Tiled checkboxes in the sprite-sheet Export, Tileset, UI Kit and Atlas dialogs. Files that would be replaced are asked about once |
 
 ## Phase 8 — Commercial Polish · ⬜
 Performance profiling; accessibility; Inno Setup installer; licensing module; full docs;
