@@ -78,6 +78,12 @@ TimelinePanel::TimelinePanel(QWidget* parent) : QWidget(parent) {
     m_info = new QLabel(this);
     m_tags = new QLabel(this);
     m_tags->setTextFormat(Qt::RichText);
+    // A long tag list (a character pack has one tag per action and direction)
+    // must not set the panel's minimum width: that pushed the whole window
+    // past the screen edge on the test PC. It is clipped; the tooltip lists all.
+    m_tags->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    m_tags->setMinimumWidth(0);
+    m_tags->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     auto* controls = new QHBoxLayout;
     m_controls = controls;
@@ -106,7 +112,7 @@ TimelinePanel::TimelinePanel(QWidget* parent) : QWidget(parent) {
     m_actionInsert = controls->count();
     controls->addWidget(m_info);
     controls->addStretch();
-    controls->addWidget(m_tags);
+    controls->addWidget(m_tags, 1);
 
     m_frames = new QListWidget(this);
     m_frames->setFlow(QListView::LeftToRight);
@@ -231,8 +237,10 @@ void TimelinePanel::rebuild() {
             tags << QStringLiteral("<span style='color:%1'>■</span> %2 (%3–%4)")
                         .arg(qs(t.color).left(7), qs(t.name).toHtmlEscaped()).arg(t.fromFrame + 1).arg(t.toFrame + 1);
         m_tags->setText(tags.join(QStringLiteral("&nbsp;&nbsp;")));
+        m_tags->setToolTip(tags.join(QStringLiteral("<br>")));
     } else {
         m_tags->clear();
+        m_tags->setToolTip({});
     }
     m_syncing = false;
     syncSelection(m_view ? m_view->currentFrame() : -1);

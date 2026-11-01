@@ -868,6 +868,17 @@ void MainWindow::buildWorkspaces() {
     railBar->addWidget(m_rail);
     addToolBar(Qt::LeftToolBarArea, railBar);
     m_pages = new QStackedWidget(this);
+    // A stacked widget asks for the largest minimum size of all its pages, so
+    // the AI Studio form widened the editor too (past a 1280 px screen on the
+    // test PC). Only the page on show counts.
+    connect(m_pages, &QStackedWidget::currentChanged, this, [this](int current) {
+        for (int i = 0; i < m_pages->count(); ++i) {
+            QWidget* page = m_pages->widget(i);
+            const QSizePolicy::Policy p = i == current ? QSizePolicy::Preferred : QSizePolicy::Ignored;
+            page->setSizePolicy(p, p);
+        }
+        m_pages->updateGeometry();
+    });
     QWidget* shell = m_pages;
     for (const WorkspaceInfo& w : workspaceInfos()) {
         if (w.id == Workspace::Settings) m_rail->addStretch();
@@ -877,7 +888,10 @@ void MainWindow::buildWorkspaces() {
     connect(m_rail, &WorkspaceRail::currentChanged, this, [this](int i) { showWorkspace(static_cast<Workspace>(i)); });
 
     auto put = [this](Workspace w, QWidget* page) {
-        if (m_pages->indexOf(page) < 0) m_pages->addWidget(page);
+        if (m_pages->indexOf(page) < 0) {
+            m_pages->addWidget(page);
+            if (m_pages->currentWidget() != page) page->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+        }
         m_pageFor[static_cast<std::size_t>(w)] = page;
     };
 

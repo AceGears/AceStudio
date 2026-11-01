@@ -35,6 +35,7 @@
 
 #include <cstdio>
 #include <functional>
+#include <utility>
 
 namespace acestudio::ui {
 
@@ -136,6 +137,8 @@ int runUiAudit(MainWindow& window, const QString& reportPath, const QString& pro
     Audit a;
     if (!project.isEmpty()) window.openProject(project);
     QApplication::processEvents();
+    // Measured with the project (and its long tag list) open, before any command changes it.
+    const int minimumWidth = window.minimumSizeHint().width();
     auditWindow(&window, a, QStringLiteral("main window"));
     for (QDockWidget* d : window.findChildren<QDockWidget*>()) auditWindow(d, a, QStringLiteral("dock"));
 
@@ -184,7 +187,8 @@ int runUiAudit(MainWindow& window, const QString& reportPath, const QString& pro
         QApplication::processEvents();
         a.actions.append(QJsonObject{{"action", text}, {"ms", static_cast<double>(t.elapsed())}});
     }
-    // Every workspace page, as shown from the rail.
+    // Every workspace page, as shown from the rail; each must fit a laptop screen.
+    std::pair<QString, int> widestWorkspace{QString(), 0};
     for (const WorkspaceInfo& w : workspaceInfos()) {
         current = QStringLiteral("workspace ") + QString::fromLatin1(w.key);
         window.showWorkspace(w.id);
@@ -192,6 +196,8 @@ int runUiAudit(MainWindow& window, const QString& reportPath, const QString& pro
         while (closeModal(a, current)) QApplication::processEvents();
         if (QWidget* page = window.m_pageFor[static_cast<std::size_t>(w.id)])
             auditWindow(page, a, current, QStringLiteral("Workspace: ") + QString::fromLatin1(w.key));
+        const int mw = window.minimumSizeHint().width();
+        if (mw > widestWorkspace.second) widestWorkspace = {QString::fromLatin1(w.key), mw};
     }
     watchdog.stop();
 
@@ -224,7 +230,8 @@ int runUiAudit(MainWindow& window, const QString& reportPath, const QString& pro
 
     QJsonObject report{{"actions", a.actions},       {"skipped", a.skipped},         {"windows", a.windows},
                        {"controls", a.controls},     {"unnamed", a.unnamed},         {"unreachable", a.unreachable},
-                       {"autosave", autosave}};
+                       {"autosave", autosave},       {"minimumWidth", std::max(minimumWidth, widestWorkspace.second)},
+                       {"widestWorkspace", widestWorkspace.first}};
     QFile f(reportPath);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return 2;
     f.write(QJsonDocument(report).toJson());
