@@ -82,7 +82,7 @@ std::pair<int, int> generationSize(int outW, int outH, QualityPreset p);
 enum class Severity { Info, Warning, Problem };
 struct Issue {
     Severity severity;
-    std::string code;      // stable id: "cropped", "colors", "soft-alpha", "stray", "pieces", "opaque", "empty", "size", "palette"
+    std::string code;      // stable id: "cropped", "colors", "soft-alpha", "stray", "pieces", "opaque", "empty", "size", "palette", "noise"
     std::string message;
 };
 struct QualityReport {
@@ -94,6 +94,7 @@ struct QualityReport {
     bool hardAlpha = true;        // every alpha is 0 or 255
     bool touchesEdge = false;     // opaque pixels on the border
     std::optional<double> paletteDistance;   // mean distance to the style palette (0..1), when given
+    std::optional<double> neighbourCorrelation;   // brightness of horizontal neighbours, -1..1 (low = noise)
     std::vector<Issue> issues;
     int score() const;            // 100 minus penalties, for sorting variations
 };

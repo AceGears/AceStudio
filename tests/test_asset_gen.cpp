@@ -130,3 +130,30 @@ TEST_CASE("generated sheets are cut into their cells", "[gen]") {
     for (const auto& c : cells) CHECK(c.image.pixel(0, 0).a == 255);
     CHECK(gen::gridPrompt("slimes", 3, 3).find("9 different slimes") != std::string::npos);
 }
+
+TEST_CASE("a failed generation that is only noise is flagged", "[gen]") {
+    Image noise(64, 64);
+    std::uint32_t state = 12345;
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 64; ++x) {
+            state = state * 1664525u + 1013904223u;
+            const auto v = static_cast<std::uint8_t>(state >> 24);
+            noise.setPixel(x, y, Rgba8{v, static_cast<std::uint8_t>(v / 2), 40, 255});
+        }
+    gen::CheckOptions o;
+    o.expectTransparent = false;
+    o.singleSubject = false;
+    const auto bad = gen::checkAsset(noise, o);
+    bool flagged = false;
+    for (const auto& i : bad.issues) flagged = flagged || i.code == "noise";
+    CHECK(flagged);
+    // A smooth gradient and blocky pixel art are not noise.
+    Image ramp(64, 64);
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 64; ++x) ramp.setPixel(x, y, Rgba8{static_cast<std::uint8_t>(x * 4), static_cast<std::uint8_t>(y * 4), 90, 255});
+    for (const auto& i : gen::checkAsset(ramp, o).issues) CHECK(i.code != "noise");
+    Image blocks(64, 64);
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 64; ++x) blocks.setPixel(x, y, ((x / 4 + y / 4) % 3) ? Rgba8{200, 60, 60, 255} : Rgba8{30, 30, 40, 255});
+    for (const auto& i : gen::checkAsset(blocks, o).issues) CHECK(i.code != "noise");
+}

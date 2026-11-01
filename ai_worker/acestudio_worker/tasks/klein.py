@@ -14,7 +14,7 @@ params:
   mask              optional PNG path: white = repaint, black = keep (with init_image)
   strength          inpaint strength 0..1 (default 0.85)
   lora              optional {"path": file.safetensors, "scale": 0..2} (e.g. the pixel-art LoRA);
-                    merged into the weights, so a different file or scale reloads the model
+                    kept as an adapter; a different file or scale reloads the model
   device            auto | cuda | cpu
   weights           auto | fp8 | bf16: auto stores the transformer and text encoder in FP8
                     (computed in BF16) on GPUs under 14 GB, so each fits next to the other's offload
@@ -106,12 +106,17 @@ def _pipelines(ctx, model_dir, lora, device, weights, offload):
             raise JobError("LoRA scale must be between 0 and 2", kind="invalid_input")
         folder, name = os.path.split(path)
         pipe.load_lora_weights(folder, weight_name=name, adapter_name="style")
-        # Merge the LoRA into the weights before any FP8 storage, so the small
-        # LoRA matrices are not themselves rounded to FP8.
-        pipe.fuse_lora(lora_scale=scale, adapter_names=["style"])
-        pipe.unload_lora_weights()
+        # Kept as an adapter, as the LoRA's own instructions do. Fusing it into
+        # the weights and unloading it (the first approach) gave pure noise on
+        # the test PC, while the same settings without the LoRA gave clean
+        # images.
+        pipe.set_adapters(["style"], adapter_weights=[scale])
     if weights == "fp8" and device == "cuda":
-        pipe.transformer.enable_layerwise_casting(storage_dtype=torch.float8_e4m3fn, compute_dtype=dtype)
+        # The LoRA's own small matrices stay in BF16 (skip "lora_").
+        skip = tuple(getattr(pipe.transformer, "_skip_layerwise_casting_patterns", None) or ()) + (
+            "pos_embed", "patch_embed", "norm", "^proj_in$", "^proj_out$", "lora_")
+        pipe.transformer.enable_layerwise_casting(storage_dtype=torch.float8_e4m3fn, compute_dtype=dtype,
+                                                  skip_modules_pattern=skip)
         apply_layerwise_casting(pipe.text_encoder, storage_dtype=torch.float8_e4m3fn, compute_dtype=dtype,
                                 skip_modules_pattern=("embed", "norm", "lm_head", "rotary"))
     if device == "cuda":

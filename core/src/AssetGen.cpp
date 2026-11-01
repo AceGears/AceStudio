@@ -278,6 +278,28 @@ QualityReport checkAsset(const Image& img, const CheckOptions& opt) {
             }
         }
     r.colors = static_cast<int>(colours.size());
+    // Noise: in real images (pixel art or painted) a pixel's brightness
+    // predicts its neighbour's; in a failed generation it does not.
+    {
+        double sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+        long n = 0;
+        for (int y = 0; y < H; ++y)
+            for (int x = 0; x + 1 < W; ++x) {
+                if (!opaque[idx(x, y)] || !opaque[idx(x + 1, y)]) continue;
+                const double a = img.pixel(x, y).luma(), b = img.pixel(x + 1, y).luma();
+                sx += a; sy += b; sxx += a * a; syy += b * b; sxy += a * b;
+                ++n;
+            }
+        if (n > 64) {
+            const double nn = static_cast<double>(n);
+            const double vx = sxx / nn - (sx / nn) * (sx / nn), vy = syy / nn - (sy / nn) * (sy / nn);
+            if (vx > 4 && vy > 4) {
+                r.neighbourCorrelation = (sxy / nn - (sx / nn) * (sy / nn)) / std::sqrt(vx * vy);
+                if (*r.neighbourCorrelation < 0.3)
+                    add(Severity::Problem, "noise", "Looks like noise, not a picture: the generation probably failed.");
+            }
+        }
+    }
     r.coverage = static_cast<double>(nOpaque) / (static_cast<double>(W) * static_cast<double>(H));
     r.hardAlpha = nSoft == 0;
 
