@@ -211,24 +211,29 @@ not been run.
 These are the issues still open after the 0.10.0 work. Each was found by running the feature,
 or is a case that has not been run yet.
 
-- **FLUX.2 [klein] has not run on a GPU yet.** The worker task, memory plan (FP8 + offload for
-  8 GB), catalogue entry and generator are built and unit-tested where possible. Generation
-  itself has not run: klein (16 GB) is not yet installed on the test PC, and PyTorch cannot
-  be installed in the build container. Not measured yet, as a result:
-  - klein speed and VRAM;
-  - Character Pack views;
-  - bestiary sheet extraction on real output;
-  - the grid-versus-staged benchmark;
-  - Pet to Pixel;
-  - the style-match scores of real results.
+- **FLUX.2 [klein] on the test PC** (RTX 4070 Laptop, 8 GB):
+  - Speed: 3.6–3.8 s per step at 1024² and 2.1–2.4 s at 512², with a peak of 4.4 GB.
+  - Verified: HD generation, the Character Pack's front and back views, and style matching
+    (goblin 87 %, sword 71 %).
+  - The pixel-art LoRA gave pure noise at adapter weight 1.0, because it is an rsLoRA with
+    alpha 128. It now runs at 0.05; that fix has not been re-run on the PC.
+  - Not yet measured on the PC:
+    - the 7×7 bestiary;
+    - the grid-versus-staged benchmark;
+    - Pet to Pixel.
+  - At Medium, a style's reference image leaks its subject: a goblin took the knight's
+    armour and red cape.
 - **Animate Sprite moves parts rigidly.** It cannot draw new poses (an arm swing, a turn).
   - A side-view character whose legs are drawn together is classified as an object, so it
     rocks rather than walks. This was the case for a 29×57 armoured knight. Set Body to Two
     legs to swing the lower half.
-  - **Wing flap** folds everything above a line. On the user's dragon reference (tested
-    locally, not committed), the head and neck folded with the wings. A wing span fixed the
-    head but left a wing horn behind inside the head's columns.
+  - **Wing flap** folds everything above a line. On a generated HD dragon (test PC), the
+    default span folded the head and neck with the wings. A span of 38–100 % kept the head
+    still and flapped the near wing; the far wing, behind the head, stays still.
   - Selecting the wings first (the selection becomes the wing mask) gives exact control.
+  - Sprites larger than 320 px are previewed from a reduced copy; the checks shown are the
+    preview's. Opening or exporting renders at full size, which takes a few seconds for an
+    HD sprite with many actions.
   - Generating flap keyframes with AI is not built.
 - **Front/back views for animation** come from AI (Character Pack). Animate Sprite on a front
   view walks with the legs side by side, which reads as a march rather than a walk cycle.
