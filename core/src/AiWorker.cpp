@@ -3,10 +3,13 @@
 
 #include "acestudio/core/PngCodec.h"
 
+#include <miniz.h>
+
 #include <algorithm>
 #include <charconv>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <random>
 
 #ifdef _WIN32
@@ -624,16 +627,43 @@ Result<int> runQuiet(const ProcessSpec& spec, std::chrono::seconds timeout, std:
     auto p = Subprocess::start(spec);
     if (!p) return p.error();
     auto code = p.value()->wait(timeout);
-    if (err)
+    if (err) {
+        for (auto& l : p.value()->takeLines(Subprocess::Stream::Stdout)) *err += "\n" + l;
         for (auto& l : p.value()->takeLines(Subprocess::Stream::Stderr)) *err += "\n" + l;
+    }
     if (!code) return Error{ErrorCode::IoError, spec.program.string() + " did not finish"};
     return *code;
+}
+
+// Unpacks a wheel (a ZIP) into `dir`, refusing paths that leave it.
+Status unpackWheel(const fs::path& wheel, const fs::path& dir) {
+    auto bytes = readFileBytes(wheel, 64u << 20);
+    if (!bytes) return bytes.error();
+    mz_zip_archive zip{};
+    if (!mz_zip_reader_init_mem(&zip, bytes.value().data(), bytes.value().size(), 0))
+        return Error{ErrorCode::CorruptData, wheel.string() + " is not a readable wheel"};
+    std::unique_ptr<mz_zip_archive, void (*)(mz_zip_archive*)> guard(&zip, [](mz_zip_archive* z) { mz_zip_reader_end(z); });
+    const mz_uint n = mz_zip_reader_get_num_files(&zip);
+    for (mz_uint i = 0; i < n; ++i) {
+        mz_zip_archive_file_stat st{};
+        if (!mz_zip_reader_file_stat(&zip, i, &st)) return Error{ErrorCode::CorruptData, "Damaged wheel " + wheel.string()};
+        const std::string name = st.m_filename;
+        if (name.empty() || name.back() == '/') continue;
+        if (name.front() == '/' || name.find(':') != std::string::npos || name.find("..") != std::string::npos || name.find('\\') != std::string::npos)
+            return Error{ErrorCode::CorruptData, "Unsafe path in wheel: " + name};
+        const fs::path target = dir / fs::path(std::u8string(name.begin(), name.end()));
+        std::error_code ec;
+        fs::create_directories(target.parent_path(), ec);
+        if (!mz_zip_reader_extract_to_file(&zip, i, target.string().c_str(), 0))
+            return Error{ErrorCode::IoError, "Cannot unpack " + name + " from " + wheel.string()};
+    }
+    return {};
 }
 
 // The embeddable Python as a private environment: a copy in the user's data
 // folder (the install folder may not be writable), without its ._pth file so
 // it searches paths like a regular install (site-packages, PYTHONPATH), and
-// with pip installed from the wheel bundled next to it.
+// with pip unpacked from the wheel bundled next to it.
 Result<fs::path> copyEmbeddable(const PythonInfo& base, const fs::path& venvDir) {
     std::error_code ec;
     const fs::path from = base.executable.parent_path();
@@ -649,14 +679,16 @@ Result<fs::path> copyEmbeddable(const PythonInfo& base, const fs::path& venvDir)
     }
     const fs::path py = venvDir / "python.exe";
     if (wheel.empty()) return Error{ErrorCode::NotFound, "The bundled Python has no pip wheel; reinstall AceStudio"};
+    // pip is pure Python: unpacking its wheel into site-packages installs it.
+    if (auto st = unpackWheel(wheel, venvDir / "Lib" / "site-packages"); !st) return st.error();
     ProcessSpec spec;
     spec.program = py;
-    spec.args = {utf8(wheel / "pip"), "install", "--no-index", "--no-warn-script-location", "--find-links", utf8(venvDir), "pip"};
+    spec.args = {"-m", "pip", "--version"};
     spec.env = {{"PYTHONIOENCODING", "utf-8"}, {"PYTHONNOUSERSITE", "1"}};
     std::string err;
-    auto code = runQuiet(spec, std::chrono::minutes(5), &err);
+    auto code = runQuiet(spec, std::chrono::minutes(2), &err);
     if (!code) return code.error();
-    if (code.value() != 0) return Error{ErrorCode::IoError, "Installing pip into the bundled Python failed." + err};
+    if (code.value() != 0) return Error{ErrorCode::IoError, "pip does not run in the bundled Python." + err};
     auto ok = probePython(py);
     if (!ok) return ok.error();
     return py;
