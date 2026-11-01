@@ -1,6 +1,6 @@
 # Known Issues and Limitations
 
-Current as of 0.9.0. Everything that could be fixed in code for Phases 1–8 has been fixed and
+Current as of 0.10.0. Everything that could be fixed in code for Phases 1–8 has been fixed and
 tested; what remains below needs hardware we have not had, is a limit of a third-party
 component or file format, or is a deliberate design choice. Nothing is listed as done that has
 not been run.
@@ -205,6 +205,51 @@ not been run.
   compositing on purpose (isolated groups). The compat test allows exactly that.
 - Performance budgets are ceilings several times the measured times, chosen so slow CI
   runners do not fail; they catch large regressions, not small ones.
+
+## 0.10.0 premium studio: unresolved
+
+These are the issues still open after the 0.10.0 work. Each was found by running the feature,
+or is a case that has not been run yet.
+
+- **FLUX.2 [klein] has not run on a GPU yet.** The worker task, memory plan (FP8 + offload for
+  8 GB), catalogue entry and generator are built and unit-tested where possible. Generation
+  itself has not run: klein (16 GB) is not yet installed on the test PC, and PyTorch cannot
+  be installed in the build container. Not measured yet, as a result:
+  - klein speed and VRAM;
+  - Character Pack views;
+  - bestiary sheet extraction on real output;
+  - the grid-versus-staged benchmark;
+  - Pet to Pixel;
+  - the style-match scores of real results.
+- **Animate Sprite moves parts rigidly.** It cannot draw new poses (an arm swing, a turn).
+  - A side-view character whose legs are drawn together is classified as an object, so it
+    rocks rather than walks. This was the case for a 29×57 armoured knight. Set Body to Two
+    legs to swing the lower half.
+  - **Wing flap** folds everything above a line. On the user's dragon reference (tested
+    locally, not committed), the head and neck folded with the wings. A wing span fixed the
+    head but left a wing horn behind inside the head's columns.
+  - Selecting the wings first (the selection becomes the wing mask) gives exact control.
+  - Generating flap keyframes with AI is not built.
+- **Front/back views for animation** come from AI (Character Pack). Animate Sprite on a front
+  view walks with the legs side by side, which reads as a march rather than a walk cycle.
+- **GameMaker export** follows GameMaker's `_stripN` import convention. It has not been
+  imported into GameMaker, which is not available here.
+- **Phaser export** was checked in Phaser 3.90.0 and 4.2.1 (headless Chromium) for loading,
+  animation frames, durations and looping. It was not checked in a shipped Phaser game.
+- **World Builder.**
+  - Maps are exported to Tiled `.tmx`; there is no direct Godot TileMapLayer or Unity
+    Tilemap scene export yet. The `.tmx` was checked structurally (unit tests, Python TOML
+    and XML parsing) and has not been opened in Tiled.
+  - The map canvas re-renders the whole map on every edit. That is fine for typical levels
+    (a few thousand cells) and slow for maps near the 4096×4096 limit.
+  - Terrain autotiling inside the map canvas is not built. Use the tileset sandbox, then add
+    the sheet as a tile sheet.
+- **`connect claude --global`** prints the `claude mcp add` command instead of editing
+  `~/.claude.json`, because Claude Code rewrites that file itself while running.
+- **The VS Code and Claude Desktop user-wide paths** are the documented defaults (`%APPDATA%`).
+  Portable or Insiders installs keep their settings elsewhere.
+- **Acceptance tests A–G:** see `docs/devlog/2026-11.md` for what was run and with what
+  result. Anything needing klein on the GPU is still open.
 
 ## Planned in later phases
 - Plugin API (Phase 8 or later). Profiling of BiRefNet on CUDA: part of its 2.6 s is CPU
