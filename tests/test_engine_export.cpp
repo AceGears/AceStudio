@@ -195,8 +195,10 @@ TEST_CASE("Asset files: dry runs list targets, engine-only sheets", "[engine]") 
     REQUIRE(w);
     CHECK_FALSE(fs::exists(dir / "hero.json"));
     CHECK(fs::exists(dir / "hero.png.meta"));
-    std::ifstream png(dir / "hero.png");
-    std::string content((std::istreambuf_iterator<char>(png)), {});
-    CHECK(content == "x");   // the sheet itself was left alone
+    {
+        std::ifstream png(dir / "hero.png");   // closed before the folder is removed (Windows)
+        std::string content((std::istreambuf_iterator<char>(png)), {});
+        CHECK(content == "x");   // the sheet itself was left alone
+    }
     fs::remove_all(dir);
 }
