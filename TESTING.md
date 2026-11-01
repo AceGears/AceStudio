@@ -40,11 +40,28 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 | `test_engine_export` | unit | Godot TileSet/SpriteFrames/StyleBox text, Unity meta (bottom-left rects, borders, stable GUIDs) and AnimationClips, Tiled Wang sets, asset writers (no overwrite without permission, dry runs, engine-only sheets) |
 | `test_script` | unit | Lua: output and error locations, sandbox escapes (io, os.execute, require, loadfile, string.dump, bytecode), paths outside the allowed folders, memory and time limits, pcall-proof stops, cancel, image/document/asset API, host document as one undo step and rollback, `Editor::replaceDocument` |
 | `test_mcp` | unit | MCP protocol layer: discover, envelope and -32022 errors, resultType/serverInfo/ttl, legacy handshake, era locking both ways, argument checks as tool errors, progress and log notifications, base64, root checks |
-| `tests/mcp/` (CI, Windows) | end-to-end | conformance suite 0.1.16 with its baseline; Python SDK 2.3.0 (auto, 2026-07-28, legacy) and TypeScript SDK 1.32.2 over stdio and HTTP; the app bridge over a named pipe |
+| `tests/mcp/` (CI, Windows) | end-to-end | conformance suite 0.2.0-alpha.12, every scenario and each spec version, no baseline; Python SDK 2.3.0 (auto, 2026-07-28, legacy) and TypeScript SDK 1.32.2 over stdio and HTTP; the app bridge over a named pipe |
 | `tests/engine/` | end-to-end (manual) | Godot 4 headless and Unity imports of the engine fixture |
 | `cli_smoke` | end-to-end | every CLI command, JSON output, exit codes, overwrite protection, corrupt-file handling |
 
 ## Recorded results
+
+### 2026-11-01 — Phase 7 pass, version 0.8.1
+
+| Environment | Build | Result |
+|---|---|---|
+| Linux, GCC 13.3, Qt 6.4.2 | everything, Release | ✅ 254/254 CTest, `-Werror` (tasks, MRTR, prompts/resources, Lua memory/require/API, Rule Tiles, multi-page atlas, Tiled sheets) |
+| Linux, GCC 13.3, AddressSanitizer | core tests `[script]`, `[mcp]` | ✅ no errors or leaks |
+
+| Check | Result |
+|---|---|
+| Conformance 0.2.0-alpha.12, `--suite all` | ✅ 228/228, including all ten tasks scenarios (`tasks-status-notifications` has no checks: the server does not send them) |
+| Same, `--spec-version` 2026-07-28 / 2025-11-25 / 2025-06-18 | ✅ 150/150, 80/80, 56/56 |
+| Python SDK client (`py_client.py`), all modes, stdio and HTTP | ✅ including elicitation-confirmed overwrite, resources, templates, prompts, completions, listen |
+| App bridge client (`bridge_client.py`), both eras | ✅ `app_documents`, tab selection, script output with errors, frame PNG, change notifications from a second process |
+| Claude Code 2.1.316 (no sign-in) | ✅ `claude mcp add --scope user` from `--print-config claude-code`: `claude mcp list` shows **Connected**. `${CLAUDE_PROJECT_DIR:-.}` expands to `.` outside a session. The project `.mcp.json` shows "Pending approval", as Claude Code requires |
+| Codex 0.166.0 (no sign-in) | ✅ `codex mcp list/get` read the printed `config.toml` (command, timeouts). Not checked: a Codex session starting the server |
+| Unity 6000.6.7f1 + 2D Tilemap Extras 9.0.1, test PC | ✅ `compare_unity.py`: 11 textures, 190 sprites, 3 clips, 13 keys and 560 painted Rule Tile cells match. The `.asset` files load as `UnityEngine.RuleTile` |
 
 ### 2026-11-01 — Phase 7, version 0.8.0
 

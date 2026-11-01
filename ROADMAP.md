@@ -135,16 +135,23 @@ Legend: ✅ done and tested · 🟡 partially done · ⬜ not started · 🔒 bl
 | Review pass (2026-10-31) | ✅ Several terrains as levels (base + up to 3: dirt, grass, rock, snow from SDXL on the PC, 0 seams in 1536 pairs); textures up to 4×4 tiles with phase variants; per-pixel seam check without false seams on noisy textures; slicer on busy backgrounds (picked colour, or BiRefNet: 4 of 4 knights found in 11 s on the PC); Clear Sky follows gradients, BiRefNet cut-out (9.6 s) and undo; atlas rotation. See TESTING.md |
 | Second review pass (2026-10-31) | ✅ Clear Sky "Sky against ground" for banded skies (no tolerance); AI cut-outs refined (hard edges, missed parts back, filled gaps opened: tested on the real BiRefNet output from the PC); repeating layers cut on a wrapped copy and still wrap (PC castle layer: no problems found); sandbox Margins (grass painted on water gets a beach) |
 
-## Phase 7 — Developer Integrations · ✅ (0.8.0, 2026-11-01)
+## Phase 7 — Developer Integrations · ✅ (0.8.0, 2026-11-01; pass 0.8.1)
+
+The 0.8.1 pass removed the 0.8.0 limits: MCP now passes conformance 0.2.0-alpha.12 in full
+(228/228, tasks extension included) with prompts, resources, templates, completions,
+elicitation and live document notifications; Lua counts images against the memory limit
+and has `require`; Unity gets Rule Tiles (all 560 painted cells match in Unity 6000.6.7f1);
+Claude Code was run against the printed setup.
+
 
 | Criterion | Status |
 |---|---|
 | CLI generation/export commands | ✅ Commands: `tileset`, `seams`, `tileset-template`, `atlas`, `slice`, `uikit` and `run`, plus `export --engines` and `ai generate --tileable`, all with `--json`. Each is covered by `cli_smoke` (exit codes, overwrite refusal) |
 | Lua 5.4 API (sandboxed) | ✅ Lua 5.4.9 + sol2 3.3.0. The `ace` API covers images, documents and every asset tool ([docs/lua-api.md](docs/lua-api.md)). The sandbox has no io, os.execute, require or bytecode. Memory and time limits and cancel cannot be swallowed by `pcall`, and files stay inside the allowed folders. A script is one undo step, rolled back on error. Run it from the Scripts menu, `acestudio-cli run` or MCP |
-| MCP server, spec 2026-07-28 with fallback, passing conformance tests | ✅ `acestudio-mcp` speaks 2026-07-28 (`server/discover`, per-request envelope, -32022, resultType, ttlMs) and 2025-11-25 and older through `initialize`, over stdio and Streamable HTTP. It has 17 tools, including live tools on the app's open document. Conformance 0.1.16: every scenario passes except features not offered (baseline with reasons). The official Python SDK (dual-era, 3 modes) and TypeScript SDK clients pass over both transports. Windows CI runs all of this against the packaged build, plus the app bridge over a named pipe |
-| Config templates for Claude Code, Cursor, VS Code, Codex | ✅ **Scripts › Set Up AI Assistants** and `acestudio-mcp --print-config`. The formats were checked against each client's current documentation; the clients themselves were not run (KNOWN_ISSUES) |
+| MCP server, spec 2026-07-28 with fallback, passing conformance tests | ✅ `acestudio-mcp` speaks 2026-07-28 (`server/discover`, per-request envelope, -32022, resultType, ttlMs) and 2025-11-25 and older through `initialize`, over stdio and Streamable HTTP. It has 17 tools, including live tools on the app's open document. Conformance 0.2.0-alpha.12: 228/228 (all spec versions and the tasks extension), no baseline. The official Python SDK (dual-era, 3 modes) and TypeScript SDK clients pass over both transports. Windows CI runs all of this against the packaged build, plus the app bridge over a named pipe |
+| Config templates for Claude Code, Cursor, VS Code, Codex | ✅ **Scripts › Set Up AI Assistants** and `acestudio-mcp --print-config`. Claude Code 2.1.316 connects with the printed setup; Codex 0.166.0 reads it (a signed-in session was not started); Cursor and VS Code follow their documentation (KNOWN_ISSUES) |
 | Godot 4.x import verified in a real project | ✅ Godot 4.6.2: SpriteFrames, TileSet terrains and StyleBoxTexture load, and Godot's own terrain painting matches AceStudio's placement in every cell (Blob47, Cardinal16) |
-| Unity import verified in a real project | ✅ Unity 6000.6.7f1 on the test PC: every sprite (rects, 9-slice borders, pivots, PPU) and every clip (keys, lengths, loop) matches AceStudio's files; no import errors |
+| Unity import verified in a real project | ✅ Unity 6000.6.7f1 on the test PC: every sprite (rects, 9-slice borders, pivots, PPU) and every clip (keys, lengths, loop) matches AceStudio's files; no import errors. With 2D Tilemap Extras, painting with AceStudio's Rule Tiles matches its placement in every cell |
 | Engine choice in the app | ✅ Godot / Unity / Tiled checkboxes in the sprite-sheet Export, Tileset, UI Kit and Atlas dialogs. Files that would be replaced are asked about once |
 
 ## Phase 8 — Commercial Polish · ⬜

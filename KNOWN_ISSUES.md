@@ -136,33 +136,31 @@ not been run.
 ## Phase 7 integrations (design limits)
 
 ### MCP server
-- Tools only: no resources, prompts or completions. The server makes no server-to-client
-  requests (sampling, elicitation, roots). The conformance scenarios for these are in
-  `tests/mcp/conformance-baseline.yml`.
 - No SSE stream resumption (`Last-Event-ID`). It is optional in 2025-11-25 and removed in
-  2026-07-28. A dropped HTTP stream cancels its tool call.
-- Conformance suite 0.1.16 has no 2026-07-28 scenarios. The modern era is checked with the
-  Python SDK 2.3.0 (a dual-era client) and the unit tests, not by the suite.
+  2026-07-28. A dropped HTTP stream cancels its tool call (tasks keep running; poll them).
+- Tasks live in memory: they end with the server process. The server sends no
+  `notifications/tasks`; clients poll `tasks/get` (both are allowed by the extension).
 - Each tool call starts `acestudio-cli`, so the CLI and the server never disagree. That costs
   a median of 2.8 ms per `info` call on the Linux build machine; Windows was not timed
   separately.
-- The `app_*` tools see the document in the app's current tab only. Scripts run on a copy,
-  and their result is not applied if the user edits the document meanwhile; the tool then
-  says so.
-- The client setups are written from each client's documentation (October 2026). Claude Code,
-  Cursor, VS Code and Codex themselves were not run here. The server was tested with the
-  official Python and TypeScript SDK clients.
+- Scripts from `app_run_lua` run on a copy, and their result is not applied if the user edits
+  the document meanwhile; the tool then says so.
+- Client setups: Claude Code 2.1.316 was run and connects to the server; Codex 0.166.0 reads
+  the setup, but a Codex session (which needs a sign-in) was not started. Cursor and VS Code
+  were not run; their setups follow their documentation (October 2026).
 
 ### Lua
-- No network, processes, `require` or native modules. Files only through the `ace` API and
-  inside the allowed folders.
-- In the app, Run Script is modal and works on a copy of the document.
+- No network, processes or native modules. Files and `require`d modules only through the
+  `ace` API and inside the allowed folders.
+- In the app, Run Script works on a copy of the document; its result is dropped if you edit
+  the document while it runs (run it again to apply it).
 
 ### Engine export
-- Unity: the sprites are sliced (Multiple), with borders and pivots. Unity Rule Tiles and
-  Tile Palettes are not generated.
-- Unity files are written for single-page atlases only.
-- Tiled has no sprite animation format; sheets get only the PNG and JSON for it.
+- Unity: Rule Tiles need the 2D Tilemap Extras package. Wang16 (a dual grid) gets no Rule
+  Tile, and Rule Tiles use phase variant 0 only. Tile Palettes are not generated.
+- Tiled: sprite sheets get a `.tsx` with tile animations only when untrimmed and on a grid
+  (horizontal, vertical or grid layout). The `.tsx` files were checked by tests, not loaded in
+  Tiled itself.
 - Godot keeps an isolated single cell empty in corner (Wang) mode. That is Godot's own
   behaviour, reproduced in `tests/engine`.
 

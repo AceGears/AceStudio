@@ -40,7 +40,9 @@ download starts. The catalogue only contains models whose licences allow commerc
 | Component | Version | License | Notes |
 |---|---|---|---|
 | Catch2 | 3.16.1 | BSL-1.0 | Tests only |
-| @modelcontextprotocol/conformance, @modelcontextprotocol/sdk (npm) | 0.1.16, 1.32.2 | MIT | MCP tests only (`tests/mcp`); installed by CI, not shipped |
+| @modelcontextprotocol/conformance, @modelcontextprotocol/sdk (npm) | 0.2.0-alpha.12, 1.32.2 | MIT | MCP tests only (`tests/mcp`); installed by CI, not shipped |
+| Claude Code, Codex CLIs (npm) | 2.1.316, 0.166.0 | Anthropic commercial terms; Apache-2.0 | Run once to check the client setups; not used by the build, not shipped |
+| com.unity.2d.tilemap.extras | 9.0.1 | Unity Companion License | Added to the throwaway Unity check project only. AceStudio's Rule Tile `.asset` files reference its script GUID but contain none of its code |
 | mcp (Python SDK, PyPI) | 2.3.0 | MIT | MCP tests only (`tests/mcp`); installed by CI, not shipped |
 | Godot, Unity | 4.6.2, 6000.6.7f1 | MIT; Unity's own licence (the user's install) | Engine import checks only (`tests/engine`), never redistributed |
 | CMake | ≥ 3.25 | BSD-3 | Build tool |

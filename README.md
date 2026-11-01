@@ -158,11 +158,16 @@ claude mcp add --transport stdio --scope user acestudio -- "C:\path\to\AceStudio
 - **Files.** The tools only read and write files inside the `--root` folders. The default is
   the folder the client starts the server in, usually your project. Existing files are kept
   unless the assistant asks to overwrite.
-- **The open document.** `app_document`, `app_run_lua` and `app_open_file` work with the
-  document open in a running AceStudio. Each change is one Edit › Undo step. Turn this off with
+- **What it offers.** 18 tools, resources (the Lua API reference, the app's open document and
+  its frame as PNG, project files through URI templates), prompts and completions. Long AI
+  jobs run as MCP tasks for clients that support them. Before replacing a file, the tools ask
+  you through the client.
+- **The open document.** `app_documents`, `app_document`, `app_run_lua` and `app_open_file`
+  work with the documents open in a running AceStudio, and clients can subscribe to changes. Each change is one Edit › Undo step. Turn this off with
   **Scripts › Allow AI Assistants to Use the Open Document**.
 - **HTTP.** `acestudio-mcp --http 39200` serves Streamable HTTP at
-  `http://127.0.0.1:39200/mcp`, on loopback only.
+  `http://127.0.0.1:39200/mcp`, on loopback only. Add `--token SECRET` (or set
+  `ACESTUDIO_MCP_TOKEN`) to require `Authorization: Bearer SECRET`.
 
 ## Portable mode
 

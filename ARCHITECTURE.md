@@ -1,6 +1,6 @@
 # AceStudio Architecture
 
-Status: 0.8.0 (Phase 7: developer integrations). This document records the structure that exists today and the
+Status: 0.8.1 (Phase 7: developer integrations). This document records the structure that exists today and the
 decisions (ADRs) that constrain future phases. Planned components are labelled **planned**.
 
 ## 1. Shape of the system
@@ -39,7 +39,7 @@ duplicate implementation of document logic, file formats or export in any front 
 | `app/` | Qt 6 Widgets desktop application. `app/src/panels/` holds dock panels. |
 | `cli/` | `acestudio-cli` executable. |
 | `mcp/` | `acestudio-mcp`: protocol layer and tools (Qt-free library `acestudio_mcp_proto`), stdio/HTTP transports and the app bridge client (`main.cpp`, Qt Core/Network). |
-| `tests/` | Catch2 unit tests and CTest-driven CLI end-to-end test. `tests/engine/`: Godot and Unity import checks. `tests/mcp/`: MCP conformance baseline and SDK client checks. |
+| `tests/` | Catch2 unit tests and CTest-driven CLI end-to-end test. `tests/engine/`: Godot and Unity import checks. `tests/mcp/`: MCP conformance and SDK client checks. |
 | `cmake/` | Dependency pins, warning flags, Qt license guard. |
 | `docs/` | Format specs and research notes (`docs/research/`). |
 | `.github/workflows/` | CI (Linux core build + Windows full build). |
@@ -215,7 +215,15 @@ duplicate implementation of document logic, file formats or export in any front 
   - The result is dropped if the user edited the document meanwhile.
 - **Verification.**
   - Catch2 tests of the protocol layer.
-  - The official conformance suite, with a baseline of features not offered.
+  - The official conformance suite (0.2.0-alpha.12), every scenario, no baseline.
+- **Input from the client.** Tools ask through `InputContext`: in the legacy era it sends a
+  server-to-client request and waits; in 2026-07-28 it records the question, the server
+  returns `input_required` with an HMAC-signed `requestState` (bound to the method, name,
+  arguments and a 10-minute expiry), and the retry replays the handler with the answers.
+- **Tasks.** With the tasks extension, task-capable tools run on a detached thread behind a
+  `TaskStore`; `ask()` then parks the task as `input_required` until `tasks/update` brings
+  the answers. A tool may gather input first and hand back `asyncWork`, which becomes the
+  task (MRTR, then task).
   - The Python (dual-era) and TypeScript SDK clients over both transports.
   - CI runs them against the packaged Windows build.
 
@@ -233,7 +241,9 @@ duplicate implementation of document logic, file formats or export in any front 
   - Only `os.time`, `os.clock`, `os.date` and `os.difftime` remain of `os`; `io`, `package`
     and `debug` are gone.
 - **Limits.**
-  - Memory is limited through the Lua allocator.
+  - Memory is limited through the Lua allocator, and the same budget counts the pixels of
+    every image the script holds and the documents it creates or grows (a `Charge` per image;
+    a full GC runs before a native allocation is refused).
   - Time and cancel are checked by a count hook. Once a stop is set it is sticky: the
     sandbox's `pcall`, `xpcall` and `coroutine.resume` re-raise it, so scripts cannot
     catch it.

@@ -2,6 +2,53 @@
 
 All notable changes are documented here. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.8.1] — 2026-11-01 — Phase 7 pass: limits removed (unreleased)
+
+### Added
+- **MCP, full protocol surface.** Conformance 0.2.0-alpha.12 passes every scenario
+  (228/228; 2026-07-28 150/150, 2025-11-25 80/80, 2025-06-18 56/56), with no baseline.
+  - Multi round-trip input (2026-07-28): `input_required` with `inputRequests` and an
+    HMAC-signed `requestState` bound to the request; retries carry `inputResponses`.
+  - Server-to-client requests in the legacy era: elicitation, sampling and roots, over stdio
+    and over HTTP (SSE, with the client's answer POSTed back).
+  - Writing tools ask before replacing a file (elicitation), in both eras.
+  - Resources (`acestudio://docs/lua-api`, the app's open document and its frame PNG),
+    resource templates for project files and frames, prompts (`autotile_terrain`,
+    `export_for_engine`, `lua_script`) and completions.
+  - `subscriptions/listen` (2026-07-28) and resource subscriptions (legacy). The app pushes
+    a change notification when its document changes, also when another program edits it.
+  - The tasks extension (`io.modelcontextprotocol/tasks`). AI generation, `tileset_generate`
+    and `export_animation` run as tasks for clients that support them: `tasks/get` polls them,
+    `tasks/update` answers their questions (partial answers allowed), and `tasks/cancel`
+    stops them. Progress shows as the task's status message.
+  - New `app_documents` tool. `app_document` and `app_run_lua` take any open tab, not only
+    the current one. A failed script's output comes back with the error.
+  - HTTP: `--token` bearer authentication (or `ACESTUDIO_MCP_TOKEN`), chunked request bodies,
+    `x-mcp-header` parameter headers, and `Mcp-Name` checks for `tasks/*`.
+- **Lua:**
+  - The memory limit now covers images and documents, not only the Lua heap. A huge
+    image is refused before it is allocated, and unreachable images are collected first.
+  - `require` loads `.lua` modules from the allowed folders, in the same sandbox, with
+    caching and cycle detection.
+  - New document API: `set_layer` (name, visibility, lock, opacity, blend), `remove_layer`,
+    `remove_frame`, `palette` and `set_palette`. `layers()` also reports `locked` and `blend`.
+  - **Scripts › Run Script** is no longer modal; you can keep working while a script runs. A
+    result is not applied if the document was edited or closed meanwhile.
+  - `acestudio-cli run --json` keeps a failed script's output.
+- **Engines:**
+  - Unity Rule Tiles (`.asset`, 2D Tilemap Extras) for Blob47 and Cardinal16 levels, and a
+    plain Tile for the base.
+  - Multi-page atlases write `<stem>_N.png` pages with a Unity `.meta` each, from the app and
+    the CLI.
+  - Tiled `.tsx` with tile animations for untrimmed grid sprite sheets.
+
+### Testing
+- Unity 6000.6.7f1 with 2D Tilemap Extras 9.0.1 paints the fixture map with the Rule Tiles,
+  and every one of the 560 cells matches AceStudio's placement.
+- Claude Code 2.1.316 loads the printed setup and reports the server as connected. Codex
+  0.166.0 reads the printed `config.toml` (`codex mcp list/get`); starting a Codex session
+  needs a sign-in, which was not done.
+
 ## [0.8.0] — 2026-11-01 — Phase 7: developer integrations (unreleased)
 
 ### Added
