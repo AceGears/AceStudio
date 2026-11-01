@@ -865,7 +865,7 @@ int main(int argc, char** argv) {
     std::optional<int> httpPort;
     bool fixtures = false;   // test only: the conformance suite's fixtures
     std::string token;
-    if (const char* t = std::getenv("ACESTUDIO_MCP_TOKEN")) token = t;
+    if (qEnvironmentVariableIsSet("ACESTUDIO_MCP_TOKEN")) token = qEnvironmentVariable("ACESTUDIO_MCP_TOKEN").toStdString();
     QHostAddress host(QHostAddress::LocalHost);
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
