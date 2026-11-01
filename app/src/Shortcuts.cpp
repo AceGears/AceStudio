@@ -55,13 +55,22 @@ void walk(QMenu* menu, const QString& idPrefix, const QString& pathPrefix, const
 } // namespace
 
 void ShortcutRegistry::collect(QMenuBar* bar, const QObject* skipMenu) {
-    m_actions.clear();
+    QList<QAction*> found;
     for (QAction* top : bar->actions())
-        if (QMenu* m = top->menu()) walk(m, slug(m->title()), clean(m->title()), skipMenu, m_actions);
+        if (QMenu* m = top->menu()) walk(m, slug(m->title()), clean(m->title()), skipMenu, found);
+    m_actions.clear();
+    for (QAction* a : found) m_actions.append(a);
+}
+
+QList<QAction*> ShortcutRegistry::actions() const {
+    QList<QAction*> live;
+    for (const QPointer<QAction>& a : m_actions)
+        if (a) live.append(a);
+    return live;
 }
 
 void ShortcutRegistry::apply(const nlohmann::json& overrides) {
-    for (QAction* a : m_actions) {
+    for (QAction* a : actions()) {
         QString seq = defaultShortcut(a);
         const std::string id = a->objectName().toStdString();
         if (overrides.is_object() && overrides.contains(id) && overrides[id].is_string())
@@ -77,7 +86,7 @@ QStringList ShortcutRegistry::conflicts() const {
     // Exact duplicates, plus Shift+<letter> vs <letter>, which Qt may resolve
     // to the unshifted action.
     QMap<QString, QStringList> byKey;
-    for (QAction* a : m_actions)
+    for (QAction* a : actions())
         for (const QKeySequence& k : a->shortcuts()) {
             if (k.isEmpty()) continue;
             QString key = k.toString(QKeySequence::PortableText);
@@ -105,6 +114,7 @@ ShortcutsDialog::ShortcutsDialog(const ShortcutRegistry& reg, const nlohmann::js
     connect(m_search, &QLineEdit::textChanged, this, &ShortcutsDialog::filter);
 
     m_table = new QTableWidget(static_cast<int>(reg.actions().size()), 3, this);
+    m_table->setAccessibleName(tr("Commands and their shortcuts"));
     m_table->setHorizontalHeaderLabels({tr("Action"), tr("Shortcut"), QString()});
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);

@@ -398,10 +398,26 @@ void MainWindow::buildMenus() {
     auto* themeGroup = new QActionGroup(this);
     m_darkAction = theme->addAction(tr("Dark"));
     m_lightAction = theme->addAction(tr("Light"));
-    for (QAction* a : {m_darkAction, m_lightAction}) { a->setCheckable(true); themeGroup->addAction(a); }
-    (m_ctx.settings().get<std::string>("general.theme") == "light" ? m_lightAction : m_darkAction)->setChecked(true);
+    QAction* contrast = theme->addAction(tr("High Contrast"));
+    contrast->setToolTip(tr("White on black with yellow selection and focus. Chosen automatically when Windows uses a contrast theme."));
+    for (QAction* a : {m_darkAction, m_lightAction, contrast}) { a->setCheckable(true); themeGroup->addAction(a); }
+    const std::string savedTheme = m_ctx.settings().get<std::string>("general.theme");
+    (systemHighContrast() || savedTheme == "highContrast" ? contrast : savedTheme == "light" ? m_lightAction : m_darkAction)->setChecked(true);
     connect(m_darkAction, &QAction::triggered, this, [this] { setThemeAndPersist(QStringLiteral("dark")); });
     connect(m_lightAction, &QAction::triggered, this, [this] { setThemeAndPersist(QStringLiteral("light")); });
+    connect(contrast, &QAction::triggered, this, [this] { setThemeAndPersist(QStringLiteral("highContrast")); });
+    QMenu* textSize = view->addMenu(tr("Te&xt Size"));
+    auto* sizeGroup = new QActionGroup(this);
+    for (int pct : {100, 125, 150, 175, 200}) {
+        QAction* a = textSize->addAction(tr("%1%").arg(pct));
+        a->setCheckable(true);
+        a->setChecked(m_ctx.settings().get<int>("general.textScale") == pct);
+        sizeGroup->addAction(a);
+        connect(a, &QAction::triggered, this, [this, pct] {
+            (void)m_ctx.settings().set("general.textScale", pct);
+            applyTextScale(*qApp, pct);
+        });
+    }
 
     QMenu* image = menuBar()->addMenu(tr("&Image"));
     docAction(image, tr("&Fit Canvas to Content"), QKeySequence(), [this] {

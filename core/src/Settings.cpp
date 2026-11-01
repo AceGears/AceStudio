@@ -22,7 +22,8 @@ bool sameKind(const json& a, const json& b) {
 Settings::Settings() {
     // General
     registerDefault("general.language", "en");
-    registerDefault("general.theme", "dark");                 // dark | light
+    registerDefault("general.theme", "dark");                 // dark | light | highContrast
+    registerDefault("general.textScale", 100);                // interface text size, % of the system font
     registerDefault("general.accentColor", "#4F8CFF");
     registerDefault("general.startup", "welcome");            // welcome | lastProject | empty
     registerDefault("general.recentProjects", json::array());

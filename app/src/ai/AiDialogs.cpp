@@ -205,6 +205,7 @@ ModelsDialog::ModelsDialog(AiService& ai, QWidget* parent) : QDialog(parent), m_
     setWindowTitle(tr("AI Models"));
     resize(820, 420);
     m_table = new QTableWidget(0, 5, this);
+    m_table->setAccessibleName(tr("AI models"));
     m_table->setHorizontalHeaderLabels({tr("Model"), tr("Used for"), tr("Licence"), tr("Size"), tr("Status")});
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);

@@ -49,6 +49,7 @@ CharacterDialog::CharacterDialog(fs::path libraryDir, DocumentView* view, QWidge
     fs::create_directories(m_dir, ec);
 
     m_list = new QListWidget(this);
+    m_list->setAccessibleName(tr("Characters"));
     m_list->setMinimumWidth(170);
     auto* newBtn = new QPushButton(tr("&New"), this);
     auto* dupBtn = new QPushButton(tr("D&uplicate"), this);
@@ -111,6 +112,7 @@ CharacterDialog::CharacterDialog(fs::path libraryDir, DocumentView* view, QWidge
     palRow->addWidget(palBtn);
     palRow->addWidget(palClear);
     m_refs = new QListWidget(m_form);
+    m_refs->setAccessibleName(tr("Reference images"));
     m_refs->setViewMode(QListView::IconMode);
     m_refs->setIconSize(QSize(64, 64));
     m_refs->setFixedHeight(92);

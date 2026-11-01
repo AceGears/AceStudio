@@ -91,6 +91,7 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
         m_viewH->setValue(view->document().height());
     }
     m_list = new QListWidget(this);
+    m_list->setAccessibleName(tr("Parallax layers, back to front"));
     m_list->setToolTip(tr("Back (top of the list) to front"));
     auto* fromDoc = new QPushButton(tr("From Document"), this);
     auto* fromFile = new QPushButton(tr("Open…"), this);
@@ -129,6 +130,7 @@ ParallaxDialog::ParallaxDialog(AiService& ai, DocumentView* view, QWidget* paren
     m_aiCut = new QPushButton(tr("Remove Background (AI)"), this);
     m_aiCut->setToolTip(tr("Cut the layer out with BiRefNet: for skies Clear Sky cannot handle"));
     m_prompt = new QLineEdit(tr("distant purple mountains at dusk"), this);
+    m_prompt->setAccessibleName(tr("Layer prompt"));
     m_generate = new QPushButton(tr("Generate Layer"), this);
     m_generate->setToolTip(tr("A horizontally seamless layer from Stable Diffusion XL, reduced to the view width"));
     m_genStatus = new QLabel(this);
@@ -943,6 +945,7 @@ void SliceDialog::openFrames() {
 AtlasDialog::AtlasDialog(DocumentView* view, QWidget* parent) : QDialog(parent), m_view(view) {
     setWindowTitle(tr("Pack Sprite Atlas"));
     m_list = new QListWidget(this);
+    m_list->setAccessibleName(tr("Sprites to pack"));
     m_list->setSelectionMode(QAbstractItemView::ExtendedSelection);
     auto* addFiles = new QPushButton(tr("Add Files…"), this);
     auto* addFrames = new QPushButton(tr("Add Document Frames"), this);
@@ -986,6 +989,7 @@ AtlasDialog::AtlasDialog(DocumentView* view, QWidget* parent) : QDialog(parent),
     m_preview = new PixelView(this);
     m_preview->setMinimumSize(420, 420);
     m_page = new QSpinBox(this);
+    m_page->setAccessibleName(tr("Atlas page"));
     m_page->setPrefix(tr("Page "));
     m_page->setRange(1, 1);
     m_info = new QLabel(this);

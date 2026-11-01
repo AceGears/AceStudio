@@ -105,6 +105,7 @@ void AdjustmentDialog::typeChanged() {
         m_values[i]->setVisible(used);
         if (!used) continue;
         m_labels[i]->setText(tr(p.label));
+        m_sliders[i]->setAccessibleName(tr(p.label));   // the label changes with the type
         m_sliders[i]->setRange(p.min, p.max);
         m_sliders[i]->setValue(p.def);
         m_values[i]->setText(QString::number(p.def));

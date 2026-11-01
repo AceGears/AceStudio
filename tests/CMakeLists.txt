@@ -54,6 +54,17 @@ if(ACESTUDIO_BUILD_CLI)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cli_smoke.cmake)
 endif()
 
+if(TARGET AceStudio AND ACESTUDIO_BUILD_CLI)
+    # Runs every menu command and checks every window for accessibility.
+    add_test(NAME ui_audit
+        COMMAND ${CMAKE_COMMAND}
+            -DAPP=$<TARGET_FILE:AceStudio>
+            -DCLI=$<TARGET_FILE:acestudio-cli>
+            -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/ui_audit
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/ui_audit.cmake)
+    set_tests_properties(ui_audit PROPERTIES TIMEOUT 1200)
+endif()
+
 # Engine-export fixture for the real-engine checks (not a CTest test itself:
 # it needs Godot / Unity, see tests/engine/README.md).
 add_executable(engine_fixture engine/fixture.cpp)

@@ -299,7 +299,8 @@ private:
 // leaves the rest 0 (as browsers do), a broken code stream ends the image.
 std::vector<std::uint8_t> gifLzw(const std::vector<std::uint8_t>& data, int minCodeSize, std::size_t count) {
     std::vector<std::uint8_t> out;
-    out.reserve(count);
+    // `count` comes from the file; grow with the real data instead of trusting it.
+    out.reserve(std::min<std::size_t>(count, std::size_t{1} << 20));
     if (minCodeSize < 2 || minCodeSize > 8) return out;
     const int clear = 1 << minCodeSize, end = clear + 1;
     std::vector<std::uint16_t> prefix(4096);
@@ -409,8 +410,6 @@ Result<DecodedAnimation> decodeGifFrames(std::span<const std::uint8_t> bytes, co
         const auto data = r.subBlocks();
         if (w <= 0 || h <= 0) continue;
         const std::vector<Rgba8>& pal = local.empty() ? global : local;
-        const auto indices = gifLzw(data, minCode, static_cast<std::size_t>(w) * static_cast<std::size_t>(h));
-        const Image before = dispose == 3 ? canvas : Image();
         // Interlaced rows come in four passes.
         std::vector<int> rows;
         rows.reserve(static_cast<std::size_t>(h));
@@ -420,6 +419,18 @@ Result<DecodedAnimation> decodeGifFrames(std::span<const std::uint8_t> bytes, co
         } else {
             for (int row = 0; row < h; ++row) rows.push_back(row);
         }
+        // A frame may extend past the logical screen (browsers clip it). Decode
+        // only up to the last row that lands on the canvas, so a 65535x65535
+        // descriptor on a small screen cannot demand gigabytes.
+        std::size_t neededRows = 0;
+        if (x < W)
+            for (std::size_t i = 0; i < rows.size(); ++i)
+                if (y + rows[i] < H) neededRows = i + 1;
+        const std::uint64_t need = static_cast<std::uint64_t>(neededRows) * static_cast<std::uint64_t>(w);
+        if (need > kMaxDecodedGifBytes / 4)
+            return Error{ErrorCode::CorruptData, "A GIF frame is too large to import"};
+        const auto indices = gifLzw(data, minCode, static_cast<std::size_t>(need));
+        const Image before = dispose == 3 ? canvas : Image();
         for (std::size_t i = 0; i < indices.size(); ++i) {
             const int row = rows[i / static_cast<std::size_t>(w)];
             const int col = static_cast<int>(i % static_cast<std::size_t>(w));

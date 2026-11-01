@@ -57,6 +57,8 @@ ExportDialog::ExportDialog(ExportKind kind, const Document& doc, int currentFram
     m_range->addItem(tr("Custom range"), kCustom);
     m_from = new QSpinBox(this);
     m_to = new QSpinBox(this);
+    m_from->setAccessibleName(tr("First frame"));
+    m_to->setAccessibleName(tr("Last frame"));
     for (QSpinBox* s : {m_from, m_to}) s->setRange(1, doc.frameCount());
     m_from->setValue(1);
     m_to->setValue(doc.frameCount());

@@ -33,6 +33,12 @@ TEST_CASE("Fuzz regression: a small GIF asking for gigabytes is refused quickly"
     CHECK_FALSE(decodeGif(big));
     // stb_image's GIF loader read freed memory on this one; AceStudio's own decoder handles it.
     (void)decodeGif(regression("gif-stb-use-after-free.gif"));
+    // A 16x16 GIF with a 65535x65535 frame descriptor: decoded clipped to the
+    // screen instead of reserving 4 GB for the frame's indices.
+    const auto start2 = std::chrono::steady_clock::now();
+    auto clipped = decodeGif(regression("gif-oversized-frame.gif"));
+    CHECK(std::chrono::steady_clock::now() - start2 < std::chrono::seconds(2));
+    if (clipped) CHECK(clipped.value().frames.front().image.width() == 16);
 }
 
 TEST_CASE("Fuzz regression: malformed MCP parameters give errors, not crashes", "[security]") {

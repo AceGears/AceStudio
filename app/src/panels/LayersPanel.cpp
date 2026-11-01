@@ -77,6 +77,7 @@ const BlendMode kModes[] = {BlendMode::Normal,  BlendMode::Multiply, BlendMode::
 
 LayersPanel::LayersPanel(QWidget* parent) : QWidget(parent) {
     m_tree = new QTreeWidget(this);
+    m_tree->setAccessibleName(tr("Layers"));
     m_tree->setColumnCount(2);
     m_tree->setHeaderLabels({tr("Layer"), tr("Mode")});
     m_tree->header()->setStretchLastSection(false);

@@ -99,6 +99,7 @@ TagsDialog::TagsDialog(DocumentView* view, QWidget* parent) : QDialog(parent), m
     setWindowTitle(tr("Animation Tags"));
     resize(420, 300);
     m_list = new QListWidget(this);
+    m_list->setAccessibleName(tr("Animation tags"));
     connect(m_list, &QListWidget::itemDoubleClicked, this, &TagsDialog::editTag);
     connect(m_list, &QListWidget::currentRowChanged, this, [this](int row) {
         m_edit->setEnabled(row >= 0);

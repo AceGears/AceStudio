@@ -56,6 +56,10 @@ add_executable(AceStudio WIN32
     src/SingleInstance.h
     src/SingleInstance.cpp
     src/licensing/Licensing.h
+    src/Accessibility.h
+    src/Accessibility.cpp
+    src/selftest/UiAudit.h
+    src/selftest/UiAudit.cpp
     src/licensing/Licensing.cpp
     src/Shortcuts.h
     src/Shortcuts.cpp

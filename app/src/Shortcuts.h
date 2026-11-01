@@ -9,6 +9,7 @@
 
 #include <QDialog>
 #include <QList>
+#include <QPointer>
 #include <QString>
 
 #include <nlohmann/json.hpp>
@@ -26,7 +27,9 @@ public:
     // and records each action's id and default shortcut.
     void collect(QMenuBar* bar, const QObject* skipMenu = nullptr);
     void apply(const nlohmann::json& overrides);
-    const QList<QAction*>& actions() const { return m_actions; }
+    // The recorded actions that still exist: menus that rebuild themselves
+    // when opened (Scripts, Workspaces) delete theirs.
+    QList<QAction*> actions() const;
     // Human-readable list of clashing shortcuts (empty = none).
     QStringList conflicts() const;
 
@@ -34,7 +37,7 @@ public:
     static QString displayName(const QAction* a);   // "Edit › Undo"
 
 private:
-    QList<QAction*> m_actions;
+    QList<QPointer<QAction>> m_actions;
 };
 
 class ShortcutsDialog : public QDialog {

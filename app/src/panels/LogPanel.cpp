@@ -14,6 +14,7 @@ namespace acestudio::ui {
 
 LogPanel::LogPanel(QWidget* parent) : QWidget(parent) {
     m_text = new QPlainTextEdit(this);
+    m_text->setAccessibleName(tr("Log messages"));
     m_text->setReadOnly(true);
     m_text->setMaximumBlockCount(2000);
     // The platform's fixed-width font (Consolas on Windows), at the UI's size.

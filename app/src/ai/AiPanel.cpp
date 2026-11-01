@@ -164,6 +164,7 @@ AiPanel::AiPanel(AiService& ai, AppContext& ctx, QWidget* parent) : QWidget(pare
     m_genPreview->hide();
 
     m_queue = new QTreeWidget(this);
+    m_queue->setAccessibleName(tr("AI jobs"));
     m_queue->setColumnCount(2);
     m_queue->setHeaderLabels({tr("Job"), tr("Progress")});
     m_queue->setRootIsDecorated(false);
