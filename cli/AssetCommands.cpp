@@ -5,6 +5,7 @@
 
 #include "acestudio/core/AssetGen.h"
 #include "acestudio/core/SpriteMotion.h"
+#include "acestudio/core/WorldMap.h"
 #include "acestudio/core/AssetFiles.h"
 #include "acestudio/core/AssetTools.h"
 #include "acestudio/core/Atlas.h"
@@ -394,6 +395,56 @@ int cmdAnimate(const Args& a, Output& out) {
     }
     return out.success({{"files", files}, {"clips", clips}},
                        "Wrote " + std::to_string(pack.value().size()) + " animation(s) to " + dir.string() + "\n");
+}
+
+// map info|render|export <file.acemap> [--out file] [--lighting] [--collision] [--show-grid]
+int cmdMap(const Args& a, Output& out) {
+    if (a.positional.size() != 3) return out.fail(kUsage, "map: expected info, render or export and an .acemap file");
+    const std::string verb = a.positional[1];
+    auto m = world::load(a.positional[2]);
+    if (!m) return out.fail(m.error());
+    const world::WorldMap& map = m.value();
+    if (verb == "info") {
+        json layers = json::array();
+        for (const auto& l : map.layers) {
+            int used = 0;
+            for (auto c : l.cells) used += c != world::kEmpty;
+            layers.push_back({{"name", l.name}, {"visible", l.visible}, {"tiles", used}});
+        }
+        json sheets = json::array();
+        for (const auto& s : map.sheets) sheets.push_back({{"name", s.name}, {"tileWidth", s.tileW}, {"tileHeight", s.tileH}, {"tiles", s.count()}});
+        int solid = 0;
+        for (int y = 0; y < map.height(); ++y)
+            for (int x = 0; x < map.width(); ++x) solid += map.solid(x, y);
+        return out.success({{"width", map.width()}, {"height", map.height()}, {"tileWidth", map.tileW()}, {"tileHeight", map.tileH()},
+                            {"layers", layers}, {"sheets", sheets}, {"props", map.props.size()}, {"propTypes", map.propDefs.size()},
+                            {"backgrounds", map.backgrounds.size()}, {"lights", map.lights.size()}, {"solidCells", solid},
+                            {"collisionRects", world::collisionRects(map).size()}},
+                           std::to_string(map.width()) + " x " + std::to_string(map.height()) + " cells of " + std::to_string(map.tileW()) + " x " +
+                               std::to_string(map.tileH()) + " px, " + std::to_string(map.layers.size()) + " layer(s), " +
+                               std::to_string(map.props.size()) + " prop(s), " + std::to_string(solid) + " solid cell(s)\n");
+    }
+    const auto target = a.opt("out");
+    if (!target) return out.fail(kUsage, "map: --out is required");
+    std::error_code ec;
+    if (!a.force && fs::exists(*target, ec)) return out.fail(kIo, *target + " already exists (use --force)");
+    if (verb == "render") {
+        world::RenderOptions o;
+        o.lighting = a.flags.count("lighting") > 0;
+        o.collision = a.flags.count("collision") > 0;
+        o.grid = a.flags.count("show-grid") > 0;
+        const Image img = world::render(map, o);
+        if (auto st = writePng(img, *target); !st) return out.fail(st.error());
+        return out.success({{"path", *target}, {"width", img.width()}, {"height", img.height()}}, "Wrote " + *target + "\n");
+    }
+    if (verb == "export") {
+        auto files = world::exportTiled(map, *target);
+        if (!files) return out.fail(files.error());
+        json list = json::array();
+        for (const auto& f : files.value()) list.push_back(f.string());
+        return out.success({{"files", list}}, "Wrote " + std::to_string(files.value().size()) + " file(s) for " + *target + "\n");
+    }
+    return out.fail(kUsage, "map: use info, render or export");
 }
 
 // uikit --out ui.png [--scale N] [--colors base,light,dark,outline,accent,text] [--square]

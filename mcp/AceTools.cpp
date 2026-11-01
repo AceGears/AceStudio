@@ -503,6 +503,86 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                      b.overwrite();
                      return fromCli(runCliConfirm(*envPtr, b.args, call));
                  }});
+    t.push_back({"sprite_animate", "Animate a sprite (no AI)",
+                 std::string("Turns one still sprite (transparent PNG) into animations without AI: idle, walk, run, sprint, jump, "
+                             "fall, land, attack1-3, dodge, roll, dash, block, hurt, death, cast, swim, fly, climb, sit, sleep. "
+                             "The motion fits the subject (two legs, four legs, blob, object). Writes one strip PNG and one JSON "
+                             "(frame size, durations, loop, automatic checks) per action.") + kPathNote,
+                 obj({{"image", str("The sprite PNG (transparent background)")},
+                      {"out", str("Output folder")},
+                      {"actions", strings("Action names (default: idle); \"all\" for every action")},
+                      {"frames", integer("Frames when one action is given (default: the action's own)", 1, 64)},
+                      {"amount", number("Movement amount, 0.25-2 (default 1)")},
+                      {"body", oneOf("Override the measured body", {"biped", "quadruped", "blob", "flyer", "object"})},
+                      {"face_left", boolean("Mirror the result to face left")},
+                      {"overwrite", kOverwrite}},
+                     {"image", "out"}),
+                 writes(),
+                 [envPtr](const json& a, const ToolCall& call) {
+                     ArgBuilder b{*envPtr, a, {"animate"}, {}};
+                     if (!b.path("image") || !b.path("out", "--out")) return badArgs(b.error);
+                     if (a.contains("actions") && a["actions"].is_array()) {
+                         std::string joined;
+                         for (const auto& v : a["actions"]) {
+                             if (!v.is_string()) return badArgs("actions must be strings");
+                             joined += (joined.empty() ? "" : ",") + v.get<std::string>();
+                         }
+                         if (!joined.empty()) b.args.insert(b.args.end(), {"--action", joined});
+                     }
+                     b.opt("frames", "--frames");
+                     b.opt("amount", "--amount");
+                     b.opt("body", "--body");
+                     if (a.value("face_left", false)) b.args.insert(b.args.end(), {"--face", "left"});
+                     b.overwrite();
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
+                 }});
+    t.push_back({"sheet_cut", "Cut a generated sheet into subjects",
+                 std::string("Cuts an AI-generated sheet of COLS x ROWS subjects (a bestiary, an item grid) into separate PNGs. "
+                             "Cut lines go through the emptiest gaps near the expected lines, an opaque background is removed "
+                             "per cell, specks are dropped and empty cells skipped.") + kPathNote,
+                 obj({{"image", str("The sheet PNG")},
+                      {"out", str("Output folder")},
+                      {"columns", integer("Columns", 1, 16)},
+                      {"rows", integer("Rows", 1, 16)},
+                      {"overwrite", kOverwrite}},
+                     {"image", "out", "columns", "rows"}),
+                 writes(),
+                 [envPtr](const json& a, const ToolCall& call) {
+                     ArgBuilder b{*envPtr, a, {"slice"}, {}};
+                     if (!b.path("image") || !b.path("out", "--out")) return badArgs(b.error);
+                     b.args.insert(b.args.end(), {"--cells", std::to_string(a.value("columns", 1)) + "x" + std::to_string(a.value("rows", 1))});
+                     b.overwrite();
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
+                 }});
+    t.push_back({"map_info", "Describe a World Builder map",
+                 std::string("Size, tile sheets, layers (with tile counts), props, lights and collision of an AceStudio map (.acemap).") + kPathNote,
+                 obj({{"path", str("The .acemap file")}}, {"path"}), readOnly(),
+                 [envPtr](const json& a, const ToolCall& call) {
+                     ArgBuilder b{*envPtr, a, {"map", "info"}, {}};
+                     if (!b.path("path")) return badArgs(b.error);
+                     return fromCli(runCli(*envPtr, b.args, call));
+                 }});
+    t.push_back({"map_export", "Render or export a World Builder map",
+                 std::string("Renders a map (.acemap) to PNG (optionally with the lighting preview and collision overlay), or "
+                             "exports it to Tiled (.tmx with its tile sheets, props, parallax layers and a collision object "
+                             "layer), which Godot, Unity, GameMaker and Phaser can import.") + kPathNote,
+                 obj({{"path", str("The .acemap file")},
+                      {"format", oneOf("png or tmx", {"png", "tmx"})},
+                      {"out", str("Output .png or .tmx")},
+                      {"lighting", boolean("PNG: apply the lights")},
+                      {"collision", boolean("PNG: show solid cells")},
+                      {"overwrite", kOverwrite}},
+                     {"path", "format", "out"}),
+                 writes(),
+                 [envPtr](const json& a, const ToolCall& call) {
+                     const bool tmx = a.value("format", "png") == "tmx";
+                     ArgBuilder b{*envPtr, a, {"map", tmx ? "export" : "render"}, {}};
+                     if (!b.path("path") || !b.path("out", "--out")) return badArgs(b.error);
+                     b.flag("lighting", "--lighting");
+                     b.flag("collision", "--collision");
+                     b.overwrite();
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
+                 }});
     t.push_back({"uikit_generate", "Generate a UI kit",
                  std::string("Draws a themed pixel UI kit (panels, buttons in states, checkboxes, sliders, ...) with 9-slice "
                              "data, plus optional Godot StyleBoxTexture .tres and Unity .meta files.") + kPathNote,

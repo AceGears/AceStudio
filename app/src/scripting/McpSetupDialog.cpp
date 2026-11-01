@@ -6,6 +6,8 @@
 
 #include "acestudio/core/FileUtil.h"
 
+#include <nlohmann/json.hpp>
+
 #include <QApplication>
 #include <QClipboard>
 #include <QComboBox>
@@ -13,6 +15,7 @@
 #include <QFontDatabase>
 #include <QLabel>
 #include <QPlainTextEdit>
+#include <QProcess>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -70,6 +73,37 @@ McpSetupDialog::McpSetupDialog(QWidget* parent) : QDialog(parent) {
         copy->setText(tr("Copied"));
     });
     connect(client, &QComboBox::currentIndexChanged, this, [copy] { copy->setText(tr("&Copy")); });
+    // "Add for Me": acestudio-cli connect merges the entry into the client's own config file (backup kept).
+    QPushButton* addForMe = buttons->addButton(tr("&Add for Me"), QDialogButtonBox::ActionRole);
+    addForMe->setToolTip(tr("Adds AceStudio to this assistant's user-wide settings file, keeping everything else in it "
+                            "(the previous file is kept as .bak)."));
+    connect(addForMe, &QPushButton::clicked, this, [this, client, note, configs] {
+        const int i = client->currentIndex();
+        if (i < 0 || i >= static_cast<int>(configs.size())) return;
+        std::string id = configs[static_cast<std::size_t>(i)].id;
+        if (id == "claude-code") id = "claude";
+#ifdef _WIN32
+        const auto cli = executableDir() / "acestudio-cli.exe";
+#else
+        const auto cli = executableDir() / "acestudio-cli";
+#endif
+        QProcess p;
+        p.start(fromPath(cli), {QStringLiteral("--json"), QStringLiteral("connect"), qs(id), QStringLiteral("--global")});
+        if (!p.waitForFinished(15000)) {
+            note->setText(tr("Could not run acestudio-cli: %1").arg(p.errorString()));
+            return;
+        }
+        const auto j = nlohmann::json::parse(p.readAllStandardOutput().toStdString(), nullptr, false);
+        if (j.is_discarded() || !j.value("ok", false)) {
+            note->setText(tr("Not added: %1").arg(j.is_discarded() ? QString::fromLocal8Bit(p.readAllStandardError()) : qs(j.value("error", std::string()))));
+        } else if (j.contains("command")) {
+            QApplication::clipboard()->setText(qs(j["command"].get<std::string>()));
+            note->setText(tr("Claude Code keeps user-wide servers in a file it manages itself. This command is on your "
+                             "clipboard; run it in a terminal:\n%1").arg(qs(j["command"].get<std::string>())));
+        } else {
+            note->setText(tr("Added to %1. Restart the assistant (or reload its MCP servers) to use it.").arg(qs(j.value("file", std::string()))));
+        }
+    });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     show(0);
 }

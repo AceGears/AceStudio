@@ -915,7 +915,7 @@ int usage(const char* why) {
                  "  --token: require \"Authorization: Bearer TOKEN\" on HTTP (or set ACESTUDIO_MCP_TOKEN)\n"
                  "  Tools may use files inside the --root folders only (default: the current folder).\n"
                  "  Protocol: MCP 2026-07-28, and 2025-11-25 / 2025-06-18 / 2025-03-26 / 2024-11-05 via initialize.\n"
-                 "  --print-config claude-code|cursor|vscode|codex   print a client setup for this executable\n"
+                 "  --print-config claude-code|cursor|vscode|codex|opencode   print a client setup for this executable\n"
                  "  --task-dir DIR   keep MCP tasks here (default: <user data>/mcp-tasks); --no-task-files: memory only\n"
                  "  --conformance-fixtures   (testing) add the MCP conformance suite's fixtures\n");
     return 1;
@@ -973,7 +973,7 @@ int main(int argc, char** argv) {
             fixtures = true;
         } else if (a == "--print-config") {
             auto v = next();
-            if (!v) return usage("--print-config needs claude-code, cursor, vscode or codex");
+            if (!v) return usage("--print-config needs claude-code, cursor, vscode, codex or opencode");
             for (const auto& c : clientConfigs(executableDir() / fs::path(argv[0]).filename())) {
                 if (c.id != *v) continue;
                 std::printf("# %s: %s\n# %s\n\n%s", c.name.c_str(), c.file.c_str(), c.note.c_str(), c.content.c_str());

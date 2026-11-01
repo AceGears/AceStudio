@@ -76,6 +76,11 @@ const char* kUsageText =
     "  slice <sheet.png> --out <folder> [--grid WxH|auto [--offset X,Y] [--spacing X,Y] [--keep-empty]]\n"
     "        [--background #rrggbb] [--tolerance 8] [--merge 2] [--min-pixels 4]\n"
     "                                  Cut a sheet into sprites (PNGs + .slices.json)\n"
+    "  map info|render|export <map.acemap> [--out file] [--lighting] [--collision] [--show-grid]\n"
+    "                                  World Builder maps: describe, render to PNG, or export to Tiled (.tmx)\n"
+    "  connect claude|claude-desktop|codex|cursor|opencode|vscode [--project DIR|--global] [--remove] [--dry-run]\n"
+    "          [--mcp PATH] [--name acestudio]\n"
+    "                                  Register acestudio-mcp in that client's config file (merged; backup kept)\n"
     "  slice <sheet.png> --out <folder> --cells COLSxROWS\n"
     "                                  Cut a generated sheet (uneven spacing, opaque background) into its subjects\n"
     "  uikit --out ui.png [--scale 1] [--colors base,light,dark,outline,accent,text] [--square]\n"
@@ -110,7 +115,8 @@ std::optional<Args> parseArgs(int argc, char** argv, std::string& err) {
         if (s == "--json") a.json = true;
         else if (s == "--force") a.force = true;
         else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot" || s == "--yes" || s == "--cpu" || s == "--rotate" ||
-                 s == "--no-outline" || s == "--no-merge" || s == "--square" || s == "--keep-empty")
+                 s == "--no-outline" || s == "--no-merge" || s == "--square" || s == "--keep-empty" ||
+                 s == "--remove" || s == "--dry-run" || s == "--global" || s == "--lighting" || s == "--collision" || s == "--show-grid")
             a.flags.insert(s.substr(2));
         else if (s == "-h" || s == "--help") { a.positional = {"help"}; return a; }
         else if (s.rfind("--", 0) == 0) {
@@ -302,6 +308,7 @@ namespace {
 bool writesFiles(const Args& a) {
     static const std::set<std::string> writers{"new", "render", "export", "tileset", "tileset-template", "atlas", "slice", "uikit", "animate"};
     const std::string& cmd = a.positional[0];
+    if (cmd == "map" && a.positional.size() > 1 && a.positional[1] != "info") return true;
     if (writers.count(cmd)) return true;
     if (cmd == "ai" && a.positional.size() > 1) {
         const std::string& verb = a.positional[1];
@@ -385,6 +392,8 @@ int main(int argc, char** argv) {
         if (cmd == "slice") return acestudio::cli::cmdSlice(*args, out);
         if (cmd == "uikit") return acestudio::cli::cmdUiKit(*args, out);
         if (cmd == "animate") return acestudio::cli::cmdAnimate(*args, out);
+        if (cmd == "connect") return acestudio::cli::cmdConnect(*args, out);
+        if (cmd == "map") return acestudio::cli::cmdMap(*args, out);
         if (cmd == "run") return acestudio::cli::cmdRun(*args, out);
         if (cmd == "licence" || cmd == "license") return cmdLicence(*args, out);
         return out.fail(kUsage, "Unknown command '" + cmd + "'. Run with --help.");

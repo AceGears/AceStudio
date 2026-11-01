@@ -6,6 +6,7 @@
 //   Cursor       https://cursor.com/docs/context/mcp           (.cursor/mcp.json)
 //   VS Code      https://code.visualstudio.com/docs/agents/reference/mcp-configuration (.vscode/mcp.json)
 //   Codex        https://learn.chatgpt.com/docs/extend/mcp     (~/.codex/config.toml)
+//   OpenCode     https://opencode.ai/docs/mcp-servers          (opencode.json, checked November 2026)
 
 #include <filesystem>
 #include <string>
@@ -14,7 +15,7 @@
 namespace acestudio::mcp {
 
 struct ClientConfig {
-    std::string id;          // claude-code, cursor, vscode, codex
+    std::string id;          // claude-code, cursor, vscode, codex, opencode
     std::string name;        // display name
     std::string file;        // where it goes
     std::string content;     // what to put there

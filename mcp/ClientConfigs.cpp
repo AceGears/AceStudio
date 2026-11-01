@@ -53,6 +53,13 @@ std::vector<ClientConfig> clientConfigs(const std::filesystem::path& mcpExe) {
     out.push_back({"codex", "Codex", "~/.codex/config.toml (or .codex/config.toml in a trusted project)", codex,
                    "The tools can use files in the folder Codex starts the server in. To choose folders, put them in args: "
                    "args = ['--root', 'C:\\path\\to\\project']."});
+    ordered_json opencode;
+    opencode["$schema"] = "https://opencode.ai/config.json";
+    opencode["mcp"]["acestudio"] = {{"type", "local"}, {"command", {exe}}, {"enabled", true}, {"timeout", 900000}};
+    out.push_back({"opencode", "OpenCode", "opencode.json in your project folder (or ~/.config/opencode/opencode.json)",
+                   opencode.dump(2) + "\n",
+                   "OpenCode starts the server in the project folder; the tools use files there. \"timeout\" is in "
+                   "milliseconds (local AI generation can take minutes)."});
     return out;
 }
 
