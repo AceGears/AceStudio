@@ -72,6 +72,7 @@ private:
     bool m_dirty = false;
     std::vector<world::WorldMap> m_undo, m_redo;
     Tool m_tool = Tool::Paint;
+    std::optional<std::pair<int, int>> m_lastCell;   // last cell of a drag, to fill the cells between mouse events
     void selectTool(Tool t);
     std::optional<std::pair<int, int>> m_rectStart;
     std::optional<std::size_t> m_dragProp;

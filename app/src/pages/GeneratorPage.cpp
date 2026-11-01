@@ -1207,13 +1207,13 @@ void GeneratorPage::onBatchJobFinished(const std::string& id) {
                 if (m_batch->sheetColumns > 0) {
                     // A sheet: cut the creatures out of the full-size image when there is one (cleaner edges), else the reduced one.
                     const int perSheet = m_batch->sheetColumns * m_batch->sheetRows;
-                    int found = 0;
-                    for (const gen::GridCell& c : gen::extractGrid(img.value(), m_batch->sheetColumns, m_batch->sheetRows)) {
-                        ++found;
+                    const auto cells = gen::extractGrid(img.value(), m_batch->sheetColumns, m_batch->sheetRows);
+                    for (const gen::GridCell& c : cells) {
                         if (static_cast<int>(m_batch->results.size()) >= m_batch->expected) break;   // the last sheet may give extras
                         m_batch->results.push_back({c.image, tr("creature %1").arg(m_batch->results.size() + 1)});
                     }
-                    if (found < perSheet) m_batch->problems << tr("%1: %2 of %3 creatures found.").arg(label).arg(found).arg(perSheet);
+                    if (static_cast<int>(cells.size()) < perSheet)
+                        m_batch->problems << tr("%1: %2 of %3 creatures found.").arg(label).arg(cells.size()).arg(perSheet);
                 } else {
                     m_batch->results.push_back({std::move(img).value(), label});
                 }

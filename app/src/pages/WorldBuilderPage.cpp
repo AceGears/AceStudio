@@ -482,6 +482,7 @@ void WorldBuilderPage::redo() {
 
 void WorldBuilderPage::pressAt(int px, int py, bool primary) {
     const int cx = px / m_map.tileW(), cy = py / m_map.tileH();
+    m_lastCell = std::pair{cx, cy};
     const int layer = currentLayer();
     switch (m_tool) {
     case Tool::Paint:
@@ -503,7 +504,12 @@ void WorldBuilderPage::pressAt(int px, int py, bool primary) {
         m_rectStart = std::pair{cx, cy};
         return;
     case Tool::Terrain: {
-        const int sheet = m_sheet->currentIndex();
+        int sheet = m_sheet->currentIndex();
+        if (sheet < 0 || m_map.sheets[static_cast<std::size_t>(sheet)].terrain.empty()) {
+            // The base sheet is usually selected after filling the ground: switch to the terrain sheet.
+            for (std::size_t i = 0; i < m_map.sheets.size(); ++i)
+                if (!m_map.sheets[i].terrain.empty()) { sheet = static_cast<int>(i); m_sheet->setCurrentIndex(sheet); break; }
+        }
         if (sheet < 0 || m_map.sheets[static_cast<std::size_t>(sheet)].terrain.empty())
             return void(Q_EMIT statusMessage(tr("Choose a terrain sheet: add a tileset made with the Tileset Generator "
                                                 "(Add › Tile Sheet from File…, next to its .json).")));
@@ -562,15 +568,33 @@ void WorldBuilderPage::pressAt(int px, int py, bool primary) {
 
 void WorldBuilderPage::dragTo(int px, int py, bool primary) {
     const int cx = px / m_map.tileW(), cy = py / m_map.tileH();
+    // Every cell on the line from the previous mouse position: a fast drag
+    // otherwise leaves gaps (seen painting terrain on the test PC).
+    auto line = [&](auto&& apply) {
+        auto [x, y] = m_lastCell.value_or(std::pair{cx, cy});
+        const int dx = std::abs(cx - x), dy = -std::abs(cy - y), sx = x < cx ? 1 : -1, sy = y < cy ? 1 : -1;
+        int err = dx + dy;
+        for (;;) {
+            apply(x, y);
+            if (x == cx && y == cy) break;
+            const int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x += sx; }
+            if (e2 <= dx) { err += dx; y += sy; }
+        }
+        m_lastCell = std::pair{cx, cy};
+    };
     switch (m_tool) {
     case Tool::Paint:
-    case Tool::Erase:
-        m_map.setCell(currentLayer(), cx, cy, (m_tool == Tool::Erase || !primary) ? kEmpty : brushCell());
+    case Tool::Erase: {
+        const std::int32_t v = (m_tool == Tool::Erase || !primary) ? kEmpty : brushCell();
+        line([&](int x, int y) { m_map.setCell(currentLayer(), x, y, v); });
         break;
-    case Tool::Collision: m_map.setSolid(cx, cy, primary); break;
+    }
+    case Tool::Collision: line([&](int x, int y) { m_map.setSolid(x, y, primary); }); break;
     case Tool::Terrain: {
         const int sheet = m_sheet->currentIndex();
-        if (sheet < 0 || !m_map.paintTerrain(currentLayer(), sheet, cx, cy, primary)) return;
+        if (sheet < 0 || m_map.sheets[static_cast<std::size_t>(sheet)].terrain.empty()) return;
+        line([&](int x, int y) { (void)m_map.paintTerrain(currentLayer(), sheet, x, y, primary); });
         break;
     }
     case Tool::Prop:
@@ -593,6 +617,7 @@ void WorldBuilderPage::releaseAt(int px, int py, bool primary) {
         rerender();
     }
     m_dragProp.reset();
+    m_lastCell.reset();
 }
 
 bool WorldBuilderPage::confirmDiscard() {
@@ -690,7 +715,7 @@ bool WorldBuilderPage::saveMap(bool askPath) {
 }
 
 void WorldBuilderPage::exportTiled() {
-    QString path = QFileDialog::getSaveFileName(this, tr("Export to Tiled"), m_file.isEmpty() ? tr("level.tmx") : QFileInfo(m_file).completeBaseName() + ".tmx",
+    QString path = QFileDialog::getSaveFileName(this, tr("Export to Tiled"), m_file.isEmpty() ? tr("level.tmx") : QFileInfo(m_file).dir().filePath(QFileInfo(m_file).completeBaseName() + ".tmx"),
                                                 tr("Tiled maps (*.tmx)"));
     if (path.isEmpty()) return;
     if (!path.endsWith(QStringLiteral(".tmx"), Qt::CaseInsensitive)) path += QStringLiteral(".tmx");
