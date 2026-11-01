@@ -63,7 +63,7 @@ AiSetupDialog::AiSetupDialog(AiService& ai, AppContext& ctx, QWidget* parent) : 
     auto* box = new QGroupBox(tr("Components"), this);
     m_onnx = new QCheckBox(tr("Background removal (BiRefNet) — ONNX Runtime, roughly 50 MB"), box);
     m_onnx->setChecked(true);
-    m_diffusion = new QCheckBox(tr("Image generation (Stable Diffusion XL) and AI upscaling — PyTorch + Diffusers"), box);
+    m_diffusion = new QCheckBox(tr("Image generation (FLUX.2 klein, SDXL), animation and AI upscaling — PyTorch + Diffusers"), box);
     m_cuda = new QRadioButton(tr("NVIDIA GPU (CUDA) — roughly 3 GB download, needs a recent NVIDIA driver"), box);
     m_cpu = new QRadioButton(tr("CPU only — smaller download; generation is very slow"), box);
     m_cuda->setChecked(true);

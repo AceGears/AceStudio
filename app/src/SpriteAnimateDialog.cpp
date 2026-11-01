@@ -128,10 +128,12 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
         sb->setRange(0, 100);
         sb->setSuffix(QStringLiteral(" %"));
         span->addWidget(sb);
-        connect(sb, &QSpinBox::valueChanged, this, &SpriteAnimateDialog::rebuild);
     }
+    // Values first, connections after: rebuild() needs every widget, and the
+    // custom-motion box does not exist yet.
     m_wingFrom->setValue(0);
     m_wingTo->setValue(100);
+    for (QSpinBox* sb : {m_wingFrom, m_wingTo}) connect(sb, &QSpinBox::valueChanged, this, &SpriteAnimateDialog::rebuild);
     m_wingFrom->setAccessibleName(tr("Wings start at (percent of the width)"));
     m_wingTo->setAccessibleName(tr("Wings end at (percent of the width)"));
     m_spanLabel = new QLabel(tr("Wing &span:"), this);
@@ -232,6 +234,7 @@ std::vector<::acestudio::motion::Action> SpriteAnimateDialog::checkedActions() c
 }
 
 void SpriteAnimateDialog::rebuild() {
+    if (!m_info || !m_preview || !m_customBox) return;   // still being built
     const auto list = checkedActions();
     m_customBox->setVisible(std::find(list.begin(), list.end(), ::acestudio::motion::Action::Custom) != list.end());
     const bool flap = std::find(list.begin(), list.end(), ::acestudio::motion::Action::Flap) != list.end();

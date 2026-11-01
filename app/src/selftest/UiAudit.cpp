@@ -142,6 +142,14 @@ int runUiAudit(MainWindow& window, const QString& reportPath, const QString& pro
     QList<QAction*> actions;
     QSet<QMenu*> visited;
     for (QAction* top : window.menuBar()->actions()) collectActions(top->menu(), actions, visited);
+    // Commands that need the audit project open run first, before other
+    // commands can close or replace it.
+    for (const char* first : {"anim.sprite"})
+        for (qsizetype i = 0; i < actions.size(); ++i)
+            if (actions[i]->objectName() == QLatin1String(first)) {
+                actions.move(i, 0);
+                break;
+            }
 
     // While a command runs (possibly inside a modal exec()), audit and close
     // whatever modal window it opens.
