@@ -647,9 +647,12 @@ void MainWindow::buildMenus() {
     // Scripts
     QMenu* scripts = menuBar()->addMenu(tr("S&cripts"));
     auto runScript = [this](const std::filesystem::path& scriptFile) {
-        ScriptDialog dlg(scriptFile, currentView(), this);
-        dlg.start();
-        dlg.exec();
+        // Not modal: the editor stays usable while the script runs.
+        auto* dlg = new ScriptDialog(scriptFile, currentView(), this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->setModal(false);
+        dlg->show();
+        dlg->start();
     };
     connect(scripts, &QMenu::aboutToShow, this, [this, scripts, runScript] {
         scripts->clear();

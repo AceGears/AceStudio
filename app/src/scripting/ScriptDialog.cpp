@@ -109,8 +109,10 @@ void ScriptDialog::start() {
     if (m_view && !m_view->filePath().isEmpty()) o.allowedRoots.push_back(toPath(m_view->filePath()).parent_path());
     // The script edits a copy, so the canvas can keep painting while it runs.
     m_copy.reset();
+    m_hadView = m_view != nullptr;
     if (m_view) {
         m_copy = std::make_unique<Editor>(m_view->editor().document());
+        m_startMark = m_view->editor().history().mark();
         o.document = m_copy.get();
     }
     o.cancel = &m_cancel;
@@ -152,6 +154,17 @@ void ScriptDialog::finished(bool ok, const QString& error, bool changed, int wri
         return;
     }
     QStringList parts;
+    if (changed && m_hadView && !m_view) {
+        m_status->setText(tr("The script ran, but its document was closed meanwhile, so its changes were not applied."));
+        m_copy.reset();
+        return;
+    }
+    if (changed && m_view && m_copy && m_view->editor().history().mark() != m_startMark) {
+        m_status->setText(tr("The script ran, but the document was edited meanwhile, so its changes were not applied "
+                             "(nothing was lost). Run it again to apply it to the current document."));
+        m_copy.reset();
+        return;
+    }
     if (changed && m_view && m_copy) {
         const Status s = m_view->editor().replaceDocument(m_copy->document(), "Run Script: " + m_script.filename().string());
         if (!s) {

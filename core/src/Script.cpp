@@ -1,6 +1,7 @@
 #include "acestudio/core/Script.h"
 
 #include "acestudio/core/AssetFiles.h"
+#include "acestudio/core/BlendMode.h"
 #include "acestudio/core/AssetTools.h"
 #include "acestudio/core/Atlas.h"
 #include "acestudio/core/Autotile.h"
@@ -14,6 +15,7 @@
 
 #include <sol/sol.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
@@ -34,7 +36,17 @@ struct Runtime {
     std::vector<std::unique_ptr<Editor>> owned;   // documents the script created or opened
     std::vector<fs::path> roots;                  // canonical allowed roots
     std::string stopped;                          // set once a limit or cancel stops the script
+    // Memory outside the Lua heap, counted against the same limit: images
+    // held by the script, and the documents it created, opened or grew.
+    std::size_t native = 0;
+    std::size_t docs = 0;
+    std::size_t hostStart = 0;                    // the host document's size at the start
+    lua_State* L = nullptr;
 };
+
+thread_local Runtime* tl_runtime = nullptr;
+
+std::size_t total(const Runtime& rt) { return rt.used + rt.native + rt.docs; }
 
 void* limitedAlloc(void* ud, void* ptr, std::size_t osize, std::size_t nsize) {
     auto* rt = static_cast<Runtime*>(ud);
@@ -44,7 +56,7 @@ void* limitedAlloc(void* ud, void* ptr, std::size_t osize, std::size_t nsize) {
         rt->used -= osize;
         return nullptr;
     }
-    if (nsize > osize && rt->used - osize + nsize > rt->opts.limits.memoryBytes) return nullptr;   // Lua raises "not enough memory"
+    if (nsize > osize && total(*rt) - osize + nsize > rt->opts.limits.memoryBytes) return nullptr;   // Lua raises "not enough memory"
     void* p = std::realloc(ptr, nsize);
     if (p) rt->used = rt->used - osize + nsize;
     return p;
@@ -74,6 +86,61 @@ void countHook(lua_State* L, lua_Debug*) {
 }
 
 [[noreturn]] void fail(const std::string& message) { throw std::runtime_error(message); }
+
+[[noreturn]] void outOfMemory(const Runtime& rt) {
+    fail("not enough memory (images and documents count too; the limit is " + std::to_string(rt.opts.limits.memoryBytes >> 20) + " MB)");
+}
+
+// Fails before allocating `bytes` more native memory that would not fit.
+// Lua's collector does not see native memory, so unreachable images are
+// collected first before the limit applies.
+void ensureRoom(std::size_t bytes) {
+    Runtime* rt = tl_runtime;
+    if (!rt || total(*rt) + bytes <= rt->opts.limits.memoryBytes) return;
+    if (rt->L) lua_gc(rt->L, LUA_GCCOLLECT);
+    if (total(*rt) + bytes > rt->opts.limits.memoryBytes) outOfMemory(*rt);
+}
+
+// The native memory of one script-held image, counted while it lives.
+class Charge {
+public:
+    Charge() = default;
+    explicit Charge(std::size_t bytes) { take(bytes); }
+    Charge(const Charge& o) { take(o.m_bytes); }
+    Charge(Charge&& o) noexcept : m_rt(o.m_rt), m_bytes(o.m_bytes) { o.m_bytes = 0; }
+    Charge& operator=(const Charge& o) {
+        if (this != &o) {
+            Charge c(o);
+            *this = std::move(c);
+        }
+        return *this;
+    }
+    Charge& operator=(Charge&& o) noexcept {
+        if (this != &o) {
+            release();
+            m_rt = o.m_rt;
+            m_bytes = o.m_bytes;
+            o.m_bytes = 0;
+        }
+        return *this;
+    }
+    ~Charge() { release(); }
+
+private:
+    void take(std::size_t bytes) {
+        m_rt = tl_runtime;
+        if (!m_rt || bytes == 0) return;
+        ensureRoom(bytes);
+        m_rt->native += bytes;
+        m_bytes = bytes;
+    }
+    void release() noexcept {
+        if (m_bytes && m_rt && m_rt == tl_runtime) m_rt->native -= m_bytes;
+        m_bytes = 0;
+    }
+    Runtime* m_rt = nullptr;
+    std::size_t m_bytes = 0;
+};
 
 template <typename T>
 T unwrap(Result<T> r) {
@@ -131,7 +198,10 @@ Rgba8 toColor(const sol::object& o) {
 // ---------------------------------------------------------------- types
 
 struct LImage {
+    LImage() = default;
+    explicit LImage(Image i) : img(std::move(i)), charge(img.byteSize()) {}
     Image img;
+    Charge charge;
 };
 
 struct LDoc {
@@ -169,8 +239,31 @@ Editor& editorOf(LDoc& d) {
     return *d.ed;
 }
 
+std::size_t docBytes(const Editor& ed) {
+    std::size_t n = ed.history().memoryBytes();
+    const Document& doc = ed.document();
+    for (const auto& l : doc.layers())
+        for (int f = 0; f < doc.frameCount(); ++f)
+            if (const Cel* c = doc.cel(l.id, f)) n += c->image.byteSize();
+    return n;
+}
+
+// Recounts the documents' memory after a change; fails when over the limit
+// (the change is then rolled back with the rest of the script).
+void recountDocs(Runtime& rt) {
+    std::size_t n = 0;
+    for (const auto& e : rt.owned) n += docBytes(*e);
+    if (rt.opts.document) {
+        const std::size_t host = docBytes(*rt.opts.document);
+        if (host > rt.hostStart) n += host - rt.hostStart;
+    }
+    rt.docs = n;
+    if (total(rt) > rt.opts.limits.memoryBytes) outOfMemory(rt);
+}
+
 void touched(Runtime& rt, LDoc& d) {
     if (d.host) rt.result.documentChanged = true;
+    recountDocs(rt);
 }
 
 LayerId layerArg(Editor& ed, int index) {
@@ -257,7 +350,10 @@ void bind(sol::state_view lua, Runtime& rt) {
                 for (int sx = 0; sx < src.img.width(); ++sx)
                     if (i.img.contains(x + sx, y + sy)) i.img.setPixel(x + sx, y + sy, over(i.img.pixel(x + sx, y + sy), src.img.pixel(sx, sy)));
         },
-        "scale", [](const LImage& i, int w, int h) { return LImage{unwrap(scaleNearest(i.img, w, h))}; },
+        "scale", [](const LImage& i, int w, int h) {
+            if (w > 0 && h > 0) ensureRoom(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4);
+            return LImage{unwrap(scaleNearest(i.img, w, h))};
+        },
         "flip", [](const LImage& i, sol::optional<std::string> axis) {
             return LImage{axis.value_or("h") == "v" ? flipVertical(i.img) : flipHorizontal(i.img)};
         },
@@ -279,6 +375,7 @@ void bind(sol::state_view lua, Runtime& rt) {
         });
     ace["image"] = [](int w, int h, sol::optional<sol::object> c) {
         if (w < 1 || h < 1 || w > 16384 || h > 16384) fail("image size must be 1..16384");
+        ensureRoom(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4);
         Image img(w, h);
         if (c && c->valid() && c->get_type() != sol::type::lua_nil) img.fill(toColor(*c));
         return LImage{std::move(img)};
@@ -300,8 +397,11 @@ void bind(sol::state_view lua, Runtime& rt) {
             sol::table t = lv.create_table();
             int i = 0;
             for (const auto& l : editorOf(d).document().layers()) {
-                t[i + 1] = lv.create_table_with("index", i, "name", l.name, "visible", l.visible, "opacity", int(l.opacity),
-                                              "group", l.kind == LayerKind::Group);
+                sol::table e = lv.create_table_with("index", i, "name", l.name, "visible", l.visible, "opacity", int(l.opacity),
+                                                    "group", l.kind == LayerKind::Group);
+                e["locked"] = l.locked;
+                e["blend"] = std::string(toString(l.blend));
+                t[i + 1] = e;
                 ++i;
             }
             return t;
@@ -326,6 +426,54 @@ void bind(sol::state_view lua, Runtime& rt) {
             Editor& ed = editorOf(d);
             frameArg(ed, frame);
             check(ed.setCelImage(layerArg(ed, layer), frame, img.img, x.value_or(0), y.value_or(0)));
+            touched(rt, d);
+        },
+        "set_layer", [&rt](LDoc& d, int layer, sol::table props) {
+            Editor& ed = editorOf(d);
+            const LayerId id = layerArg(ed, layer);
+            if (auto n = props.get<sol::optional<std::string>>(std::string("name"))) check(ed.renameLayer(id, *n));
+            if (auto v = props.get<sol::optional<bool>>(std::string("visible"))) check(ed.setLayerVisible(id, *v));
+            if (auto l = props.get<sol::optional<bool>>(std::string("locked"))) check(ed.setLayerLocked(id, *l));
+            if (auto o = props.get<sol::optional<double>>(std::string("opacity"))) {
+                if (*o < 0 || *o > 255) fail("opacity is 0..255");
+                check(ed.setLayerOpacity(id, static_cast<std::uint8_t>(*o + 0.5)));
+            }
+            if (auto b = props.get<sol::optional<std::string>>(std::string("blend"))) {
+                auto mode = blendModeFromString(*b);
+                if (!mode) fail("unknown blend mode \"" + *b + "\"");
+                check(ed.setLayerBlend(id, *mode));
+            }
+            touched(rt, d);
+        },
+        "remove_layer", [&rt](LDoc& d, int layer) {
+            Editor& ed = editorOf(d);
+            if (ed.document().layers().size() < 2) fail("a document keeps at least one layer");
+            check(ed.removeLayer(layerArg(ed, layer)));
+            touched(rt, d);
+        },
+        "remove_frame", [&rt](LDoc& d, int frame) {
+            Editor& ed = editorOf(d);
+            frameArg(ed, frame);
+            if (ed.document().frameCount() < 2) fail("a document keeps at least one frame");
+            check(ed.removeFrame(frame));
+            touched(rt, d);
+        },
+        "palette", [](LDoc& d, sol::this_state ts) {
+            sol::state_view lv(ts);
+            sol::table t = lv.create_table();
+            int i = 1;
+            for (const Rgba8 c : editorOf(d).document().palette().colors()) {
+                std::string h = c.toHex(true);
+                for (char& ch : h) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                t[i++] = h;
+            }
+            return t;
+        },
+        "set_palette", [&rt](LDoc& d, sol::table colors) {
+            Editor& ed = editorOf(d);
+            Palette p(ed.document().palette().name());
+            for (std::size_t i = 1; i <= colors.size(); ++i) check(p.add(toColor(colors[i].get<sol::object>())));
+            check(ed.replacePalette(std::move(p), "Script: Set Palette"));
             touched(rt, d);
         },
         "add_frame", [&rt](LDoc& d, sol::optional<int> ms) {
@@ -409,10 +557,12 @@ void bind(sol::state_view lua, Runtime& rt) {
         unwrap(doc.addLayer("Layer 1"));
         for (int i = 1; i < frames.value_or(1); ++i) unwrap(doc.insertFrame(i));
         rt.owned.push_back(std::make_unique<Editor>(std::move(doc)));
+        recountDocs(rt);
         return LDoc{rt.owned.back().get(), false};
     };
     ace["open"] = [&rt](const std::string& path) {
         rt.owned.push_back(std::make_unique<Editor>(unwrap(loadProject(resolvePath(rt, path)))));
+        recountDocs(rt);
         return LDoc{rt.owned.back().get(), false};
     };
 
@@ -555,6 +705,47 @@ void bind(sol::state_view lua, Runtime& rt) {
         return static_cast<int>(w.files.size());
     };
 
+    // require: plain .lua modules from the allowed folders ("a.b" -> a/b.lua),
+    // run in the sandbox like the script itself. Loaded modules are cached.
+    lua.set_function("__ace_module_source", [&rt](const std::string& name) {
+        if (name.empty() || name.size() > 200 || name.front() == '.' || name.back() == '.' || name.find("..") != std::string::npos)
+            fail("bad module name \"" + name + "\"");
+        for (char ch : name)
+            if (!(std::isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '.' || ch == '-')) fail("bad module name \"" + name + "\"");
+        std::string rel = name;
+        std::replace(rel.begin(), rel.end(), '.', '/');
+        rel += ".lua";
+        if (rt.roots.empty()) fail("module '" + name + "' not found (this script may not read files)");
+        for (const fs::path& root : rt.roots) {
+            std::error_code ec;
+            const std::u8string u = (root / fs::path(std::u8string(rel.begin(), rel.end()))).u8string();
+            const fs::path file = resolvePath(rt, std::string(u.begin(), u.end()));   // no way out through links
+            if (!fs::is_regular_file(file, ec)) continue;
+            auto bytes = unwrap(readFileBytes(file, 4u * 1024u * 1024u));
+            return std::make_tuple(std::string(bytes.begin(), bytes.end()), "@" + rel);
+        }
+        fail("module '" + name + "' not found in the allowed folders (looked for " + rel + ")");
+    });
+    lua.safe_script(R"(
+        local source, load_text = __ace_module_source, load
+        __ace_module_source = nil
+        local loaded, loading = {}, {}
+        require = function(name)
+          if type(name) ~= "string" then error("require takes a module name", 2) end
+          if loaded[name] ~= nil then return loaded[name] end
+          if loading[name] then error("require: module '" .. name .. "' requires itself", 2) end
+          local code, chunk = source(name)
+          local f, err = load_text(code, chunk, "t")
+          if not f then error(err, 2) end
+          loading[name] = true
+          local r = f(name)
+          loading[name] = nil
+          if r == nil then r = true end
+          loaded[name] = r
+          return r
+        end
+    )", sol::script_throw_on_error, "=sandbox");
+
     sol::table args = lua.create_table();
     for (std::size_t i = 0; i < rt.opts.args.size(); ++i) args[i + 1] = rt.opts.args[i];
     lua["arg"] = args;
@@ -608,8 +799,11 @@ Result<ScriptResult> runScript(const std::string& source, const std::string& chu
         fs::path c = fs::weakly_canonical(r, ec);
         if (!ec) rt.roots.push_back(c);
     }
+    if (opts.document) rt.hostStart = docBytes(*opts.document);
     lua_State* L = lua_newstate(limitedAlloc, &rt);
     if (!L) return Error{ErrorCode::Internal, "Could not start Lua"};
+    tl_runtime = &rt;
+    rt.L = L;
     // The editor command group: the host document changes in one undo step.
     std::size_t mark = 0;
     if (opts.document) mark = opts.document->history().mark();
@@ -632,6 +826,7 @@ Result<ScriptResult> runScript(const std::string& source, const std::string& chu
     }
     rt.owned.clear();
     lua_close(L);
+    tl_runtime = nullptr;
     if (opts.document) {
         Editor& ed = *opts.document;
         if (!failure.empty()) {
@@ -642,7 +837,7 @@ Result<ScriptResult> runScript(const std::string& source, const std::string& chu
         }
     }
     if (!failure.empty()) {
-        if (failure.find("not enough memory") != std::string::npos)
+        if (failure.find("not enough memory") != std::string::npos && failure.find("count too") == std::string::npos)
             failure += " (the script used more than " + std::to_string(opts.limits.memoryBytes >> 20) + " MB)";
         return Error{ErrorCode::InvalidArgument, failure};
     }

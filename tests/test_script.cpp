@@ -250,3 +250,80 @@ TEST_CASE("Editor::replaceDocument is one undo step", "[script]") {
     REQUIRE(ed.redo());
     CHECK(ed.document().layers().size() == 2);
 }
+
+TEST_CASE("Lua memory limit counts images and documents", "[script]") {
+    ScriptOptions o;
+    o.limits.memoryBytes = 32u << 20;
+    // 64 images of 256x256 (16 MB of pixels) fit; 1024 (256 MB) do not.
+    CHECK(run("local t = {} for i = 1, 64 do t[i] = ace.image(256, 256) end", o));
+    auto many = run("local t = {} for i = 1, 1024 do t[i] = ace.image(256, 256) end", o);
+    REQUIRE_FALSE(many);
+    CHECK(errorOf(many).find("not enough memory") != std::string::npos);
+    // One huge image is refused before it is allocated.
+    CHECK(errorOf(run("local big = ace.image(16384, 16384)", o)).find("not enough memory") != std::string::npos);
+    // Copies and scaled images count too; freed ones are given back.
+    CHECK(run("for i = 1, 200 do local a = ace.image(512, 512):scale(1024, 1024) end collectgarbage()", o));
+    CHECK_FALSE(run("local t = {} local a = ace.image(1024, 1024) for i = 1, 64 do t[i] = a:copy() end", o));
+    // Documents: frames added to a script-made document count.
+    auto doc = run("local d = ace.new_document(512, 512) for i = 1, 200 do d:set_cel(0, d:add_frame(), ace.image(512, 512, '#ffffff')) end", o);
+    REQUIRE_FALSE(doc);
+    INFO(errorOf(doc));
+    CHECK(errorOf(doc).find("not enough memory") != std::string::npos);
+}
+
+TEST_CASE("Lua require loads modules from the allowed folders", "[script]") {
+    TempDir dir;
+    std::filesystem::create_directories(dir / "lib" / "util");
+    std::ofstream(dir / "lib" / "util" / "colors.lua") << "local M = {} M.red = '#ff0000' print('loaded') return M\n";
+    std::ofstream(dir / "lib" / "loop.lua") << "return require('loop')\n";
+    std::ofstream(dir / "lib" / "esc.lua") << "return io\n";
+    ScriptOptions o;
+    o.allowedRoots = {dir / "lib"};
+    auto r = run("local c = require('util.colors') local again = require('util.colors') assert(c == again) assert(c.red == '#ff0000')", o);
+    REQUIRE(r);
+    CHECK(r.value().output == "loaded\n");   // cached: runs once
+    CHECK(errorOf(run("require('loop')", o)).find("requires itself") != std::string::npos);
+    CHECK(errorOf(run("require('missing')", o)).find("not found") != std::string::npos);
+    CHECK(errorOf(run("require('../secret')", o)).find("bad module name") != std::string::npos);
+    CHECK(errorOf(run("require('/etc/passwd')", o)).find("bad module name") != std::string::npos);
+    // Modules run in the same sandbox.
+    CHECK(run("assert(require('esc') == true)", o));   // io is nil there
+}
+
+TEST_CASE("Lua layer, frame and palette API", "[script]") {
+    auto doc = Document::create(4, 4);
+    REQUIRE(doc);
+    REQUIRE(doc.value().addLayer("A"));
+    Editor ed(std::move(doc).value());
+    ScriptOptions o;
+    o.document = &ed;
+    auto r = run(R"(
+        local d = ace.document()
+        local b = d:add_layer('B')
+        d:set_layer(b, {name = 'Shade', visible = false, opacity = 128, blend = 'multiply'})
+        local l = d:layers()[2]
+        assert(l.name == 'Shade' and l.visible == false and l.opacity == 128 and l.blend == 'multiply' and l.locked == false)
+        d:add_frame() d:add_frame()
+        d:remove_frame(1)
+        assert(d.frames == 2)
+        d:remove_layer(0)
+        assert(#d:layers() == 1)
+        d:set_palette({'#000000', '#ff0000', {0, 255, 0}})
+        local p = d:palette()
+        assert(#p == 3 and p[2] == '#ff0000ff' and p[3] == '#00ff00ff')
+        local ok = pcall(function() d:remove_layer(0) end)
+        assert(not ok)
+        local bad = pcall(function() d:set_layer(0, {blend = 'nope'}) end)
+        assert(not bad)
+    )", o);
+    INFO(errorOf(r));
+    REQUIRE(r);
+    CHECK(ed.document().layers().size() == 1);
+    CHECK(ed.document().layers()[0].name == "Shade");
+    CHECK(ed.document().palette().size() == 3);
+    // All of it is one undo step.
+    REQUIRE(ed.undo());
+    CHECK(ed.document().layers().size() == 1);
+    CHECK(ed.document().layers()[0].name == "A");
+    CHECK(ed.document().frameCount() == 1);
+}

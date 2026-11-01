@@ -60,6 +60,14 @@ public:
         return code;
     }
     int fail(const Error& e) { return fail(exitFor(e.code), e.describe()); }
+    // A failure with extra JSON fields (JSON mode only).
+    int fail(int code, const std::string& message, const json& extra) {
+        if (!m_json) return fail(code, message);
+        json j{{"ok", false}, {"exitCode", code}, {"error", message}};
+        for (const auto& [k, v] : extra.items()) j[k] = v;
+        std::cout << j.dump() << "\n";
+        return code;
+    }
 
     int success(json payload, const std::string& human) {
         if (m_json) {

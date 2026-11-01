@@ -410,6 +410,78 @@ std::string unityAssetMeta(const std::string& guid, std::int64_t mainObjectFileI
     return o.str();
 }
 
+namespace {
+
+// RuleTile neighbour values (RuleTile.TilingRuleOutput.Neighbor).
+constexpr int kThis = 1, kNotThis = 2, kDontCare = 0;
+
+std::string unityRef(std::int64_t fileId, const std::string& guid) {
+    return "{fileID: " + std::to_string(fileId) + ", guid: " + guid + ", type: 3}";
+}
+
+std::string monoHeader(const std::string& name, const std::string& script) {
+    return "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n--- !u!114 &11400000\nMonoBehaviour:\n  m_ObjectHideFlags: 0\n"
+           "  m_CorrespondingSourceObject: {fileID: 0}\n  m_PrefabInstance: {fileID: 0}\n  m_PrefabAsset: {fileID: 0}\n"
+           "  m_GameObject: {fileID: 0}\n  m_Enabled: 1\n  m_EditorHideFlags: 0\n  m_Script: " + script + "\n  m_Name: " + name +
+           "\n  m_EditorClassIdentifier: \n";
+}
+
+} // namespace
+
+std::string unityRuleTile(const Tileset& t, const std::string& name, const std::string& spriteStem, const std::string& textureGuid) {
+    if (t.scheme == AutotileScheme::Wang16) return {};
+    const bool blob = t.scheme == AutotileScheme::Blob47;
+    const int n = tileCount(t.scheme);
+    auto spriteId = [&](int k) { return unityFileId(textureGuid + "/" + spriteStem + "_" + std::to_string(k)); };
+    // Unity's neighbour order: (-1,1) (0,1) (1,1) (-1,0) (1,0) (-1,-1) (0,-1) (1,-1), y up
+    // (paint map row y at Unity y = -y). Blob bits: N=1 NE=2 E=4 SE=8 S=16 SW=32 W=64 NW=128.
+    struct Pos { int x, y; };
+    const Pos pos[8] = {{-1, 1}, {0, 1}, {1, 1}, {-1, 0}, {1, 0}, {-1, -1}, {0, -1}, {1, -1}};
+    std::ostringstream o;
+    o << monoHeader(name, std::string("{fileID: 11500000, guid: ") + kUnityRuleTileScriptGuid + ", type: 3}");
+    int full = n - 1;
+    if (blob) {
+        const auto& masks = blobMasks();
+        full = static_cast<int>(std::find(masks.begin(), masks.end(), std::uint8_t{255}) - masks.begin());
+    }
+    o << "  m_DefaultSprite: " << unityRef(spriteId(full), textureGuid) << "\n  m_DefaultGameObject: {fileID: 0}\n"
+         "  m_DefaultColliderType: 1\n  m_TilingRules:\n";
+    for (int k = 0; k < n; ++k) {
+        int v[8];
+        if (blob) {
+            const int m = blobMasks()[static_cast<std::size_t>(k)];
+            const bool N = m & 1, E = m & 4, S = m & 16, W = m & 64;
+            auto side = [](bool b) { return b ? kThis : kNotThis; };
+            auto corner = [&](bool a, bool b, int bit) { return a && b ? ((m & bit) ? kThis : kNotThis) : kDontCare; };
+            v[0] = corner(N, W, 128); v[1] = side(N); v[2] = corner(N, E, 2);
+            v[3] = side(W);                           v[4] = side(E);
+            v[5] = corner(S, W, 32);  v[6] = side(S); v[7] = corner(S, E, 8);
+        } else {   // Cardinal16: index = mask, N=1 E=2 S=4 W=8
+            auto side = [&](int bit) { return (k & bit) ? kThis : kNotThis; };
+            v[0] = v[2] = v[5] = v[7] = kDontCare;
+            v[1] = side(1); v[4] = side(2); v[6] = side(4); v[3] = side(8);
+        }
+        o << "  - m_Id: " << k << "\n    m_Sprites:\n    - " << unityRef(spriteId(k), textureGuid) << "\n"
+          << "    m_GameObject: {fileID: 0}\n    m_MinAnimationSpeed: 1\n    m_MaxAnimationSpeed: 1\n    m_PerlinScale: 0.5\n"
+             "    m_Output: 0\n    m_ColliderType: 1\n    m_RandomTransform: 0\n    m_Neighbors:\n";
+        for (int i = 0; i < 8; ++i) o << "    - " << v[i] << "\n";
+        o << "    m_NeighborPositions:\n";
+        for (int i = 0; i < 8; ++i) o << "    - {x: " << pos[i].x << ", y: " << pos[i].y << ", z: 0}\n";
+        o << "    m_RuleTransform: 0\n";
+    }
+    return o.str();
+}
+
+std::string unityTile(const std::string& name, std::int64_t spriteFileId, const std::string& textureGuid) {
+    std::ostringstream o;
+    o << monoHeader(name, "{fileID: 13312, guid: 0000000000000000e000000000000000, type: 0}");
+    o << "  m_Sprite: " << unityRef(spriteFileId, textureGuid) << "\n  m_Color: {r: 1, g: 1, b: 1, a: 1}\n"
+         "  m_Transform:\n    e00: 1\n    e01: 0\n    e02: 0\n    e03: 0\n    e10: 0\n    e11: 1\n    e12: 0\n    e13: 0\n"
+         "    e20: 0\n    e21: 0\n    e22: 1\n    e23: 0\n    e30: 0\n    e31: 0\n    e32: 0\n    e33: 1\n"
+         "  m_InstancedGameObject: {fileID: 0}\n  m_Flags: 1\n  m_ColliderType: 1\n";
+    return o.str();
+}
+
 // ------------------------------------------------------------------ Tiled
 
 std::string tiledTileset(const Tileset& t, const std::string& imageFile, const std::string& name, const std::string& terrainName,
@@ -442,6 +514,44 @@ std::string tiledTileset(const Tileset& t, const std::string& imageFile, const s
         o << "\"/>\n";
     }
     o << "  </wangset>\n </wangsets>\n</tileset>\n";
+    return o.str();
+}
+
+std::string tiledSpriteSheet(const EngineSheet& sheet, const std::string& imageFile, const std::string& name) {
+    if (sheet.frames.empty()) return {};
+    const int w = sheet.frames.front().rect.w, h = sheet.frames.front().rect.h;
+    if (w < 1 || h < 1 || sheet.width % w != 0 || sheet.height % h != 0) return {};
+    const int cols = sheet.width / w, rows = sheet.height / h;
+    std::vector<int> tileOf;
+    for (const EngineFrame& f : sheet.frames) {
+        if (f.rect.w != w || f.rect.h != h || f.rect.x % w != 0 || f.rect.y % h != 0) return {};
+        tileOf.push_back((f.rect.y / h) * cols + f.rect.x / w);
+    }
+    std::ostringstream o;
+    o << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    o << "<tileset version=\"1.10\" tiledversion=\"1.11.0\" name=\"" << xmlEscape(name) << "\" tilewidth=\"" << w << "\" tileheight=\"" << h
+      << "\" tilecount=\"" << cols * rows << "\" columns=\"" << cols << "\">\n";
+    o << " <image source=\"" << xmlEscape(imageFile) << "\" width=\"" << sheet.width << "\" height=\"" << sheet.height << "\"/>\n";
+    // Tiled allows one animation per tile: an animation whose first frame
+    // already carries one goes on the next free tile of its frames.
+    std::vector<bool> used(static_cast<std::size_t>(cols * rows), false);
+    for (const EngineAnimation& a : sheet.animations) {
+        if (a.frames.empty()) continue;
+        int host = -1;
+        for (int fi : a.frames) {
+            const int t = tileOf[static_cast<std::size_t>(fi)];
+            if (!used[static_cast<std::size_t>(t)]) { host = t; break; }
+        }
+        if (host < 0) continue;
+        used[static_cast<std::size_t>(host)] = true;
+        o << " <tile id=\"" << host << "\" type=\"" << xmlEscape(a.name) << "\">\n  <properties>\n   <property name=\"animation\" value=\""
+          << xmlEscape(a.name) << "\"/>\n  </properties>\n  <animation>\n";
+        for (std::size_t i = 0; i < a.frames.size(); ++i)
+            o << "   <frame tileid=\"" << tileOf[static_cast<std::size_t>(a.frames[i])] << "\" duration=\""
+              << (i < a.durationsMs.size() ? a.durationsMs[i] : 100) << "\"/>\n";
+        o << "  </animation>\n </tile>\n";
+    }
+    o << "</tileset>\n";
     return o.str();
 }
 

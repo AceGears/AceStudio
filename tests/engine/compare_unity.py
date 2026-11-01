@@ -8,7 +8,9 @@ The report comes from tests/engine/unity/AceStudioImportCheck.cs. Checked:
   * Unity's sprites are exactly the ones in AceStudio's .meta (names, rects,
     9-slice borders, pivots, pixels per unit);
   * the rects are the JSON frames flipped to Unity's bottom-left origin;
-  * every .anim became a clip whose sprite keys, length and loop flag match.
+  * every .anim became a clip whose sprite keys, length and loop flag match;
+  * painting map.json with AceStudio's Rule Tiles (Blob47, Cardinal16) puts
+    the same tile in every cell as AceStudio's own placement.
 Exit 1 with a list of problems if anything differs.
 """
 import json
@@ -137,8 +139,31 @@ for anim in sorted(f for f in os.listdir(fixture) if f.endswith(".anim")):
     if c["loop"] != loop:
         problem(f"{anim}: loop {c['loop']} in Unity, {loop} in the .anim")
 
+# Rule Tiles: Unity's choice per cell against AceStudio's placement.
+checked["cells"] = 0
+level_map = json.load(open(os.path.join(fixture, "map.json"), encoding="utf-8"))
+paint = report.get("paint") or {}
+for scheme, cols in (("blob47", 8), ("cardinal16", 4)):
+    got = paint.get(scheme)
+    if not got or "error" in got:
+        problem(f"{scheme}: no Rule Tile paint result ({(got or {}).get('error', 'missing')})")
+        continue
+    if not got.get("ruleType", "").endswith("RuleTile"):
+        problem(f"{scheme}: the tile asset loaded as {got.get('ruleType')}, not a RuleTile")
+    for li, (unity_cells, want_cells) in enumerate(zip(got["levels"], level_map["expected"][scheme])):
+        for i, (u, (src, c, r)) in enumerate(zip(unity_cells, want_cells)):
+            if src < 0:
+                want = None
+            elif src == 0:
+                want = f"{scheme}_base"
+            else:
+                want = f"{scheme}_level{src}_{r * cols + c}"
+            checked["cells"] += 1
+            if u != want:
+                problem(f"{scheme} level {li + 1} cell ({i % level_map['w']}, {i // level_map['w']}): Unity drew {u}, AceStudio places {want}")
+
 print(f"Unity {report.get('unity')}: {checked['textures']} textures, {checked['sprites']} sprites, "
-      f"{checked['clips']} clips, {checked['keys']} keys checked")
+      f"{checked['clips']} clips, {checked['keys']} keys, {checked['cells']} painted cells checked")
 if problems:
     print(f"{len(problems)} problem(s):")
     for p in problems[:60]:

@@ -60,12 +60,14 @@ Result<WrittenFiles> writeTilesetFiles(const std::vector<Tileset>& levels, const
 
 // A document's frames as a sprite sheet: <png> + Aseprite-style JSON, and
 // engines: <stem>.tres (Godot SpriteFrames, one animation per tag),
-// <png>.meta + <stem>_<tag>.anim (+ .meta) per animation (Unity).
+// <png>.meta + <stem>_<tag>.anim (+ .meta) per animation (Unity), <stem>.tsx
+// with tile animations for grid layouts (Tiled).
 Result<WrittenFiles> writeSheetFiles(const Document& doc, const FrameRange& range, const SheetOptions& sheetOpts,
                                      const std::filesystem::path& png, const AssetWriteOptions& opts);
 
-// A packed atlas (single page): <png> + TexturePacker-style JSON; Unity
-// .meta with one sprite per item and their 9-slice borders.
+// A packed atlas: <png> (several pages: <stem>_0.png, <stem>_1.png, ...) +
+// one TexturePacker-style JSON; a Unity .meta per page with one sprite per
+// item on it and their 9-slice borders.
 Result<WrittenFiles> writeAtlasFiles(const Atlas& atlas, const std::filesystem::path& png, const AssetWriteOptions& opts,
                                      const std::vector<NineSlice>& borders = {});
 

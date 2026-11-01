@@ -194,6 +194,8 @@ ToolResult fromCli(const Result<CliOut>& r, const std::string& okText = {}) {
     const CliOut& c = r.value();
     if (!c.result.value("ok", false)) {
         std::string msg = c.result.value("error", std::string("failed"));
+        // A failed script's output helps find the problem.
+        if (const std::string out = c.result.value("output", std::string()); !out.empty()) msg += "\n\nScript output before the error:\n" + out;
         return ToolResult::text(msg, true);
     }
     json data = c.result;

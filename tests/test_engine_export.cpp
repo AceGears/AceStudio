@@ -202,3 +202,117 @@ TEST_CASE("Asset files: dry runs list targets, engine-only sheets", "[engine]") 
     }
     fs::remove_all(dir);
 }
+
+TEST_CASE("Unity Rule Tiles: one rule per tile, neighbours from the masks", "[engine]") {
+    const Tileset blob = generateTileset(AutotileScheme::Blob47, tex({40, 80, 200, 255}), tex({220, 200, 120, 255})).value();
+    const std::string guid = unityGuid("acestudio:t.png");
+    const std::string r = unityRuleTile(blob, "t", "t", guid);
+    CHECK(r.find(std::string("guid: ") + kUnityRuleTileScriptGuid) != std::string::npos);
+    CHECK(count(r, "  - m_Id: ") == 47);
+    CHECK(count(r, "    m_NeighborPositions:") == 47);
+    for (int k = 0; k < 47; ++k)
+        CHECK(r.find("{fileID: " + std::to_string(unityFileId(guid + "/t_" + std::to_string(k))) + ", guid: " + guid) != std::string::npos);
+    // The isolated tile (mask 0): all four sides Not This, corners Don't Care.
+    const std::size_t k0 = r.find("  - m_Id: 0\n");
+    const std::string rule0 = r.substr(k0, r.find("  - m_Id: 1\n") - k0);
+    CHECK(rule0.find("    m_Neighbors:\n    - 0\n    - 2\n    - 0\n    - 2\n    - 2\n    - 0\n    - 2\n    - 0\n") != std::string::npos);
+    // Cardinal16: diagonals never matter.
+    const Tileset card = generateTileset(AutotileScheme::Cardinal16, tex({40, 80, 200, 255}), tex({220, 200, 120, 255})).value();
+    const std::string c = unityRuleTile(card, "c", "c", guid);
+    CHECK(count(c, "  - m_Id: ") == 16);
+    const std::size_t k15 = c.find("  - m_Id: 15\n");
+    CHECK(c.find("    m_Neighbors:\n    - 0\n    - 1\n    - 0\n    - 1\n    - 1\n    - 0\n    - 1\n    - 0\n", k15) != std::string::npos);
+    // Wang16 cannot be a Rule Tile.
+    const Tileset wang = generateTileset(AutotileScheme::Wang16, tex({40, 80, 200, 255}), tex({220, 200, 120, 255})).value();
+    CHECK(unityRuleTile(wang, "w", "w", guid).empty());
+    CHECK(unityTile("b", 42, guid).find("m_Sprite: {fileID: 42, guid: " + guid) != std::string::npos);
+}
+
+TEST_CASE("Tiled sprite sheets: tile animations for grid layouts", "[engine]") {
+    const Document doc = animated();
+    auto sheet = buildSpriteSheet(doc, {}, SheetOptions{});
+    REQUIRE(sheet);
+    const EngineSheet es = engineSheet(doc, sheet.value(), "hero");
+    const std::string tsx = tiledSpriteSheet(es, "hero.png", "hero");
+    REQUIRE_FALSE(tsx.empty());
+    CHECK(tsx.find("tilewidth=\"8\" tileheight=\"8\" tilecount=\"4\" columns=\"4\"") != std::string::npos);
+    CHECK(count(tsx, "<animation>") == 2);
+    // run: frames 0-3 on tile 0 with the frame durations; bounce goes on the next free tile.
+    CHECK(tsx.find("<tile id=\"0\" type=\"run\">") != std::string::npos);
+    CHECK(tsx.find("<frame tileid=\"3\" duration=\"200\"/>") != std::string::npos);
+    CHECK(tsx.find("<tile id=\"1\" type=\"bounce\">") != std::string::npos);
+    // Trimmed or packed sheets get no .tsx, and a note says why.
+    const fs::path dir = fs::temp_directory_path() / "acestudio_engine_tsx";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    AssetWriteOptions o;
+    o.engines = kEngineTiled;
+    SheetOptions trimmed;
+    trimmed.trim = true;
+    auto w = writeSheetFiles(doc, {}, trimmed, dir / "hero.png", o);
+    REQUIRE(w);
+    CHECK_FALSE(fs::exists(dir / "hero.tsx"));
+    CHECK_FALSE(w.value().notes.empty());
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Asset files: Rule Tiles for tilesets, multi-page atlases", "[engine]") {
+    const fs::path dir = fs::temp_directory_path() / "acestudio_engine_rules";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    AssetWriteOptions o;
+    o.engines = kEngineUnity | kEngineTiled;
+    std::vector<Tileset> levels{generateTileset(AutotileScheme::Blob47, tex({40, 80, 200, 255}), tex({220, 200, 120, 255})).value(),
+                                generateTileset(AutotileScheme::Blob47, Image(), tex({60, 160, 60, 255})).value()};
+    REQUIRE(writeTilesetFiles(levels, dir / "t.png", o));
+    for (const char* f : {"t_level1.asset", "t_level1.asset.meta", "t_level2.asset", "t_base.asset", "t_base.asset.meta"}) CHECK(fs::exists(dir / f));
+    {
+        // Every sprite a Rule Tile uses is defined by the texture's .meta.
+        auto read = [](const fs::path& p) {
+            std::ifstream f(p);
+            return std::string((std::istreambuf_iterator<char>(f)), {});
+        };
+        const std::string rule = read(dir / "t_level2.asset"), meta = read(dir / "t_level2.png.meta");
+        const std::regex ref("fileID: (-?[0-9]+), guid: ([0-9a-f]{32})");
+        int refs = 0;
+        for (std::sregex_iterator it(rule.begin(), rule.end(), ref), end; it != end; ++it) {
+            if ((*it)[2] == kUnityRuleTileScriptGuid) continue;
+            ++refs;
+            CHECK(meta.find("internalID: " + (*it)[1].str()) != std::string::npos);
+            CHECK(meta.find("guid: " + (*it)[2].str()) != std::string::npos);
+        }
+        CHECK(refs == 48);   // default sprite + one per rule
+    }
+    REQUIRE(writeSheetFiles(animated(), {}, SheetOptions{}, dir / "hero.png", o));
+    CHECK(fs::exists(dir / "hero.tsx"));
+
+    std::vector<AtlasItem> items;
+    for (int i = 0; i < 6; ++i) {
+        Image img(30, 30);
+        img.fill({static_cast<std::uint8_t>(i * 40), 100, 100, 255});
+        items.push_back({"s" + std::to_string(i), img});
+    }
+    AtlasOptions ao;
+    ao.maxWidth = ao.maxHeight = 64;
+    ao.multiplePages = true;
+    const Atlas atlas = packAtlas(items, ao).value();
+    REQUIRE(atlas.pages.size() > 1);
+    auto w = writeAtlasFiles(atlas, dir / "items.png", o);
+    REQUIRE(w);
+    for (std::size_t p = 0; p < atlas.pages.size(); ++p) {
+        const fs::path page = dir / ("items_" + std::to_string(p) + ".png");
+        CHECK(fs::exists(page));
+        std::ifstream m(fs::path(page.string() + ".meta"));
+        const std::string meta((std::istreambuf_iterator<char>(m)), {});
+        int sprites = 0;
+        for (const auto& s : atlas.sprites) {
+            if (s.page != static_cast<int>(p)) continue;
+            ++sprites;
+            CHECK(meta.find("name: " + s.name) != std::string::npos);
+        }
+        CHECK(sprites > 0);
+    }
+    CHECK(fs::exists(dir / "items.json"));
+    CHECK_FALSE(fs::exists(dir / "items.png"));
+    fs::remove_all(dir);
+}

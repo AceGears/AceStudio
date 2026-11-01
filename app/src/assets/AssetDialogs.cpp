@@ -1106,32 +1106,11 @@ void AtlasDialog::exportFiles() {
     const QString f = QFileDialog::getSaveFileName(this, tr("Export Atlas"), QStringLiteral("atlas.png"), tr("PNG image (*.png)"));
     if (f.isEmpty()) return;
     const fs::path png = withExtension(f, ".png");
-    if (m_atlas->pages.size() == 1) {
-        AssetWriteOptions opts;
-        opts.engines = m_engines->engines();
-        const Atlas atlas = *m_atlas;
-        (void)writeAssetFiles(this, opts, png, [&](const AssetWriteOptions& o) { return writeAtlasFiles(atlas, png, o); });
-        return;
-    }
-    // Several pages: <stem>_N.png + one JSON (engine files need one page).
-    if (m_engines->engines() != kEngineNone)
-        QMessageBox::information(this, windowTitle(), tr("Unity files are written for single-page atlases only; raise the maximum "
-                                                         "size to fit everything on one page. Writing the pages and JSON."));
-    const fs::path json = fs::path(png).replace_extension(".json");
-    std::vector<std::string> files;
-    for (std::size_t i = 0; i < m_atlas->pages.size(); ++i) {
-        const std::string name = png.stem().string() + "_" + std::to_string(i) + ".png";
-        if (Status st = writePng(m_atlas->pages[i], png.parent_path() / name); !st) {
-            QMessageBox::warning(this, windowTitle(), qs(st.error().message));
-            return;
-        }
-        files.push_back(name);
-    }
-    if (Status st = writeTextFile(json, atlasJson(*m_atlas, files)); !st) {
-        QMessageBox::warning(this, windowTitle(), qs(st.error().message));
-        return;
-    }
-    QMessageBox::information(this, windowTitle(), tr("Wrote %1 page image(s) and %2.").arg(files.size()).arg(fromPath(json.filename())));
+    // Several pages are written as <stem>_0.png, <stem>_1.png, ... with one JSON.
+    AssetWriteOptions opts;
+    opts.engines = m_engines->engines();
+    const Atlas atlas = *m_atlas;
+    (void)writeAssetFiles(this, opts, png, [&](const AssetWriteOptions& o) { return writeAtlasFiles(atlas, png, o); });
 }
 
 // ================================================================ template

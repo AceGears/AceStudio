@@ -134,9 +134,16 @@ Result<WrittenFiles> writeTilesetFiles(const std::vector<Tileset>& levels, const
             const std::string terrain = i < names.levels.size() && !names.levels[i].empty() ? names.levels[i] : "terrain " + std::to_string(i + 1);
             plan.text(dir / (name + ".tsx"), tiledTileset(levels[i], fileName(img), name, terrain, names.base));
         }
-        if (o.engines & kEngineUnity)
+        if (o.engines & kEngineUnity) {
             plan.text(fs::path(img.string() + ".meta"),
                       unityTextureMeta(tileGrid(levels[i], name), guidFor(img), ppuOr(o.pixelsPerUnit, levels[i].tileSize)));
+            const std::string rule = unityRuleTile(levels[i], name, name, guidFor(img));
+            if (!rule.empty()) {
+                const fs::path asset = dir / (name + ".asset");
+                plan.text(asset, rule);
+                plan.text(fs::path(asset.string() + ".meta"), unityAssetMeta(unityGuid("acestudio:" + fileName(asset)), 11400000));
+            }
+        }
     }
     if (withBase && (o.engines & kEngineUnity)) {
         EngineSheet b;
@@ -144,6 +151,9 @@ Result<WrittenFiles> writeTilesetFiles(const std::vector<Tileset>& levels, const
         b.height = first.base.height();
         b.frames.push_back({stem + "_base", {0, 0, b.width, b.height}, {}, 0.5, 0.5});
         plan.text(fs::path(base.string() + ".meta"), unityTextureMeta(b, guidFor(base), ppuOr(o.pixelsPerUnit, first.tileSize)));
+        const fs::path asset = dir / (stem + "_base.asset");
+        plan.text(asset, unityTile(stem + "_base", unityFileId(guidFor(base) + "/" + stem + "_base"), guidFor(base)));
+        plan.text(fs::path(asset.string() + ".meta"), unityAssetMeta(unityGuid("acestudio:" + fileName(asset)), 11400000));
     }
     if (!single) plan.text(dir / (stem + "_terrain.json"), terrainSetJson(levels, images, jsons, withBase ? fileName(base) : std::string()));
     if (o.engines & kEngineGodot)
@@ -158,8 +168,14 @@ Result<WrittenFiles> writeTilesetFiles(const std::vector<Tileset>& levels, const
     if (first.scheme == AutotileScheme::Wang16 && levels.size() > 1 && (o.engines & kEngineGodot))
         notes.push_back("Godot's corner mode works on the cell grid: a single isolated cell of an upper level stays empty "
                         "(AceStudio draws Wang tiles on the dual grid); paint upper levels at least 2x2");
-    if (o.engines & kEngineUnity)
-        notes.push_back("Unity: the images are sliced into one sprite per tile; Unity's Rule Tiles are not generated");
+    if ((o.engines & kEngineUnity) && first.scheme == AutotileScheme::Wang16)
+        notes.push_back("Unity: Wang16 is a dual grid, which Rule Tiles cannot express; the images are sliced into one sprite per "
+                        "tile for placing by hand");
+    else if (o.engines & kEngineUnity)
+        notes.push_back("Unity: the Rule Tiles (.asset) need the 2D Tilemap Extras package (com.unity.2d.tilemap.extras); paint "
+                        "each level on its own Tilemap, lowest first" + std::string(withBase ? ", and the base with the _base tile" : ""));
+    if ((o.engines & kEngineUnity) && first.phases > 1 && first.scheme != AutotileScheme::Wang16)
+        notes.push_back("Unity: the Rule Tiles use the first of the tile variants only");
     return plan.commit(o.overwrite, std::move(notes), o.dryRun);
 }
 
@@ -193,25 +209,42 @@ Result<WrittenFiles> writeSheetFiles(const Document& doc, const FrameRange& rang
         }
     }
     std::vector<std::string> notes;
-    if (o.engines & kEngineTiled) notes.push_back("Tiled has no sprite animation format; only the sheet and JSON were written for it");
+    if (o.engines & kEngineTiled) {
+        // Trimmed frames are not cells of the frame size; packed ones are not on a grid.
+        const std::string tsx = so.trim || so.layout == SheetLayout::Packed ? std::string() : tiledSpriteSheet(es, fileName(png), stem);
+        if (!tsx.empty()) plan.text(dir / (stem + ".tsx"), tsx);
+        else notes.push_back("Tiled: the frames are not on a regular grid (trimmed or packed), so no .tsx was written; "
+                             "export untrimmed with a horizontal, vertical or grid layout for Tiled tile animations");
+    }
     return plan.commit(o.overwrite, std::move(notes), o.dryRun);
 }
 
 Result<WrittenFiles> writeAtlasFiles(const Atlas& atlas, const fs::path& pngIn, const AssetWriteOptions& o,
                                      const std::vector<NineSlice>& borders) {
-    if (atlas.pages.size() != 1) return Error{ErrorCode::InvalidArgument, "Engine files need a single-page atlas"};
+    if (atlas.pages.empty()) return Error{ErrorCode::InvalidArgument, "The atlas has no pages"};
     fs::path png = pngIn;
     if (png.extension() != ".png") png += ".png";
     const fs::path dir = png.parent_path();
-    Plan plan;
-    plan.image(png, atlas.pages.front());
-    plan.text(dir / (png.stem().string() + ".json"), atlasJson(atlas, {fileName(png)}));
+    // One page: <png>; several: <stem>_0.png, <stem>_1.png, ... and one JSON.
+    std::vector<fs::path> pages;
+    if (atlas.pages.size() == 1) pages.push_back(png);
+    else
+        for (std::size_t p = 0; p < atlas.pages.size(); ++p) pages.push_back(dir / (png.stem().string() + "_" + std::to_string(p) + ".png"));
+    std::vector<std::string> names;
+    for (const auto& p : pages) names.push_back(fileName(p));
     if (o.engines & kEngineUnity) {
         bool rotated = false;
         for (const auto& s : atlas.sprites) rotated = rotated || s.rotated;
         if (rotated) return Error{ErrorCode::InvalidArgument, "Unity cannot use rotated atlas sprites; pack without rotation"};
-        plan.text(fs::path(png.string() + ".meta"), unityTextureMeta(engineSheet(atlas, 0, borders), guidFor(png), ppuOr(o.pixelsPerUnit, 16)));
     }
+    Plan plan;
+    for (std::size_t p = 0; p < pages.size(); ++p) {
+        plan.image(pages[p], atlas.pages[p]);
+        if (o.engines & kEngineUnity)
+            plan.text(fs::path(pages[p].string() + ".meta"),
+                      unityTextureMeta(engineSheet(atlas, static_cast<int>(p), borders), guidFor(pages[p]), ppuOr(o.pixelsPerUnit, 16)));
+    }
+    plan.text(dir / (png.stem().string() + ".json"), atlasJson(atlas, names));
     return plan.commit(o.overwrite, {}, o.dryRun);
 }
 

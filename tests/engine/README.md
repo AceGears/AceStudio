@@ -19,8 +19,10 @@ Last run: Godot 4.6.2-stable (Linux, headless), 2026-10-31: all cells match.
 ## Unity
 
 1. Make a throwaway project folder with `Assets/AceStudio/`, holding
-   `engine_fixture`'s PNG, `.meta`, `.anim` and `.json` files, and
-   `Assets/Editor/AceStudioImportCheck.cs` (from `tests/engine/unity/`).
+   `engine_fixture`'s PNG, `.meta`, `.anim`, `.asset` and `.json` files, and
+   `Assets/Editor/AceStudioImportCheck.cs` and `AceStudioPackageSetup.cs` (from
+   `tests/engine/unity/`). The second one adds `com.unity.2d.tilemap.extras`
+   through the Package Manager the first time the project opens.
 2. Open the folder in Unity (Unity Hub › Add › Add project from disk). After the
    import, the script writes `acestudio_unity_report.json` in the project folder.
    **AceStudio › Write Import Report** runs it again.
@@ -34,8 +36,12 @@ settings and every clip's sprite keys. The comparison checks these:
 - The rects are the JSON frames flipped to Unity's bottom-left origin.
 - The 9-slice borders match the UI kit JSON.
 - Clip keys, lengths and loop flags match the `.anim` files.
+- The `.asset` Rule Tiles load as `RuleTile`. Painting the fixture's level map with them
+  (level 1 or the base tile on one Tilemap, level 2 on another) makes Unity choose the same
+  tile as AceStudio in every cell, for Blob47 and Cardinal16.
 
-Last run: Unity 6000.6.7f1 (Windows), 2026-11-01. Everything matched: 11 textures, 190
-sprites, 3 clips and 13 keys, with no import errors in the Editor log. Clip lengths equal the
+Last run: Unity 6000.6.7f1 (Windows) with 2D Tilemap Extras 9.0.1, 2026-11-01. Everything
+matched: 11 textures, 190 sprites, 3 clips, 13 keys and 560 painted cells (2 schemes x 2
+levels x 140 cells). Clip lengths equal the
 frame durations: walk 0.40 s, idle 0.45 s, die 0.65 s. The report is kept as
 `unity/report-6000.6.7f1.json`.

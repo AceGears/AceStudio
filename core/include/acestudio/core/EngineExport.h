@@ -7,9 +7,11 @@
 //              terrain sets for autotiling, StyleBoxTexture (.tres) for
 //              9-slice UI elements.
 //   Unity      TextureImporter .meta files that slice a sheet into named
-//              sprites (with 9-slice borders and pivots), and AnimationClip
-//              (.anim) files per animation.
-//   Tiled      .tsx tilesets with Wang sets for the terrain brush.
+//              sprites (with 9-slice borders and pivots), AnimationClip
+//              (.anim) files per animation, and Rule Tiles (2D Tilemap
+//              Extras) for Blob47 and Cardinal16 tilesets.
+//   Tiled      .tsx tilesets with Wang sets for the terrain brush, and .tsx
+//              tilesets with tile animations for grid sprite sheets.
 //
 // All output is text and deterministic: the same input always gives the same
 // bytes (GUIDs and IDs are derived from names, not random).
@@ -96,6 +98,17 @@ std::string unityAnimationClip(const EngineSheet& sheet, std::size_t animation, 
 // A plain .meta for a generated asset (the .anim), so Unity keeps its GUID.
 std::string unityAssetMeta(const std::string& guid, std::int64_t mainObjectFileId);
 
+// The RuleTile script of com.unity.2d.tilemap.extras (RuleTile.cs.meta).
+inline constexpr const char* kUnityRuleTileScriptGuid = "9d1514134bc4fbd41bb739b1b9a49231";
+// A Rule Tile for a Blob47 or Cardinal16 level: one rule per tile, with the
+// neighbours as This / Not This (Blob47 corners only where both sides are
+// set, like AceStudio's placement). The sprites are `spriteStem_<k>` of the
+// texture `textureGuid` (as unityTextureMeta names them); phase 0 only.
+// Empty for Wang16 (a dual grid, which Rule Tiles cannot express).
+std::string unityRuleTile(const Tileset& t, const std::string& name, const std::string& spriteStem, const std::string& textureGuid);
+// A plain Tile (UnityEngine.Tilemaps.Tile) showing one sprite.
+std::string unityTile(const std::string& name, std::int64_t spriteFileId, const std::string& textureGuid);
+
 // ---- Tiled
 
 // A .tsx tileset with one Wang set: Blob47 = mixed, Wang16 = corner,
@@ -103,5 +116,10 @@ std::string unityAssetMeta(const std::string& guid, std::int64_t mainObjectFileI
 // a level with a transparent base, whose empty side is colour 0). Only phase 0.
 std::string tiledTileset(const Tileset& t, const std::string& imageFile, const std::string& name,
                          const std::string& terrainName, const std::string& baseName);
+// A .tsx for a sprite sheet whose frames sit on a regular grid (pass only
+// untrimmed horizontal, vertical or grid layouts): one tile per cell, and one tile
+// animation per animation, on the tile of its first frame. Empty when the
+// frames do not form a grid.
+std::string tiledSpriteSheet(const EngineSheet& sheet, const std::string& imageFile, const std::string& name);
 
 } // namespace acestudio

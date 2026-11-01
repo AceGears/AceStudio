@@ -226,41 +226,16 @@ int cmdAtlas(const Args& a, Output& out) {
     if (!engines) return out.fail(engines.error());
     fs::path png = *outPath;
     if (png.extension() != ".png") png += ".png";
-    if (atlas.value().pages.size() == 1) {
-        AssetWriteOptions wo;
-        wo.engines = engines.value();
-        wo.overwrite = a.force;
-        wo.pixelsPerUnit = optInt(a, "ppu").value_or(0);
-        auto w = writeAtlasFiles(atlas.value(), png, wo);
-        if (!w) return out.fail(w.error());
-        json j = filesJson(w.value());
-        j["pages"] = 1;
-        j["sprites"] = items.size();
-        return out.success(std::move(j), filesHuman(w.value()));
-    }
-    if (engines.value() != kEngineNone) return out.fail(kUsage, "atlas: engine files need a single page; raise --max");
-    std::vector<std::string> names;
-    std::vector<fs::path> paths;
-    for (std::size_t p = 0; p < atlas.value().pages.size(); ++p) {
-        paths.push_back(png.parent_path() / (png.stem().string() + "_" + std::to_string(p) + ".png"));
-        names.push_back(paths.back().filename().string());
-    }
-    const fs::path js = fs::path(png).replace_extension(".json");
-    std::error_code ec;
-    if (!a.force) {
-        for (const auto& p : paths)
-            if (fs::exists(p, ec)) return out.fail(kIo, p.string() + " already exists (use --force)");
-        if (fs::exists(js, ec)) return out.fail(kIo, js.string() + " already exists (use --force)");
-    }
-    json files = json::array();
-    for (std::size_t p = 0; p < paths.size(); ++p) {
-        if (auto st = writePng(atlas.value().pages[p], paths[p]); !st) return out.fail(st.error());
-        files.push_back(paths[p].string());
-    }
-    if (auto st = writeTextFile(js, atlasJson(atlas.value(), names)); !st) return out.fail(st.error());
-    files.push_back(js.string());
-    return out.success({{"files", files}, {"pages", paths.size()}, {"sprites", items.size()}},
-                       "Wrote " + std::to_string(paths.size()) + " pages and " + js.string() + "\n");
+    AssetWriteOptions wo;
+    wo.engines = engines.value();
+    wo.overwrite = a.force;
+    wo.pixelsPerUnit = optInt(a, "ppu").value_or(0);
+    auto w = writeAtlasFiles(atlas.value(), png, wo);
+    if (!w) return out.fail(w.error());
+    json j = filesJson(w.value());
+    j["pages"] = atlas.value().pages.size();
+    j["sprites"] = items.size();
+    return out.success(std::move(j), filesHuman(w.value()));
 }
 
 // slice sheet.png --out folder [--grid WxH [--offset X,Y] [--spacing X,Y]]

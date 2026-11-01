@@ -5,6 +5,9 @@
 // everything it writes <project>/acestudio_unity_report.json: every sprite
 // Unity made from AceStudio's .meta files (name, rect, border, pivot, pixels
 // per unit), the import settings, and every AnimationClip's sprite keys.
+// It also paints the fixture's level map (map.json) with AceStudio's Rule
+// Tiles (needs com.unity.2d.tilemap.extras) and records the sprite Unity
+// chose for every cell.
 // tests/engine/compare_unity.py compares the report with AceStudio's files.
 // Menu: AceStudio > Write Import Report (to run it again).
 
@@ -14,6 +17,7 @@ using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Tilemaps;
 
 [InitializeOnLoad]
 public static class AceStudioImportCheck
@@ -103,9 +107,84 @@ public static class AceStudioImportCheck
             }
             sb.Append("]}");
         }
-        sb.Append("]}");
+        sb.Append("],\"paint\":");
+        Paint(sb);
+        sb.Append("}");
         string report = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "acestudio_unity_report.json");
         File.WriteAllText(report, sb.ToString());
         Debug.Log("AceStudio import report: " + report);
+    }
+
+    // Paints map.json's levels like a user would: level 1 (or the base tile)
+    // on one Tilemap, level 2 on another; map row y goes to Unity row -y.
+    static void Paint(StringBuilder sb)
+    {
+        string mapPath = Path.Combine(Folder, "map.json");
+        if (!File.Exists(mapPath)) { sb.Append("null"); return; }
+        var map = JsonUtility.FromJson<LevelMapJson>(File.ReadAllText(mapPath));
+        sb.Append('{');
+        bool firstScheme = true;
+        foreach (var scheme in new[] { "blob47", "cardinal16" })
+        {
+            if (!firstScheme) sb.Append(',');
+            firstScheme = false;
+            sb.Append(Q(scheme)).Append(':');
+            var baseTile = AssetDatabase.LoadAssetAtPath<TileBase>(Folder + "/" + scheme + "_base.asset");
+            var rule1 = AssetDatabase.LoadAssetAtPath<TileBase>(Folder + "/" + scheme + "_level1.asset");
+            var rule2 = AssetDatabase.LoadAssetAtPath<TileBase>(Folder + "/" + scheme + "_level2.asset");
+            if (baseTile == null || rule1 == null || rule2 == null)
+            {
+                sb.Append("{\"error\":").Append(Q("could not load the tiles (is com.unity.2d.tilemap.extras installed?)")).Append('}');
+                continue;
+            }
+            var grid = new GameObject("AceStudioCheckGrid", typeof(Grid));
+            try
+            {
+                var layers = new Tilemap[2];
+                for (int l = 0; l < 2; ++l)
+                {
+                    var go = new GameObject("Level" + (l + 1), typeof(Tilemap));
+                    go.transform.SetParent(grid.transform);
+                    layers[l] = go.GetComponent<Tilemap>();
+                }
+                for (int y = 0; y < map.h; ++y)
+                    for (int x = 0; x < map.w; ++x)
+                    {
+                        int level = map.levels[y * map.w + x];
+                        var cell = new Vector3Int(x, -y, 0);
+                        layers[0].SetTile(cell, level >= 1 ? rule1 : baseTile);
+                        if (level >= 2) layers[1].SetTile(cell, rule2);
+                    }
+                sb.Append("{\"ruleType\":").Append(Q(rule1.GetType().FullName)).Append(",\"levels\":[");
+                for (int l = 0; l < 2; ++l)
+                {
+                    layers[l].RefreshAllTiles();
+                    if (l > 0) sb.Append(',');
+                    sb.Append('[');
+                    for (int y = 0; y < map.h; ++y)
+                        for (int x = 0; x < map.w; ++x)
+                        {
+                            if (y > 0 || x > 0) sb.Append(',');
+                            var sprite = layers[l].GetSprite(new Vector3Int(x, -y, 0));
+                            sb.Append(sprite ? Q(sprite.name) : "null");
+                        }
+                    sb.Append(']');
+                }
+                sb.Append("]}");
+            }
+            finally
+            {
+                Object.DestroyImmediate(grid);
+            }
+        }
+        sb.Append('}');
+    }
+
+    [System.Serializable]
+    class LevelMapJson
+    {
+        public int w;
+        public int h;
+        public int[] levels;
     }
 }

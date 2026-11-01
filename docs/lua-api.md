@@ -15,7 +15,8 @@ tables as usual. For example, `doc:layers()[1]` is the layer with `index = 0`.
 
 | Available | Removed |
 |---|---|
-| `string` (except `string.dump`), `table`, `math`, `utf8`, `coroutine` | `io`, `package`, `require`, `debug` |
+| `string` (except `string.dump`), `table`, `math`, `utf8`, `coroutine` | `io`, `package`, `debug`, native modules |
+| `require` for `.lua` modules in the allowed folders (see below) | `require` of anything else |
 | base functions (`print`, `pairs`, `pcall`, `error`, `tostring`, `setmetatable`, …) | `dofile`, `loadfile` |
 | `load` for **text** chunks only (`mode` is always `"t"`) | loading precompiled bytecode |
 | `os.time`, `os.clock`, `os.date`, `os.difftime` | everything else in `os` (`execute`, `remove`, `rename`, `getenv`, `exit`, `tmpname`, …) |
@@ -28,11 +29,19 @@ Limits:
   - In the app, the allowed folder is the script's folder and the folder of the current document.
   - Relative paths are resolved against the first allowed folder.
   - `..` and symlinks are resolved before the check.
-- **Memory.** 512 MB by default (CLI `--memory MB`). Going over the limit raises `not enough memory`.
+- **Memory.** 512 MB by default (CLI `--memory MB`). The limit covers the Lua heap, the pixels of every image the script holds, and the documents it creates, opens or grows (cels and undo history). Going over the limit raises `not enough memory`; a large image is refused before it is allocated.
 - **Time.** 30 s by default (CLI `--timeout s`, where 0 means no limit). The app's Cancel button stops a script, and `pcall` cannot catch either of these stops for long, because the check fires again.
 - **Overwriting.** Writing tools refuse to replace existing files unless you pass `overwrite = true`.
 
 Errors give the file name and line, for example `make.lua:12: there is no frame 4`.
+
+## Modules
+
+`require("name")` loads `name.lua` from the allowed folders (first match wins); dots are folders, so `require("lib.colors")` loads `lib/colors.lua`.
+
+- Module names use letters, digits, `_`, `-` and `.`; paths such as `../x` or `/etc/x` are refused.
+- A module runs in the same sandbox, once; later calls return the cached value (`true` when the module returns nothing).
+- A module that requires itself, directly or through others, raises an error.
 
 ## Arguments and output
 
@@ -80,11 +89,16 @@ Errors give the file name and line, for example `make.lua:12: there is no frame 
 | Member | |
 |---|---|
 | `doc.width`, `doc.height`, `doc.frames` | size and frame count |
-| `doc:layers()` | list of `{index, name, visible, opacity, group}` |
+| `doc:layers()` | list of `{index, name, visible, locked, opacity, blend, group}` |
 | `doc:add_layer([name])` | adds a layer on top and returns its index |
+| `doc:set_layer(layer, {name, visible, locked, opacity, blend})` | changes layer properties (any subset; opacity 0..255; blend such as `"multiply"`) |
+| `doc:remove_layer(layer)` | removes a layer (a document keeps at least one) |
 | `doc:cel(layer, frame)` | the cel as a canvas-sized image |
 | `doc:set_cel(layer, frame, image[, x, y])` | replaces a cel |
 | `doc:add_frame([ms])` | appends a frame (default 100 ms) and returns its index |
+| `doc:remove_frame(frame)` | removes a frame (a document keeps at least one) |
+| `doc:palette()` | the palette as a list of `"#rrggbbaa"` strings |
+| `doc:set_palette({colour, ...})` | replaces the palette (up to 256 colours) |
 | `doc:duration(frame)`, `doc:set_duration(frame, ms)` | frame timing |
 | `doc:add_tag(name, from, to[, "forward"\|"reverse"\|"pingpong"])` | animation tag |
 | `doc:tags()` | list of `{name, from, to, direction}` |

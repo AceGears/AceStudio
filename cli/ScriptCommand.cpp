@@ -62,7 +62,10 @@ int cmdRun(const Args& a, Output& out) {
     }
     // In human mode the script's output streams as it runs; in JSON mode it
     // is returned in the result.
+    // A failed script's output is kept too (JSON: the "output" field).
+    std::string printed;
     if (!out.isJson()) o.output = [](const std::string& s) { std::cout << s << std::flush; };
+    else o.output = [&printed](const std::string& s) { printed += s; };
 
     std::unique_ptr<Editor> editor;
     const auto docPath = a.opt("doc");
@@ -76,7 +79,7 @@ int cmdRun(const Args& a, Output& out) {
     }
 
     auto r = runScriptFile(script, o);
-    if (!r) return out.fail(kScript, r.error().message);
+    if (!r) return out.fail(kScript, r.error().message, {{"output", printed}});
     const ScriptResult& res = r.value();
 
     json saved = nullptr;
