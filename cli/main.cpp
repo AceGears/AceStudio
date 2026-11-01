@@ -76,6 +76,8 @@ const char* kUsageText =
     "  slice <sheet.png> --out <folder> [--grid WxH|auto [--offset X,Y] [--spacing X,Y] [--keep-empty]]\n"
     "        [--background #rrggbb] [--tolerance 8] [--merge 2] [--min-pixels 4]\n"
     "                                  Cut a sheet into sprites (PNGs + .slices.json)\n"
+    "  slice <sheet.png> --out <folder> --cells COLSxROWS\n"
+    "                                  Cut a generated sheet (uneven spacing, opaque background) into its subjects\n"
     "  uikit --out ui.png [--scale 1] [--colors base,light,dark,outline,accent,text] [--square]\n"
     "        [--texture pattern.png] [--engines godot,unity]\n"
     "                                  Themed UI kit with 9-slice data (Godot StyleBoxTexture .tres)\n"

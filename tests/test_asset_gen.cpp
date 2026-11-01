@@ -105,3 +105,28 @@ TEST_CASE("Reference roles limit what each reference contributes", "[gen]") {
     // SDXL receives no reference images, so no reference instructions.
     CHECK(composePrompt(s, Backend::Sdxl, true).positive.find("reference image") == std::string::npos);
 }
+
+TEST_CASE("generated sheets are cut into their cells", "[gen]") {
+    // A 3 x 2 sheet on an opaque background; the creatures are not centred
+    // in their cells and one cell is empty, and there is a speck.
+    Image sheet(300, 200, Rgba8{240, 236, 220, 255});
+    const Rgba8 body{120, 40, 160, 255};
+    sheet.fillRect({10, 20, 60, 50}, body);       // cell (0,0), off-centre
+    sheet.fillRect({120, 30, 40, 60}, body);      // cell (1,0)
+    sheet.fillRect({215, 15, 50, 70}, body);      // cell (2,0)
+    sheet.fillRect({30, 120, 40, 40}, body);      // cell (0,1)
+    sheet.fillRect({140, 130, 2, 2}, body);       // speck in cell (1,1): empty
+    sheet.fillRect({220, 110, 60, 80}, body);     // cell (2,1)
+    sheet.fillRect({274, 112, 2, 2}, Rgba8{10, 10, 10, 255});  // speck next to it
+    const auto cells = gen::extractGrid(sheet, 3, 2);
+    REQUIRE(cells.size() == 5);
+    CHECK(cells[0].image.width() == 60);
+    CHECK(cells[0].image.height() == 50);
+    CHECK(cells[0].rect.x == 10);
+    CHECK(cells[3].column == 0);
+    CHECK(cells[3].row == 1);
+    CHECK(cells[4].column == 2);
+    CHECK(cells[4].image.width() == 60);    // the speck was dropped
+    for (const auto& c : cells) CHECK(c.image.pixel(0, 0).a == 255);
+    CHECK(gen::gridPrompt("slimes", 3, 3).find("9 different slimes") != std::string::npos);
+}

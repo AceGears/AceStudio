@@ -51,6 +51,8 @@ struct Spec {
     // (style::toString keys: character, style, environment, ...). Each role
     // adds an instruction that limits what the model takes from that image.
     std::vector<std::string> referenceRoles;
+    // A sheet of different subjects in one image (bestiary grids); 0 = one subject.
+    int sheetColumns = 0, sheetRows = 0;
 };
 
 struct Prompt {
@@ -104,5 +106,22 @@ struct CheckOptions {
     const Palette* stylePalette = nullptr;
 };
 QualityReport checkAsset(const Image& img, const CheckOptions& opt);
+
+// ------------------------------------------------------------------ sheets
+
+// Prompt words for a sheet of `cols` x `rows` different subjects in one image.
+std::string gridPrompt(const std::string& subject, int cols, int rows);
+
+struct GridCell {
+    int column = 0, row = 0;
+    IntRect rect;                 // where it was cut from the sheet
+    Image image;                  // cropped to its content, background removed
+};
+// Cuts a generated sheet into its cells. The cut lines are placed in the
+// emptiest column/row near each expected line (models rarely space a grid
+// exactly), the background is removed from each cell's border inwards when
+// the sheet is opaque, stray specks under `minPixels` are dropped, and empty
+// cells are left out.
+std::vector<GridCell> extractGrid(const Image& sheet, int cols, int rows, int minPixels = 16);
 
 } // namespace acestudio::gen

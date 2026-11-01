@@ -3,6 +3,7 @@
 
 #include "CliCommon.h"
 
+#include "acestudio/core/AssetGen.h"
 #include "acestudio/core/SpriteMotion.h"
 #include "acestudio/core/AssetFiles.h"
 #include "acestudio/core/AssetTools.h"
@@ -256,6 +257,27 @@ int cmdSlice(const Args& a, Output& out) {
         so.background = *c;
     }
     std::vector<SlicedSprite> slices;
+    if (auto cells = a.opt("cells")) {
+        // A generated sheet: N x M subjects, spacing not exact; background removed per cell.
+        auto cr = parseSize(*cells);
+        if (!cr) return out.fail(kUsage, "slice: --cells expects COLSxROWS");
+        const auto grid = gen::extractGrid(img.value(), cr->first, cr->second);
+        if (grid.empty()) return out.fail(kCorrupt, "slice: no subjects found in the cells");
+        const fs::path dir = *outDir;
+        std::error_code ec;
+        fs::create_directories(dir, ec);
+        const std::string stem = fs::path(a.positional[1]).stem().string();
+        json files = json::array(), rects = json::array();
+        for (const auto& c : grid) {
+            const std::string name = stem + "_r" + std::to_string(c.row + 1) + "c" + std::to_string(c.column + 1);
+            const fs::path p = dir / (name + ".png");
+            if (!a.force && fs::exists(p, ec)) return out.fail(kIo, p.string() + " already exists (use --force)");
+            if (auto st = writePng(c.image, p); !st) return out.fail(st.error());
+            files.push_back(p.string());
+            rects.push_back({{"name", name}, {"x", c.rect.x}, {"y", c.rect.y}, {"w", c.rect.w}, {"h", c.rect.h}});
+        }
+        return out.success({{"files", files}, {"sprites", rects}}, "Cut " + std::to_string(grid.size()) + " subject(s) into " + dir.string() + "\n");
+    }
     if (auto g = a.opt("grid")) {
         GridGuess grid;
         if (*g == "auto") {

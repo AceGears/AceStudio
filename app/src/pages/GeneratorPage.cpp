@@ -8,6 +8,7 @@
 
 #include "acestudio/core/FileUtil.h"
 #include "acestudio/core/ModelCatalog.h"
+#include "acestudio/core/AssetFiles.h"
 #include "acestudio/core/PaletteIO.h"
 #include "acestudio/core/PngCodec.h"
 
@@ -23,6 +24,8 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QRegularExpression>
+#include <QDateTime>
 #include <QDialogButtonBox>
 #include <QDialog>
 #include <QLineEdit>
@@ -316,6 +319,20 @@ QWidget* GeneratorPage::buildForm() {
     go->addWidget(m_generate, 1);
     go->addWidget(m_cancel);
     col->addLayout(go);
+    auto* more = new QHBoxLayout;
+    auto* bestiary = new QPushButton(tr("Bestiary Sheet…"), w);
+    bestiary->setToolTip(tr("A grid of different creatures, cut into separate sprites"));
+    auto* pack = new QPushButton(tr("Asset Pack…"), w);
+    pack->setToolTip(tr("A themed set of matching assets, or one item in five tiers"));
+    auto* pet = new QPushButton(tr("Pet to Pixel…"), w);
+    pet->setToolTip(tr("A sprite of your pet from a photo"));
+    more->addWidget(bestiary);
+    more->addWidget(pack);
+    more->addWidget(pet);
+    col->addLayout(more);
+    connect(bestiary, &QPushButton::clicked, this, &GeneratorPage::startBestiary);
+    connect(pack, &QPushButton::clicked, this, &GeneratorPage::startAssetPack);
+    connect(pet, &QPushButton::clicked, this, &GeneratorPage::startPetToPixel);
     auto* models = new QPushButton(tr("Models…"), w);
     connect(models, &QPushButton::clicked, this, &GeneratorPage::showModelsRequested);
     col->addWidget(models, 0, Qt::AlignLeft);
@@ -608,7 +625,7 @@ gen::CheckOptions GeneratorPage::checkOptions() const {
 
 void GeneratorPage::generate(const std::vector<Image>& extraRefs) {
     if (!m_job.empty()) return void(Q_EMIT statusMessage(tr("A generation is already running.")));
-    const std::string id = submitJob(extraRefs);
+    const std::string id = submitJob(extraRefs, JobOptions());
     if (id.empty()) return;
     m_job = id;
     m_generate->setEnabled(false);
@@ -618,15 +635,24 @@ void GeneratorPage::generate(const std::vector<Image>& extraRefs) {
     m_status->setText(tr("Queued…"));
 }
 
-std::string GeneratorPage::submitJob(const std::vector<Image>& extraRefs, const std::string& viewWords, std::optional<long long> seed,
-                                     std::optional<std::pair<int, int>> size) {
+std::string GeneratorPage::submitJob(const std::vector<Image>& extraRefs, const JobOptions& o) {
     gen::Spec s = spec();
+    if (o.description) s.description = *o.description;
+    if (o.type) {
+        s.type = *o.type;
+        s.transparent = m_transparent->isChecked() && gen::isSingleSubject(s.type);
+    }
+    s.sheetColumns = o.sheetColumns;
+    s.sheetRows = o.sheetRows;
+    const bool sheet = o.sheetColumns > 0 && o.sheetRows > 0;
     if (s.description.empty()) {
         m_prompt->setFocus();
         Q_EMIT statusMessage(tr("Describe the asset first."));
         return {};
     }
-    if (!viewWords.empty()) s.description += ", " + viewWords;
+    if (!o.extraWords.empty()) s.description += ", " + o.extraWords;
+    const auto size = o.size;
+    const auto seed = o.seed;
     // Choose the backend: klein when installed (and wanted), else SDXL.
     const QString choice = m_model->currentData().toString();
     const ModelEntry* klein = installed(m_ai, "flux2-klein-4b");
@@ -680,7 +706,7 @@ std::string GeneratorPage::submitJob(const std::vector<Image>& extraRefs, const 
               {"width", gw},
               {"height", gh},
               {"steps", backend == gen::Backend::Klein ? info.kleinSteps : info.sdxlSteps},
-              {"count", viewWords.empty() ? m_count->value() : 1},
+              {"count", o.count > 0 ? o.count : m_count->value()},
               {"seed", seed.value_or(m_seed->value())},
               {"model_id", model->id}};
     if (backend == gen::Backend::Sdxl) {
@@ -696,7 +722,7 @@ std::string GeneratorPage::submitJob(const std::vector<Image>& extraRefs, const 
         else Q_EMIT statusMessage(tr("Install a BiRefNet model for transparent backgrounds (Models…)."));
     }
     if (pixel) {
-        p["pixel"] = {{"width", outW}, {"height", outH}, {"crop", gen::isSingleSubject(s.type)}};
+        p["pixel"] = {{"width", outW}, {"height", outH}, {"crop", gen::isSingleSubject(s.type) && !sheet}};
         const int pal = m_palette->currentData().toInt();
         // A palette reference, or a strongly locked style, fixes the colours.
         Palette fixed;
@@ -754,6 +780,7 @@ void GeneratorPage::onJobChanged(const QString& qid) {
 
 void GeneratorPage::onJobFinished(const QString& qid) {
     if (m_pack && m_pack->jobs.count(qid.toStdString())) return onPackJobFinished(qid.toStdString());
+    if (m_batch && m_batch->jobs.count(qid.toStdString())) return onBatchJobFinished(qid.toStdString());
     if (qid.toStdString() != m_job) return;
     const Job* j = m_ai.job(m_job);
     m_job.clear();
@@ -765,7 +792,6 @@ void GeneratorPage::onJobFinished(const QString& qid) {
         m_status->setText(j->state == JobState::Cancelled ? tr("Cancelled.") : tr("Failed: %1").arg(qs(j->error).section(QLatin1Char('\n'), 0, 0)));
         return;
     }
-    const gen::CheckOptions opt = checkOptions();
     const long long seed = j->info.value("seed", 0LL);
     int added = 0;
     for (int i = 0; i < 8; ++i) {
@@ -779,23 +805,7 @@ void GeneratorPage::onJobFinished(const QString& qid) {
             if (auto rimg = readPng(raw->second)) r.raw = std::move(rimg).value();
         r.seed = seed + i;
         r.name = QString::fromStdString(spec().description).left(24) + QStringLiteral(" #%1").arg(r.seed);
-        r.report = gen::checkAsset(r.image, opt);
-        if (const auto locked = lockedStyle(); locked && locked->features.sampleCount > 0) {
-            r.styleMatch = style::styleSimilarity(locked->features, style::analyze(r.image));
-            const double floor = locked->variation == 0 ? 0.8 : locked->variation == 1 ? 0.7 : 0.55;
-            if (*r.styleMatch < floor)
-                r.report.issues.push_back({gen::Severity::Warning, "style",
-                                           "Off-style: " + std::to_string(static_cast<int>(*r.styleMatch * 100)) + "% match with “" +
-                                               locked->name + "”."});
-        }
-        const int score = r.report.score();
-        auto* it = new QListWidgetItem(QIcon(thumb(r.image, 140)),
-                                       QStringLiteral("%1  %2").arg(score >= 90 ? QStringLiteral("●") : score >= 70 ? QStringLiteral("▲") : QStringLiteral("✖"))
-                                           .arg(tr("seed %1").arg(r.seed)));
-        it->setToolTip(tr("Check score %1/100").arg(score));
-        // Newest first: row i of the grid is m_resultList[i].
-        m_resultList.insert(m_resultList.begin(), std::move(r));
-        m_results->insertItem(0, it);
+        addResult(std::move(r));
         ++added;
     }
     const json& info = j->info;
@@ -882,7 +892,12 @@ void GeneratorPage::startCharacterPack(const Result& base) {
     for (const std::string& d : m_pack->directions)
         for (const DirectionInfo& info : kDirections)
             if (d == info.key && info.mirrorOf == nullptr && *info.words) {
-                const std::string id = submitJob({ref}, info.words, base.seed, std::pair{base.image.width(), base.image.height()});
+                JobOptions jo;
+                jo.extraWords = info.words;
+                jo.seed = base.seed;
+                jo.size = std::pair{base.image.width(), base.image.height()};
+                jo.count = 1;
+                const std::string id = submitJob({ref}, jo);
                 if (id.empty()) { m_pack.reset(); return; }
                 m_pack->jobs[id] = d;
             }
@@ -955,6 +970,323 @@ void GeneratorPage::finishPack() {
                           .arg(outs.size())
                           .arg(pack.problems.isEmpty() ? QString() : QStringLiteral(" ") + pack.problems.join(QStringLiteral("; "))));
     Q_EMIT openAnimation(frames, durations, tags, pack.name);
+}
+
+// ------------------------------------------------------------------ batches
+
+namespace {
+struct PackItem { const char* words; gen::AssetType type; };
+struct PackTemplate { const char* label; std::vector<PackItem> items; };
+const std::vector<PackTemplate>& packTemplates() {
+    using T = gen::AssetType;
+    static const std::vector<PackTemplate> t = {
+        {QT_TRANSLATE_NOOP("GeneratorPage", "Dungeon"),
+         {{"stone dungeon door", T::Prop}, {"wooden treasure chest", T::Prop}, {"burning wall torch", T::Prop}, {"skeleton warrior", T::Monster},
+          {"giant rat", T::Monster}, {"red health potion", T::Item}, {"iron key", T::Item}, {"spike trap", T::Prop}}},
+        {QT_TRANSLATE_NOOP("GeneratorPage", "Forest"),
+         {{"oak tree", T::Prop}, {"berry bush", T::Prop}, {"mossy rock", T::Prop}, {"wooden fence section", T::Prop},
+          {"cluster of mushrooms", T::Prop}, {"grey wolf", T::Animal}, {"wild boar", T::Animal}, {"wooden signpost", T::Prop}}},
+        {QT_TRANSLATE_NOOP("GeneratorPage", "Sci-fi"),
+         {{"laser rifle", T::Weapon}, {"metal supply crate", T::Prop}, {"security robot", T::Monster}, {"computer terminal", T::Furniture},
+          {"glowing energy cell", T::Item}, {"sliding metal door", T::Prop}, {"alien plant", T::Prop}, {"medkit", T::Item}}},
+        {QT_TRANSLATE_NOOP("GeneratorPage", "Town"),
+         {{"market stall", T::Building}, {"stone well", T::Prop}, {"street lamp", T::Prop}, {"wooden barrel", T::Prop},
+          {"blacksmith anvil", T::Prop}, {"villager", T::Npc}, {"town guard", T::Npc}, {"wooden cart", T::Prop}}},
+    };
+    return t;
+}
+const std::vector<const char*> kTiers = {"wooden", "iron", "steel", "golden", "legendary glowing"};
+} // namespace
+
+void GeneratorPage::startBestiary() {
+    if (m_batch || m_pack) return void(Q_EMIT statusMessage(tr("A batch is already running.")));
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Bestiary Sheet"));
+    auto* form = new QFormLayout(&dlg);
+    auto* subject = new QLineEdit(m_prompt->toPlainText().trimmed().isEmpty() ? tr("fantasy monsters") : m_prompt->toPlainText().trimmed(), &dlg);
+    form->addRow(tr("&Creatures:"), subject);
+    auto* grid = new QComboBox(&dlg);
+    for (int n = 3; n <= 7; ++n) grid->addItem(tr("%1 × %1 (%2 creatures)").arg(n).arg(n * n), n);
+    grid->addItem(tr("Custom"), 0);
+    form->addRow(tr("&Grid:"), grid);
+    auto* cols = new QSpinBox(&dlg);
+    cols->setRange(1, 10);
+    cols->setValue(4);
+    auto* rows = new QSpinBox(&dlg);
+    rows->setRange(1, 10);
+    rows->setValue(2);
+    auto* custom = new QHBoxLayout;
+    custom->addWidget(cols);
+    custom->addWidget(new QLabel(QStringLiteral("×"), &dlg));
+    custom->addWidget(rows);
+    form->addRow(tr("C&ustom columns × rows:"), custom);
+    cols->setAccessibleName(tr("Columns"));
+    rows->setAccessibleName(tr("Rows"));
+    auto syncCustom = [=] { cols->setEnabled(grid->currentData().toInt() == 0); rows->setEnabled(grid->currentData().toInt() == 0); };
+    connect(grid, &QComboBox::currentIndexChanged, &dlg, syncCustom);
+    syncCustom();
+    auto* mode = new QComboBox(&dlg);
+    mode->addItem(tr("One sheet, cut into creatures (fast)"), 0);
+    mode->addItem(tr("One image per creature (staged, cleaner)"), 1);
+    form->addRow(tr("&Method:"), mode);
+    auto* idle = new QCheckBox(tr("Animate an &idle for every creature"), &dlg);
+    form->addRow(idle);
+    auto* note = new QLabel(tr("Both methods report their time per creature, so you can compare them on your GPU."), &dlg);
+    note->setWordWrap(true);
+    note->setProperty("role", "muted");
+    form->addRow(note);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addRow(buttons);
+    if (dlg.exec() != QDialog::Accepted || subject->text().trimmed().isEmpty()) return;
+
+    const int n = grid->currentData().toInt();
+    const int c = n > 0 ? n : cols->value(), r = n > 0 ? n : rows->value();
+    const std::string what = subject->text().trimmed().toStdString();
+    const auto [outW, outH] = outputSize();
+    Batch b;
+    b.title = tr("Bestiary");
+    b.animateIdle = idle->isChecked();
+    b.startedMs = QDateTime::currentMSecsSinceEpoch();
+    m_batch = std::move(b);
+    if (mode->currentData().toInt() == 0) {
+        JobOptions o;
+        o.description = what;
+        o.type = gen::AssetType::Monster;
+        o.sheetColumns = c;
+        o.sheetRows = r;
+        o.size = std::pair{outW * c, outH * r};
+        o.count = 1;
+        const std::string id = submitJob({}, o);
+        if (id.empty()) { m_batch.reset(); return; }
+        m_batch->sheetColumns = c;
+        m_batch->sheetRows = r;
+        m_batch->jobs[id] = tr("sheet");
+    } else {
+        // Different creatures: one seed each, the same words.
+        for (int i = 0; i < c * r; ++i) {
+            JobOptions o;
+            o.description = "one of many " + what + ", creature number " + std::to_string(i + 1) + " of a varied bestiary";
+            o.type = gen::AssetType::Monster;
+            o.seed = m_seed->value() >= 0 ? m_seed->value() + i : -1;
+            o.count = 1;
+            const std::string id = submitJob({}, o);
+            if (id.empty()) break;
+            m_batch->jobs[id] = tr("creature %1").arg(i + 1);
+        }
+        if (m_batch->jobs.empty()) { m_batch.reset(); return; }
+    }
+    m_status->setText(tr("%1: %n generation(s) queued…", nullptr, static_cast<int>(m_batch->jobs.size())).arg(m_batch->title));
+}
+
+void GeneratorPage::startAssetPack() {
+    if (m_batch || m_pack) return void(Q_EMIT statusMessage(tr("A batch is already running.")));
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Asset Pack"));
+    auto* form = new QFormLayout(&dlg);
+    auto* kind = new QComboBox(&dlg);
+    for (std::size_t i = 0; i < packTemplates().size(); ++i)
+        kind->addItem(tr("%1 pack (%2 assets)").arg(tr(packTemplates()[i].label)).arg(packTemplates()[i].items.size()), static_cast<int>(i));
+    kind->addItem(tr("Item family: the prompt in five tiers"), -1);
+    kind->addItem(tr("My own list (one asset per line)"), -2);
+    form->addRow(tr("&Pack:"), kind);
+    auto* theme = new QLineEdit(&dlg);
+    theme->setPlaceholderText(tr("e.g. frozen, haunted, desert (optional)"));
+    form->addRow(tr("&Theme:"), theme);
+    auto* list = new QPlainTextEdit(&dlg);
+    list->setPlaceholderText(tr("wooden shield\nhealing herb\ngoblin archer"));
+    list->setMaximumHeight(110);
+    list->setAccessibleName(tr("Asset list"));
+    form->addRow(tr("&List:"), list);
+    auto sync = [=] { list->setEnabled(kind->currentData().toInt() == -2); };
+    connect(kind, &QComboBox::currentIndexChanged, &dlg, sync);
+    sync();
+    auto* folder = new QCheckBox(tr("&Save every asset to a folder, with a manifest"), &dlg);
+    form->addRow(folder);
+    auto* note = new QLabel(tr("Every asset uses the form's style, perspective, size and the locked game style, so the pack "
+                               "matches. Lock a style first for the closest match."),
+                            &dlg);
+    note->setWordWrap(true);
+    note->setProperty("role", "muted");
+    form->addRow(note);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addRow(buttons);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    std::vector<std::pair<std::string, std::optional<gen::AssetType>>> items;
+    const int k = kind->currentData().toInt();
+    const std::string t = theme->text().trimmed().toStdString();
+    auto themed = [&](const std::string& w) { return t.empty() ? w : t + " " + w; };
+    if (k >= 0) {
+        for (const PackItem& it : packTemplates()[static_cast<std::size_t>(k)].items) items.push_back({themed(it.words), it.type});
+    } else if (k == -1) {
+        const std::string item = m_prompt->toPlainText().trimmed().toStdString();
+        if (item.empty()) return void(QMessageBox::information(this, tr("Asset Pack"), tr("Describe the item in the prompt first (e.g. sword).")));
+        for (const char* tier : kTiers) items.push_back({themed(std::string(tier) + " " + item), std::nullopt});
+    } else {
+        for (const QString& line : list->toPlainText().split(QLatin1Char('\n'), Qt::SkipEmptyParts))
+            if (!line.trimmed().isEmpty()) items.push_back({themed(line.trimmed().toStdString()), std::nullopt});
+    }
+    if (items.empty()) return;
+    QString dir;
+    if (folder->isChecked()) {
+        dir = QFileDialog::getExistingDirectory(this, tr("Save the Asset Pack in"));
+        if (dir.isEmpty()) return;
+    }
+    Batch b;
+    b.title = tr("Asset pack");
+    b.saveDir = dir;
+    b.startedMs = QDateTime::currentMSecsSinceEpoch();
+    m_batch = std::move(b);
+    for (const auto& [words, type] : items) {
+        JobOptions o;
+        o.description = words;
+        o.type = type;
+        o.count = 1;
+        const std::string id = submitJob({}, o);
+        if (id.empty()) break;
+        m_batch->jobs[id] = qs(words);
+    }
+    if (m_batch->jobs.empty()) { m_batch.reset(); return; }
+    m_status->setText(tr("%1: %n generation(s) queued…", nullptr, static_cast<int>(m_batch->jobs.size())).arg(m_batch->title));
+}
+
+void GeneratorPage::startPetToPixel() {
+    if (!installed(m_ai, "flux2-klein-4b") || m_model->currentData().toString() == QLatin1String("sdxl"))
+        return void(QMessageBox::information(this, tr("Pet to Pixel"),
+                                             tr("Turning a photo into a sprite uses the photo as a reference, which needs FLUX.2 [klein] "
+                                                "(Models…).")));
+    const QString path = QFileDialog::getOpenFileName(this, tr("Photo of Your Pet"), QString(), tr("Photos (*.png *.jpg *.jpeg *.webp *.bmp)"));
+    if (path.isEmpty()) return;
+    QImage photo(path);
+    if (photo.isNull()) return void(QMessageBox::warning(this, tr("Pet to Pixel"), tr("Could not read %1.").arg(QFileInfo(path).fileName())));
+    // Keep the reference to a sensible size; the model works at about one megapixel.
+    if (std::max(photo.width(), photo.height()) > 1024) photo = photo.scaled(1024, 1024, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    m_references.clear();
+    addReference(fromQImage(photo.convertToFormat(QImage::Format_RGBA8888)), QFileInfo(path).completeBaseName(), style::RefRole::Creature);
+    m_type->setCurrentIndex(std::max(0, m_type->findData(QStringLiteral("pet"))));
+    if (m_prompt->toPlainText().trimmed().isEmpty())
+        m_prompt->setPlainText(tr("my pet as a cute game sprite, same breed, fur colours and markings as the photo"));
+    generate();
+}
+
+void GeneratorPage::onBatchJobFinished(const std::string& id) {
+    const QString label = m_batch->jobs[id];
+    m_batch->jobs.erase(id);
+    const Job* j = m_ai.job(id);
+    if (j && j->state == JobState::Succeeded) {
+        if (auto o = j->outputs.find("image0"); o != j->outputs.end()) {
+            if (auto img = readPng(o->second)) {
+                if (m_batch->sheetColumns > 0) {
+                    // A sheet: cut the creatures out of the full-size image when there is one (cleaner edges), else the reduced one.
+                    for (const gen::GridCell& c : gen::extractGrid(img.value(), m_batch->sheetColumns, m_batch->sheetRows))
+                        m_batch->results.push_back({c.image, tr("creature %1-%2").arg(c.row + 1).arg(c.column + 1)});
+                    const int expected = m_batch->sheetColumns * m_batch->sheetRows;
+                    if (static_cast<int>(m_batch->results.size()) < expected)
+                        m_batch->problems << tr("%1 of %2 cells held a creature.").arg(m_batch->results.size()).arg(expected);
+                } else {
+                    m_batch->results.push_back({std::move(img).value(), label});
+                }
+            }
+        }
+    } else {
+        m_batch->problems << tr("%1 failed: %2").arg(label, j ? qs(j->error).section(QLatin1Char('\n'), 0, 0) : tr("job lost"));
+    }
+    if (m_batch->jobs.empty()) finishBatch();
+    else m_status->setText(tr("%1: %n to go…", nullptr, static_cast<int>(m_batch->jobs.size())).arg(m_batch->title));
+}
+
+void GeneratorPage::finishBatch() {
+    Batch b = std::move(*m_batch);
+    m_batch.reset();
+    const double seconds = static_cast<double>(QDateTime::currentMSecsSinceEpoch() - b.startedMs) / 1000.0;
+    long long n = 0;
+    for (auto& [img, name] : b.results) {
+        Result r;
+        r.image = img;
+        r.name = name;
+        r.seed = n++;
+        addResult(std::move(r));
+    }
+    if (!b.results.empty()) m_results->setCurrentRow(0);
+    QString text = tr("%1: %n asset(s) in %2 s (%3 s each).", nullptr, static_cast<int>(b.results.size()))
+                       .arg(b.title)
+                       .arg(seconds, 0, 'f', 1)
+                       .arg(b.results.empty() ? 0.0 : seconds / static_cast<double>(b.results.size()), 0, 'f', 1);
+    if (!b.saveDir.isEmpty() && !b.results.empty()) {
+        json manifest{{"format", "acestudio.assetpack"}, {"version", 1}, {"assets", json::array()}};
+        int written = 0;
+        for (std::size_t i = 0; i < b.results.size(); ++i) {
+            QString base = b.results[i].second;
+            base.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_-]+")), QStringLiteral("_"));
+            const QString file = QStringLiteral("%1_%2.png").arg(i + 1, 2, 10, QLatin1Char('0')).arg(base.left(40));
+            const auto path = toPath(b.saveDir) / toPath(file);
+            std::error_code ec;
+            if (std::filesystem::exists(path, ec)) { b.problems << tr("%1 exists; not replaced.").arg(file); continue; }
+            if (auto st = writePng(b.results[i].first, path); !st) { b.problems << qs(st.error().message); continue; }
+            manifest["assets"].push_back({{"file", file.toStdString()}, {"name", b.results[i].second.toStdString()},
+                                          {"width", b.results[i].first.width()}, {"height", b.results[i].first.height()}});
+            ++written;
+        }
+        (void)writeTextFile(toPath(b.saveDir) / "assetpack.json", manifest.dump(2));
+        text += tr(" Saved %1 to %2.").arg(written).arg(b.saveDir);
+    }
+    if (!b.problems.isEmpty()) text += QStringLiteral(" ") + b.problems.join(QStringLiteral(" "));
+    m_status->setText(text);
+    if (b.animateIdle && !b.results.empty()) {
+        // One document: an idle per creature, all in one frame size.
+        std::vector<std::pair<::acestudio::motion::Clip, QString>> clips;
+        int W = 0, H = 0;
+        for (const auto& [img, name] : b.results) {
+            ::acestudio::motion::Options o;
+            o.action = ::acestudio::motion::Action::Idle;
+            auto c = ::acestudio::motion::animate(img, o);
+            if (!c) continue;
+            W = std::max(W, c.value().frames[0].width());
+            H = std::max(H, c.value().frames[0].height());
+            clips.push_back({std::move(c).value(), name});
+        }
+        std::vector<Image> frames;
+        std::vector<int> durations;
+        std::vector<AnimationTag> tags;
+        for (const auto& [c, name] : clips) {
+            AnimationTag t;
+            t.name = name.toStdString();
+            t.fromFrame = static_cast<int>(frames.size());
+            for (std::size_t i = 0; i < c.frames.size(); ++i) {
+                Image f(W, H);
+                f.blit(c.frames[i], (W - c.frames[i].width()) / 2, H - c.frames[i].height());
+                frames.push_back(std::move(f));
+                durations.push_back(c.durations[i]);
+            }
+            t.toFrame = static_cast<int>(frames.size()) - 1;
+            tags.push_back(std::move(t));
+        }
+        if (!frames.empty()) Q_EMIT openAnimation(frames, durations, tags, b.title);
+    }
+}
+
+void GeneratorPage::addResult(Result r) {
+    r.report = gen::checkAsset(r.image, checkOptions());
+    if (const auto locked = lockedStyle(); locked && locked->features.sampleCount > 0) {
+        r.styleMatch = style::styleSimilarity(locked->features, style::analyze(r.image));
+        const double floor = locked->variation == 0 ? 0.8 : locked->variation == 1 ? 0.7 : 0.55;
+        if (*r.styleMatch < floor)
+            r.report.issues.push_back({gen::Severity::Warning, "style",
+                                       "Off-style: " + std::to_string(static_cast<int>(*r.styleMatch * 100)) + "% match with “" +
+                                           locked->name + "”."});
+    }
+    const int score = r.report.score();
+    auto* it = new QListWidgetItem(QIcon(thumb(r.image, 140)),
+                                   QStringLiteral("%1  %2").arg(score >= 90 ? QStringLiteral("●") : score >= 70 ? QStringLiteral("▲") : QStringLiteral("✖"))
+                                       .arg(tr("seed %1").arg(r.seed)));
+    it->setToolTip(tr("Check score %1/100").arg(score));
+    // Newest first: row i of the grid is m_resultList[i].
+    m_resultList.insert(m_resultList.begin(), std::move(r));
+    m_results->insertItem(0, it);
 }
 
 GeneratorPage::Result* GeneratorPage::selected() {

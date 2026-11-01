@@ -77,8 +77,24 @@ private:
     void generate(const std::vector<Image>& extraRefs = {});
     // Queues one generation; returns the job id, or "" when it could not start.
     // A pack view (viewWords set) runs alongside, at a fixed seed and size.
-    std::string submitJob(const std::vector<Image>& extraRefs, const std::string& viewWords = {},
-                          std::optional<long long> seed = {}, std::optional<std::pair<int, int>> size = {});
+    struct JobOptions {
+        std::string extraWords;                       // appended to the description
+        std::optional<std::string> description;       // replaces the form's description
+        std::optional<gen::AssetType> type;
+        std::optional<long long> seed;
+        std::optional<std::pair<int, int>> size;      // output size
+        int sheetColumns = 0, sheetRows = 0;          // a sheet of different subjects
+        int count = 0;                                // 0 = the form's variations
+    };
+    std::string submitJob(const std::vector<Image>& extraRefs, const JobOptions& o);
+    void addResult(Result r);
+    // Batches: a bestiary sheet (one image cut into cells, or one image per
+    // creature), an asset pack, a pet portrait.
+    void startBestiary();
+    void startAssetPack();
+    void startPetToPixel();
+    void onBatchJobFinished(const std::string& id);
+    void finishBatch();
     void startCharacterPack(const Result& base);
     void onPackJobFinished(const std::string& id);
     void finishPack();
@@ -136,6 +152,18 @@ private:
         QStringList problems;
     };
     std::optional<Pack> m_pack;
+    struct Batch {
+        QString title;
+        std::map<std::string, QString> jobs;          // job id -> label
+        int sheetColumns = 0, sheetRows = 0;          // > 0: cut the result into cells
+        bool animateIdle = false;
+        QString saveDir;                              // write every result here, with a manifest
+        std::vector<std::pair<Image, QString>> results;
+        double gpuSeconds = 0;                        // sum of the jobs' generation time
+        qint64 startedMs = 0;
+        QStringList problems;
+    };
+    std::optional<Batch> m_batch;
 
     std::vector<Reference> m_references;
     std::vector<Result> m_resultList;

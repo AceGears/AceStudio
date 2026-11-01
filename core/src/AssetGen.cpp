@@ -1,6 +1,9 @@
 #include "acestudio/core/AssetGen.h"
 
+#include "acestudio/core/AnimationQA.h"
+
 #include <algorithm>
+#include <limits>
 #include <cmath>
 #include <set>
 #include <vector>
@@ -138,9 +141,14 @@ Prompt composePrompt(const Spec& spec, Backend backend, bool styleLora) {
     const bool pixel = isPixelStyle(spec.style);
     // The pixel-art LoRAs are trained on these trigger words.
     if (pixel && styleLora) out += backend == Backend::Klein ? "pixel art sprite, " : "pixel art, ";
-    out += trim(spec.description);
-    out += ", ";
-    out += typePhrase(spec.type);
+    const bool sheet = spec.sheetColumns > 0 && spec.sheetRows > 0;
+    if (sheet) {
+        out += gridPrompt(trim(spec.description), spec.sheetColumns, spec.sheetRows);
+    } else {
+        out += trim(spec.description);
+        out += ", ";
+        out += typePhrase(spec.type);
+    }
     if (spec.type != AssetType::Background && spec.type != AssetType::Terrain && spec.type != AssetType::Tileset) {
         out += ", ";
         out += perspectivePhrase(spec.perspective);
@@ -151,7 +159,9 @@ Prompt composePrompt(const Spec& spec, Backend backend, bool styleLora) {
         out += ", ";
         out += trim(spec.styleNotes);
     }
-    if (isSingleSubject(spec.type)) {
+    if (sheet) {
+        out += ", on a plain white background";
+    } else if (isSingleSubject(spec.type)) {
         // Measured with SDXL: "plain background" alone was ignored, which
         // breaks framing and background removal.
         out += ", one single subject, centered, entire subject visible with margin around it, isolated on a plain white background";
@@ -345,6 +355,90 @@ QualityReport checkAsset(const Image& img, const CheckOptions& opt) {
                                                    std::to_string(static_cast<int>(std::lround(*r.paletteDistance * 100))) + "%).");
     }
     return r;
+}
+
+// ------------------------------------------------------------------ sheets
+
+std::string gridPrompt(const std::string& subject, int cols, int rows) {
+    return "a character sheet of " + std::to_string(cols * rows) + " different " + subject + ", arranged in a grid of " +
+           std::to_string(cols) + " columns and " + std::to_string(rows) +
+           " rows, each one complete and separate with empty space around it, all the same scale, plain flat background";
+}
+
+std::vector<GridCell> extractGrid(const Image& sheet, int cols, int rows, int minPixels) {
+    std::vector<GridCell> out;
+    if (sheet.isNull() || cols < 1 || rows < 1 || cols > 16 || rows > 16) return out;
+    // Is the sheet already cut out? Otherwise treat the border colour as background.
+    bool transparent = false;
+    for (const Rgba8& c : sheet.pixels())
+        if (c.a < 255) { transparent = true; break; }
+    const Image clean = transparent ? sheet : removeBorderBackground(sheet, 28);
+    const int W = clean.width(), H = clean.height();
+    std::vector<int> colInk(static_cast<std::size_t>(W), 0), rowInk(static_cast<std::size_t>(H), 0);
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (clean.pixel(x, y).a > 0) { ++colInk[static_cast<std::size_t>(x)]; ++rowInk[static_cast<std::size_t>(y)]; }
+    auto cuts = [](const std::vector<int>& ink, int n) {
+        const int len = static_cast<int>(ink.size());
+        std::vector<int> c{0};
+        for (int i = 1; i < n; ++i) {
+            const int expected = len * i / n;
+            const int window = std::max(1, len / n * 15 / 100);
+            int best = expected, bestInk = std::numeric_limits<int>::max(), bestDist = 0;
+            for (int p = std::max(c.back() + 1, expected - window); p <= std::min(len - 1, expected + window); ++p) {
+                const int v = ink[static_cast<std::size_t>(p)], d = std::abs(p - expected);
+                if (v < bestInk || (v == bestInk && d < bestDist)) { best = p; bestInk = v; bestDist = d; }
+            }
+            c.push_back(best);
+        }
+        c.push_back(len);
+        return c;
+    };
+    const std::vector<int> xs = cuts(colInk, cols), ys = cuts(rowInk, rows);
+    for (int r = 0; r < rows; ++r)
+        for (int c = 0; c < cols; ++c) {
+            const IntRect cell{xs[static_cast<std::size_t>(c)], ys[static_cast<std::size_t>(r)], xs[static_cast<std::size_t>(c) + 1] - xs[static_cast<std::size_t>(c)],
+                               ys[static_cast<std::size_t>(r) + 1] - ys[static_cast<std::size_t>(r)]};
+            Image img = clean.copy(cell);
+            // Keep the largest piece and pieces close to it; drop specks.
+            const Mask sil = silhouette(img);
+            std::vector<int> label(static_cast<std::size_t>(img.width()) * static_cast<std::size_t>(img.height()), -1);
+            std::vector<int> sizes;
+            for (int y = 0; y < img.height(); ++y)
+                for (int x = 0; x < img.width(); ++x) {
+                    const std::size_t i = static_cast<std::size_t>(y) * static_cast<std::size_t>(img.width()) + static_cast<std::size_t>(x);
+                    if (!sil.get(x, y) || label[i] >= 0) continue;
+                    const int id = static_cast<int>(sizes.size());
+                    sizes.push_back(0);
+                    std::vector<std::pair<int, int>> stack{{x, y}};
+                    label[i] = id;
+                    while (!stack.empty()) {
+                        auto [px, py] = stack.back();
+                        stack.pop_back();
+                        ++sizes.back();
+                        for (int dy = -1; dy <= 1; ++dy)
+                            for (int dx = -1; dx <= 1; ++dx) {
+                                const int nx = px + dx, ny = py + dy;
+                                if (nx < 0 || ny < 0 || nx >= img.width() || ny >= img.height() || !sil.get(nx, ny)) continue;
+                                const std::size_t j = static_cast<std::size_t>(ny) * static_cast<std::size_t>(img.width()) + static_cast<std::size_t>(nx);
+                                if (label[j] < 0) { label[j] = id; stack.push_back({nx, ny}); }
+                            }
+                    }
+                }
+            if (sizes.empty()) continue;
+            const int biggest = *std::max_element(sizes.begin(), sizes.end());
+            if (biggest < minPixels) continue;
+            const int keepMin = std::max(minPixels, biggest / 50);
+            for (int y = 0; y < img.height(); ++y)
+                for (int x = 0; x < img.width(); ++x) {
+                    const int l = label[static_cast<std::size_t>(y) * static_cast<std::size_t>(img.width()) + static_cast<std::size_t>(x)];
+                    if (l < 0 || sizes[static_cast<std::size_t>(l)] < keepMin) img.setPixel(x, y, Rgba8::transparent());
+                }
+            const IntRect b = img.opaqueBounds();
+            if (b.empty()) continue;
+            out.push_back({c, r, {cell.x + b.x, cell.y + b.y, b.w, b.h}, img.copy(b)});
+        }
+    return out;
 }
 
 } // namespace acestudio::gen
