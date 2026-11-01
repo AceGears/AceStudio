@@ -1,0 +1,70 @@
+# Pins a Hugging Face model for ai_worker/catalog/models.json: lists the repo
+# at a fixed commit and prints each file's size and SHA-256 (LFS files: the
+# hash Hugging Face stores; small files: downloaded and hashed here).
+# Run by hand: gh workflow run pin-model.yml -f repo=owner/name -f revision=<commit> -f paths="a b/c"
+name: Pin model files
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Hugging Face repo id (owner/name)"
+        required: true
+      revision:
+        description: "Commit hash"
+        required: true
+      paths:
+        description: "Space-separated file paths or directory prefixes to include (empty = all)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  pin:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: List and hash
+        env:
+          REPO: ${{ inputs.repo }}
+          REV: ${{ inputs.revision }}
+          PATHS: ${{ inputs.paths }}
+        run: |
+          python3 - <<'EOF'
+          import hashlib, json, os, re, sys, urllib.request
+          repo, rev = os.environ["REPO"], os.environ["REV"]
+          if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo) or not re.fullmatch(r"[0-9a-f]{40}", rev):
+              sys.exit("repo must be owner/name and revision a 40-character commit hash")
+          wanted = os.environ.get("PATHS", "").split()
+          def get(url):
+              req = urllib.request.Request(url, headers={"User-Agent": "AceStudio-pin/1"})
+              return urllib.request.urlopen(req, timeout=120).read()
+          tree = json.loads(get(f"https://huggingface.co/api/models/{repo}/tree/{rev}?recursive=true"))
+          out = []
+          for f in tree:
+              if f.get("type") != "file":
+                  continue
+              p = f["path"]
+              if wanted and not any(p == w or p.startswith(w.rstrip("/") + "/") for w in wanted):
+                  continue
+              url = f"https://huggingface.co/{repo}/resolve/{rev}/{p}"
+              lfs = f.get("lfs")
+              if lfs:
+                  size, sha = lfs["size"], lfs["oid"]
+              else:
+                  data = get(url)
+                  size, sha = len(data), hashlib.sha256(data).hexdigest()
+                  # Cross-check against the git blob id the tree reports.
+                  blob = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+                  if blob != f.get("oid"):
+                      sys.exit(f"{p}: git blob {blob} does not match the tree's {f.get('oid')}")
+              out.append({"path": p, "url": url, "size": size, "sha256": sha})
+          print(json.dumps(out, indent=1))
+          with open("pinned.json", "w") as fh:
+              json.dump({"repo": repo, "revision": rev, "files": out}, fh, indent=1)
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinned
+          path: pinned.json
