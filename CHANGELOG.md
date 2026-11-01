@@ -2,6 +2,72 @@
 
 All notable changes are documented here. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.9.0] — 2026-11-01 — Phase 8: commercial polish (unreleased)
+
+### Added
+- **Licensing.** Offline licence keys signed with Ed25519 (Monocypher 4.0.3), and a 14-day
+  trial with everything enabled.
+  - After the trial, projects still open and render, and autosave and recovery keep working;
+    saving and exporting need a key. This applies to the app, the CLI (exit code 7), Lua and
+    MCP.
+  - **Help › Licence…** and a status-bar button. The dialog says when a build uses the public
+    development key.
+  - `acestudio-licence` (not shipped) makes key pairs and issues keys.
+- **Windows installer** (Inno Setup).
+  - Installs per user, without an administrator prompt, and opens `.acestudio` files with
+    AceStudio.
+  - Ships the licence texts, the user guide, the privacy policy and an EULA (a draft for
+    legal review).
+  - **Bundled Python 3.12.10** (checked against python.org's SHA-256) with pip, so the AI
+    features no longer need a separate Python install.
+  - CI installs it silently, runs the CLI and AI setup from the install folder, uninstalls
+    it, and checks that user data is kept.
+- **Accessibility.**
+  - Every control has a screen-reader name and can be reached with Tab. `AceStudio --ui-audit`
+    checks this on every window that the 136 menu commands open: 689 controls, 0 unnamed.
+  - **View › Theme › High Contrast**, which also follows Windows' high-contrast mode, and
+    **View › Text Size** (100–200%).
+- **Help › User Guide** and **Help › Privacy** (`docs/user-guide.md`, `PRIVACY.md`).
+- **Regression suite.**
+  - Projects saved by 0.1.0, 0.5.0 and 0.8.1, each built from its own commit, must open and
+    render pixel-identically.
+  - Golden renders cover every blend mode, the adjustments, masks, clipping, onion skin and
+    the packed sprite sheet with its JSON.
+  - Benchmarks cover project save and load, PNG, GIF, APNG and WebP, sprite sheets and the
+    autosave snapshot, and CI fails when one exceeds its performance budget.
+- **Fuzzing**: libFuzzer targets with ASan and UBSan for every untrusted input (projects, PNG,
+  GIF, APNG, WebP, palettes, licence keys, Lua, MCP).
+- **SECURITY.md**: threat model, findings and residual risks.
+
+### Changed
+- **Faster.**
+  - Blend loops are specialised per mode: full composites take about 35% less time, with
+    output bit-identical on 36 million random samples.
+  - Project cels are compressed and decompressed on all cores, and moved rather than copied
+    on load. A 160-cel 1024² project loads 3× faster, even on 2 cores.
+  - **Image pixels are copy-on-write**, so copies of documents (undo, scripts, autosave) cost
+    nothing until something changes. Strokes on large layers are 2× faster.
+- **Autosave runs in the background**: the editor no longer pauses while a large document is
+  written to its recovery file. On the 2-vCPU VM that pause was 1.1–1.3 s for a 160-cel 1024²
+  project; the UI thread now spends 0.01 ms.
+- **GIF import uses AceStudio's own decoder**, which matches Pillow pixel for pixel. stb_image
+  is built for PNG only.
+- **AI worker**: the Hugging Face libraries run offline with telemetry off; models are local.
+- **AI setup keeps a working environment** that was made from another supported Python,
+  instead of rebuilding it and losing installed packages.
+
+### Fixed
+- **Security.**
+  - MCP: malformed parameters, or a bad `Content-Length`, ended the server.
+  - The HTTP bearer token is now compared in constant time.
+  - GIF, WebP and APNG imports could ask for gigabytes; they are now limited to 1 GB of
+    decoded pixels.
+  - stb_image's GIF loader had a heap use-after-free; it is no longer used.
+  - A GIF frame larger than its screen reserved 4 GB.
+- **Keyboard Shortcuts dialog crashed** after the menus were rebuilt, for example after
+  changing the theme. The UI audit found it.
+- **Windows**: `NOMINMAX` for the code that includes `windows.h`.
+
 ## [0.8.1] — 2026-11-01 — Phase 7 pass: limits removed (unreleased)
 
 ### Added

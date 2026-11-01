@@ -2,14 +2,23 @@
 
 AI-assisted game asset creation and 2D animation studio for Windows.
 
-> **Status: Phase 6 (environment and asset tools), version 0.7.0.** You can draw and animate
-> pixel art with layers, frames, tags and onion skin, export sprite sheets (Aseprite-compatible
-> JSON), GIF, APNG, WebP and PNG sequences, undo anything, and recover work after a crash. AI
-> Studio runs SDXL, BiRefNet and Real-ESRGAN locally in a supervised worker, generates
-> character animations from pose skeletons, and makes seamless textures. The Assets menu builds
-> autotile sets (blob 47, Wang, 4-neighbour) with seam checks, parallax backgrounds, UI kits
-> with 9-slice data, sliced sheets and packed atlases. Engine-specific export, MCP and Lua are
-> Phase 7 — see [ROADMAP.md](ROADMAP.md). Nothing in the app pretends to work when it doesn't.
+> **Status: Phase 8 (commercial polish), version 0.9.0.** Draw and animate pixel art with
+> layers, frames, tags and onion skin; export sprite sheets, GIF, APNG, WebP and engine files
+> for Godot, Unity and Tiled; run SDXL, BiRefNet and Real-ESRGAN locally; script with Lua;
+> let AI assistants work through MCP. 0.9.0 adds a Windows installer with a bundled Python,
+> offline licence keys with a 14-day trial, accessibility (screen-reader names, keyboard
+> access, high contrast, text size), a security review with fuzzing, and a regression suite.
+> Release-candidate testing is Phase 9 — see [ROADMAP.md](ROADMAP.md). Nothing in the app
+> pretends to work when it doesn't.
+
+## Install
+
+Run `AceStudio-<version>-setup-x64.exe`. It installs for your user only (no administrator
+prompt) and includes everything, Python for the AI features too. Uninstalling keeps your
+projects, settings and models. The [user guide](docs/user-guide.md) covers everyday use.
+
+**Trial and licence.** Everything works for 14 days. After that, files open and render but
+saving and exporting need a key: **Help › Licence…**. Keys are checked offline.
 
 ## What works today
 
@@ -132,8 +141,9 @@ acestudio-cli ai download birefnet-lite --accept-license MIT
 acestudio-cli ai remove-bg photo.png --out cutout.png
 ```
 
-AI requirements: Python 3.10+ installed (python.org, "Add to PATH"); for generation an NVIDIA
-GPU with 8 GB+ VRAM (12 GB recommended). AI files live in `%LOCALAPPDATA%\AceStudio\ai`.
+AI requirements: the installer's bundled Python (or, for a build from source, a 64-bit
+Python 3.10–3.14); for generation an NVIDIA GPU with 8 GB+ VRAM (12 GB recommended). AI files
+live in `%LOCALAPPDATA%\AceStudio\ai`.
 
 ```sh
 acestudio-cli export hero.acestudio --format sheet --engines godot,unity --out hero   # + .tres, .meta, .anim
@@ -143,7 +153,8 @@ acestudio-cli run make_walk.lua --allow assets     # sandboxed Lua (docs/lua-api
 ```
 
 Exit codes: 0 ok · 1 usage · 2 I/O or not found · 3 corrupt (or seams found) · 4 newer version ·
-5 internal · 6 the Lua script failed.
+5 internal · 6 the Lua script failed · 7 needs a licence (the trial has ended).
+`acestudio-cli licence` shows the licence state; `licence install @key-file` (or the key itself) installs a key.
 Existing files are never overwritten without `--force`.
 
 ## AI assistants (MCP)
@@ -187,6 +198,9 @@ Settings and logs live in `%APPDATA%\AceStudio` (Linux: `~/.config/AceStudio`). 
 
 | File | Purpose |
 |---|---|
+| [docs/user-guide.md](docs/user-guide.md) | The user guide (also Help › User Guide) |
+| [PRIVACY.md](PRIVACY.md) | What is stored and when the network is used (draft for legal review) |
+| [SECURITY.md](SECURITY.md) | Threat model, review findings, fuzzing, reporting |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System structure and decision records |
 | [ROADMAP.md](ROADMAP.md) | Phases with acceptance criteria and status |
 | [TESTING.md](TESTING.md) | How to test, and recorded results |
@@ -200,4 +214,6 @@ Settings and logs live in `%APPDATA%\AceStudio` (Linux: `~/.config/AceStudio`). 
 
 ## License
 
-Proprietary — see [LICENSE](LICENSE). Third-party components: [LICENSE_AUDIT.md](LICENSE_AUDIT.md).
+Proprietary — see [LICENSE](LICENSE) and the EULA draft in `packaging/windows/EULA.txt`.
+Third-party components: [LICENSE_AUDIT.md](LICENSE_AUDIT.md); their licence texts ship in the
+installer's `licences` folder.
