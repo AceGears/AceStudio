@@ -93,3 +93,15 @@ TEST_CASE("Asset checks find cut-off, opaque, noisy and soft-edged results", "[g
     sizeOpt.expectHeight = 64;
     CHECK(checkAsset(good, sizeOpt).issues.front().code == "size");
 }
+
+TEST_CASE("Reference roles limit what each reference contributes", "[gen]") {
+    Spec s;
+    s.description = "a goblin archer";
+    s.referenceRoles = {"character", "style"};
+    const std::string k = composePrompt(s, Backend::Klein, true).positive;
+    CHECK(k.find("Keep the character from reference image 1 exactly") != std::string::npos);
+    CHECK(k.find("art style of reference image 2") != std::string::npos);
+    CHECK(k.find("do not copy its subject") != std::string::npos);
+    // SDXL receives no reference images, so no reference instructions.
+    CHECK(composePrompt(s, Backend::Sdxl, true).positive.find("reference image") == std::string::npos);
+}

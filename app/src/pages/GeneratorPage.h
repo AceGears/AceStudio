@@ -7,6 +7,7 @@
 
 #include "acestudio/core/AssetGen.h"
 #include "acestudio/core/Image.h"
+#include "acestudio/core/StyleProfile.h"
 
 #include <QPointer>
 #include <QWidget>
@@ -37,7 +38,7 @@ public:
     void setView(DocumentView* view);
     void setPrompt(const QString& prompt, const QString& assetTypeKey = {});
     // Adds an image to the references (up to four).
-    void addReference(const Image& img, const QString& name);
+    void addReference(const Image& img, const QString& name, style::RefRole role = style::RefRole::Style);
 
 Q_SIGNALS:
     void openAsDocument(const acestudio::Image& img, const QString& name);
@@ -54,14 +55,19 @@ private:
         QString name;
         long long seed = 0;
         gen::QualityReport report;
+        std::optional<double> styleMatch;   // similarity to the locked style, 0..1
     };
     struct Reference {
         Image image;
         QString name;
+        style::RefRole role = style::RefRole::Style;
     };
 
     QWidget* buildForm();
     QWidget* buildResults();
+    QWidget* buildStyleBox(QWidget* parent);
+    void refreshStyles();
+    std::optional<style::StyleProfile> lockedStyle() const;
     void refreshModels();
     void refreshReferences();
     void generate(const std::vector<Image>& extraRefs = {});
@@ -93,6 +99,12 @@ private:
     QSpinBox* m_count = nullptr;
     QSpinBox* m_seed = nullptr;
     QListWidget* m_refs = nullptr;
+    QComboBox* m_role = nullptr;
+    QComboBox* m_styleCombo = nullptr;
+    QCheckBox* m_lockStyle = nullptr;
+    QComboBox* m_styleStrength = nullptr;
+    QLabel* m_styleInfo = nullptr;
+    style::StyleLibrary m_styles;
     QPushButton* m_generate = nullptr;
     QPushButton* m_cancel = nullptr;
     QProgressBar* m_progress = nullptr;

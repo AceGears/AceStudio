@@ -8,6 +8,7 @@
 
 #include "acestudio/core/FileUtil.h"
 #include "acestudio/core/ModelCatalog.h"
+#include "acestudio/core/PaletteIO.h"
 #include "acestudio/core/PngCodec.h"
 
 #include <QCheckBox>
@@ -22,6 +23,8 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QLineEdit>
+#include <QInputDialog>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QProgressBar>
@@ -73,7 +76,8 @@ QString severityMark(gen::Severity s) {
 
 } // namespace
 
-GeneratorPage::GeneratorPage(AiService& ai, AppContext& ctx, QWidget* parent) : QWidget(parent), m_ai(ai), m_ctx(ctx) {
+GeneratorPage::GeneratorPage(AiService& ai, AppContext& ctx, QWidget* parent)
+    : QWidget(parent), m_ai(ai), m_ctx(ctx), m_styles(ctx.dataDir() / "styles") {
     auto* lay = new QHBoxLayout(this);
     lay->setContentsMargins(0, 0, 0, 0);
     auto* split = new QSplitter(Qt::Horizontal, this);
@@ -88,6 +92,7 @@ GeneratorPage::GeneratorPage(AiService& ai, AppContext& ctx, QWidget* parent) : 
     connect(&m_ai, &AiService::jobFinished, this, &GeneratorPage::onJobFinished);
     refreshModels();
     refreshReferences();
+    refreshStyles();
     showResult(-1);
 }
 
@@ -239,6 +244,32 @@ QWidget* GeneratorPage::buildForm() {
         if (r >= 0 && r < static_cast<int>(m_references.size())) m_references.erase(m_references.begin() + r);
         refreshReferences();
     });
+    auto* roleRow = new QHBoxLayout;
+    auto* roleLabel = new QLabel(tr("Selected reference is &for:"), w);
+    m_role = new QComboBox(w);
+    for (style::RefRole r : {style::RefRole::Character, style::RefRole::Style, style::RefRole::Palette, style::RefRole::Environment,
+                             style::RefRole::Creature, style::RefRole::Equipment, style::RefRole::Animation, style::RefRole::Composition})
+        m_role->addItem(tr(style::roleLabel(r)), QString::fromLatin1(style::toString(r)));
+    roleLabel->setBuddy(m_role);
+    roleRow->addWidget(roleLabel);
+    roleRow->addWidget(m_role, 1);
+    col->addLayout(roleRow);
+    connect(m_refs, &QListWidget::currentRowChanged, this, [this](int r) {
+        m_role->setEnabled(r >= 0);
+        if (r >= 0 && r < static_cast<int>(m_references.size()))
+            m_role->setCurrentIndex(m_role->findData(QString::fromLatin1(style::toString(m_references[static_cast<std::size_t>(r)].role))));
+    });
+    connect(m_role, &QComboBox::activated, this, [this] {
+        const int r = m_refs->currentRow();
+        if (r < 0 || r >= static_cast<int>(m_references.size())) return;
+        m_references[static_cast<std::size_t>(r)].role =
+            style::refRoleFromString(m_role->currentData().toString().toStdString()).value_or(style::RefRole::Style);
+        refreshReferences();
+        m_refs->setCurrentRow(r);
+    });
+    m_role->setEnabled(false);
+
+    col->addWidget(buildStyleBox(w));
 
     auto* genLabel = new QLabel(tr("3  Generate"), w);
     genLabel->setProperty("role", "h2");
@@ -356,7 +387,15 @@ QWidget* GeneratorPage::buildResults() {
     });
     act(tr("Animate…"), 0, 2, [this](Result& r) { Q_EMIT animateRequested(r.image, r.name); });
     act(tr("More Like This"), 1, 0, [this](Result& r) { generate({r.raw.isNull() ? r.image : r.raw}); });
-    act(tr("Use as Reference"), 1, 1, [this](Result& r) { addReference(r.raw.isNull() ? r.image : r.raw, r.name); });
+    act(tr("Use as Reference"), 1, 1, [this](Result& r) { addReference(r.raw.isNull() ? r.image : r.raw, r.name, style::RefRole::Character); });
+    act(tr("Add to Style"), 2, 0, [this](Result& r) {
+        const std::string id = m_styleCombo->currentData().toString().toStdString();
+        if (id.empty()) return void(Q_EMIT statusMessage(tr("Create a style first (Game style › New Style from References).")));
+        auto p = m_styles.addReferences(id, {{r.image, style::RefRole::Style}});
+        if (!p) return void(Q_EMIT statusMessage(qs(p.error().message)));
+        refreshStyles();
+        Q_EMIT statusMessage(tr("Added to the style “%1”.").arg(qs(p.value().name)));
+    });
     act(tr("Save PNG…"), 1, 2, [this](Result& r) {
         const QString f = QFileDialog::getSaveFileName(this, tr("Save PNG"), r.name + QStringLiteral(".png"), tr("PNG (*.png)"));
         if (f.isEmpty()) return;
@@ -385,23 +424,131 @@ void GeneratorPage::setPrompt(const QString& prompt, const QString& typeKey) {
     m_prompt->setFocus();
 }
 
-void GeneratorPage::addReference(const Image& img, const QString& name) {
+void GeneratorPage::addReference(const Image& img, const QString& name, style::RefRole role) {
     if (img.isNull()) return;
     if (m_references.size() >= 4) {
         Q_EMIT statusMessage(tr("Up to four references; remove one first."));
         return;
     }
-    m_references.push_back({img, name});
+    m_references.push_back({img, name, role});
     refreshReferences();
+    m_refs->setCurrentRow(static_cast<int>(m_references.size()) - 1);
 }
 
 void GeneratorPage::refreshReferences() {
     m_refs->clear();
     for (const Reference& r : m_references) {
-        auto* it = new QListWidgetItem(QIcon(thumb(r.image, 64)), r.name.left(14));
-        it->setToolTip(r.name);
+        auto* it = new QListWidgetItem(QIcon(thumb(r.image, 64)), tr(style::roleLabel(r.role)));
+        it->setToolTip(tr("%1 — %2").arg(r.name, tr(style::roleLabel(r.role))));
         m_refs->addItem(it);
     }
+}
+
+QWidget* GeneratorPage::buildStyleBox(QWidget* parent) {
+    auto* box = new QFrame(parent);
+    box->setProperty("card", true);
+    auto* lay = new QVBoxLayout(box);
+    lay->setContentsMargins(12, 10, 12, 12);
+    auto* head = new QLabel(tr("Game style"), box);
+    head->setProperty("role", "h2");
+    lay->addWidget(head);
+    auto* row = new QHBoxLayout;
+    m_styleCombo = new QComboBox(box);
+    m_styleCombo->setAccessibleName(tr("Style profile"));
+    row->addWidget(m_styleCombo, 1);
+    m_styleStrength = new QComboBox(box);
+    m_styleStrength->setAccessibleName(tr("Style strength"));
+    m_styleStrength->addItem(tr("Light"), 1);
+    m_styleStrength->addItem(tr("Medium"), 2);
+    m_styleStrength->addItem(tr("Strong"), 3);
+    m_styleStrength->setToolTip(tr("Light: the style's words and palette check. Medium: also its reference images. "
+                                   "Strong: also its exact palette."));
+    row->addWidget(m_styleStrength);
+    lay->addLayout(row);
+    m_lockStyle = new QCheckBox(tr("Lock Game Style (apply to every generation)"), box);
+    lay->addWidget(m_lockStyle);
+    m_styleInfo = new QLabel(box);
+    m_styleInfo->setProperty("role", "muted");
+    m_styleInfo->setWordWrap(true);
+    lay->addWidget(m_styleInfo);
+    auto* buttons = new QHBoxLayout;
+    auto* fromRefs = new QPushButton(tr("New Style from References…"), box);
+    auto* del = new QPushButton(tr("Delete Style"), box);
+    buttons->addWidget(fromRefs);
+    buttons->addWidget(del);
+    buttons->addStretch();
+    lay->addLayout(buttons);
+
+    connect(fromRefs, &QPushButton::clicked, this, [this] {
+        std::vector<std::pair<Image, style::RefRole>> refs;
+        for (const Reference& r : m_references) refs.push_back({r.image, r.role});
+        if (refs.empty()) return void(QMessageBox::information(this, tr("New Style"), tr("Add one or more reference images first.")));
+        bool ok = false;
+        const QString name = QInputDialog::getText(this, tr("New Style"), tr("Name of the style:"), QLineEdit::Normal, tr("My game"), &ok);
+        if (!ok || name.trimmed().isEmpty()) return;
+        auto p = m_styles.create(name.trimmed().toStdString(), refs);
+        if (!p) return void(QMessageBox::warning(this, tr("New Style"), qs(p.error().message)));
+        m_ctx.setSetting("style.locked", p.value().id);
+        refreshStyles();
+    });
+    connect(del, &QPushButton::clicked, this, [this] {
+        const QString id = m_styleCombo->currentData().toString();
+        if (id.isEmpty()) return;
+        if (QMessageBox::question(this, tr("Delete Style"), tr("Delete the style “%1” and its copied reference images?").arg(m_styleCombo->currentText())) !=
+            QMessageBox::Yes)
+            return;
+        if (auto st = m_styles.remove(id.toStdString()); !st) QMessageBox::warning(this, tr("Delete Style"), qs(st.error().message));
+        m_ctx.setSetting("style.locked", std::string());
+        refreshStyles();
+    });
+    auto persist = [this] {
+        const QString id = m_lockStyle->isChecked() ? m_styleCombo->currentData().toString() : QString();
+        m_ctx.setSetting("style.locked", id.toStdString());
+        // The strength is the profile's own setting.
+        if (auto p = m_styles.load(m_styleCombo->currentData().toString().toStdString())) {
+            style::StyleProfile prof = std::move(p).value();
+            prof.strength = m_styleStrength->currentData().toInt();
+            (void)m_styles.save(prof);
+        }
+        refreshStyles();
+    };
+    connect(m_lockStyle, &QCheckBox::toggled, this, persist);
+    connect(m_styleStrength, &QComboBox::activated, this, persist);
+    connect(m_styleCombo, &QComboBox::activated, this, persist);
+    return box;
+}
+
+void GeneratorPage::refreshStyles() {
+    const std::string locked = m_ctx.settings().get<std::string>("style.locked");
+    const QString current = m_styleCombo->currentData().toString();
+    m_styleCombo->blockSignals(true);
+    m_lockStyle->blockSignals(true);
+    m_styleCombo->clear();
+    const auto list = m_styles.list();
+    for (const auto& p : list) m_styleCombo->addItem(qs(p.name), qs(p.id));
+    if (list.empty()) m_styleCombo->addItem(tr("No styles yet"), QString());
+    int idx = m_styleCombo->findData(locked.empty() ? current : qs(locked));
+    m_styleCombo->setCurrentIndex(std::max(0, idx));
+    m_lockStyle->setChecked(!locked.empty() && idx >= 0);
+    m_lockStyle->setEnabled(!list.empty());
+    m_styleStrength->setEnabled(!list.empty());
+    m_styleCombo->blockSignals(false);
+    m_lockStyle->blockSignals(false);
+    if (auto p = m_styles.load(m_styleCombo->currentData().toString().toStdString())) {
+        m_styleStrength->setCurrentIndex(std::max(0, m_styleStrength->findData(p.value().strength)));
+        m_styleInfo->setText(tr("%1 reference(s). Measured: %2.")
+                                 .arg(p.value().references.size())
+                                 .arg(qs(style::describe(p.value().features))));
+    } else {
+        m_styleInfo->setText(tr("Make a style from reference images to keep new assets in your game's look."));
+    }
+}
+
+std::optional<style::StyleProfile> GeneratorPage::lockedStyle() const {
+    const std::string id = m_ctx.settings().get<std::string>("style.locked");
+    if (id.empty()) return std::nullopt;
+    auto p = m_styles.load(id);
+    return p ? std::optional<style::StyleProfile>(std::move(p).value()) : std::nullopt;
 }
 
 void GeneratorPage::refreshModels() {
@@ -474,16 +621,36 @@ void GeneratorPage::generate(const std::vector<Image>& extraRefs) {
         if (!sdxl) return void(Q_EMIT showModelsRequested());
         backend = gen::Backend::Sdxl;
     }
+    // References: images sent to the model (with their roles) and palette-only references.
+    gen::Spec sp = s;
+    std::vector<Image> refImages;
+    std::vector<Image> paletteSources;
+    auto take = [&](const Image& img, style::RefRole role) {
+        if (role == style::RefRole::Palette) { paletteSources.push_back(img); return; }
+        if (refImages.size() >= 4) return;
+        refImages.push_back(img);
+        sp.referenceRoles.push_back(style::toString(role));
+    };
+    for (const Image& e : extraRefs) take(e, style::RefRole::Character);
+    for (const Reference& r : m_references) take(r.image, r.role);
+    const std::optional<style::StyleProfile> locked = lockedStyle();
+    if (locked) {
+        sp.styleNotes = style::describe(locked->features);
+        if (!locked->notes.empty()) sp.styleNotes += ", " + locked->notes;
+        if (locked->strength >= 2)
+            for (const auto& ref : locked->references)
+                if (ref.role != style::RefRole::Character && ref.role != style::RefRole::Creature)
+                    if (auto img = m_styles.referenceImage(*locked, ref)) take(img.value(), ref.role);
+    }
+    if (!refImages.empty() && backend == gen::Backend::Sdxl)
+        Q_EMIT statusMessage(tr("Reference images need FLUX.2 klein; SDXL uses the description and the style's words only."));
     std::vector<const Image*> refs;
-    for (const Reference& r : m_references) refs.push_back(&r.image);
-    for (const Image& e : extraRefs) refs.insert(refs.begin(), &e);
-    if (refs.size() > 4) refs.resize(4);
-    if (!refs.empty() && backend == gen::Backend::Sdxl)
-        Q_EMIT statusMessage(tr("References need FLUX.2 klein; generating from the description only."));
+    for (const Image& r : refImages) refs.push_back(&r);
 
     const bool pixel = gen::isPixelStyle(s.style);
     const ModelEntry* lora = pixel ? installed(m_ai, backend == gen::Backend::Klein ? "pixel-art-klein-lora" : "pixel-art-xl") : nullptr;
-    const gen::Prompt prompt = gen::composePrompt(s, backend, lora != nullptr);
+    if (backend == gen::Backend::Sdxl) sp.referenceRoles.clear();
+    const gen::Prompt prompt = gen::composePrompt(sp, backend, lora != nullptr);
     const auto preset = gen::presetFromKey(m_preset->currentData().toString().toStdString()).value_or(gen::QualityPreset::Balanced);
     const auto [outW, outH] = outputSize();
     auto [gw, gh] = pixel ? gen::generationSize(outW, outH, preset) : std::pair{outW / 16 * 16, outH / 16 * 16};
@@ -513,7 +680,22 @@ void GeneratorPage::generate(const std::vector<Image>& extraRefs) {
     if (pixel) {
         p["pixel"] = {{"width", outW}, {"height", outH}, {"crop", gen::isSingleSubject(s.type)}};
         const int pal = m_palette->currentData().toInt();
-        if (pal < 0 && m_view && m_view->document().palette().size() > 0) {
+        // A palette reference, or a strongly locked style, fixes the colours.
+        Palette fixed;
+        if (!paletteSources.empty()) {
+            Image strip(static_cast<int>(paletteSources.size()) * 64, 64);
+            for (std::size_t i = 0; i < paletteSources.size(); ++i)
+                for (std::size_t c = 0; c < extractPalette(paletteSources[i], 64).size(); ++c)
+                    strip.setPixel(static_cast<int>(i * 64 + c % 64), static_cast<int>(c / 64), extractPalette(paletteSources[i], 64).at(c));
+            fixed = extractPalette(strip, 32);
+        } else if (locked && locked->strength >= 3) {
+            fixed = locked->features.palette;
+        }
+        if (fixed.size() > 0) {
+            json colours = json::array();
+            for (std::size_t i = 0; i < fixed.size(); ++i) colours.push_back(fixed.at(i).toHex(false));
+            p["pixel"]["palette"] = colours;
+        } else if (pal < 0 && m_view && m_view->document().palette().size() > 0) {
             json colours = json::array();
             for (std::size_t i = 0; i < m_view->document().palette().size(); ++i) colours.push_back(m_view->document().palette().at(i).toHex(false));
             p["pixel"]["palette"] = colours;
@@ -582,6 +764,14 @@ void GeneratorPage::onJobFinished(const QString& qid) {
         r.seed = seed + i;
         r.name = QString::fromStdString(spec().description).left(24) + QStringLiteral(" #%1").arg(r.seed);
         r.report = gen::checkAsset(r.image, opt);
+        if (const auto locked = lockedStyle(); locked && locked->features.sampleCount > 0) {
+            r.styleMatch = style::styleSimilarity(locked->features, style::analyze(r.image));
+            const double floor = locked->variation == 0 ? 0.8 : locked->variation == 1 ? 0.7 : 0.55;
+            if (*r.styleMatch < floor)
+                r.report.issues.push_back({gen::Severity::Warning, "style",
+                                           "Off-style: " + std::to_string(static_cast<int>(*r.styleMatch * 100)) + "% match with “" +
+                                               locked->name + "”."});
+        }
         const int score = r.report.score();
         auto* it = new QListWidgetItem(QIcon(thumb(r.image, 140)),
                                        QStringLiteral("%1  %2").arg(score >= 90 ? QStringLiteral("●") : score >= 70 ? QStringLiteral("▲") : QStringLiteral("✖"))
@@ -618,6 +808,7 @@ void GeneratorPage::showResult(int index) {
     m_preview->setPixmap(thumb(r.image, 200));
     QString html = tr("<b>%1 × %2 px</b>, %3 colours, score %4/100<br>").arg(r.image.width()).arg(r.image.height())
                        .arg(r.report.colors).arg(r.report.score());
+    if (r.styleMatch) html += tr("Style match: %1%<br>").arg(static_cast<int>(*r.styleMatch * 100));
     if (r.report.issues.empty()) html += tr("No problems found.");
     for (const gen::Issue& i : r.report.issues) html += severityMark(i.severity) + QStringLiteral(" ") + qs(i.message).toHtmlEscaped() + QStringLiteral("<br>");
     m_report->setText(html);

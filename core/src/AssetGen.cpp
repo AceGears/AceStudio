@@ -158,6 +158,27 @@ Prompt composePrompt(const Spec& spec, Backend backend, bool styleLora) {
         if (pixel && backend == Backend::Klein) out += ", game asset";
     }
     if (wantsTileable(spec.type)) out += ", seamless, evenly lit, no perspective, top-down texture";
+    if (backend == Backend::Klein)
+        for (std::size_t i = 0; i < spec.referenceRoles.size(); ++i) {
+            const std::string n = std::to_string(i + 1);
+            const std::string& role = spec.referenceRoles[i];
+            if (role == "character")
+                out += ". Keep the character from reference image " + n +
+                       " exactly: same face, hair, body proportions, outfit, colours and equipment";
+            else if (role == "creature")
+                out += ". The same creature as reference image " + n + ": same anatomy, markings and colours";
+            else if (role == "equipment")
+                out += ". The same item design as reference image " + n;
+            else if (role == "environment")
+                out += ". Match the environment, materials and lighting of reference image " + n;
+            else if (role == "animation")
+                out += ". In the pose shown in reference image " + n;
+            else if (role == "composition")
+                out += ". Use the composition and framing of reference image " + n;
+            else   // style
+                out += ". Drawn in the art style of reference image " + n +
+                       " (rendering, outline, shading, palette), but with a different subject; do not copy its subject";
+        }
     p.positive = out;
     if (backend == Backend::Sdxl) {
         p.negative = "blurry, jpeg artifacts, text, watermark, signature, deformed, extra limbs";

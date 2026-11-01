@@ -36,6 +36,7 @@ Settings::Settings() {
     registerDefault("library.folders", json::array());        // extra folders the Asset Library scans
     registerDefault("library.tags", json::object());          // asset path -> tags
     registerDefault("library.favorites", json::array());
+    registerDefault("style.locked", "");                      // style profile id applied to every generation ("" = none)
     // Canvas
     registerDefault("canvas.grid.visible", true);
     registerDefault("canvas.grid.color", "#FFFFFF1F");

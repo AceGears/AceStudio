@@ -47,6 +47,10 @@ struct Spec {
     Perspective perspective = Perspective::Side;
     bool transparent = true;
     std::string styleNotes;       // from a locked style profile (palette, outline, shading words)
+    // Roles of the reference images sent with the request, in order
+    // (style::toString keys: character, style, environment, ...). Each role
+    // adds an instruction that limits what the model takes from that image.
+    std::vector<std::string> referenceRoles;
 };
 
 struct Prompt {
