@@ -650,7 +650,13 @@ std::string GeneratorPage::submitJob(const std::vector<Image>& extraRefs, const 
         Q_EMIT statusMessage(tr("Describe the asset first."));
         return {};
     }
-    if (!o.extraWords.empty()) s.description += ", " + o.extraWords;
+    // A view of a character pack goes first and as an instruction: tried on
+    // the test PC with the words appended after the description, klein
+    // returned the reference's side view unchanged for the front view.
+    if (!o.extraWords.empty())
+        s.description = extraRefs.empty() ? s.description + ", " + o.extraWords
+                                          : "Turn the character around to a " + o.extraWords +
+                                                ", showing that side of the body. The character: " + s.description;
     const auto size = o.size;
     const auto seed = o.seed;
     // Choose the backend: klein when installed (and wanted), else SDXL.
