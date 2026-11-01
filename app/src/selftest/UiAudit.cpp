@@ -62,9 +62,11 @@ QString windowName(QWidget* top) {
     return t.isEmpty() ? QString::fromLatin1(top->metaObject()->className()) : t;
 }
 
-void auditWindow(QWidget* top, Audit& a, const QString& context) {
+// `pageName` audits a page of the main window (a workspace) as if it were a
+// window of its own, keyboard reachability included.
+void auditWindow(QWidget* top, Audit& a, const QString& context, const QString& pageName = {}) {
     nameControls(top);   // what the app does when the window is shown
-    const QString win = windowName(top);
+    const QString win = pageName.isEmpty() ? windowName(top) : pageName;
     a.windows.append(QJsonObject{{"window", win}, {"class", top->metaObject()->className()}, {"from", context}});
     QList<QWidget*> all = top->findChildren<QWidget*>();
     all.prepend(top);
@@ -89,7 +91,7 @@ void auditWindow(QWidget* top, Audit& a, const QString& context) {
         // Keyboard: every control in a dialog must take focus with Tab
         // (toolbar buttons are reached through menus and shortcuts instead).
         const bool inToolbar = qobject_cast<QToolBar*>(w->parentWidget()) != nullptr;
-        if (!inToolbar && qobject_cast<QDialog*>(top) && !(w->focusPolicy() & Qt::TabFocus) && w->isEnabled()) {
+        if (!inToolbar && (qobject_cast<QDialog*>(top) || !pageName.isEmpty()) && !(w->focusPolicy() & Qt::TabFocus) && w->isEnabled()) {
             info["name"] = name;
             a.unreachable.append(info);
         }
@@ -173,6 +175,15 @@ int runUiAudit(MainWindow& window, const QString& reportPath, const QString& pro
             }
         QApplication::processEvents();
         a.actions.append(QJsonObject{{"action", text}, {"ms", static_cast<double>(t.elapsed())}});
+    }
+    // Every workspace page, as shown from the rail.
+    for (const WorkspaceInfo& w : workspaceInfos()) {
+        current = QStringLiteral("workspace ") + QString::fromLatin1(w.key);
+        window.showWorkspace(w.id);
+        QApplication::processEvents();
+        while (closeModal(a, current)) QApplication::processEvents();
+        if (QWidget* page = window.m_pageFor[static_cast<std::size_t>(w.id)])
+            auditWindow(page, a, current, QStringLiteral("Workspace: ") + QString::fromLatin1(w.key));
     }
     watchdog.stop();
 

@@ -725,3 +725,11 @@ void AiPanel::onJobFinished(const QString& qid) {
 }
 
 } // namespace acestudio::ui
+
+namespace acestudio::ui {
+void AiPanel::setPrompt(const QString& prompt) {
+    if (prompt.isEmpty() || !m_prompt) return;
+    m_prompt->setPlainText(prompt);
+    m_prompt->setFocus();
+}
+} // namespace acestudio::ui

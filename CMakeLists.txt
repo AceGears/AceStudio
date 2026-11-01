@@ -32,6 +32,7 @@ endif()
 
 include(CompilerWarnings)
 include(Dependencies)
+include(WinResource)
 
 # Version header shared by every target.
 configure_file(

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AutosaveQueue.h"
+#include "ui/Workspaces.h"
 #include "acestudio/core/Animation.h"
 
 #include "acestudio/core/Result.h"
@@ -12,6 +13,7 @@
 #include <QSet>
 #include <QMainWindow>
 
+#include <array>
 #include <memory>
 
 class QAction;
@@ -62,6 +64,14 @@ private:
     void buildMenus();
     void buildDocks();
     QWidget* buildWelcome();
+    void buildWorkspaces();
+public:
+    // Shows a workspace (rail, View › Workspace, Ctrl+1..0).
+    void showWorkspace(Workspace w);
+    Workspace currentWorkspace() const { return m_workspace; }
+private:
+    void onSettingChanged(const QString& key);
+    void newProjectFromTemplate(int width, int height, int frames, const QString& name);
     void restoreWindowState();
     void saveWindowState();
 
@@ -108,6 +118,20 @@ private:
     void editShortcuts();
 
     AppContext& m_ctx;
+    // Workspace shell: rail + pages. The document area (m_stack) is the page
+    // shared by the Editor and Animation workspaces.
+    class WorkspaceRail* m_rail = nullptr;
+    QStackedWidget* m_pages = nullptr;
+    class HomePage* m_home = nullptr;
+    class LibraryPage* m_library = nullptr;
+    QList<class HubPage*> m_hubs;
+    std::array<QWidget*, kWorkspaceCount> m_pageFor{};
+    Workspace m_workspace = Workspace::Home;
+    Workspace m_lastDocWorkspace = Workspace::Editor;
+    // Dock arrangement of each document workspace while another one shows.
+    QByteArray m_editorDocks, m_animationDocks;
+    bool m_animationVisited = false;
+    QList<QAction*> m_workspaceActions;
     QStackedWidget* m_stack = nullptr;
     QTabWidget* m_tabs = nullptr;
     QListWidget* m_welcomeRecent = nullptr;

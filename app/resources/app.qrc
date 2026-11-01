@@ -1,0 +1,10 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/branding">
+    <file alias="logo-512.png">branding/acestudio-512.png</file>
+    <file alias="logo-256.png">branding/acestudio-256.png</file>
+    <file alias="logo-128.png">branding/acestudio-128.png</file>
+    <file alias="logo-64.png">branding/acestudio-64.png</file>
+    <file alias="logo-32.png">branding/acestudio-32.png</file>
+  </qresource>
+</RCC>

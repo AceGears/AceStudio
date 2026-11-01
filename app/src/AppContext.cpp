@@ -84,3 +84,15 @@ void AppContext::saveSettings() {
 }
 
 } // namespace acestudio::ui
+
+namespace acestudio::ui {
+bool AppContext::setSetting(const std::string& key, const nlohmann::json& value, QString* error) {
+    if (auto st = m_settings.set(key, value); !st) {
+        if (error) *error = QString::fromStdString(st.error().message);
+        return false;
+    }
+    saveSettings();
+    Q_EMIT settingChanged(QString::fromStdString(key));
+    return true;
+}
+} // namespace acestudio::ui

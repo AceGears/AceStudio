@@ -41,6 +41,7 @@ public Q_SLOTS:
     void showSetup();
     void showModels();
     void focusTab(int index);   // 0 generate, 1 remove background, 2 upscale
+    void setPrompt(const QString& prompt);   // fills the Generate prompt (empty: unchanged)
 
 Q_SIGNALS:
     // `frame` is the frame the job was started from (the result belongs there

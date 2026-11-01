@@ -24,11 +24,18 @@ Settings::Settings() {
     registerDefault("general.language", "en");
     registerDefault("general.theme", "dark");                 // dark | light | highContrast
     registerDefault("general.textScale", 100);                // interface text size, % of the system font
-    registerDefault("general.accentColor", "#4F8CFF");
+    registerDefault("general.accentColor", "#0A6CF5");          // electric blue from the logo
     registerDefault("general.startup", "welcome");            // welcome | lastProject | empty
     registerDefault("general.recentProjects", json::array());
     registerDefault("general.maxRecentProjects", 12);
     registerDefault("general.autosaveIntervalSec", 120);
+    registerDefault("ui.reducedMotion", false);               // also on when Windows turns animations off
+    registerDefault("ui.animationSpeed", 100);                // percent: 50 = twice as fast, 200 = half speed
+    registerDefault("ui.workspace", "home");                  // the workspace shown at start
+    registerDefault("ui.showSplash", true);
+    registerDefault("library.folders", json::array());        // extra folders the Asset Library scans
+    registerDefault("library.tags", json::object());          // asset path -> tags
+    registerDefault("library.favorites", json::array());
     // Canvas
     registerDefault("canvas.grid.visible", true);
     registerDefault("canvas.grid.color", "#FFFFFF1F");

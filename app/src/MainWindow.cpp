@@ -2,6 +2,12 @@
 #include "licensing/Licensing.h"
 #include "scripting/AppBridgeServer.h"
 #include "scripting/McpSetupDialog.h"
+#include "ui/WorkspaceRail.h"
+#include "ui/Motion.h"
+#include "pages/SettingsPage.h"
+#include "pages/LibraryPage.h"
+#include "pages/HubPage.h"
+#include "pages/HomePage.h"
 #include "scripting/ScriptDialog.h"
 
 #include "AppContext.h"
@@ -68,7 +74,9 @@
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QTabWidget>
+#include <QToolBar>
 #include <QUrl>
+#include <QHBoxLayout>
 #include <QVBoxLayout>
 
 namespace acestudio::ui {
@@ -108,7 +116,6 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
     m_stack = new QStackedWidget(this);
     m_stack->addWidget(buildWelcome());
     m_stack->addWidget(m_tabs);
-    setCentralWidget(m_stack);
 
     initLicensing(m_ctx.dataDir());
     m_tools = new ToolState(this);
@@ -124,6 +131,8 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
         this);
     if (m_ctx.settings().get<bool>("mcp.bridgeEnabled")) (void)m_bridge->start();
     buildMenus();
+    buildWorkspaces();
+    connect(&m_ctx, &AppContext::settingChanged, this, &MainWindow::onSettingChanged);
 
     m_statusCursor = new QLabel(this);
     m_statusZoom = new QLabel(this);
@@ -172,6 +181,13 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
                                        std::to_string(d->minimumSizeHint().height()));
     restoreWindowState();
     onCurrentTabChanged();
+    // Start in the saved workspace (documents opened at start switch to the editor).
+    const std::string startKey = m_ctx.settings().get<std::string>("ui.workspace");
+    Workspace start = Workspace::Home;
+    for (const WorkspaceInfo& w : workspaceInfos())
+        if (startKey == w.key && !isDocumentWorkspace(w.id)) start = w.id;
+    showWorkspace(start);
+    if (m_ctx.settings().get<bool>("ai.autoStart")) QTimer::singleShot(500, this, [this] { m_aiPanel->showSetup(); });
 }
 
 // ------------------------------------------------------------------ layout
@@ -376,6 +392,21 @@ void MainWindow::buildMenus() {
 
     // View
     QMenu* view = menuBar()->addMenu(tr("&View"));
+    {
+        // Workspaces: Alt+1 … Alt+0, in rail order.
+        QMenu* ws = view->addMenu(tr("&Workspace"));
+        static const Qt::Key keys[] = {Qt::Key_1, Qt::Key_2, Qt::Key_3, Qt::Key_4, Qt::Key_5,
+                                       Qt::Key_6, Qt::Key_7, Qt::Key_8, Qt::Key_9, Qt::Key_0};
+        int i = 0;
+        for (const WorkspaceInfo& w : workspaceInfos()) {
+            QAction* a = ws->addAction(icon(w.glyph), QCoreApplication::translate("Workspace", w.label));
+            a->setShortcut(QKeySequence(Qt::ALT | keys[i++]));
+            const Workspace id = w.id;
+            connect(a, &QAction::triggered, this, [this, id] { showWorkspace(id); });
+            m_workspaceActions << a;
+        }
+        view->addSeparator();
+    }
     docAction(view, tr("Zoom &In"), QKeySequence::ZoomIn, [this] { currentView()->canvas()->zoomIn(); });
     docAction(view, tr("Zoom &Out"), QKeySequence::ZoomOut, [this] { currentView()->canvas()->zoomOut(); });
     docAction(view, tr("Zoom to &Fit"), QKeySequence(Qt::CTRL | Qt::Key_0), [this] { currentView()->canvas()->zoomToFit(); });
@@ -637,12 +668,12 @@ void MainWindow::buildMenus() {
         CharacterDialog dlg(m_ctx.dataDir() / "characters", currentView(), this);
         dlg.exec();
     });
-    aiMenu->addAction(tr("Generate &Animation…"), this, [this] {
+    (aiMenu->addAction(tr("Generate &Animation…"), this, [this] {
         AnimationDialog dlg(m_ctx, *m_ai, currentView(), [this](const std::vector<Image>& frames, const std::vector<int>& durations,
                                                                const QString& name) { openAnimationAsDocument(frames, durations, name); },
                             this);
         dlg.exec();
-    });
+    }))->setObjectName(QStringLiteral("ai.animation"));
     aiMenu->addSeparator();
     aiMenu->addAction(tr("&Models…"), m_aiPanel, &AiPanel::showModels);
     aiMenu->addAction(tr("&Set Up AI Runtime…"), m_aiPanel, &AiPanel::showSetup);
@@ -659,30 +690,30 @@ void MainWindow::buildMenus() {
     auto openFrames = [this](const std::vector<Image>& frames, const std::vector<int>& durations, const QString& name) {
         openAnimationAsDocument(frames, durations, name);
     };
-    assets->addAction(tr("&Tileset Generator…"), this, [this, openImage] {
+    (assets->addAction(tr("&Tileset Generator…"), this, [this, openImage] {
         TilesetDialog dlg(*m_ai, currentView(), openImage, this);
         dlg.exec();
-    });
+    }))->setObjectName(QStringLiteral("assets.tileset"));
     assets->addAction(tr("New Tileset &Template…"), this, [this, openImage] { newTilesetTemplate(openImage, this); });
-    assets->addAction(tr("Check Tileset &Seams…"), this, [this] { checkDocumentSeams(currentView(), this); });
+    (assets->addAction(tr("Check Tileset &Seams…"), this, [this] { checkDocumentSeams(currentView(), this); }))->setObjectName(QStringLiteral("assets.seams"));
     assets->addSeparator();
-    assets->addAction(tr("&Parallax Background…"), this, [this] {
+    (assets->addAction(tr("&Parallax Background…"), this, [this] {
         ParallaxDialog dlg(*m_ai, currentView(), this);
         dlg.exec();
-    });
-    assets->addAction(tr("&UI Kit Generator…"), this, [this, openImage] {
+    }))->setObjectName(QStringLiteral("assets.parallax"));
+    (assets->addAction(tr("&UI Kit Generator…"), this, [this, openImage] {
         UiKitDialog dlg(currentView(), openImage, this);
         dlg.exec();
-    });
+    }))->setObjectName(QStringLiteral("assets.uikit"));
     assets->addSeparator();
-    assets->addAction(tr("Smart S&licer…"), this, [this, openFrames] {
+    (assets->addAction(tr("Smart S&licer…"), this, [this, openFrames] {
         SliceDialog dlg(*m_ai, currentView(), openFrames, this);
         dlg.exec();
-    });
-    assets->addAction(tr("Pack Sprite &Atlas…"), this, [this] {
+    }))->setObjectName(QStringLiteral("assets.slicer"));
+    (assets->addAction(tr("Pack Sprite &Atlas…"), this, [this] {
         AtlasDialog dlg(currentView(), this);
         dlg.exec();
-    });
+    }))->setObjectName(QStringLiteral("assets.atlas"));
     // Scripts
     QMenu* scripts = menuBar()->addMenu(tr("S&cripts"));
     auto runScript = [this](const std::filesystem::path& scriptFile) {
@@ -782,7 +813,12 @@ void MainWindow::restoreWindowState() {
 
 void MainWindow::saveWindowState() {
     (void)m_ctx.settings().set("window.geometry", saveGeometry().toBase64().toStdString());
-    (void)m_ctx.settings().set("window.state", saveState(kLayoutVersion).toBase64().toStdString());
+    // The saved layout is the Pixel Editor's dock arrangement, whatever page is showing.
+    QByteArray docks = saveState(kLayoutVersion);
+    if (m_workspace == Workspace::Animation || !isDocumentWorkspace(m_workspace)) docks = m_editorDocks.isEmpty() ? m_defaultState : m_editorDocks;
+    (void)m_ctx.settings().set("window.state", docks.toBase64().toStdString());
+    const auto& infos = workspaceInfos();
+    (void)m_ctx.settings().set("ui.workspace", std::string(infos[static_cast<std::size_t>(m_workspace)].key));
 }
 
 void MainWindow::resetLayout() {
@@ -791,6 +827,258 @@ void MainWindow::resetLayout() {
         d->show();
     }
     restoreState(m_defaultState, kLayoutVersion);
+}
+
+// ------------------------------------------------------------------ workspace shell
+
+static CanvasAppearance canvasLookFromSettings(const Settings& s);
+
+void MainWindow::buildWorkspaces() {
+    // The rail lives in a fixed toolbar: QMainWindow lays toolbars outside the
+    // dock areas, so the rail stays at the far left whatever docks are open.
+    auto* railBar = new QToolBar(tr("Workspaces"), this);
+    railBar->setObjectName(QStringLiteral("toolbar.workspaces"));
+    railBar->setMovable(false);
+    railBar->setFloatable(false);
+    railBar->toggleViewAction()->setEnabled(false);
+    railBar->setContextMenuPolicy(Qt::PreventContextMenu);
+    railBar->setStyleSheet(QStringLiteral("QToolBar { border: none; padding: 0; spacing: 0; }"));
+    m_rail = new WorkspaceRail(railBar);
+    railBar->addWidget(m_rail);
+    addToolBar(Qt::LeftToolBarArea, railBar);
+    m_pages = new QStackedWidget(this);
+    QWidget* shell = m_pages;
+    for (const WorkspaceInfo& w : workspaceInfos()) {
+        if (w.id == Workspace::Settings) m_rail->addStretch();
+        m_rail->addWorkspace(w.glyph, QCoreApplication::translate("Workspace", w.label),
+                             QCoreApplication::translate("Workspace", w.tooltip));
+    }
+    connect(m_rail, &WorkspaceRail::currentChanged, this, [this](int i) { showWorkspace(static_cast<Workspace>(i)); });
+
+    auto put = [this](Workspace w, QWidget* page) {
+        if (m_pages->indexOf(page) < 0) m_pages->addWidget(page);
+        m_pageFor[static_cast<std::size_t>(w)] = page;
+    };
+
+    // Home.
+    m_home = new HomePage(m_ctx, m_pages);
+    connect(m_home, &HomePage::newProjectRequested, this, &MainWindow::newProject);
+    connect(m_home, &HomePage::openProjectRequested, this, &MainWindow::openProjectDialog);
+    connect(m_home, &HomePage::openRecentRequested, this, [this](const QString& p) { openProject(p); });
+    connect(m_home, &HomePage::importImageRequested, this, [this] { importPng(false); });
+    connect(m_home, &HomePage::templateRequested, this,
+            [this](const ProjectTemplate& t) { newProjectFromTemplate(t.width, t.height, t.frames, t.name); });
+    connect(m_home, &HomePage::guideRequested, this, [this] { showDocument(QStringLiteral("user-guide.md"), tr("User Guide")); });
+    connect(m_home, &HomePage::workspaceRequested, this, [this](const QString& key) {
+        for (const WorkspaceInfo& w : workspaceInfos())
+            if (key == QLatin1String(w.key)) showWorkspace(w.id);
+    });
+    connect(m_home, &HomePage::generateRequested, this, [this](const QString& prompt, const QString&) {
+        showWorkspace(Workspace::AiStudio);
+        m_aiPanel->focusTab(0);
+        m_aiPanel->setPrompt(prompt);
+    });
+    put(Workspace::Home, m_home);
+
+    // Document area: Pixel Editor and Animation.
+    put(Workspace::Editor, m_stack);
+    put(Workspace::Animation, m_stack);
+
+    // AI Studio: the generation panel, full page. (It also stays available as
+    // a dock inside the editor for working on the open document.)
+    auto* ai = new HubPage(tr("AI Studio"), tr("Generate assets"),
+                           tr("Text-to-image and image-to-image, background removal and upscaling run locally on this PC. "
+                              "Results open as new documents or arrive as layers in the open one."),
+                           m_pages);
+    ai->addCard({Glyph::Sparkle, tr("Generate"), tr("Pixel-art or detailed images from a description, at your canvas size and palette."),
+                 tr("Open Generator"), [this] { showWorkspace(Workspace::Editor); m_aiDock->show(); m_aiDock->raise(); m_aiPanel->focusTab(0); }});
+    ai->addCard({Glyph::Image, tr("Remove Background"), tr("Cut a sprite out of its background (BiRefNet), with hard pixel-art edges."),
+                 tr("Open"), [this] { showWorkspace(Workspace::Editor); m_aiDock->show(); m_aiDock->raise(); m_aiPanel->focusTab(1); }, true});
+    ai->addCard({Glyph::Grid, tr("Upscale"), tr("Real-ESRGAN ×4 for detailed art; for pixel art use Image › Scale."),
+                 tr("Open"), [this] { showWorkspace(Workspace::Editor); m_aiDock->show(); m_aiDock->raise(); m_aiPanel->focusTab(2); }, true});
+    ai->addSection(tr("Runtime"));
+    ai->addCard({Glyph::Settings, tr("Set Up AI"), tr("Installs the AI runtime into AceStudio's own folder; nothing else on the PC changes."),
+                 tr("Set Up…"), [this] { m_aiPanel->showSetup(); }});
+    ai->addCard({Glyph::Library, tr("Models"), tr("Download models after accepting their licences; each file is verified."),
+                 tr("Manage Models…"), [this] { m_aiPanel->showModels(); }});
+    m_hubs << ai;
+    put(Workspace::AiStudio, ai);
+
+    // Characters.
+    auto* chars = new HubPage(tr("Characters"), tr("Characters and animation"),
+                              tr("Keep a character's look in a profile with reference images and a palette, then generate pose-guided "
+                                 "animations that stay consistent."),
+                              m_pages);
+    chars->addCard({Glyph::Characters, tr("Character Library"), tr("Create and edit character profiles with references and palettes."),
+                    tr("Open Library…"), [this] { CharacterDialog dlg(m_ctx.dataDir() / "characters", currentView(), this); dlg.exec(); }});
+    chars->addCard({Glyph::Animation, tr("Generate Animation"), tr("Idle, walk, run and jump cycles from a character, checked frame by frame."),
+                    tr("Generate…"), [this] {
+                        for (QAction* a : findChildren<QAction*>())
+                            if (a->objectName() == QLatin1String("ai.animation")) { a->trigger(); return; }
+                    }});
+    m_hubs << chars;
+    put(Workspace::Characters, chars);
+
+    // World Builder.
+    auto* world = new HubPage(tr("World Builder"), tr("Tilesets, terrain and backgrounds"),
+                              tr("Seamless autotile sets with terrain levels, a sandbox to paint test maps, parallax backgrounds and "
+                                 "UI kits, with Godot, Unity and Tiled files."),
+                              m_pages);
+    auto trigger = [this](const char* name) {
+        for (QAction* a : findChildren<QAction*>())
+            if (a->objectName() == QLatin1String(name)) { a->trigger(); return; }
+    };
+    world->addCard({Glyph::Grid, tr("Tileset Generator"), tr("Blob 47, Wang 16 or Cardinal 16 from your textures, with seam checks."),
+                    tr("Open…"), [trigger] { trigger("assets.tileset"); }});
+    world->addCard({Glyph::World, tr("Parallax Background"), tr("Layered backgrounds that loop, from images or generated scenes."),
+                    tr("Open…"), [trigger] { trigger("assets.parallax"); }});
+    world->addCard({Glyph::Check, tr("Seam Check"), tr("Find edges that do not match in an existing tileset."),
+                    tr("Check…"), [trigger] { trigger("assets.seams"); }});
+    world->addCard({Glyph::Image, tr("UI Kit"), tr("Buttons and panels with exact nine-slice borders."),
+                    tr("Open…"), [trigger] { trigger("assets.uikit"); }});
+    world->addCard({Glyph::Grid, tr("Smart Slicer"), tr("Cut a sheet into sprites, with background removal."),
+                    tr("Open…"), [trigger] { trigger("assets.slicer"); }});
+    world->addCard({Glyph::Library, tr("Atlas Packer"), tr("Pack sprites into a deterministic texture atlas."),
+                    tr("Open…"), [trigger] { trigger("assets.atlas"); }});
+    m_hubs << world;
+    put(Workspace::World, world);
+
+    // Library.
+    m_library = new LibraryPage(m_ctx, m_pages);
+    connect(m_library, &LibraryPage::openRequested, this, [this](const QString& p) {
+        QString err;
+        if (!openAnyFile(p, &err) && !err.isEmpty()) statusBar()->showMessage(err, 6000);
+    });
+    put(Workspace::Library, m_library);
+
+    // Export Studio.
+    auto* exp = new HubPage(tr("Export Studio"), tr("Export"),
+                            tr("Sprite sheets with Aseprite-compatible JSON (Phaser and most engines read it), GIF, APNG, WebP and PNG "
+                               "sequences, and engine files for Godot 4, Unity and Tiled."),
+                            m_pages);
+    auto exportKind = [this](ExportKind k) { return [this, k] { exportAnimation(static_cast<int>(k)); }; };
+    exp->addCard({Glyph::Grid, tr("Sprite Sheet"), tr("Horizontal, vertical, grid or packed; trim, padding, merge duplicates; engine files."),
+                  tr("Export…"), exportKind(ExportKind::SpriteSheet), true});
+    exp->addCard({Glyph::Animation, tr("Animated GIF"), tr("Up to 256 colours per frame; 1-bit transparency."), tr("Export…"),
+                  exportKind(ExportKind::Gif), true});
+    exp->addCard({Glyph::Animation, tr("Animated WebP"), tr("Lossless, full alpha."), tr("Export…"), exportKind(ExportKind::Webp), true});
+    exp->addCard({Glyph::Animation, tr("APNG"), tr("Lossless PNG animation, full alpha."), tr("Export…"), exportKind(ExportKind::Apng), true});
+    exp->addCard({Glyph::Image, tr("PNG Sequence"), tr("One PNG per frame, numbered."), tr("Export…"), exportKind(ExportKind::PngSequence), true});
+    exp->addCard({Glyph::Image, tr("Current Frame"), tr("The frame you are on as one PNG."), tr("Export…"), [this] { exportPng(); }, true});
+    m_hubs << exp;
+    put(Workspace::Export, exp);
+
+    // Integrations.
+    auto* integ = new HubPage(tr("Integrations"), tr("AI coding assistants"),
+                              tr("acestudio-mcp lets Claude Code, Codex, Cursor, VS Code and other MCP clients create, render and export "
+                                 "assets, and work on the document open here."),
+                              m_pages);
+    auto* setup = new McpSetupDialog(integ);
+    setup->setWindowFlags(Qt::Widget);
+    for (auto* bb : setup->findChildren<QDialogButtonBox*>())   // a page has no Close
+        if (QPushButton* close = bb->button(QDialogButtonBox::Close)) close->hide();
+    integ->addWidget(setup, 1);
+    m_hubs << integ;
+    put(Workspace::Integrations, integ);
+
+    // Settings.
+    auto* settings = new SettingsPage(m_ctx, m_pages);
+    connect(settings, &SettingsPage::openLogsRequested, this,
+            [this] { QDesktopServices::openUrl(QUrl::fromLocalFile(fromPath(m_ctx.logDir()))); });
+    connect(settings, &SettingsPage::openModelsRequested, this, [this] { m_aiPanel->showModels(); });
+    connect(settings, &SettingsPage::openAiSetupRequested, this, [this] { m_aiPanel->showSetup(); });
+    connect(settings, &SettingsPage::openShortcutsRequested, this, &MainWindow::editShortcuts);
+    connect(settings, &SettingsPage::resetLayoutRequested, this, [this] {
+        showWorkspace(Workspace::Editor);
+        resetLayout();
+    });
+    put(Workspace::Settings, settings);
+
+    setCentralWidget(shell);
+}
+
+void MainWindow::showWorkspace(Workspace w) {
+    if (!m_pages) return;
+    const Workspace prev = m_workspace;
+    const bool wasDoc = isDocumentWorkspace(prev);
+    const bool isDoc = isDocumentWorkspace(w);
+    const bool firstShow = !m_rail->button(static_cast<int>(prev)) || m_rail->currentIndex() < 0;
+    // Remember the dock arrangement of the document workspace we leave.
+    if (wasDoc && !firstShow) {
+        (prev == Workspace::Animation ? m_animationDocks : m_editorDocks) = saveState(kLayoutVersion);
+    }
+    if (isDoc) {
+        const QByteArray& saved = w == Workspace::Animation ? m_animationDocks : m_editorDocks;
+        if (!saved.isEmpty()) {
+            restoreState(saved, kLayoutVersion);
+        } else if (w == Workspace::Animation && !m_animationVisited) {
+            applyBuiltinWorkspace(QStringLiteral("Animation"));
+        } else if (!wasDoc) {
+            for (QDockWidget* d : findChildren<QDockWidget*>())
+                if (d->property("aceHidden").toBool()) d->show();
+        }
+        if (w == Workspace::Animation) m_animationVisited = true;
+        for (QDockWidget* d : findChildren<QDockWidget*>()) d->setProperty("aceHidden", false);
+        m_lastDocWorkspace = w;
+    } else {
+        // Full pages use the whole window: hide the docks (remembered above).
+        for (QDockWidget* d : findChildren<QDockWidget*>())
+            if (!d->isHidden() && !d->isFloating()) {
+                d->setProperty("aceHidden", true);
+                d->hide();
+            }
+    }
+    m_workspace = w;
+    if (w == Workspace::Home) updateLicenceStatus();
+    QWidget* page = m_pageFor[static_cast<std::size_t>(w)];
+    const bool changed = m_pages->currentWidget() != page;
+    m_pages->setCurrentWidget(page);
+    if (changed) motion::fadeIn(page, 170);
+    m_rail->setCurrentIndex(static_cast<int>(w));
+    for (int i = 0; i < m_workspaceActions.size(); ++i) m_workspaceActions[i]->setCheckable(true), m_workspaceActions[i]->setChecked(i == static_cast<int>(w));
+}
+
+void MainWindow::newProjectFromTemplate(int width, int height, int frames, const QString& name) {
+    auto doc = Document::create(width, height);
+    if (!doc) {
+        report(doc.error());
+        return;
+    }
+    const int fps = std::clamp(m_ctx.settings().get<int>("animation.defaultFps"), 1, 60);
+    for (int f = 1; f < frames; ++f) (void)doc.value().insertFrame(f, 1000 / fps);
+    (void)doc.value().setFrameDuration(0, 1000 / fps);
+    if (!doc.value().addLayer("Layer 1")) return;
+    auto* view = new DocumentView(std::move(doc).value(), QString(), ProjectInfo{}, m_tools, m_tabs);
+    addView(view);
+    view->markNeverSaved();
+    ACE_LOG_INFO("ui", "Created a project from the template " + name.toStdString());
+}
+
+void MainWindow::onSettingChanged(const QString& key) {
+    const Settings& s = m_ctx.settings();
+    const bool all = key == QLatin1String("*");
+    if (all || key == QLatin1String("general.theme") || key == QLatin1String("general.accentColor")) {
+        ThemeKind kind = themeFromString(QString::fromStdString(s.get<std::string>("general.theme")));
+        if (systemHighContrast()) kind = ThemeKind::HighContrast;
+        applyTheme(*qApp, kind, settingColor(s, "general.accentColor", kBrandAccent));
+        if (m_darkAction) m_darkAction->setChecked(kind == ThemeKind::Dark);
+        if (m_lightAction) m_lightAction->setChecked(kind == ThemeKind::Light);
+        if (m_rail) m_rail->update();
+    }
+    if (all || key == QLatin1String("general.textScale")) applyTextScale(*qApp, s.get<int>("general.textScale"));
+    if (all || key.startsWith(QLatin1String("ui.")))
+        motion::configure(s.get<bool>("ui.reducedMotion"), s.get<int>("ui.animationSpeed"));
+    if (all || key == QLatin1String("general.autosaveIntervalSec")) applyAutosaveInterval();
+    if (all || key.startsWith(QLatin1String("canvas."))) {
+        const CanvasAppearance look = canvasLookFromSettings(s);
+        for (int i = 0; i < m_tabs->count(); ++i) static_cast<DocumentView*>(m_tabs->widget(i))->canvas()->setAppearance(look);
+        if (m_gridAction) m_gridAction->setChecked(s.get<bool>("canvas.grid.visible"));
+    }
+    if (all || key.startsWith(QLatin1String("animation.onionSkin"))) applyOnionSkin();
+    if (all || key == QLatin1String("mcp.bridgeEnabled")) {
+        if (s.get<bool>("mcp.bridgeEnabled")) (void)m_bridge->start();
+        else m_bridge->stop();
+    }
 }
 
 // ------------------------------------------------------------------ workspaces
@@ -878,9 +1166,8 @@ void MainWindow::applyWorkspace(const QString& name) {
 
 DocumentView* MainWindow::currentView() const { return qobject_cast<DocumentView*>(m_tabs->currentWidget()); }
 
-void MainWindow::addView(DocumentView* view) {
+static CanvasAppearance canvasLookFromSettings(const Settings& s) {
     CanvasAppearance look;
-    const Settings& s = m_ctx.settings();
     look.background = settingColor(s, "canvas.background", "#1B1B20");
     look.checker1 = settingColor(s, "canvas.checker.color1", "#2A2A31");
     look.checker2 = settingColor(s, "canvas.checker.color2", "#34343C");
@@ -889,7 +1176,11 @@ void MainWindow::addView(DocumentView* view) {
     look.gridColor = settingColor(s, "canvas.grid.color", "#FFFFFF1F");
     look.gridMinZoom = s.get<int>("canvas.grid.minZoom");
     look.zoomStep = s.get<double>("canvas.zoomStep");
-    view->canvas()->setAppearance(look);
+    return look;
+}
+
+void MainWindow::addView(DocumentView* view) {
+    view->canvas()->setAppearance(canvasLookFromSettings(m_ctx.settings()));
     if (m_onionAction && m_onionAction->isChecked()) view->setOnionSkin(onionSkinFromSettings());
 
     connect(view, &DocumentView::modifiedChanged, this, [this, view] { updateTabTitle(view); });
@@ -907,6 +1198,7 @@ void MainWindow::addView(DocumentView* view) {
     connect(view, &DocumentView::documentChanged, m_bridge, &AppBridgeServer::documentsChanged);
     updateTabTitle(view);
     m_tabs->setCurrentIndex(idx);
+    if (m_pages && !isDocumentWorkspace(m_workspace)) showWorkspace(m_lastDocWorkspace);
 }
 
 void MainWindow::updateTabTitle(DocumentView* view) {
@@ -921,6 +1213,7 @@ void MainWindow::onCurrentTabChanged() {
     DocumentView* v = currentView();
     if (m_bridge) m_bridge->documentsChanged();
     m_stack->setCurrentIndex(v ? 1 : 0);
+    for (HubPage* h : m_hubs) h->setDocumentOpen(v != nullptr);
     m_layers->setView(v);
     m_props->setView(v);
     m_palette->setView(v);
@@ -1008,7 +1301,10 @@ void MainWindow::newProject() {
         return;
     }
     (void)doc.value().addLayer("Layer 1");
-    for (int i = 1; i < dlg.frameCount(); ++i) (void)doc.value().insertFrame(i);
+    // Frames play at the default speed from Settings › Animation.
+    const int frameMs = 1000 / std::clamp(m_ctx.settings().get<int>("animation.defaultFps"), 1, 60);
+    (void)doc.value().setFrameDuration(0, frameMs);
+    for (int i = 1; i < dlg.frameCount(); ++i) (void)doc.value().insertFrame(i, frameMs);
     auto* view = new DocumentView(std::move(doc).value(), QString(), ProjectInfo{}, m_tools, m_tabs);
     addView(view);
     view->markNeverSaved();
@@ -1160,10 +1456,7 @@ void MainWindow::rebuildRecentMenus() {
     }
 }
 
-void MainWindow::setThemeAndPersist(const QString& theme) {
-    (void)m_ctx.settings().set("general.theme", theme.toStdString());
-    applyTheme(*qApp, themeFromString(theme), settingColor(m_ctx.settings(), "general.accentColor", "#4F8CFF"));
-}
+void MainWindow::setThemeAndPersist(const QString& theme) { m_ctx.setSetting("general.theme", theme.toStdString()); }
 
 void MainWindow::showLicence() {
     LicenceDialog dlg(this);
@@ -1181,11 +1474,16 @@ void MainWindow::updateLicenceStatus() {
     case LicenceMode::TrialEnded: text = tr("Trial ended: enter a key"); break;
     }
     m_statusLicence->setText(text);
+    if (m_home) m_home->refreshLicence(qs(describeLicence(s)));
     m_statusLicence->setToolTip(qs(describeLicence(s)));
 }
 
 void MainWindow::showAbout() {
-    QMessageBox::about(this, tr("About AceStudio"),
+    QMessageBox box(this);
+    box.setWindowTitle(tr("About AceStudio"));
+    box.setIconPixmap(QPixmap(QStringLiteral(":/branding/logo-256.png")).scaled(160, 160, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    box.setTextFormat(Qt::RichText);
+    box.setText(
         tr("<h3>AceStudio %1</h3>"
            "<p>AI-assisted game asset creation and 2D animation studio.</p>"
            "<p>%4</p>"
@@ -1194,6 +1492,7 @@ void MainWindow::showAbout() {
            "See Help › Third-Party Notices.</p>")
             .arg(QString::fromLatin1(kVersionString)).arg(kProjectSchemaVersion).arg(QString::fromLatin1(qVersion()))
             .arg(qs(describeLicence(currentLicence())).toHtmlEscaped()));
+    box.exec();
 }
 
 void MainWindow::showNotices() {

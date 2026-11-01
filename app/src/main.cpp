@@ -5,13 +5,49 @@
 #include "Accessibility.h"
 #include "Theme.h"
 #include "selftest/UiAudit.h"
+#include "ui/Motion.h"
 
 #include "acestudio/core/Log.h"
 #include "acestudio/core/Version.h"
 
 #include <QApplication>
+#include <QFileInfo>
+#include <QLinearGradient>
+#include <QPainter>
+#include <QSplashScreen>
 #include <QMessageBox>
 #include <QTimer>
+
+#include <memory>
+
+namespace {
+// The splash: the AceStudio logo on the charcoal brand background.
+QPixmap splashPixmap(qreal dpr) {
+    const QSize logical(520, 400);
+    QPixmap pm(logical * dpr);
+    pm.setDevicePixelRatio(dpr);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    QLinearGradient bg(0, 0, 0, logical.height());
+    bg.setColorAt(0, QColor("#161A21"));
+    bg.setColorAt(1, QColor("#0B0D10"));
+    p.setPen(QColor("#262C36"));
+    p.setBrush(bg);
+    p.drawRoundedRect(QRectF(0.5, 0.5, logical.width() - 1, logical.height() - 1), 16, 16);
+    const QPixmap logo(QStringLiteral(":/branding/logo-512.png"));
+    const int side = 300;
+    p.drawPixmap(QRect((logical.width() - side) / 2, 24, side, side), logo);
+    p.setPen(QColor("#8C95A7"));
+    QFont f = p.font();
+    f.setPointSizeF(9);
+    p.setFont(f);
+    p.drawText(QRect(0, logical.height() - 58, logical.width(), 20), Qt::AlignCenter,
+               QStringLiteral("Version %1").arg(QString::fromLatin1(acestudio::kVersionString)));
+    return pm;
+}
+} // namespace
 
 int main(int argc, char* argv[]) {
     using namespace acestudio;
@@ -30,6 +66,7 @@ int main(int argc, char* argv[]) {
     QApplication::setApplicationName(QStringLiteral("AceStudio"));
     QApplication::setOrganizationName(QStringLiteral("AceStudio"));
     QApplication::setApplicationVersion(QString::fromLatin1(kVersionString));
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/branding/logo-256.png")));
 
     installAccessibilityHelper(app);
     AppContext ctx;
@@ -59,9 +96,23 @@ int main(int argc, char* argv[]) {
     const ThemeKind theme = systemHighContrast() ? ThemeKind::HighContrast : themeFromString(qs(ctx.settings().get<std::string>("general.theme")));
     applyTheme(app, theme, accent ? toQColor(*accent) : QColor());
     applyTextScale(app, ctx.settings().get<int>("general.textScale"));
+    motion::configure(ctx.settings().get<bool>("ui.reducedMotion"), ctx.settings().get<int>("ui.animationSpeed"));
+
+    std::unique_ptr<QSplashScreen> splash;
+    if (auditReport.isEmpty() && ctx.settings().get<bool>("ui.showSplash")) {
+        splash = std::make_unique<QSplashScreen>(splashPixmap(app.devicePixelRatio()));
+        splash->setAttribute(Qt::WA_TranslucentBackground);
+        splash->show();
+        app.processEvents();
+    }
 
     MainWindow window(ctx);
     window.show();
+    if (splash) splash->finish(&window);
+    // Settings › Appearance › Open at start: the last project.
+    if (files.isEmpty() && auditReport.isEmpty() && ctx.settings().get<std::string>("general.startup") == "lastProject" &&
+        !ctx.recentProjects().isEmpty() && QFileInfo::exists(ctx.recentProjects().first()))
+        files << ctx.recentProjects().first();
     if (!auditReport.isEmpty()) {
         const int rc = runUiAudit(window, auditReport, auditProject);
         Logger::instance().flush();

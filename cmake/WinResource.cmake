@@ -1,0 +1,18 @@
+# Windows executables get the AceStudio icon and version information
+# (Explorer, the taskbar, Properties › Details, and the installer read them).
+function(acestudio_add_win_resource target description)
+    if(NOT WIN32)
+        return()
+    endif()
+    get_target_property(name ${target} OUTPUT_NAME)
+    if(NOT name)
+        set(name ${target})
+    endif()
+    set(ACE_RC_NAME "${name}")
+    set(ACE_RC_DESCRIPTION "${description}")
+    set(ACE_RC_ICON "${PROJECT_SOURCE_DIR}/app/resources/branding/acestudio.ico")
+    string(REPLACE "/" "\\\\" ACE_RC_ICON "${ACE_RC_ICON}")
+    set(rc "${CMAKE_CURRENT_BINARY_DIR}/${target}_resource.rc")
+    configure_file("${PROJECT_SOURCE_DIR}/cmake/WinResource.rc.in" "${rc}" @ONLY)
+    target_sources(${target} PRIVATE "${rc}")
+endfunction()

@@ -31,9 +31,13 @@ public:
 
     // Persists settings; reports errors through the log.
     void saveSettings();
+    // Changes one setting, saves, and announces it (settingChanged). Returns
+    // false with `error` for unknown keys or wrong types.
+    bool setSetting(const std::string& key, const nlohmann::json& value, QString* error = nullptr);
 
 Q_SIGNALS:
     void recentProjectsChanged();
+    void settingChanged(const QString& key);
 
 private:
     void setRecent(const QStringList& list);

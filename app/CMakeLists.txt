@@ -2,9 +2,26 @@ find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets Network)
 include(QtLicenseGuard)
 
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 
 add_executable(AceStudio WIN32
+    resources/app.qrc
     src/main.cpp
+    src/ui/Icons.h
+    src/ui/Icons.cpp
+    src/ui/Motion.h
+    src/ui/Motion.cpp
+    src/ui/WorkspaceRail.h
+    src/ui/WorkspaceRail.cpp
+    src/ui/Workspaces.h
+    src/pages/HomePage.h
+    src/pages/HomePage.cpp
+    src/pages/HubPage.h
+    src/pages/HubPage.cpp
+    src/pages/LibraryPage.h
+    src/pages/LibraryPage.cpp
+    src/pages/SettingsPage.h
+    src/pages/SettingsPage.cpp
     src/AppContext.h
     src/AppContext.cpp
     src/Theme.h
@@ -91,6 +108,7 @@ acestudio_check_qt_licenses(AceStudio)
 if(WIN32)
     set_target_properties(AceStudio PROPERTIES OUTPUT_NAME "AceStudio")
 endif()
+acestudio_add_win_resource(AceStudio "AceStudio")
 
 # Help › User Guide and Help › Privacy read these from docs/ next to the
 # executable (CI copies them into the distribution the same way).

@@ -46,6 +46,19 @@ CloseApplications=yes
 RestartApplications=no
 UninstallDisplayIcon={app}\AceStudio.exe
 UninstallDisplayName=AceStudio {#AppVersion}
+; Branding: the AceStudio logo (app/resources/branding), unmodified, at each DPI.
+SetupIconFile=..\..\app\resources\branding\acestudio.ico
+WizardImageFile=branding\wizard-164.bmp,branding\wizard-192.bmp,branding\wizard-246.bmp,branding\wizard-314.bmp,branding\wizard-410.bmp
+WizardSmallImageFile=branding\small-55.bmp,branding\small-64.bmp,branding\small-83.bmp,branding\small-92.bmp,branding\small-110.bmp,branding\small-119.bmp,branding\small-138.bmp
+WizardImageStretch=no
+WizardImageBackColor=$1A1412
+; The user can choose the folder; upgrades reuse the previous one.
+DisableDirPage=no
+UsePreviousAppDir=yes
+VersionInfoCompany=AceGears
+VersionInfoDescription=AceStudio Setup
+VersionInfoProductName=AceStudio
+VersionInfoProductVersion={#AppVersion}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
