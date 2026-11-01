@@ -84,6 +84,13 @@ def onnx_session(model_path, device="auto", provider=None, optimization="all"):
     return sess, sess.get_providers()[0]
 
 
+def release_sessions():
+    """Drops the cached ONNX sessions (and the GPU memory they hold)."""
+    _sessions.clear()
+    import gc
+    gc.collect()
+
+
 def _cached_session(model_path, device, provider, optimization):
     for (path, used, opt), sess in list(_sessions.items()):
         if path == model_path and opt == optimization and (provider is None or provider == used):

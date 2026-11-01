@@ -468,6 +468,7 @@ def run(ctx):
 
     outputs = {}
     pixel = ctx.param("pixel")
+    generated = []
     try:
         for i in range(count):
             ctx.check_cancel()
@@ -489,15 +490,10 @@ def run(ctx):
             else:
                 result = pipe(width=width, height=height, **common)
             ctx.check_cancel()
-            img = result.images[0]
-            if ctx.param("cutout"):
-                from .postprocess import apply_cutout
-                img = apply_cutout(ctx, img, ctx.param("cutout"))
-            if pixel:
-                outputs["raw%d" % i] = save_png(img, ctx.path("raw%d.png" % i))
-                img = pixelate(img, int(pixel["width"]), int(pixel["height"]), pixel.get("colors"), pixel.get("palette"),
-                               crop=bool(pixel.get("crop", False)) and tileable == "none", box=pixel.get("box"))
-            outputs["image%d" % i] = save_png(img, ctx.path("image%d.png" % i))
+            generated.append(result.images[0])
+        from .postprocess import finish_images
+        outputs.update(finish_images(ctx, generated, pipe, torch, device, pixelate, save_png,
+                                     bool((pixel or {}).get("crop", False)) and tileable == "none"))
     except Cancelled:
         raise
     except torch.cuda.OutOfMemoryError:

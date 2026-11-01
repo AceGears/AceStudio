@@ -193,9 +193,10 @@ def run(ctx):
         ctx.progress(0.05 + 0.9 * done[0] / total, "Step %d of %d" % (done[0], total), step=done[0], steps=total, force=True)
         return kwargs
 
-    outputs = {}
+    generated = []
     pixel = ctx.param("pixel")
     step_times = []
+    peak = 0.0
     if device == "cuda":
         torch.cuda.reset_peak_memory_stats()
     try:
@@ -217,15 +218,11 @@ def run(ctx):
                 result = runner(**common)
             step_times.append((time.monotonic() - t1) / steps)
             ctx.check_cancel()
-            img = result.images[0]
-            if ctx.param("cutout"):
-                from .postprocess import apply_cutout
-                img = apply_cutout(ctx, img, ctx.param("cutout"))
-            if pixel:
-                outputs["raw%d" % i] = save_png(img, ctx.path("raw%d.png" % i))
-                img = pixelate(img, int(pixel["width"]), int(pixel["height"]), pixel.get("colors"), pixel.get("palette"),
-                               crop=bool(pixel.get("crop", False)), box=pixel.get("box"))
-            outputs["image%d" % i] = save_png(img, ctx.path("image%d.png" % i))
+            generated.append(result.images[0])
+        peak = torch.cuda.max_memory_allocated() / 2**30 if device == "cuda" else 0.0
+        from .postprocess import finish_images
+        outputs = finish_images(ctx, generated, pipe, torch, device, pixelate, save_png,
+                                bool((pixel or {}).get("crop", False)))
     except Cancelled:
         raise
     except torch.cuda.OutOfMemoryError:
@@ -238,5 +235,5 @@ def run(ctx):
             "loadSeconds": round(load_s, 2), "secondsPerStep": round(sum(step_times) / max(1, len(step_times)), 3)}
     if device == "cuda":
         info["vramGb"] = round(vram, 1)
-        info["peakVramGb"] = round(torch.cuda.max_memory_allocated() / 2**30, 2)
+        info["peakVramGb"] = round(peak, 2)   # during generation (the cutout runs afterwards)
     return {"outputs": outputs, "info": info}
