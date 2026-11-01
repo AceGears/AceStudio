@@ -106,8 +106,13 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
     m_tools = new ToolState(this);
     buildDocks();
     m_bridge = new AppBridgeServer(
-        {[this] { return currentView(); }, [this](const QString& p, QString* e) { return openAnyFile(p, e); },
-         scriptsFolder(m_ctx.dataDir())},
+        {[this] { return currentView(); },
+         [this] {
+             std::vector<DocumentView*> v;
+             for (int i = 0; i < m_tabs->count(); ++i) v.push_back(static_cast<DocumentView*>(m_tabs->widget(i)));
+             return v;
+         },
+         [this](const QString& p, QString* e) { return openAnyFile(p, e); }, scriptsFolder(m_ctx.dataDir())},
         this);
     if (m_ctx.settings().get<bool>("mcp.bridgeEnabled")) (void)m_bridge->start();
     buildMenus();
@@ -853,6 +858,7 @@ void MainWindow::addView(DocumentView* view) {
             [this](double z) { m_statusZoom->setText(QStringLiteral("%1%").arg(qRound(z * 100))); });
 
     const int idx = m_tabs->addTab(view, view->displayName());
+    connect(view, &DocumentView::documentChanged, m_bridge, &AppBridgeServer::documentsChanged);
     updateTabTitle(view);
     m_tabs->setCurrentIndex(idx);
 }
@@ -867,6 +873,7 @@ void MainWindow::updateTabTitle(DocumentView* view) {
 
 void MainWindow::onCurrentTabChanged() {
     DocumentView* v = currentView();
+    if (m_bridge) m_bridge->documentsChanged();
     m_stack->setCurrentIndex(v ? 1 : 0);
     m_layers->setView(v);
     m_props->setView(v);

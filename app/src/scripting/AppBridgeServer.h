@@ -11,12 +11,14 @@
 #include <atomic>
 #include <filesystem>
 #include <memory>
+#include <vector>
 #include <functional>
 
 #include <nlohmann/json.hpp>
 
 class QLocalServer;
 class QLocalSocket;
+class QTimer;
 
 namespace acestudio::ui {
 
@@ -27,6 +29,7 @@ class AppBridgeServer : public QObject {
 public:
     struct Hooks {
         std::function<DocumentView*()> currentView;
+        std::function<std::vector<DocumentView*>()> views;   // every open tab, in order
         std::function<bool(const QString& path, QString* error)> open;
         std::filesystem::path scriptsFolder;
     };
@@ -36,6 +39,9 @@ public:
     bool start();          // false if the socket could not be created (logged)
     void stop();
     bool running() const;
+    // A document changed or another tab became current: tells watchers
+    // (debounced), so MCP subscribers hear about it.
+    void documentsChanged();
 
 private:
     void onConnection();
@@ -43,10 +49,15 @@ private:
     void reply(QLocalSocket* sock, const nlohmann::json& id, const nlohmann::json& result);
     void fail(QLocalSocket* sock, const nlohmann::json& id, const std::string& message);
     void runLua(QLocalSocket* sock, const nlohmann::json& id, const nlohmann::json& params);
+    // The document a request names ({"document": index | path}), or the
+    // current one; null (with `error`) if there is none.
+    DocumentView* viewFor(const nlohmann::json& params, std::string* error) const;
 
     Hooks m_hooks;
     QLocalServer* m_server = nullptr;
     int m_busy = 0;   // scripts running
+    std::vector<QPointer<QLocalSocket>> m_watchers;
+    ::QTimer* m_debounce = nullptr;
     std::shared_ptr<std::atomic<bool>> m_cancel = std::make_shared<std::atomic<bool>>(false);
 };
 

@@ -79,6 +79,15 @@ Result<const Job*> runJob(WorkerSupervisor& sup, const std::string& task, json p
                 std::fflush(stderr);
                 last = line;
             }
+        } else {
+            // --json: progress as JSON lines on stderr (stdout stays the
+            // result), for acestudio-mcp's progress notifications.
+            const std::string line = json{{"progress", j->progress}, {"message", j->message}}.dump();
+            if (line != last) {
+                std::fprintf(stderr, "%s\n", line.c_str());
+                std::fflush(stderr);
+                last = line;
+            }
         }
         return isFinished(j->state);
     }, timeout);

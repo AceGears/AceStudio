@@ -181,8 +181,13 @@ jobs:
           $server = Start-Process -FilePath $mcp -ArgumentList "--root", $root, "--http", "39200", "--conformance-fixtures" -PassThru -NoNewWindow
           Start-Sleep -Seconds 2
           $failed = $false
-          npx conformance server --url http://127.0.0.1:39200/mcp --suite all --expected-failures conformance-baseline.yml
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::MCP conformance: unexpected failures"; $failed = $true }
+          # Every scenario, then each spec version on its own: no expected failures.
+          npx conformance server --url http://127.0.0.1:39200/mcp --suite all
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::MCP conformance (all scenarios) failed"; $failed = $true }
+          foreach ($v in "2026-07-28", "2025-11-25", "2025-06-18") {
+            npx conformance server --url http://127.0.0.1:39200/mcp --suite all --spec-version $v
+            if ($LASTEXITCODE -ne 0) { Write-Host "::error::MCP conformance $v failed"; $failed = $true }
+          }
           python py_client.py $mcp $root http://127.0.0.1:39200/mcp
           if ($LASTEXITCODE -ne 0) { Write-Host "::error::MCP Python SDK client checks failed"; $failed = $true }
           node ts_client.mjs $mcp $root http://127.0.0.1:39200/mcp

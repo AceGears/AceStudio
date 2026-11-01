@@ -3,6 +3,7 @@
 #include "acestudio/core/FileUtil.h"
 #include "acestudio/core/Subprocess.h"
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <random>
@@ -116,6 +117,16 @@ Result<CliOut> runCli(const ToolEnv& env, std::vector<std::string> args, const T
     for (;;) {
         for (auto& l : p.takeLines(Subprocess::Stream::Stdout)) out.push_back(std::move(l));
         for (auto& l : p.takeLines(Subprocess::Stream::Stderr)) {
+            // AI jobs report {"progress": 0..1, "message": ...} lines.
+            if (!l.empty() && l.front() == '{') {
+                const json pj = json::parse(l, nullptr, false);
+                if (pj.is_object() && pj.contains("progress")) {
+                    const double pr = pj["progress"].is_number() ? pj["progress"].get<double>() : -1.0;
+                    if (call.progress && pr >= 0) call.progress(pr * 100.0, 100.0, pj.value("message", std::string()));
+                    if (call.log) call.log("debug", pj.value("message", std::string()));
+                    continue;
+                }
+            }
             if (call.log && !l.empty()) call.log("debug", l);
             err += l + "\n";
         }
@@ -146,6 +157,35 @@ Result<CliOut> runCli(const ToolEnv& env, std::vector<std::string> args, const T
         return Error{ErrorCode::Internal, "acestudio-cli gave no JSON result (exit " + std::to_string(r.exitCode) + ")" +
                                               (err.empty() ? std::string() : ": " + err)};
     return r;
+}
+
+bool hasArg(const std::vector<std::string>& args, const char* a) { return std::find(args.begin(), args.end(), a) != args.end(); }
+
+// Runs the CLI; when it refuses to replace existing files, asks the user
+// (elicitation) whether to replace them, and runs again with --force if so.
+// In the 2026 era the question goes out as input_required and this returns
+// while the client asks; the retry carries the answer.
+Result<CliOut> runCliConfirm(const ToolEnv& env, std::vector<std::string> args, const ToolCall& call,
+                             std::chrono::milliseconds timeout = std::chrono::minutes(10)) {
+    auto r = runCli(env, args, call, timeout);
+    if (!r || r.value().result.value("ok", false) || hasArg(args, "--force") || !call.input ||
+        !call.input->supports("elicitation/create"))
+        return r;
+    const std::string err = r.value().result.value("error", std::string());
+    if (err.find("already exists") == std::string::npos) return r;
+    json params{{"message", err.substr(0, err.find(" (use")) + ". Replace the existing files?"},
+                {"requestedSchema",
+                 {{"type", "object"},
+                  {"properties", {{"replace", {{"type", "boolean"}, {"title", "Replace the existing files"}, {"default", false}}}}},
+                  {"required", {"replace"}}}}};
+    auto answer = call.input->ask("replace_existing", "elicitation/create", params);
+    if (!answer) return r;   // modern: asked (input_required); legacy: the client could not answer
+    if (answer->value("action", std::string()) != "accept" || !answer->value("content", json::object()).value("replace", false)) {
+        r.value().result["error"] = err + " — kept, as you chose";
+        return r;
+    }
+    args.push_back("--force");
+    return runCli(env, args, call, timeout);
 }
 
 // The CLI result as a tool result: text summary + structured content.
@@ -233,6 +273,7 @@ fs::path tempFile(const std::string& ext) {
 
 } // namespace
 
+namespace {
 std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
     auto envPtr = std::make_shared<ToolEnv>(envIn);
     std::vector<Tool> t;
@@ -264,7 +305,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                      b.opt("frames", "--frames");
                      b.opt("color_mode", "--color-mode");
                      b.overwrite();
-                     return fromCli(runCli(*envPtr, b.args, call));
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
                  }});
     t.push_back({"render_frame", "Render a frame",
                  std::string("Flattens one frame of a project and returns it as a PNG image (nearest-neighbour scale). "
@@ -348,7 +389,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                          b.opt(k, f);
                      b.flag("trim", "--trim");
                      b.overwrite();
-                     return fromCli(runCli(*envPtr, b.args, call));
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
                  }});
 
     // ---------------------------------------------------------- asset tools
@@ -386,7 +427,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                          b.args.insert(b.args.end(), {"--names", joined});
                      }
                      b.overwrite();
-                     return fromCli(runCli(*envPtr, b.args, call));
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
                  }});
     t.push_back({"tileset_check_seams", "Check tileset seams",
                  std::string("Checks every pair of tiles that can touch in an autotile set and reports visible seams.") + kPathNote,
@@ -437,7 +478,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                      b.flag("rotate", "--rotate");
                      b.flag("pot", "--pot");
                      b.overwrite();
-                     return fromCli(runCli(*envPtr, b.args, call));
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
                  }});
     t.push_back({"sprites_slice", "Slice a sprite sheet",
                  std::string("Cuts a sheet into sprites, by a grid or by detecting separate sprites on a background. "
@@ -458,7 +499,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                               {"grid", "--grid"}, {"background", "--background"}, {"tolerance", "--tolerance"}, {"merge", "--merge"}})
                          b.opt(k, f);
                      b.overwrite();
-                     return fromCli(runCli(*envPtr, b.args, call));
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
                  }});
     t.push_back({"uikit_generate", "Generate a UI kit",
                  std::string("Draws a themed pixel UI kit (panels, buttons in states, checkboxes, sliders, ...) with 9-slice "
@@ -483,7 +524,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                      }
                      b.flag("square", "--square");
                      b.overwrite();
-                     return fromCli(runCli(*envPtr, b.args, call));
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
                  }});
 
     // ---------------------------------------------------------- Lua
@@ -579,7 +620,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                               {"tileable", "--tileable"}, {"lora", "--lora"}, {"model", "--model"}})
                          b.opt(k, f);
                      b.overwrite();
-                     ToolResult r = fromCli(runCli(*envPtr, b.args, call, 60min));
+                     ToolResult r = fromCli(runCliConfirm(*envPtr, b.args, call, 60min));
                      if (!r.isError && r.structured && r.structured->contains("path"))
                          if (auto img = pngBase64(fs::path(r.structured->at("path").get<std::string>())); img && img.value().size() < 6'000'000)
                              r.addImage(img.value());
@@ -597,7 +638,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                          if (!b.path("input") || !b.path("out", "--out")) return badArgs(b.error);
                          b.opt("model", "--model");
                          b.overwrite();
-                         return fromCli(runCli(*envPtr, b.args, call, 30min));
+                         return fromCli(runCliConfirm(*envPtr, b.args, call, 30min));
                      }});
     }
 
@@ -606,12 +647,30 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
         if (!envPtr->bridge) return Error{ErrorCode::NotFound, "No app bridge in this build"};
         return envPtr->bridge(method, params, timeoutMs);
     };
-    t.push_back({"app_document", "Look at the open document",
-                 "Describes the document open in the running AceStudio app (size, frames, layers, tags, file) and returns "
-                 "the current frame as an image. Fails if AceStudio is not running or has no document open.",
+    const json docArg = {{"description", "Which open document: its tab index (0 = first, see app_documents) or its file path. "
+                                         "Default: the current tab"}};
+    auto docParams = [](const json& a) {
+        json p = json::object();
+        if (a.contains("document") && !a["document"].is_null()) p["document"] = a["document"];
+        return p;
+    };
+    t.push_back({"app_documents", "List the open documents",
+                 "Lists the documents open in the running AceStudio app (tab index, name, file, size, frames, whether it "
+                 "has unsaved changes, which one is current).",
                  obj(json::object()), readOnly(),
                  [bridgeResult](const json&, const ToolCall&) {
-                     auto r = bridgeResult("document", json::object(), 10000);
+                     auto r = bridgeResult("documents", json::object(), 10000);
+                     if (!r) return ToolResult::text(r.error().message, true);
+                     ToolResult t2 = ToolResult::text(r.value().dump(2));
+                     t2.structured = r.value();
+                     return t2;
+                 }});
+    t.push_back({"app_document", "Look at an open document",
+                 "Describes a document open in the running AceStudio app (size, frames, layers, tags, file) and returns "
+                 "its current frame as an image. Fails if AceStudio is not running or has no document open.",
+                 obj({{"document", docArg}}), readOnly(),
+                 [bridgeResult, docParams](const json& a, const ToolCall&) {
+                     auto r = bridgeResult("document", docParams(a), 10000);
                      if (!r) return ToolResult::text(r.error().message, true);
                      json data = r.value();
                      std::string png = data.value("png", std::string());
@@ -622,27 +681,38 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                      return t2;
                  }});
     t.push_back({"app_run_lua", "Run Lua in the app",
-                 "Runs a sandboxed Lua script on the document open in the running AceStudio app (ace.document()). The "
+                 "Runs a sandboxed Lua script on a document open in the running AceStudio app (ace.document()). The "
                  "user sees the changes immediately and can take them back with one Edit > Undo. Files: the document's "
                  "folder and the app's scripts folder only.",
-                 obj({{"code", str("Lua source code")}, {"args", strings("Strings visible as `arg`")}}, {"code"}),
+                 obj({{"code", str("Lua source code")}, {"args", strings("Strings visible as `arg`")}, {"document", docArg}}, {"code"}),
                  {{"readOnlyHint", false}, {"destructiveHint", false}, {"idempotentHint", false}, {"openWorldHint", false}},
-                 [bridgeResult](const json& a, const ToolCall&) {
-                     json params{{"code", a["code"]}, {"args", a.value("args", json::array())}};
+                 [envPtr, bridgeResult, docParams](const json& a, const ToolCall&) {
+                     json params = docParams(a);
+                     params["code"] = a["code"];
+                     params["args"] = a.value("args", json::array());
                      auto r = bridgeResult("run_lua", params, 120000);
                      if (!r) return ToolResult::text(r.error().message, true);
                      json data = r.value();
-                     std::string out = data.value("output", std::string());
+                     const std::string out = data.value("output", std::string());
+                     if (data.contains("error")) {
+                         ToolResult t2 = ToolResult::text((out.empty() ? std::string() : out + "\n") + "error: " + data["error"].get<std::string>(), true);
+                         t2.structured = data;
+                         return t2;
+                     }
                      ToolResult t2 = ToolResult::text(out.empty() ? "(no output)" : out);
                      json summary = data;
                      summary.erase("output");
                      t2.addText(summary.dump(2));
                      t2.structured = data;
+                     if (data.value("documentChanged", false) && envPtr->resourceChanged) {
+                         envPtr->resourceChanged(kAppDocumentUri);
+                         envPtr->resourceChanged(kAppFrameUri);
+                     }
                      return t2;
                  }});
     t.push_back({"app_open_file", "Open a file in the app",
                  std::string("Opens a project or PNG in the running AceStudio app so the user can see and edit it.") + kPathNote,
-                 obj({{"path", str("File to open (.acestudio, .png, .gif, ...)")}}, {"path"}),
+                 obj({{"path", str("File to open (.acestudio or .png)")}}, {"path"}),
                  {{"readOnlyHint", true}, {"destructiveHint", false}, {"openWorldHint", false}},
                  [envPtr, bridgeResult](const json& a, const ToolCall&) {
                      auto p = resolveInRoots(envPtr->roots, a["path"].get<std::string>());
@@ -651,9 +721,241 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                      if (!r) return ToolResult::text(r.error().message, true);
                      ToolResult t2 = ToolResult::text("Opened " + utf8(p.value()));
                      t2.structured = r.value();
+                     if (envPtr->resourceChanged) {
+                         envPtr->resourceChanged(kAppDocumentUri);
+                         envPtr->resourceChanged(kAppFrameUri);
+                     }
                      return t2;
                  }});
     return t;
+}
+} // namespace
+
+namespace {
+
+const std::vector<std::string> kEngineValues{"godot", "unity", "tiled", "godot,unity", "godot,unity,tiled"};
+
+std::vector<std::string> prefixed(const std::vector<std::string>& all, const std::string& value) {
+    std::vector<std::string> out;
+    for (const auto& v : all)
+        if (v.rfind(value, 0) == 0) out.push_back(v);
+    return out;
+}
+
+json userText(const std::string& text) { return {{"role", "user"}, {"content", textBlock(text)}}; }
+
+} // namespace
+
+const std::string& luaApiReference() {
+    static const unsigned char bytes[] = {
+#include "LuaApiDoc.inc"
+    };
+    static const std::string doc(reinterpret_cast<const char*>(bytes), sizeof bytes);
+    return doc;
+}
+
+std::vector<std::string> completeFiles(const std::vector<fs::path>& roots, const std::string& prefix,
+                                       const std::vector<std::string>& extensions, std::size_t max) {
+    std::vector<std::string> out;
+    if (roots.empty()) return out;
+    std::error_code ec;
+    fs::recursive_directory_iterator it(roots.front(), fs::directory_options::skip_permission_denied, ec), end;
+    for (std::size_t seen = 0; it != end && seen < 20000 && out.size() < max; it.increment(ec), ++seen) {
+        if (ec) break;
+        if (it.depth() > 4) {
+            it.disable_recursion_pending();
+            continue;
+        }
+        const std::string name = it->path().filename().string();
+        if (it->is_directory(ec)) {
+            if (!name.empty() && (name[0] == '.' || name == "node_modules" || name == "Library")) it.disable_recursion_pending();
+            continue;
+        }
+        std::string ext = it->path().extension().string();
+        for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (std::find(extensions.begin(), extensions.end(), ext) == extensions.end()) continue;
+        std::string rel = fs::relative(it->path(), roots.front(), ec).generic_string();
+        if (ec || rel.rfind(prefix, 0) != 0) continue;
+        out.push_back(rel);
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+ServerContent aceStudioContent(const ToolEnv& envIn) {
+    ServerContent c;
+    c.tools = aceStudioTools(envIn);
+    // Long-running tools run as tasks for clients with the tasks extension
+    // (they poll tasks/get instead of holding a request open for minutes).
+    for (auto& tool : c.tools)
+        if (tool.name == "ai_generate_image" || tool.name == "ai_remove_background" || tool.name == "ai_upscale" ||
+            tool.name == "tileset_generate" || tool.name == "export_animation")
+            tool.taskSupport = "optional";
+    auto envPtr = std::make_shared<ToolEnv>(envIn);
+
+    // ---------------------------------------------------------- resources
+    c.resources.push_back({"acestudio://docs/lua-api", "lua-api", "AceStudio Lua API",
+                           "The sandboxed Lua 5.4 `ace` API used by run_lua and app_run_lua: images, documents, tilesets, "
+                           "atlases, slicing, UI kits.",
+                           "text/markdown",
+                           [](const std::string& uri, InputContext&) -> Result<json> {
+                               return json::array({{{"uri", uri}, {"mimeType", "text/markdown"}, {"text", luaApiReference()}}});
+                           },
+                           3600000, true});
+    c.resources.push_back({kAppDocumentUri, "app-document", "Open document",
+                           "The document in the running AceStudio app's current tab (size, frames, layers, tags, file). "
+                           "Subscribe to hear when it changes.",
+                           "application/json",
+                           [envPtr](const std::string& uri, InputContext&) -> Result<json> {
+                               // Not running is a state of this resource, not a missing resource.
+                               auto r = envPtr->bridge ? envPtr->bridge("document", json::object(), 10000)
+                                                       : Result<json>(Error{ErrorCode::NotFound, "no app bridge"});
+                               json d = r ? r.value() : json{{"open", false}, {"appRunning", false}, {"message", r.error().message}};
+                               if (r) d["appRunning"] = true;
+                               d.erase("png");
+                               return json::array({{{"uri", uri}, {"mimeType", "application/json"}, {"text", d.dump(2)}}});
+                           },
+                           0, false});
+    c.resources.push_back({kAppFrameUri, "app-frame", "Open document's current frame",
+                           "The current frame of the open document, flattened, as a PNG (scaled up for small canvases).",
+                           "image/png",
+                           [envPtr](const std::string& uri, InputContext&) -> Result<json> {
+                               if (!envPtr->bridge) return Error{ErrorCode::NotFound, "no app bridge"};
+                               auto r = envPtr->bridge("document", json::object(), 10000);
+                               if (!r) return Error{ErrorCode::NotFound, r.error().message};
+                               if (!r.value().value("open", false)) return Error{ErrorCode::NotFound, "no document is open"};
+                               return json::array({{{"uri", uri}, {"mimeType", "image/png"}, {"blob", r.value().value("png", std::string())}}});
+                           },
+                           0, false});
+
+    // ---------------------------------------------------------- templates
+    auto projectFiles = [envPtr](const std::string&, const std::string& value, const json&) {
+        return completeFiles(envPtr->roots, value, {".acestudio"});
+    };
+    c.templates.push_back({"acestudio://project/{+path}", "project", "Project",
+                           "An .acestudio project under the server's folders: size, colour mode, frames, layers, tags.",
+                           "application/json",
+                           [envPtr](const std::string& uri, const std::map<std::string, std::string>& vars, InputContext&) -> Result<json> {
+                               auto p = resolveInRoots(envPtr->roots, vars.at("path"));
+                               if (!p) return Error{ErrorCode::NotFound, p.error().message};
+                               std::error_code ec;
+                               if (!fs::is_regular_file(p.value(), ec)) return Error{ErrorCode::NotFound, vars.at("path") + " does not exist"};
+                               ToolCall none;
+                               auto r = runCli(*envPtr, {"info", utf8(p.value())}, none);
+                               if (!r) return r.error();
+                               if (!r.value().result.value("ok", false))
+                                   return Error{ErrorCode::InvalidArgument, r.value().result.value("error", std::string("cannot read the project"))};
+                               json d = r.value().result;
+                               d.erase("ok");
+                               return json::array({{{"uri", uri}, {"mimeType", "application/json"}, {"text", d.dump(2)}}});
+                           },
+                           projectFiles, 0, false});
+    c.templates.push_back({"acestudio://project/{+path}/frame/{frame}.png", "project-frame", "Project frame",
+                           "One frame of an .acestudio project, flattened, as a PNG (frame index from 0).",
+                           "image/png",
+                           [envPtr](const std::string& uri, const std::map<std::string, std::string>& vars, InputContext&) -> Result<json> {
+                               auto p = resolveInRoots(envPtr->roots, vars.at("path"));
+                               if (!p) return Error{ErrorCode::NotFound, p.error().message};
+                               std::error_code ec;
+                               if (!fs::is_regular_file(p.value(), ec)) return Error{ErrorCode::NotFound, vars.at("path") + " does not exist"};
+                               const std::string frame = vars.at("frame");
+                               if (frame.empty() || frame.find_first_not_of("0123456789") != std::string::npos)
+                                   return Error{ErrorCode::NotFound, "frame must be a number"};
+                               const fs::path out = tempFile(".png");
+                               ToolCall none;
+                               auto r = runCli(*envPtr, {"render", utf8(p.value()), "--out", utf8(out), "--frame", frame}, none);
+                               auto img = (r && r.value().result.value("ok", false)) ? pngBase64(out) : Result<std::string>(Error{ErrorCode::NotFound,
+                                   r ? r.value().result.value("error", std::string("cannot render")) : r.error().message});
+                               fs::remove(out, ec);
+                               if (!img) return img.error();
+                               return json::array({{{"uri", uri}, {"mimeType", "image/png"}, {"blob", img.value()}}});
+                           },
+                           [envPtr](const std::string& name, const std::string& value, const json& ctx) {
+                               std::vector<std::string> out;
+                               if (name == "path") return completeFiles(envPtr->roots, value, {".acestudio"});
+                               if (name == "frame") {
+                                   int frames = 1;
+                                   if (ctx.contains("path"))
+                                       if (auto p = resolveInRoots(envPtr->roots, ctx["path"].get<std::string>())) {
+                                           ToolCall none;
+                                           if (auto r = runCli(*envPtr, {"info", utf8(p.value())}, none); r && r.value().result.value("ok", false))
+                                               frames = r.value().result.value("frames", 1);
+                                       }
+                                   for (int i = 0; i < std::min(frames, 100); ++i)
+                                       if (std::to_string(i).rfind(value, 0) == 0) out.push_back(std::to_string(i));
+                               }
+                               return out;
+                           },
+                           0, false});
+
+    // ---------------------------------------------------------- prompts
+    auto pngs = [envPtr](const std::string& name, const std::string& value, const json&) -> std::vector<std::string> {
+        if (name == "engine" || name == "engines") return prefixed(kEngineValues, value);
+        if (name == "scheme") return prefixed({"blob47", "wang16", "cardinal16"}, value);
+        return completeFiles(envPtr->roots, value, {".png"});
+    };
+    c.prompts.push_back({"autotile_terrain", "Autotile terrain for a game engine",
+                         "Builds a seamless autotile tileset from texture images and exports it for an engine, then checks it.",
+                         {{"base", "Base (ground) texture PNG", true},
+                          {"terrains", "Terrain texture PNG(s) drawn over the base, comma separated, lowest first", true},
+                          {"engine", "Engine files to write: godot, unity, tiled (comma separated)", false},
+                          {"scheme", "blob47 (8-neighbour, default), wang16 (corners / dual grid) or cardinal16 (4-neighbour)", false}},
+                         [](const json& a, InputContext&) -> Result<json> {
+                             const std::string engine = a.value("engine", std::string("godot"));
+                             const std::string scheme = a.value("scheme", std::string("blob47"));
+                             const std::string terrains = a["terrains"].get<std::string>();
+                             return json{{"description", "Autotile terrain"},
+                                         {"messages",
+                                          {userText("Make an autotile tileset with AceStudio. Base texture: " + a["base"].get<std::string>() +
+                                                    "; terrains (lowest first): " + terrains + "; scheme: " + scheme + "; engines: " + engine +
+                                                    ".\n\n1. Call tileset_generate with base, terrains (as a list), scheme, and engines \"" + engine +
+                                                    "\". Use tile 16 unless the textures suggest another size.\n2. Call tileset_check_seams on each "
+                                                    "level PNG it wrote and report any seams.\n3. List the engine files written and say how to use "
+                                                    "them (Godot: open the .tres TileSet and paint with terrains; Unity: drag the RuleTile asset "
+                                                    "into a Tile Palette; Tiled: use the Wang set in the .tsx).")}}};
+                         },
+                         pngs});
+    c.prompts.push_back({"export_for_engine", "Export a sprite for a game engine",
+                         "Exports an AceStudio project as a sprite sheet with engine files (Godot SpriteFrames, Unity sprites "
+                         "and clips) and checks the result.",
+                         {{"path", "The .acestudio project", true}, {"engine", "godot, unity or both (comma separated)", true}},
+                         [](const json& a, InputContext&) -> Result<json> {
+                             return json{{"description", "Export for an engine"},
+                                         {"messages",
+                                          {userText("Export " + a["path"].get<std::string>() + " for " + a["engine"].get<std::string>() +
+                                                    " with AceStudio.\n\n1. Call document_info to see its frames and animation tags.\n"
+                                                    "2. Call export_animation with format \"sheet\", layout \"grid\", engines \"" +
+                                                    a["engine"].get<std::string>() + "\" and an out path next to the project.\n"
+                                                    "3. Call render_frame on frame 0 to show the sprite, and list the files written: one "
+                                                    "animation per tag.")}}};
+                         },
+                         [envPtr](const std::string& name, const std::string& value, const json&) -> std::vector<std::string> {
+                             if (name == "engine") return prefixed(kEngineValues, value);
+                             return completeFiles(envPtr->roots, value, {".acestudio"});
+                         }});
+    c.prompts.push_back({"lua_script", "Write an AceStudio Lua script",
+                         "Writes and runs a sandboxed Lua script for a task, with the Lua API reference attached.",
+                         {{"task", "What the script should do", true},
+                          {"target", "\"file\" (run_lua on files) or \"app\" (app_run_lua on the open document); default file", false}},
+                         [](const json& a, InputContext&) -> Result<json> {
+                             const bool app = a.value("target", std::string("file")) == "app";
+                             return json{{"description", "Lua script"},
+                                         {"messages",
+                                          {{{"role", "user"},
+                                            {"content",
+                                             {{"type", "resource"},
+                                              {"resource", {{"uri", "acestudio://docs/lua-api"}, {"mimeType", "text/markdown"}, {"text", luaApiReference()}}}}}},
+                                           userText("Using the AceStudio Lua API above, write a script for this task: " + a["task"].get<std::string>() +
+                                                    "\n\nRun it with " + (app ? "app_run_lua (it edits the document open in AceStudio; one undo step)"
+                                                                              : "run_lua (files only inside the server's folders)") +
+                                                    ". Frames, layers and pixels are 0-based. If it fails, read the error (it has the line "
+                                                    "number), fix the script and run it again.")}}};
+                         },
+                         [](const std::string& name, const std::string& value, const json&) -> std::vector<std::string> {
+                             if (name == "target") return prefixed({"file", "app"}, value);
+                             return {};
+                         }});
+    return c;
 }
 
 } // namespace acestudio::mcp

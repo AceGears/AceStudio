@@ -15,7 +15,9 @@
 #include <QImage>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QTimer>
 
+#include <algorithm>
 #include <thread>
 
 namespace acestudio::ui {
@@ -23,7 +25,47 @@ namespace acestudio::ui {
 using nlohmann::json;
 namespace fs = std::filesystem;
 
-AppBridgeServer::AppBridgeServer(Hooks hooks, QObject* parent) : QObject(parent), m_hooks(std::move(hooks)) {}
+AppBridgeServer::AppBridgeServer(Hooks hooks, QObject* parent) : QObject(parent), m_hooks(std::move(hooks)) {
+    m_debounce = new QTimer(this);
+    m_debounce->setSingleShot(true);
+    m_debounce->setInterval(250);
+    connect(m_debounce, &QTimer::timeout, this, [this] {
+        const QByteArray line = "{\"event\":\"document\"}\n";
+        for (auto& w : m_watchers)
+            if (w && w->state() == QLocalSocket::ConnectedState) w->write(line);
+        m_watchers.erase(std::remove_if(m_watchers.begin(), m_watchers.end(), [](const QPointer<QLocalSocket>& w) { return !w; }),
+                         m_watchers.end());
+    });
+}
+
+void AppBridgeServer::documentsChanged() {
+    if (!m_watchers.empty()) m_debounce->start();
+}
+
+DocumentView* AppBridgeServer::viewFor(const json& params, std::string* error) const {
+    const json which = params.value("document", json());
+    if (which.is_null()) {
+        DocumentView* v = m_hooks.currentView ? m_hooks.currentView() : nullptr;
+        if (!v && error) *error = "No document is open in AceStudio";
+        return v;
+    }
+    const auto views = m_hooks.views ? m_hooks.views() : std::vector<DocumentView*>{};
+    if (which.is_number_integer()) {
+        const auto i = which.get<long long>();
+        if (i >= 0 && i < static_cast<long long>(views.size())) return views[static_cast<std::size_t>(i)];
+        if (error) *error = "There is no open document " + std::to_string(i) + " (" + std::to_string(views.size()) + " open)";
+        return nullptr;
+    }
+    if (which.is_string()) {
+        const QFileInfo want(QString::fromStdString(which.get<std::string>()));
+        for (DocumentView* v : views)
+            if (!v->filePath().isEmpty() && QFileInfo(v->filePath()) == want) return v;
+        if (error) *error = "No open document has the file " + which.get<std::string>();
+        return nullptr;
+    }
+    if (error) *error = "document must be a tab index or a file path";
+    return nullptr;
+}
 
 AppBridgeServer::~AppBridgeServer() {
     *m_cancel = true;   // stops a running script; its result is dropped
@@ -97,8 +139,31 @@ void AppBridgeServer::onLine(QLocalSocket* sock, const QByteArray& line) {
     const json params = req.value("params", json::object());
     ACE_LOG_INFO("bridge", "MCP request: " + method);
 
+    if (method == "watch") {
+        m_watchers.push_back(sock);
+        return reply(sock, id, json{{"watching", true}});
+    }
+    if (method == "documents") {
+        json list = json::array();
+        const auto views = m_hooks.views ? m_hooks.views() : std::vector<DocumentView*>{};
+        DocumentView* cur = m_hooks.currentView ? m_hooks.currentView() : nullptr;
+        for (std::size_t i = 0; i < views.size(); ++i) {
+            const DocumentView* v = views[i];
+            list.push_back({{"index", i},
+                            {"name", v->displayName().toStdString()},
+                            {"path", v->filePath().toStdString()},
+                            {"width", v->document().width()},
+                            {"height", v->document().height()},
+                            {"frames", v->document().frameCount()},
+                            {"modified", v->isModified()},
+                            {"current", v == cur}});
+        }
+        return reply(sock, id, json{{"documents", list}});
+    }
     if (method == "document") {
-        DocumentView* v = m_hooks.currentView ? m_hooks.currentView() : nullptr;
+        std::string why;
+        DocumentView* v = viewFor(params, &why);
+        if (!v && params.contains("document")) return fail(sock, id, why);
         if (!v) return reply(sock, id, json{{"open", false}, {"message", "No document is open in AceStudio"}});
         const Document& d = v->document();
         json layers = json::array();
@@ -119,12 +184,13 @@ void AppBridgeServer::onLine(QLocalSocket* sock, const QByteArray& line) {
         buf.open(QIODevice::WriteOnly);
         q.save(&buf, "PNG");
         json r{{"open", true},
-               {"name", QFileInfo(v->filePath()).fileName().toStdString()},
+               {"name", v->displayName().toStdString()},
                {"path", v->filePath().toStdString()},
                {"width", d.width()},
                {"height", d.height()},
                {"frames", d.frameCount()},
                {"frame", frame},
+               {"modified", v->isModified()},
                {"layers", layers},
                {"tags", tags},
                {"imageScale", scale},
@@ -142,8 +208,9 @@ void AppBridgeServer::onLine(QLocalSocket* sock, const QByteArray& line) {
 }
 
 void AppBridgeServer::runLua(QLocalSocket* sock, const json& id, const json& params) {
-    DocumentView* v = m_hooks.currentView ? m_hooks.currentView() : nullptr;
-    if (!v) return fail(sock, id, "No document is open in AceStudio");
+    std::string why;
+    DocumentView* v = viewFor(params, &why);
+    if (!v) return fail(sock, id, why);
     if (m_busy > 0) return fail(sock, id, "Another script is still running in AceStudio");
     if (!params.contains("code") || !params["code"].is_string()) return fail(sock, id, "run_lua needs code");
 
@@ -156,6 +223,8 @@ void AppBridgeServer::runLua(QLocalSocket* sock, const json& id, const json& par
     auto copy = std::make_shared<Editor>(v->document());
     o.document = copy.get();
     o.cancel = m_cancel.get();
+    auto output = std::make_shared<std::string>();
+    o.output = [output](const std::string& text) { *output += text; };   // worker thread only
     const std::size_t markBefore = v->editor().history().mark();
     const std::string code = params["code"].get<std::string>();
     QPointer<DocumentView> view(v);
@@ -163,13 +232,16 @@ void AppBridgeServer::runLua(QLocalSocket* sock, const json& id, const json& par
     QPointer<AppBridgeServer> self(this);
     auto cancel = m_cancel;   // keeps the flag alive for the thread
     ++m_busy;
-    std::thread([self, o, code, copy, view, s, id, markBefore, cancel] {
+    std::thread([self, o, code, copy, view, s, id, markBefore, cancel, output] {
         auto r = runScript(code, "mcp", o);
-        QMetaObject::invokeMethod(qApp, [self, r = std::move(r), copy, view, s, id, markBefore]() mutable {
+        QMetaObject::invokeMethod(qApp, [self, r = std::move(r), copy, view, s, id, markBefore, output]() mutable {
             if (!self) return;
             AppBridgeServer* me = self.data();
             --me->m_busy;
-            auto fail = [&](const std::string& m) { me->fail(s, id, m); };
+            auto fail = [&](const std::string& m) {
+                if (s && s->state() == QLocalSocket::ConnectedState)
+                    s->write(QByteArray::fromStdString(json{{"id", id}, {"error", m}, {"output", *output}}.dump() + "\n"));
+            };
             if (!r) return fail(r.error().message);
             const ScriptResult& res = r.value();
             json written = json::array();

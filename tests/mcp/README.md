@@ -8,7 +8,7 @@ on the packaged Windows build.
 
 The tool versions are pinned:
 
-- `@modelcontextprotocol/conformance` 0.1.16
+- `@modelcontextprotocol/conformance` 0.2.0-alpha.12: covers 2025-06-18, 2025-11-25 and 2026-07-28, plus the tasks extension
 - `@modelcontextprotocol/sdk` 1.32.2: the TypeScript client, protocol 2025-11-25
 - `mcp` 2.3.0: the Python SDK, a dual-era client that speaks 2026-07-28 and falls back to 2025-11-25
 
@@ -27,12 +27,12 @@ python -m venv .venv
 # A scratch root folder for the tools to write into
 mkdir /tmp/mcproot
 
-# Conformance suite (Streamable HTTP, legacy era). --conformance-fixtures adds
-# the suite's fixture tools (test_simple_text, ...) so it can check content
-# types, tool errors, progress and log notifications.
+# Conformance suite (Streamable HTTP, both eras). --conformance-fixtures adds
+# the suite's fixture tools, prompts and resources (test_simple_text, greet,
+# slow_compute, test://static-text, ...).
 acestudio-mcp --root /tmp/mcproot --http 39200 --conformance-fixtures &
-npx conformance server --url http://127.0.0.1:39200/mcp --suite all \
-    --expected-failures conformance-baseline.yml
+npx conformance server --url http://127.0.0.1:39200/mcp --suite all
+npx conformance server --url http://127.0.0.1:39200/mcp --suite all --spec-version 2025-06-18   # and 2025-11-25, 2026-07-28
 
 # Python SDK, auto / 2026-07-28 / legacy modes, over stdio and HTTP
 .venv/bin/python py_client.py <path to acestudio-mcp> /tmp/mcproot http://127.0.0.1:39200/mcp
@@ -41,11 +41,9 @@ npx conformance server --url http://127.0.0.1:39200/mcp --suite all \
 node ts_client.mjs <path to acestudio-mcp> /tmp/mcproot http://127.0.0.1:39200/mcp
 ```
 
-## Baseline
+## No baseline
 
-`conformance-baseline.yml` lists the scenarios this server is expected to fail,
-with the reason for each. They test features acestudio-mcp does not offer
-(resources, prompts, completions, sampling and elicitation) or SSE resumability.
-
-The suite fails if a scenario not in the baseline fails. It also fails if a
-listed scenario starts passing, so the baseline cannot go stale.
+Every scenario must pass; there is no list of expected failures. With 0.2.0-alpha.12:
+all scenarios 228/228, 2026-07-28 150/150, 2025-11-25 80/80, 2025-06-18 56/56.
+The optional `tasks-status-notifications` scenario has no checks to run, because the server
+does not send `notifications/tasks` (clients poll `tasks/get`).
