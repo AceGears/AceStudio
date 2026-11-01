@@ -11,6 +11,7 @@
 #include "acestudio/core/Version.h"
 
 #include <QApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QLinearGradient>
 #include <QPainter>
@@ -79,8 +80,13 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < args.size(); ++i) {
         if (args[i] == QLatin1String("--new-instance")) newInstance = true;
         else if (args[i] == QLatin1String("--ui-audit")) i += 2;   // its report and project are not files to open
-        else if (!args[i].startsWith(QLatin1Char('-'))) files << args[i];
+        else if (!args[i].startsWith(QLatin1Char('-'))) files << QFileInfo(args[i]).absoluteFilePath();
     }
+    // Started from the Start menu, the working folder is the install folder,
+    // and file dialogs given no folder opened there (seen on the test PC).
+    // The home folder is the better start; command-line files are resolved
+    // above, before this.
+    if (QDir(QDir::currentPath()) == QDir(QCoreApplication::applicationDirPath())) QDir::setCurrent(QDir::homePath());
     SingleInstance single(ctx.dataDir());
     if (!newInstance && auditReport.isEmpty()) {
         if (single.forwardToRunning(files)) {

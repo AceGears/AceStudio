@@ -4,6 +4,8 @@
 #include "../QtBridge.h"
 
 #include "acestudio/core/PngCodec.h"
+#include <nlohmann/json.hpp>
+#include "acestudio/core/FileUtil.h"
 
 #include <QButtonGroup>
 #include <QCheckBox>
@@ -164,8 +166,8 @@ WorldBuilderPage::WorldBuilderPage(AppContext& ctx, ImageSource currentImage, QW
     auto* tools = new QHBoxLayout;
     auto* group = new QButtonGroup(this);
     const std::vector<std::pair<Tool, QString>> toolList = {
-        {Tool::Paint, tr("Paint")}, {Tool::Erase, tr("Erase")}, {Tool::Fill, tr("Fill")}, {Tool::Rect, tr("Rect")},
-        {Tool::Prop, tr("Prop")},   {Tool::Collision, tr("Solid")}, {Tool::Light, tr("Light")}};
+        {Tool::Paint, tr("Paint")},     {Tool::Erase, tr("Erase")}, {Tool::Fill, tr("Fill")},       {Tool::Rect, tr("Rect")},
+        {Tool::Terrain, tr("Terrain")}, {Tool::Prop, tr("Prop")},   {Tool::Collision, tr("Solid")}, {Tool::Light, tr("Light")}};
     auto* toolGrid = new QGridLayout;
     for (std::size_t i = 0; i < toolList.size(); ++i) {
         auto* b = new QToolButton(this);
@@ -183,9 +185,11 @@ WorldBuilderPage::WorldBuilderPage(AppContext& ctx, ImageSource currentImage, QW
     m_toolButtons.front()->setChecked(true);
     m_toolButtons[0]->setToolTip(tr("Paint the selected tile (right button erases)"));
     m_toolButtons[3]->setToolTip(tr("Drag a rectangle of the selected tile"));
-    m_toolButtons[4]->setToolTip(tr("Place the selected prop; drag a prop to move it, right-click to remove it"));
-    m_toolButtons[5]->setToolTip(tr("Mark cells solid for collision (right button clears)"));
-    m_toolButtons[6]->setToolTip(tr("Add a light for the lighting preview (right-click removes the nearest)"));
+    m_toolButtons[4]->setToolTip(tr("Paint terrain with a Tileset Generator sheet: the edge tiles are chosen for you "
+                                     "(right button removes terrain)"));
+    m_toolButtons[5]->setToolTip(tr("Place the selected prop; drag a prop to move it, right-click to remove it"));
+    m_toolButtons[6]->setToolTip(tr("Mark cells solid for collision (right button clears)"));
+    m_toolButtons[7]->setToolTip(tr("Add a light for the lighting preview (right-click removes the nearest)"));
     tools->addLayout(toolGrid);
     left->addLayout(tools);
 
@@ -272,10 +276,7 @@ WorldBuilderPage::WorldBuilderPage(AppContext& ctx, ImageSource currentImage, QW
     left->addWidget(m_palette, 2);
     connect(m_sheet, &QComboBox::currentIndexChanged, this, &WorldBuilderPage::refreshPalette);
     connect(m_palette, &QListWidget::currentRowChanged, this, [this] {
-        if (m_tool != Tool::Paint && m_tool != Tool::Fill && m_tool != Tool::Rect) {
-            m_tool = Tool::Paint;
-            m_toolButtons[0]->setChecked(true);
-        }
+        if (m_tool != Tool::Paint && m_tool != Tool::Fill && m_tool != Tool::Rect && m_tool != Tool::Terrain) selectTool(Tool::Paint);
     });
 
     auto* propsLabel = new QLabel(tr("&Props:"), this);
@@ -292,8 +293,7 @@ WorldBuilderPage::WorldBuilderPage(AppContext& ctx, ImageSource currentImage, QW
     left->addWidget(m_propSolid);
     connect(m_propList, &QListWidget::currentRowChanged, this, [this](int r) {
         if (r >= 0) {
-            m_tool = Tool::Prop;
-            m_toolButtons[4]->setChecked(true);
+            selectTool(Tool::Prop);
         }
     });
 
@@ -366,6 +366,13 @@ int WorldBuilderPage::currentLayer() const {
     const int row = m_layers->currentRow();
     if (row < 0) return m_map.layers.empty() ? -1 : 0;
     return static_cast<int>(m_map.layers.size()) - 1 - row;
+}
+
+void WorldBuilderPage::selectTool(Tool t) {
+    // The buttons are in the enum's order.
+    m_tool = t;
+    m_rectStart.reset();
+    m_toolButtons[static_cast<std::size_t>(t)]->setChecked(true);
 }
 
 std::int32_t WorldBuilderPage::brushCell() const {
@@ -495,6 +502,15 @@ void WorldBuilderPage::pressAt(int px, int py, bool primary) {
     case Tool::Rect:
         m_rectStart = std::pair{cx, cy};
         return;
+    case Tool::Terrain: {
+        const int sheet = m_sheet->currentIndex();
+        if (sheet < 0 || m_map.sheets[static_cast<std::size_t>(sheet)].terrain.empty())
+            return void(Q_EMIT statusMessage(tr("Choose a terrain sheet: add a tileset made with the Tileset Generator "
+                                                "(Add › Tile Sheet from File…, next to its .json).")));
+        pushUndo();
+        if (auto st = m_map.paintTerrain(layer, sheet, cx, cy, primary); !st) return void(Q_EMIT statusMessage(qs(st.error().message)));
+        break;
+    }
     case Tool::Collision:
         pushUndo();
         m_map.setSolid(cx, cy, primary);
@@ -552,6 +568,11 @@ void WorldBuilderPage::dragTo(int px, int py, bool primary) {
         m_map.setCell(currentLayer(), cx, cy, (m_tool == Tool::Erase || !primary) ? kEmpty : brushCell());
         break;
     case Tool::Collision: m_map.setSolid(cx, cy, primary); break;
+    case Tool::Terrain: {
+        const int sheet = m_sheet->currentIndex();
+        if (sheet < 0 || !m_map.paintTerrain(currentLayer(), sheet, cx, cy, primary)) return;
+        break;
+    }
     case Tool::Prop:
         if (!m_dragProp) return;
         m_map.props[*m_dragProp].x = px - m_dragDx;
@@ -693,6 +714,40 @@ void WorldBuilderPage::addSheet(bool fromDocument) {
         if (!r) return void(QMessageBox::warning(this, tr("Add Tile Sheet"), qs(r.error().message)));
         img = std::move(r).value();
         name = QFileInfo(path).completeBaseName();
+        // A Tileset Generator export: its .json gives the terrain scheme, the
+        // tile size and the base fill, so the Terrain tool can paint with it.
+        const QString jsonPath = QFileInfo(path).dir().filePath(name + QStringLiteral(".json"));
+        if (QFileInfo::exists(jsonPath)) {
+            auto bytes = readFileBytes(toPath(jsonPath));
+            const nlohmann::json meta = bytes ? nlohmann::json::parse(bytes.value().begin(), bytes.value().end(), nullptr, false) : nlohmann::json();
+            const std::string scheme = meta.is_object() ? meta.value("scheme", std::string()) : std::string();
+            if (scheme == "blob47" || scheme == "cardinal16") {
+                const int ts = meta.value("tileSize", 0);
+                TileSheet sheet{name.toStdString(), img, ts, ts};
+                sheet.terrain = scheme;
+                sheet.terrainPhases = std::clamp(meta.value("phases", 1), 1, 16);
+                pushUndo();
+                if (auto st = m_map.addSheet(sheet); !st) {
+                    undo();
+                    m_redo.clear();
+                    return void(QMessageBox::warning(this, tr("Add Tile Sheet"), qs(st.error().message)));
+                }
+                const int terrainIndex = static_cast<int>(m_map.sheets.size()) - 1;
+                QString note = tr("Terrain sheet added: paint it with the Terrain tool.");
+                const std::string baseName = meta.value("base", std::string());
+                if (!baseName.empty() && baseName.find('/') == std::string::npos && baseName.find('\\') == std::string::npos) {
+                    if (auto base = readPng(toPath(QFileInfo(path).dir().filePath(QString::fromStdString(baseName))))) {
+                        if (m_map.addSheet({name.toStdString() + " base", std::move(base).value(), ts, ts}))
+                            note += QLatin1Char(' ') + tr("Fill the ground layer with “%1 base”.").arg(name);
+                    }
+                }
+                refreshAll();
+                m_sheet->setCurrentIndex(terrainIndex);
+                selectTool(Tool::Terrain);
+                Q_EMIT statusMessage(note);
+                return;
+            }
+        }
     }
     bool ok = false;
     const QString size = QInputDialog::getText(this, tr("Add Tile Sheet"), tr("Tile size in the sheet (W×H):"), QLineEdit::Normal,

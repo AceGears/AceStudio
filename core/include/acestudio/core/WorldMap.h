@@ -19,6 +19,11 @@ struct TileSheet {
     std::string name;
     Image image;
     int tileW = 16, tileH = 16;
+    // A terrain sheet from the Tileset Generator (its .json): "blob47" or
+    // "cardinal16", laid out in that scheme's order, `terrainPhases` copies
+    // per side. Empty for a plain sheet. The Terrain tool paints with it.
+    std::string terrain;
+    int terrainPhases = 1;
     int columns() const { return tileW > 0 ? image.width() / tileW : 0; }
     int rows() const { return tileH > 0 ? image.height() / tileH : 0; }
     int count() const { return columns() * rows(); }
@@ -93,6 +98,12 @@ public:
     void resize(int width, int height);
     // Marks cells solid wherever a layer has a tile (for a quick start).
     void solidFromLayer(int layer);
+    // Terrain painting with a terrain sheet: sets or clears terrain at (x, y)
+    // on the layer and re-picks the edge tiles of it and its 8 neighbours.
+    // A cell is terrain when it holds a tile of that sheet. Outside the map
+    // counts as the nearest edge cell, so terrain runs off the map edge
+    // without a border. Errors when the sheet has no terrain scheme.
+    Status paintTerrain(int layer, int sheet, int x, int y, bool on);
 
 private:
     int m_width = 0, m_height = 0, m_tileW = 16, m_tileH = 16;

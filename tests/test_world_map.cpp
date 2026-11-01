@@ -149,3 +149,45 @@ TEST_CASE("damaged or unsafe map files are refused", "[world]") {
     CHECK_FALSE(WorldMap::create(0, 4, 8, 8));
     CHECK_FALSE(WorldMap::create(5000, 4, 8, 8));
 }
+
+TEST_CASE("the terrain tool picks edge tiles from a blob terrain sheet", "[world]") {
+    auto m = WorldMap::create(8, 6, 16, 16);
+    REQUIRE(m);
+    WorldMap map = std::move(m).value();
+    TileSheet terrain{"grass", Image(8 * 16, 6 * 16, kGrass), 16, 16};
+    terrain.terrain = "blob47";
+    REQUIRE(map.addSheet(terrain));
+    REQUIRE(map.addSheet({"plain", Image(16, 16, kStone), 16, 16}));
+    map.addLayer("Ground");
+    CHECK_FALSE(map.paintTerrain(0, 1, 1, 1, true));   // a plain sheet is refused
+
+    // A 3 x 3 patch: centre = all neighbours (mask 255, the last of the 47),
+    // top-left = only E, SE, S (mask 4|8|16 = 28 -> its index in tileset order).
+    for (int y = 1; y <= 3; ++y)
+        for (int x = 2; x <= 4; ++x) REQUIRE(map.paintTerrain(0, 0, x, y, true));
+    CHECK(cellSheet(map.cell(0, 3, 2)) == 0);
+    CHECK(cellTile(map.cell(0, 3, 2)) == 46);
+    const int topLeft = cellTile(map.cell(0, 2, 1));
+    CHECK(topLeft != 46);
+    CHECK(topLeft != cellTile(map.cell(0, 4, 3)));   // opposite corners differ
+    CHECK(map.cell(0, 0, 0) == kEmpty);
+
+    // Erasing the centre turns its neighbours into edges around a hole.
+    REQUIRE(map.paintTerrain(0, 0, 3, 2, false));
+    CHECK(map.cell(0, 3, 2) == kEmpty);
+    CHECK(cellTile(map.cell(0, 3, 1)) != 46);
+
+    // Terrain filling a whole row runs off the map edge without a border:
+    // the cell at x = 0 counts the outside as terrain too.
+    for (int x = 0; x < 8; ++x)
+        for (int y = 4; y < 6; ++y) REQUIRE(map.paintTerrain(0, 0, x, y, true));
+    CHECK(cellTile(map.cell(0, 0, 5)) == 46);
+
+    // The terrain scheme survives saving.
+    TempDir dir;
+    REQUIRE(save(map, dir / "terrain.acemap"));
+    auto back = load(dir / "terrain.acemap");
+    REQUIRE(back);
+    CHECK(back.value().sheets[0].terrain == "blob47");
+    CHECK(back.value().sheets[1].terrain.empty());
+}

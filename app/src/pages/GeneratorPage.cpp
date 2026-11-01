@@ -419,7 +419,13 @@ QWidget* GeneratorPage::buildResults() {
     act(tr("Character Pack…"), 3, 1, [this](Result& r) { startCharacterPack(r); })
         ->setToolTip(tr("Generates the other directions from this character (FLUX.2 klein) and animates every direction."));
     act(tr("Save PNG…"), 2, 1, [this](Result& r) {
-        const QString f = QFileDialog::getSaveFileName(this, tr("Save PNG"), r.name + QStringLiteral(".png"), tr("PNG (*.png)"));
+        // The name comes from the prompt: characters Windows refuses in a file
+        // name (a ":" on the test PC) become "-".
+        QString safe = r.name;
+        safe.replace(QRegularExpression(QStringLiteral(R"([<>:"/\\|?*\x00-\x1f])")), QStringLiteral("-"));
+        safe = safe.trimmed();
+        if (safe.isEmpty()) safe = QStringLiteral("asset");
+        const QString f = QFileDialog::getSaveFileName(this, tr("Save PNG"), QDir::home().filePath(safe + QStringLiteral(".png")), tr("PNG (*.png)"));
         if (f.isEmpty()) return;
         if (auto st = writePng(r.image, toPath(f)); !st) QMessageBox::warning(this, tr("Save PNG"), qs(st.error().message));
         else Q_EMIT statusMessage(tr("Saved %1").arg(QDir::toNativeSeparators(f)));

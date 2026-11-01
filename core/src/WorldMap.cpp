@@ -1,6 +1,7 @@
 #include "acestudio/core/WorldMap.h"
 
 #include "acestudio/core/AssetFiles.h"
+#include "acestudio/core/Autotile.h"
 #include "acestudio/core/FileUtil.h"
 #include "acestudio/core/PngCodec.h"
 
@@ -178,6 +179,44 @@ void WorldMap::resize(int width, int height) {
     m_height = height;
 }
 
+Status WorldMap::paintTerrain(int layer, int sheet, int x, int y, bool on) {
+    if (layer < 0 || layer >= static_cast<int>(layers.size())) return Error(ErrorCode::InvalidArgument, "No such layer.");
+    if (sheet < 0 || sheet >= static_cast<int>(sheets.size())) return Error(ErrorCode::InvalidArgument, "No such tile sheet.");
+    const TileSheet& sh = sheets[static_cast<std::size_t>(sheet)];
+    const auto scheme = autotileSchemeFromString(sh.terrain);
+    if (!scheme || *scheme == AutotileScheme::Wang16)
+        return Error(ErrorCode::InvalidArgument, "This tile sheet is not a blob or cardinal terrain set.");
+    if (x < 0 || y < 0 || x >= m_width || y >= m_height) return {};
+    const auto [cols, rows] = tilesetGrid(*scheme);
+    const int P = std::max(1, sh.terrainPhases);
+    if (sh.columns() < cols * P || sh.rows() < rows * P)
+        return Error(ErrorCode::InvalidArgument, "The terrain sheet is smaller than its scheme's layout.");
+    auto isTerrain = [&](int cx, int cy) {
+        cx = std::clamp(cx, 0, m_width - 1);
+        cy = std::clamp(cy, 0, m_height - 1);
+        const std::int32_t c = cell(layer, cx, cy);
+        return c != kEmpty && cellSheet(c) == sheet;
+    };
+    // Its own cell first (any tile of the sheet marks it), then the 3 x 3
+    // around it from a 5 x 5 neighbourhood.
+    setCell(layer, x, y, on ? makeCell(sheet, 0) : kEmpty);
+    TerrainMap local(5, 5);
+    for (int dy = -2; dy <= 2; ++dy)
+        for (int dx = -2; dx <= 2; ++dx) local.set(dx + 2, dy + 2, isTerrain(x + dx, y + dy));
+    const TilePlacement placed = autotile(local, *scheme);
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+            const int cx = x + dx, cy = y + dy;
+            if (cx < 0 || cy < 0 || cx >= m_width || cy >= m_height || !isTerrain(cx, cy)) continue;
+            const int idx = placed.at(dx + 2, dy + 2);
+            if (idx < 0) continue;
+            const int px = cx % P, py = cy % P;
+            const int col = px * cols + idx % cols, row = py * rows + idx / cols;
+            setCell(layer, cx, cy, makeCell(sheet, row * sh.columns() + col));
+        }
+    return {};
+}
+
 void WorldMap::solidFromLayer(int layer) {
     for (int y = 0; y < m_height; ++y)
         for (int x = 0; x < m_width; ++x)
@@ -312,7 +351,9 @@ Status save(const WorldMap& map, const fs::path& file) {
         const TileSheet& s = map.sheets[i];
         auto rel = img(s.image, "sheet" + std::to_string(i) + "_" + safeName(s.name, "tiles"));
         if (!rel) return rel.error();
-        j["sheets"].push_back({{"name", s.name}, {"image", rel.value()}, {"tileWidth", s.tileW}, {"tileHeight", s.tileH}});
+        json e{{"name", s.name}, {"image", rel.value()}, {"tileWidth", s.tileW}, {"tileHeight", s.tileH}};
+        if (!s.terrain.empty()) { e["terrain"] = s.terrain; e["terrainPhases"] = s.terrainPhases; }
+        j["sheets"].push_back(std::move(e));
     }
     j["layers"] = json::array();
     for (const TileLayer& l : map.layers) j["layers"].push_back({{"name", l.name}, {"visible", l.visible}, {"opacity", l.opacity}, {"cells", l.cells}});
@@ -363,6 +404,8 @@ Result<WorldMap> load(const fs::path& file) {
             auto im = image(s);
             if (!im) return im.error();
             TileSheet sh{s.value("name", "tiles"), std::move(im).value(), s.value("tileWidth", map.tileW()), s.value("tileHeight", map.tileH())};
+            sh.terrain = s.value("terrain", std::string());
+            sh.terrainPhases = std::clamp(s.value("terrainPhases", 1), 1, 16);
             if (auto st = map.addSheet(std::move(sh)); !st) return st.error();
         }
         const std::size_t area = static_cast<std::size_t>(map.width()) * static_cast<std::size_t>(map.height());

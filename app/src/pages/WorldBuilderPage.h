@@ -34,7 +34,7 @@ public:
     WorldBuilderPage(AppContext& ctx, ImageSource currentImage, QWidget* parent = nullptr);
     bool openMap(const QString& path);
 
-    enum class Tool { Paint, Erase, Fill, Rect, Prop, Collision, Light };
+    enum class Tool { Paint, Erase, Fill, Rect, Terrain, Prop, Collision, Light };
 
 Q_SIGNALS:
     void statusMessage(const QString& text);
@@ -72,6 +72,7 @@ private:
     bool m_dirty = false;
     std::vector<world::WorldMap> m_undo, m_redo;
     Tool m_tool = Tool::Paint;
+    void selectTool(Tool t);
     std::optional<std::pair<int, int>> m_rectStart;
     std::optional<std::size_t> m_dragProp;
     int m_dragDx = 0, m_dragDy = 0;
