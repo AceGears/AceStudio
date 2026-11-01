@@ -71,6 +71,9 @@ public:
     void setRecoveryId(std::string id) { m_recoveryId = std::move(id); }
     bool needsAutosave() const { return isModified() && m_changeSerial != m_autosavedSerial; }
     void markAutosaved() { m_autosavedSerial = m_changeSerial; }
+    // Background autosave: the snapshot taken at `serial` was written.
+    std::uint64_t changeSerial() const { return m_changeSerial; }
+    void markAutosavedAt(std::uint64_t serial) { m_autosavedSerial = serial; }
     // True while a stroke or selection drag is in progress.
     bool isBusy() const { return m_session != nullptr || m_selecting; }
     // A curve, polygon or move is in progress (Enter/Escape finish it).

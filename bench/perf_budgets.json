@@ -12,6 +12,7 @@
   "undo+redo paint step on 1024x1024": 5,
   "project save 1024x1024, 20 layers x 8 frames": 8000,
   "project load 1024x1024, 20 layers x 8 frames": 4000,
+  "autosave snapshot 1024x1024, 20 layers x 8 frames": 1500,
   "PNG encode 1024x1024": 120,
   "PNG decode 1024x1024": 50,
   "GIF encode 16 frames 256x256": 500,

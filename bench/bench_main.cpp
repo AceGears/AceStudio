@@ -22,6 +22,7 @@
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -121,6 +122,10 @@ void fileBenchmarks() {
     std::printf("%-46s %10.1f MB\n", "  (project size)", static_cast<double>(bytes.size()) / 1e6);
     record("project load 1024x1024, 20 layers x 8 frames", 5,
            [&] { volatile auto d = deserializeProject(bytes); (void)d; });
+    // What autosave costs the UI thread: the snapshot copy (the save itself
+    // runs in the background).
+    record("autosave snapshot 1024x1024, 20 layers x 8 frames", 5,
+           [&] { volatile auto d = std::make_shared<Document>(e.document()); (void)d; });
 
     const Image flat = e.document().composite(0);
     std::vector<std::uint8_t> png;

@@ -1,6 +1,7 @@
 #include "UiAudit.h"
 
 #include "../Accessibility.h"
+#include "../DocumentView.h"
 #include "../MainWindow.h"
 
 #include <QAbstractButton>
@@ -11,6 +12,7 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QDialog>
+#include <QDir>
 #include <QDockWidget>
 #include <QElapsedTimer>
 #include <QFile>
@@ -174,8 +176,36 @@ int runUiAudit(MainWindow& window, const QString& reportPath, const QString& pro
     }
     watchdog.stop();
 
+    // Background autosave: the commands above changed the documents. An
+    // autosave writes a recovery file for each without blocking, and
+    // discarding (as Save, Close and Quit do) removes them again.
+    QJsonObject autosave;
+    {
+        const QDir dir(QString::fromStdWString(window.m_recovery->directory().wstring()));
+        const auto files = [&] { return dir.entryList({QStringLiteral("*.acestudio")}, QDir::Files).size(); };
+        int modified = 0;
+        for (int i = 0; i < window.m_tabs->count(); ++i)
+            if (static_cast<DocumentView*>(window.m_tabs->widget(i))->needsAutosave()) ++modified;
+        QElapsedTimer t;
+        t.start();
+        window.autosaveTick();
+        const qint64 tickMs = t.elapsed();
+        window.m_autosaveQueue->drain();
+        QApplication::processEvents();
+        int stillPending = 0;
+        for (int i = 0; i < window.m_tabs->count(); ++i)
+            if (static_cast<DocumentView*>(window.m_tabs->widget(i))->needsAutosave()) ++stillPending;
+        const auto written = files();
+        for (int i = 0; i < window.m_tabs->count(); ++i) window.discardRecovery(static_cast<DocumentView*>(window.m_tabs->widget(i)));
+        window.m_autosaveQueue->drain();
+        autosave = QJsonObject{{"modifiedDocuments", modified}, {"tickMs", static_cast<double>(tickMs)},
+                               {"recoveryFilesWritten", static_cast<int>(written)}, {"stillNeedingAutosave", stillPending},
+                               {"recoveryFilesAfterDiscard", static_cast<int>(files())}};
+    }
+
     QJsonObject report{{"actions", a.actions},       {"skipped", a.skipped},         {"windows", a.windows},
-                       {"controls", a.controls},     {"unnamed", a.unnamed},         {"unreachable", a.unreachable}};
+                       {"controls", a.controls},     {"unnamed", a.unnamed},         {"unreachable", a.unreachable},
+                       {"autosave", autosave}};
     QFile f(reportPath);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return 2;
     f.write(QJsonDocument(report).toJson());

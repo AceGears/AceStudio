@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AutosaveQueue.h"
 #include "acestudio/core/Animation.h"
 
 #include "acestudio/core/Result.h"
@@ -8,6 +9,7 @@
 #include "acestudio/core/Recovery.h"
 #include "Shortcuts.h"
 
+#include <QSet>
 #include <QMainWindow>
 
 #include <memory>
@@ -47,6 +49,9 @@ public:
     bool openProject(const QString& path);
     // Offers to restore documents left behind by a crash.
     void offerRecovery();
+
+    // The UI audit also checks background autosave.
+    friend int runUiAudit(MainWindow& window, const QString& reportPath, const QString& project);
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -163,6 +168,9 @@ private:
     void saveWorkspace();
     ShortcutRegistry m_shortcuts;
     std::unique_ptr<RecoveryStore> m_recovery;
+    // Declared after m_recovery so it is destroyed (and drained) first.
+    std::unique_ptr<AutosaveQueue> m_autosaveQueue;
+    QSet<QString> m_autosaving;   // recovery ids with a write in flight
     QTimer* m_autosaveTimer = nullptr;
     bool m_autosaveErrorShown = false;
 };

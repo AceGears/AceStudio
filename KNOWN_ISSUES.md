@@ -1,6 +1,6 @@
 # Known Issues and Limitations
 
-Current as of 0.6.0. Everything that could be fixed in code for Phases 1–5 has been fixed and
+Current as of 0.9.0. Everything that could be fixed in code for Phases 1–8 has been fixed and
 tested; what remains below needs hardware we have not had, is a limit of a third-party
 component or file format, or is a deliberate design choice. Nothing is listed as done that has
 not been run.
@@ -34,9 +34,10 @@ not been run.
   container limits, before a CPU run. If too little is free, the job fails within seconds and
   says how much is needed, instead of the worker being killed. The 12 GB figure for BiRefNet
   General is an estimate.
-- **Python:** the AI features need a 64-bit Python 3.10–3.14 installed. ONNX Runtime publishes no
-  Windows wheels for 3.15 yet, and none for 32-bit, so a 32-bit Python is skipped or refused.
-  Bundling an embeddable Python is part of Phase 8 packaging.
+- **Python:** the installer bundles Python 3.12, so nothing needs installing. Without it (a
+  build from source, or a deleted `python` folder) AceStudio looks for a 64-bit Python
+  3.10–3.14; ONNX Runtime publishes no Windows wheels for 3.15 yet, and none for 32-bit. An
+  AI environment already made from another supported Python is kept, not rebuilt.
 - **Small canvases and SDXL:** generation runs near 1024² and is reduced with nearest neighbour.
   At 64×64 that is a 16× reduction, twice Pixel Art XL's ~8× pixel size, so results are coarse;
   128×128 fits best. "Frame the subject" helps when the background is plain.
@@ -64,11 +65,11 @@ not been run.
 
 ## Design choices (documented behaviour, not defects)
 - **Compositing runs on the CPU.** Large areas are split across threads with identical output.
-  On the 2-vCPU test VM, a full 1024×1024 × 20-layer recomposite takes about 63 ms with mixed
-  blend modes and 42 ms with normal layers. That is roughly 15–20 ms on an 8-core PC. Strokes
-  recomposite only their dirty region. A GPU compositor would have to reproduce every blend
-  mode, mask, clip and adjustment exactly; these numbers do not justify that cost. Phase 8
-  profiles again on real hardware.
+  On the 2-vCPU test VM, a full 1024×1024 × 20-layer recomposite with mixed blend modes takes
+  34–44 ms in 0.9.0 (58–68 ms before the blend loops were specialised per mode). Strokes
+  recomposite only their dirty region (0.07 ms for 32×32). A GPU compositor would have to
+  reproduce every blend mode, mask, clip and adjustment exactly; these numbers do not justify
+  that cost. `bench/perf_budgets.json` fails CI if they grow several-fold.
 - **Live generation preview** needs the optional 10 MB TAESD-XL model (MIT; Models dialog).
   Without it, generation shows progress only. Generate Animation shows the preview on the
   frame being generated.
@@ -114,7 +115,11 @@ not been run.
 - **Layer transforms skip frames where the layer has no pixels.** Transforming an empty layer
   reports "The layer is empty".
 - Onion-skin ghosts are cached. The first display after a structural change composites each
-  ghost frame once (about 240 ms for one ghost each side at 1024² × 20 layers on the VM).
+  ghost frame once (about 100 ms for one ghost each side at 1024² × 20 layers on the VM).
+- **Saving large projects** PNG-compresses every cel, about 10 ms per 1024² cel per core
+  (miniz deflates the whole cel even when it is mostly empty). Cels are compressed on all
+  cores: 160 such cels take 1.3 s to save and 0.5 s to load on the 2-vCPU VM. Autosave writes
+  to recovery files in the background.
 
 ## Phase 6 asset tools (design limits)
 - Up to three terrains over a base, and textures of up to 4×4 tiles. Engines without per-cell
@@ -165,6 +170,37 @@ not been run.
   Tiled itself.
 - Godot keeps an isolated single cell empty in corner (Wang) mode. That is Godot's own
   behaviour, reproduced in `tests/engine`.
+
+## Phase 8 commercial polish (limits)
+
+### Licensing
+- Enforcement is client-side and offline. Deleting both the trial file and its registry value
+  restarts the trial, and a patched binary skips the check (SECURITY.md).
+- Builds without the release public key (`ACESTUDIO_LICENCE_PUBLIC_KEY`) accept keys made with
+  the public development key. The licence dialog and CI say so. The release key pair has not
+  been generated yet; the publisher must do it (`tools/licence/README.md`).
+- There is no online activation, seat counting or revocation list; an expiry date in the key
+  is the only way to end a licence.
+
+### Installer and distribution
+- The installer and executables are **not code-signed**: SmartScreen warns on first run.
+- Per-user install only by default; an all-users install is possible from the command line
+  (`/ALLUSERS`) but was not tested.
+- Nightly installers are attached to a GitHub release, public while the repository is.
+- The EULA (`packaging/windows/EULA.txt`) and PRIVACY.md are drafts for legal review.
+
+### Accessibility
+- The UI audit checks that every control has an accessible name and can be reached with Tab,
+  on every window the menus open. It does not prove the result is pleasant with a screen
+  reader: NVDA and Narrator were not run.
+- The canvas itself is a picture; drawing needs a pointer. Everything else (menus, panels,
+  dialogs, timeline, layers) works from the keyboard.
+
+### Regression suite
+- Projects from 0.1.0 render differently where groups have content: 0.2.0 changed group
+  compositing on purpose (isolated groups). The compat test allows exactly that.
+- Performance budgets are ceilings several times the measured times, chosen so slow CI
+  runners do not fail; they catch large regressions, not small ones.
 
 ## Planned in later phases
 - Plugin API (Phase 8 or later). Profiling of BiRefNet on CUDA: part of its 2.6 s is CPU

@@ -56,6 +56,7 @@
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPointer>
 #include <QCoreApplication>
 #include <QDialog>
 #include <QFile>
@@ -149,6 +150,7 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
     rebuildRecentMenus();
 
     m_recovery = std::make_unique<RecoveryStore>(m_ctx.dataDir() / "recovery");
+    m_autosaveQueue = std::make_unique<AutosaveQueue>();
     loadBrushTips();
     m_autosaveTimer = new QTimer(this);
     connect(m_autosaveTimer, &QTimer::timeout, this, &MainWindow::autosaveTick);
@@ -1429,24 +1431,41 @@ void MainWindow::autosaveTick() {
     for (int i = 0; i < m_tabs->count(); ++i) {
         auto* v = static_cast<DocumentView*>(m_tabs->widget(i));
         if (!v->needsAutosave() || v->isBusy()) continue;
-        const auto st = m_recovery->write(v->recoveryId(), v->document(), v->filePath().toStdString(),
-                                          v->displayName().toStdString());
-        if (st) {
-            v->markAutosaved();
-            ACE_LOG_DEBUG("autosave", "Recovery copy written for " + v->displayName().toStdString());
-        } else {
-            ACE_LOG_ERROR("autosave", "Recovery copy failed: " + st.error().message);
-            if (!m_autosaveErrorShown) {
-                m_autosaveErrorShown = true;
-                statusBar()->showMessage(tr("Autosave failed: %1").arg(qs(st.error().message)), 8000);
-            }
-        }
+        const QString id = qs(v->recoveryId());
+        if (m_autosaving.contains(id)) continue;   // the previous write is still running
+        // Snapshot here (a memory copy); compress and write in the background
+        // so a large document does not freeze the editor.
+        auto snapshot = std::make_shared<Document>(v->document());
+        const std::uint64_t serial = v->changeSerial();
+        const std::string rid = v->recoveryId(), path = v->filePath().toStdString(), title = v->displayName().toStdString();
+        m_autosaving.insert(id);
+        RecoveryStore* store = m_recovery.get();
+        QPointer<DocumentView> view(v);
+        m_autosaveQueue->post([this, store, snapshot, serial, rid, path, title, id, view] {
+            const Status st = store->write(rid, *snapshot, path, title);
+            QMetaObject::invokeMethod(this, [this, st, serial, id, view, title] {
+                m_autosaving.remove(id);
+                if (st) {
+                    if (view) view->markAutosavedAt(serial);
+                    ACE_LOG_DEBUG("autosave", "Recovery copy written for " + title);
+                } else {
+                    ACE_LOG_ERROR("autosave", "Recovery copy failed: " + st.error().message);
+                    if (!m_autosaveErrorShown) {
+                        m_autosaveErrorShown = true;
+                        statusBar()->showMessage(tr("Autosave failed: %1").arg(qs(st.error().message)), 8000);
+                    }
+                }
+            });
+        });
     }
 }
 
 void MainWindow::discardRecovery(DocumentView* view) {
     if (!view || !m_recovery) return;
-    (void)m_recovery->remove(view->recoveryId());
+    // Queued behind any write still running for this document, so the
+    // recovery files are gone afterwards whatever the order of events.
+    RecoveryStore* store = m_recovery.get();
+    m_autosaveQueue->post([store, id = view->recoveryId()] { (void)store->remove(id); });
 }
 
 void MainWindow::offerRecovery() {
@@ -1518,6 +1537,7 @@ void MainWindow::closeEvent(QCloseEvent* e) {
         }
     }
     for (int i = 0; i < m_tabs->count(); ++i) discardRecovery(static_cast<DocumentView*>(m_tabs->widget(i)));
+    m_autosaveQueue->drain();
     saveWindowState();
     m_ctx.saveSettings();
     ACE_LOG_INFO("app", "Shutting down");

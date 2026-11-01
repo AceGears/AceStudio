@@ -643,6 +643,9 @@ void Document::compositeRegion(int frame, const IntRect& region, Image& canvas) 
     };
     const int n = compositeThreads(r);
     if (n == 1) { band(r.y, r.y + r.h); return; }
+    // The bands write to one Image from several threads: detach it from any
+    // copies first (copy-on-write) so no thread replaces its buffer.
+    (void)canvas.pixels();
     const auto edge = [&](int i) { return r.y + static_cast<int>(static_cast<long long>(r.h) * i / n); };
     std::vector<std::exception_ptr> errors(static_cast<std::size_t>(n));
     std::vector<std::thread> workers;
