@@ -1110,7 +1110,22 @@ json McpServer::complete(const json& id, const json& params) const {
     return okResponse(id, {{"completion", {{"values", values}, {"total", total}, {"hasMore", total > values.size()}}}});
 }
 
+// Never throws: malformed parameters (a string where an object belongs, ...)
+// become JSON-RPC errors instead of ending the server (found by fuzzing).
 std::optional<json> McpServer::handle(const json& msg, Connection& c, const Peer& peer) {
+    const json id = msg.is_object() && msg.contains("id") && (msg["id"].is_string() || msg["id"].is_number_integer()) ? msg["id"] : json();
+    try {
+        return handleChecked(msg, c, peer);
+    } catch (const json::exception& e) {
+        if (!msg.is_object() || !msg.contains("id")) return std::nullopt;
+        return errorResponse(id, code::kInvalidParams, std::string("Invalid parameters: ") + e.what());
+    } catch (const std::exception& e) {
+        if (!msg.is_object() || !msg.contains("id")) return std::nullopt;
+        return errorResponse(id, code::kInternalError, std::string("Internal error: ") + e.what());
+    }
+}
+
+std::optional<json> McpServer::handleChecked(const json& msg, Connection& c, const Peer& peer) {
     if (!msg.is_object() || msg.value("jsonrpc", std::string()) != "2.0" || !msg.contains("method") || !msg["method"].is_string()) {
         if (responseId(msg)) return std::nullopt;   // responses are routed by the transport
         const json id = msg.is_object() && msg.contains("id") ? msg["id"] : json(nullptr);
@@ -1262,6 +1277,16 @@ std::optional<json> McpServer::handleModern(const json& msg, Connection&, const 
 // ---- subscriptions
 
 std::variant<McpServer::Listen, json> McpServer::listenRequest(const json& msg) {
+    try {
+        return listenChecked(msg);
+    } catch (const std::exception& e) {
+        const json id = msg.is_object() && msg.contains("id") ? msg["id"] : json();
+        return errorResponse(id, code::kInvalidParams, std::string("Invalid parameters: ") + e.what());
+    }
+}
+
+std::variant<McpServer::Listen, json> McpServer::listenChecked(const json& msg) {
+    if (!msg.is_object()) return errorResponse(nullptr, code::kInvalidRequest, "Not a JSON-RPC 2.0 request");
     const json id = msg.value("id", json());
     const json& params = paramsOf(msg);
     if (auto e = envelopeError(id, metaOf(params))) return *e;

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <span>
@@ -226,6 +227,13 @@ Result<LicenceKey> verifyLicenceKey(const std::string& text) {
 }
 
 LicenceStatus licenceStatus(const fs::path& dataDir, std::chrono::system_clock::time_point now, bool useRegistry) {
+    // ACESTUDIO_DATA_DIR keeps everything in one folder (tests, CI): the
+    // registry, shared by every data folder of the user, stays out of it.
+#ifdef _WIN32
+    if (GetEnvironmentVariableW(L"ACESTUDIO_DATA_DIR", nullptr, 0) > 0) useRegistry = false;
+#else
+    if (std::getenv("ACESTUDIO_DATA_DIR")) useRegistry = false;
+#endif
     LicenceStatus st;
     const std::string today = dateOf(now);
     if (const std::string text = readText(dataDir / "licence.key"); !text.empty()) {

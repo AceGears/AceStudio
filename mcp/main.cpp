@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <charconv>
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
@@ -40,6 +41,19 @@
 using namespace acestudio;
 using namespace acestudio::mcp;
 namespace fs = std::filesystem;
+
+// HTTP limits: one request's headers and body.
+constexpr qsizetype kMaxHeaderBytes = 64 * 1024;
+constexpr qsizetype kMaxBodyBytes = 64 * 1024 * 1024;
+
+// Compares secrets without leaking how many leading bytes matched.
+bool constantTimeEquals(const std::string& a, const std::string& b) {
+    unsigned char diff = static_cast<unsigned char>(a.size() != b.size());
+    const std::size_t n = std::max(a.size(), b.size());
+    for (std::size_t i = 0; i < n; ++i)
+        diff |= static_cast<unsigned char>((i < a.size() ? a[i] : 0) ^ (i < b.size() ? b[i] : 0));
+    return diff == 0;
+}
 using namespace std::chrono_literals;
 
 namespace {
@@ -483,7 +497,7 @@ std::optional<QByteArray> dechunk(const QByteArray& in, qsizetype& used, bool& b
         QByteArray sizeLine = in.mid(pos, nl - pos);
         if (const qsizetype semi = sizeLine.indexOf(';'); semi >= 0) sizeLine.truncate(semi);
         const qsizetype size = sizeLine.trimmed().toLongLong(&ok, 16);
-        if (!ok || size < 0) {
+        if (!ok || size < 0 || size > kMaxBodyBytes || out.size() + size > kMaxBodyBytes) {   // no overflow below
             bad = true;
             return QByteArray();
         }
@@ -546,14 +560,25 @@ private:
     void onData(QTcpSocket* sock) {
         QByteArray& buf = m_buffers[sock];
         buf += sock->readAll();
-        if (buf.size() > 64 * 1024 * 1024) {
+        if (buf.size() > kMaxBodyBytes + kMaxHeaderBytes) {
             reply(sock, 413, "Payload Too Large", {}, {});
             sock->disconnectFromHost();
             return;
         }
         if (m_inFlight.count(sock) || m_listens.count(sock)) return;   // one request at a time per connection
         const qsizetype end = buf.indexOf("\r\n\r\n");
-        if (end < 0) return;
+        if (end < 0) {
+            if (buf.size() > kMaxHeaderBytes) {   // no end of headers in sight
+                reply(sock, 431, "Request Header Fields Too Large", {}, {});
+                sock->disconnectFromHost();
+            }
+            return;
+        }
+        if (end > kMaxHeaderBytes) {
+            reply(sock, 431, "Request Header Fields Too Large", {}, {});
+            sock->disconnectFromHost();
+            return;
+        }
         HttpRequest req;
         const QList<QByteArray> lines = buf.left(end).split('\n');
         const QList<QByteArray> start = lines.value(0).trimmed().split(' ');
@@ -583,7 +608,23 @@ private:
             req.body = *body;
             buf.remove(0, end + 4 + used);
         } else {
-            const qsizetype length = req.header("content-length") ? std::stoll(*req.header("content-length")) : 0;
+            qsizetype length = 0;
+            if (const auto cl = req.header("content-length")) {
+                // Digits only: no sign, no garbage (std::stoll would throw and end the server).
+                std::uint64_t v = 0;
+                const auto [p, ec] = std::from_chars(cl->data(), cl->data() + cl->size(), v);
+                if (cl->empty() || ec != std::errc() || p != cl->data() + cl->size()) {
+                    reply(sock, 400, "Bad Request", {}, "Bad Content-Length", "text/plain");
+                    sock->disconnectFromHost();
+                    return;
+                }
+                if (v > kMaxBodyBytes) {
+                    reply(sock, 413, "Payload Too Large", {}, {});
+                    sock->disconnectFromHost();
+                    return;
+                }
+                length = static_cast<qsizetype>(v);
+            }
             if (buf.size() < end + 4 + length) return;   // wait for the body
             req.body = buf.mid(end + 4, length);
             buf.remove(0, end + 4 + length);
@@ -648,7 +689,7 @@ private:
         }
         if (!m_token.empty()) {
             const std::string auth = req.header("authorization").value_or("");
-            if (auth != "Bearer " + m_token) {
+            if (!constantTimeEquals(auth, "Bearer " + m_token)) {
                 replyJson(sock, 401, "Unauthorized", McpServer::errorResponse(nullptr, code::kInvalidRequest, "Missing or wrong bearer token"),
                           {{"WWW-Authenticate", "Bearer"}});
                 return;

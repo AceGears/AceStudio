@@ -60,7 +60,8 @@ struct LicenceStatus {
 
 // Reads the saved key (<dataDir>/licence.key) and the trial start (recorded
 // on first use in <dataDir>/trial.json and, on Windows, the registry;
-// the earlier one counts; tests pass useRegistry = false). A clock set back
+// the earlier one counts; tests pass useRegistry = false, and ACESTUDIO_DATA_DIR
+// leaves the registry out too). A clock set back
 // before the trial start ends the trial.
 LicenceStatus licenceStatus(const std::filesystem::path& dataDir,
                             std::chrono::system_clock::time_point now = std::chrono::system_clock::now(), bool useRegistry = true);

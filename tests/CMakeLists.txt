@@ -61,6 +61,6 @@ target_link_libraries(engine_fixture PRIVATE AceStudio::core)
 
 # MCP protocol layer (no Qt needed for these tests).
 if(TARGET acestudio_mcp_proto)
-    target_sources(acestudio_core_tests PRIVATE test_mcp.cpp)
+    target_sources(acestudio_core_tests PRIVATE test_mcp.cpp test_fuzz_regressions.cpp)
     target_link_libraries(acestudio_core_tests PRIVATE acestudio_mcp_proto)
 endif()

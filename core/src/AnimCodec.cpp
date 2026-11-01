@@ -1,4 +1,5 @@
 #include "acestudio/core/AnimCodec.h"
+#include "acestudio/core/Document.h"
 #include "acestudio/core/PaletteIO.h"
 
 #include "StbImage.h"
@@ -197,9 +198,68 @@ Result<std::vector<std::uint8_t>> encodeGif(const std::vector<AnimFrame>& frames
     return o;
 }
 
+namespace {
+
+// The GIF's screen size and frame count, read from its block structure before
+// decoding: stb_image keeps every frame at screen size in memory, so a small
+// file can otherwise ask for gigabytes (found by fuzzing).
+struct GifShape {
+    int width = 0, height = 0, frames = 0;
+};
+std::optional<GifShape> gifShape(std::span<const std::uint8_t> b) {
+    if (b.size() < 13 || std::memcmp(b.data(), "GIF8", 4) != 0) return std::nullopt;
+    GifShape g;
+    g.width = b[6] | (b[7] << 8);
+    g.height = b[8] | (b[9] << 8);
+    std::size_t pos = 13;
+    if (b[10] & 0x80) pos += 3u * (1u << ((b[10] & 7) + 1));
+    auto skipSubBlocks = [&] {
+        while (pos < b.size()) {
+            const std::size_t len = b[pos++];
+            if (len == 0) return true;
+            pos += len;
+        }
+        return false;
+    };
+    while (pos < b.size()) {
+        const std::uint8_t tag = b[pos++];
+        if (tag == 0x3B) break;
+        if (tag == 0x21) {
+            if (pos >= b.size()) break;
+            ++pos;   // label
+            if (!skipSubBlocks()) break;
+        } else if (tag == 0x2C) {
+            if (pos + 9 > b.size()) break;
+            const std::uint8_t flags = b[pos + 8];
+            pos += 9;
+            if (flags & 0x80) pos += 3u * (1u << ((flags & 7) + 1));
+            ++pos;   // LZW minimum code size
+            ++g.frames;
+            if (!skipSubBlocks()) break;
+        } else {
+            break;
+        }
+    }
+    return g;
+}
+
+constexpr std::uint64_t kMaxDecodedGifBytes = 1ull << 30;   // all frames of an animation, decoded (GIF, WebP, APNG)
+
+} // namespace
+
 Result<DecodedAnimation> decodeGif(std::span<const std::uint8_t> bytes) {
     if (bytes.size() < 6 || bytes.size() > static_cast<std::size_t>(INT_MAX))
         return Error{ErrorCode::CorruptData, "Not a GIF"};
+    const auto shape = gifShape(bytes);
+    if (!shape) return Error{ErrorCode::CorruptData, "Not a GIF"};
+    if (shape->width <= 0 || shape->height <= 0 || shape->width > Image::kMaxDimension || shape->height > Image::kMaxDimension)
+        return Error{ErrorCode::CorruptData, "GIF dimensions exceed limits"};
+    if (shape->frames > Document::kMaxFrames)
+        return Error{ErrorCode::CorruptData, "The GIF has more than " + std::to_string(Document::kMaxFrames) + " frames"};
+    // stb also keeps two working copies of the screen.
+    if (static_cast<std::uint64_t>(shape->width) * static_cast<std::uint64_t>(shape->height) * 4u *
+            static_cast<std::uint64_t>(shape->frames + 3) > kMaxDecodedGifBytes)
+        return Error{ErrorCode::CorruptData, "The GIF is too large to import (more than 1 GB of pixels when decoded)"};
     int* delays = nullptr;
     int w = 0, h = 0, n = 0, comp = 0;
     stbi_uc* data = stbi_load_gif_from_memory(bytes.data(), static_cast<int>(bytes.size()), &delays, &w, &h, &n, &comp, 4);
@@ -355,6 +415,9 @@ Result<DecodedAnimation> decodeApng(std::span<const std::uint8_t> b) {
                     }
                 }
         }
+        if (out.frames.size() + 1 > static_cast<std::size_t>(Document::kMaxFrames) ||
+            (out.frames.size() + 3) * canvas.byteSize() > kMaxDecodedGifBytes)
+            return Error{ErrorCode::CorruptData, "The APNG is too large to import (more than 1 GB of pixels when decoded)"};
         out.frames.push_back({canvas, cur.delay});
         if (cur.dispose == 1) canvas.fillRect({cur.x, cur.y, cur.w, cur.h}, Rgba8::transparent());
         else if (cur.dispose == 2) canvas = before;
@@ -468,6 +531,9 @@ Result<DecodedAnimation> decodeWebp(std::span<const std::uint8_t> bytes) {
     const int w = static_cast<int>(info.canvas_width), h = static_cast<int>(info.canvas_height);
     if (w <= 0 || h <= 0 || w > Image::kMaxDimension || h > Image::kMaxDimension)
         return Error{ErrorCode::CorruptData, "WebP dimensions exceed limits"};
+    if (info.frame_count > static_cast<std::uint32_t>(Document::kMaxFrames) ||
+        static_cast<std::uint64_t>(w) * static_cast<std::uint64_t>(h) * 4u * (info.frame_count + 2u) > kMaxDecodedGifBytes)
+        return Error{ErrorCode::CorruptData, "The WebP is too large to import (more than 1 GB of pixels when decoded)"};
     DecodedAnimation out;
     out.loopCount = static_cast<int>(info.loop_count);
     int prevTs = 0;

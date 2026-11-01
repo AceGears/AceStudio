@@ -343,6 +343,8 @@ private:
     // Verifies a requestState; returns its payload, or an error message.
     std::variant<json, std::string> verifyState(const std::string& state, const std::string& method, const json& params) const;
 
+    std::optional<json> handleChecked(const json& msg, Connection& c, const Peer& peer);
+    std::variant<Listen, json> listenChecked(const json& msg);
     std::optional<json> handleLegacy(const json& msg, Connection& c, const Peer& peer);
     std::optional<json> handleModern(const json& msg, Connection& c, const Peer& peer);
 
