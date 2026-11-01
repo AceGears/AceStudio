@@ -146,6 +146,8 @@ TEST_CASE("a failed generation that is only noise is flagged", "[gen]") {
     const auto bad = gen::checkAsset(noise, o);
     bool flagged = false;
     for (const auto& i : bad.issues) flagged = flagged || i.code == "noise";
+    CHECK(bad.score() == 0);   // ranks below every real result
+    CHECK(gen::checkAsset(Image(16, 16), o).score() == 0);   // fully transparent
     CHECK(flagged);
     // A smooth gradient and blocky pixel art are not noise.
     Image ramp(64, 64);

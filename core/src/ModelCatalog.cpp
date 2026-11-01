@@ -67,6 +67,9 @@ Result<ModelCatalog> ModelCatalog::parse(const json& j) {
             e.task = m.at("task").get<std::string>();
             e.kind = m.value("kind", std::string("model"));
             e.requiresModel = m.value("requiresModel", std::string());
+            e.loraScale = m.value("loraScale", 1.0);
+            if (!(e.loraScale > 0.0 && e.loraScale <= 2.0))
+                return Error{ErrorCode::CorruptData, "model " + e.id + ": loraScale must be in (0, 2]"};
             e.description = m.value("description", std::string());
             e.copyright = m.value("copyright", std::string());
             e.source = m.value("source", std::string());

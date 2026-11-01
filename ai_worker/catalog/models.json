@@ -510,6 +510,7 @@
       "task": "image.klein",
       "kind": "lora",
       "requiresModel": "flux2-klein-4b",
+      "loraScale": 0.05,
       "description": "Pixel-art sprite style for FLUX.2 [klein] (trained on CC0 and synthetic sprites). AceStudio reduces the result to your canvas size and palette.",
       "license": "Apache-2.0",
       "copyright": "limbicnation",

@@ -39,6 +39,9 @@ struct ModelEntry {
     std::string task;          // worker task it serves
     std::string kind = "model";  // model | lora
     std::string requiresModel;   // a LoRA's base model
+    // A LoRA's default strength (adapter weight). 1.0 for most; an rsLoRA
+    // trained with a large alpha needs far less (it overdrives into noise).
+    double loraScale = 1.0;
     std::string description;
     ModelLicense license;
     std::string copyright;

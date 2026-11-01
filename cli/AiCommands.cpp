@@ -273,7 +273,7 @@ int cmdImageTask(const Args& a, Output& out, const AiContext& c, const ModelCata
             const ModelEntry* l = cat.find(*lora);
             if (!l || l->kind != "lora" || store.state(*l) != InstallState::Installed)
                 return out.fail(kIo, "LoRA " + *lora + " is not installed");
-            params["lora"] = {{"path", utf8(store.entryPath(*l))}, {"scale", 1.0}};
+            params["lora"] = {{"path", utf8(store.entryPath(*l))}, {"scale", l->loraScale}};
         }
         if (auto px = a.opt("pixel")) {
             const std::size_t x = px->find('x');

@@ -720,7 +720,7 @@ std::string GeneratorPage::submitJob(const std::vector<Image>& extraRefs, const 
         p["guidance"] = 6.0;
         if (gen::wantsTileable(s.type)) p["tileable"] = "xy";
     }
-    if (lora) p["lora"] = {{"path", utf8(m_ai.store()->entryPath(*lora))}, {"scale", 1.0}};
+    if (lora) p["lora"] = {{"path", utf8(m_ai.store()->entryPath(*lora))}, {"scale", lora->loraScale}};
     if (s.transparent) {
         const ModelEntry* bg = installed(m_ai, "birefnet-general");
         if (!bg) bg = installed(m_ai, "birefnet-lite");

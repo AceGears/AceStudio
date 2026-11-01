@@ -243,8 +243,13 @@ std::pair<int, int> generationSize(int outW, int outH, QualityPreset preset) {
 
 int QualityReport::score() const {
     int s = 100;
-    for (const Issue& i : issues) s -= i.severity == Severity::Problem ? 25 : i.severity == Severity::Warning ? 8 : 0;
-    return std::max(0, s);
+    bool unusable = false;
+    for (const Issue& i : issues) {
+        s -= i.severity == Severity::Problem ? 25 : i.severity == Severity::Warning ? 8 : 0;
+        // Nothing usable at all: rank below every real result, however few other issues.
+        unusable = unusable || i.code == "empty" || i.code == "noise";
+    }
+    return unusable ? 0 : std::max(0, s);
 }
 
 QualityReport checkAsset(const Image& img, const CheckOptions& opt) {

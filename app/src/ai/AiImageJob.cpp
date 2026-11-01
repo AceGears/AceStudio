@@ -75,7 +75,7 @@ bool AiImageJob::start(const Request& r, QString* why) {
               {"tileable", r.tileable.toStdString()},
               {"seed", r.seed}};
     if (const ModelEntry* l = cat->find("pixel-art-xl"); l && store->state(*l) == InstallState::Installed)
-        p["lora"] = {{"path", utf8(store->entryPath(*l))}, {"scale", 1.0}};
+        p["lora"] = {{"path", utf8(store->entryPath(*l))}, {"scale", l->loraScale}};
     if (const ModelEntry* tae = cat->find("taesdxl"); tae && store->state(*tae) == InstallState::Installed)
         p["preview"] = {{"dir", utf8(store->entryPath(*tae))}, {"every", 4}};
     if (r.pixelWidth > 0 && r.pixelHeight > 0) {

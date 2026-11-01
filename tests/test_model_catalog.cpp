@@ -32,6 +32,12 @@ TEST_CASE("Shipped model catalogue is valid and fully licensed", "[ai][models]")
     auto cat = ModelCatalog::load(ACESTUDIO_SOURCE_DIR "/ai_worker/catalog/models.json");
     if (!cat) FAIL(cat.error().message);
     REQUIRE(cat.value().models().size() >= 5);
+    // The klein pixel-art LoRA is an rsLoRA (rank 64, alpha 128): at full
+    // strength it overdrives FLUX.2 klein into pure noise (seen on the test PC).
+    const ModelEntry* pixelKlein = cat.value().find("pixel-art-klein-lora");
+    REQUIRE(pixelKlein);
+    CHECK(pixelKlein->loraScale < 0.2);
+    if (const ModelEntry* xl = cat.value().find("pixel-art-xl")) CHECK(xl->loraScale == 1.0);
     for (const auto& m : cat.value().models()) {
         INFO(m.id);
         CHECK(m.license.commercialUse);         // the default set excludes non-commercial models
