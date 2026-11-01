@@ -368,6 +368,17 @@ int cmdAnimate(const Args& a, Output& out) {
         if (!o.body) return out.fail(kUsage, "animate: --body expects biped, quadruped, blob, flyer or object");
     }
     o.faceLeft = a.opt("face").value_or("right") == "left";
+    try {
+        if (auto v = a.opt("wing-line")) o.wingLine = std::stod(*v);
+        if (auto v = a.opt("wing-span")) {
+            const auto dash = v->find('-');
+            if (dash == std::string::npos) return out.fail(kUsage, "animate: --wing-span expects FROM-TO (fractions of the width)");
+            o.wingFrom = std::stod(v->substr(0, dash));
+            o.wingTo = std::stod(v->substr(dash + 1));
+        }
+    } catch (...) {
+        return out.fail(kUsage, "animate: --wing-line and --wing-span expect numbers");
+    }
     auto pack = motion::animatePack(img.value(), list, o);
     if (!pack) return out.fail(pack.error());
     const fs::path dir = *outDir;

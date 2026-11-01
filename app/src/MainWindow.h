@@ -100,7 +100,7 @@ public:
     // Used by AI Studio for results.
     DocumentView* openAnimationAsDocument(const std::vector<Image>& frames, const std::vector<int>& durations, const QString& name,
                                           const std::vector<AnimationTag>& tags = {});
-    void animateSprite(const Image& sprite, const QString& name);
+    void animateSprite(const Image& sprite, const QString& name, const Mask& wingMask = {});
     DocumentView* openImageAsDocument(const Image& img, const QString& name);
     bool insertImageAsLayer(DocumentView* view, const Image& img, const QString& name, std::optional<LayerId> above = {},
                             int frame = -1);

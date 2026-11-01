@@ -187,3 +187,24 @@ TEST_CASE("a wing flap folds the part above the wing line", "[motion]") {
     for (const auto& i : chk.issues) INFO(i);
     CHECK(chk.issues.empty());
 }
+
+TEST_CASE("a wing mask chooses exactly which pixels flap", "[motion]") {
+    Image dragon(30, 30);
+    dragon.fillRect({8, 16, 16, 10}, kShirt);   // body
+    dragon.fillRect({10, 2, 8, 14}, kSkin);     // wing
+    dragon.fillRect({20, 6, 6, 10}, kPants);    // head, also above the line
+    Options o;
+    o.action = Action::Flap;
+    o.wingLine = 14.0 / 24.0;
+    o.wingMask = Mask(30, 30);
+    for (int y = 2; y < 16; ++y)
+        for (int x = 10; x < 18; ++x) o.wingMask.set(x, y, true);
+    auto clip = animate(dragon, o);
+    REQUIRE(clip);
+    // The head never moves (only the body's bob, which is whole pixels): its pixel count stays.
+    for (const Image& f : clip.value().frames) {
+        int head = 0;
+        for (const Rgba8& c : f.pixels()) head += c == kPants;
+        CHECK(head == 60);
+    }
+}

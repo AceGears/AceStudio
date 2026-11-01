@@ -337,7 +337,7 @@ struct RenderedClip {
 };
 
 RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action action, int frames, bool loops, double amount,
-                    const CustomMotion& cm, double wingLine) {
+                    const CustomMotion& cm, double wingLine, double wingFrom, double wingTo, const Mask& wingMask) {
     const IntRect bb = subj.bounds;
     const double W = bb.w, H = bb.h;
     const bool legs = (body == Body::Biped || body == Body::Quadruped) && subj.legTop >= 0 && !subj.feet.empty();
@@ -357,6 +357,8 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
     const std::size_t wingPart = groundPart + 1;
     const bool flap = action == Action::Flap;
     const int wingRow = bb.y + static_cast<int>(std::lround(std::clamp(wingLine, 0.05, 0.95) * bb.h));
+    const int wingX0 = bb.x + static_cast<int>(std::floor(std::clamp(std::min(wingFrom, wingTo), 0.0, 1.0) * bb.w));
+    const int wingX1 = bb.x + static_cast<int>(std::ceil(std::clamp(std::max(wingFrom, wingTo), 0.0, 1.0) * bb.w));
     std::vector<IntRect> partBounds(wingPart + 1, IntRect{});
     auto grow = [](IntRect& r, int x, int y) {
         if (r.empty()) { r = {x, y, 1, 1}; return; }
@@ -370,7 +372,7 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
             std::size_t part = 0;
             if (hasGround && y >= subj.groundTop && (x < shadowX0 || x > shadowX1)) {
                 part = groundPart;
-            } else if (flap && y < wingRow) {
+            } else if (flap && (wingMask.isNull() ? (y < wingRow && x >= wingX0 && x < wingX1) : wingMask.get(x, y))) {
                 part = wingPart;
             } else if (legs && y >= subj.legTop) {
                 int best = 0, bestDist = std::numeric_limits<int>::max();
@@ -610,7 +612,7 @@ Result<std::vector<Clip>> animatePack(const Image& sprite, const std::vector<Act
     for (Action a : list) {
         const ActionInfo& info = actionInfo(a);
         const int frames = std::clamp(base.frames > 0 && list.size() == 1 ? base.frames : info.frames, 1, 64);
-        rendered.push_back(render(sprite, subj, body, a, frames, info.loops, amount, base.custom, base.wingLine));
+        rendered.push_back(render(sprite, subj, body, a, frames, info.loops, amount, base.custom, base.wingLine, base.wingFrom, base.wingTo, base.wingMask));
     }
     const IntRect box = usedBox(rendered);
     std::vector<Clip> out;

@@ -15,6 +15,7 @@
 // differently) the AI pipeline generates the frames instead.
 
 #include "acestudio/core/Image.h"
+#include "acestudio/core/Raster.h"
 
 #include <optional>
 #include <string>
@@ -73,6 +74,12 @@ struct Options {
     // Wing flap: everything above this line (fraction of the sprite's height
     // from the top) is a wing that folds about the line.
     double wingLine = 0.45;
+    // ... and between these fractions of the width, so a head or tail that
+    // rises above the line can be left out.
+    double wingFrom = 0.0, wingTo = 1.0;
+    // Or exactly the pixels set here (same size as the sprite, e.g. a
+    // selection): the wings fold about the wing line, everything else stays.
+    Mask wingMask;
     CustomMotion custom;
 };
 

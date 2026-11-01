@@ -39,8 +39,9 @@ const char* bodyLabel(::acestudio::motion::Body b) {
 }
 } // namespace
 
-SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& name, OpenFn open, QWidget* parent)
-    : QDialog(parent), m_sprite(sprite), m_name(name), m_open(std::move(open)) {
+SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& name, OpenFn open, QWidget* parent, const Mask& wingMask)
+    : QDialog(parent), m_sprite(sprite), m_wingMask(wingMask), m_open(std::move(open)) {
+    m_name = name;
     setWindowTitle(tr("Animate Sprite"));
     m_subject = ::acestudio::motion::analyzeSubject(m_sprite);
 
@@ -120,6 +121,29 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     m_wingLabel->setBuddy(m_wingLine);
     form->addRow(m_wingLabel, m_wingLine);
     connect(m_wingLine, &QSlider::valueChanged, this, &SpriteAnimateDialog::rebuild);
+    auto* span = new QHBoxLayout;
+    m_wingFrom = new QSpinBox(this);
+    m_wingTo = new QSpinBox(this);
+    for (QSpinBox* sb : {m_wingFrom, m_wingTo}) {
+        sb->setRange(0, 100);
+        sb->setSuffix(QStringLiteral(" %"));
+        span->addWidget(sb);
+        connect(sb, &QSpinBox::valueChanged, this, &SpriteAnimateDialog::rebuild);
+    }
+    m_wingFrom->setValue(0);
+    m_wingTo->setValue(100);
+    m_wingFrom->setAccessibleName(tr("Wings start at (percent of the width)"));
+    m_wingTo->setAccessibleName(tr("Wings end at (percent of the width)"));
+    m_spanLabel = new QLabel(tr("Wing &span:"), this);
+    m_spanLabel->setBuddy(m_wingFrom);
+    m_spanLabel->setToolTip(tr("Only this part of the width folds, so a head or tail above the wing line stays still. "
+                               "For exact control, select the wings before opening Animate Sprite: the selection is used instead."));
+    if (!m_wingMask.isNull()) {
+        m_wingFrom->setEnabled(false);
+        m_wingTo->setEnabled(false);
+        m_spanLabel->setText(tr("Wing &span: the selection"));
+    }
+    form->addRow(m_spanLabel, span);
     right->addLayout(form);
 
     m_customBox = new QGroupBox(tr("Custom motion"), this);
@@ -201,6 +225,9 @@ std::vector<::acestudio::motion::Action> SpriteAnimateDialog::checkedActions() c
     o.faceLeft = m_face->currentIndex() == 1;
     o.custom = {m_bob->value(), m_sway->value(), m_squash->value(), m_tilt->value(), m_legSwing->value()};
     o.wingLine = m_wingLine->value() / 100.0;
+    o.wingFrom = m_wingFrom->value() / 100.0;
+    o.wingTo = m_wingTo->value() / 100.0;
+    o.wingMask = m_wingMask;
     return o;
 }
 
@@ -210,6 +237,9 @@ void SpriteAnimateDialog::rebuild() {
     const bool flap = std::find(list.begin(), list.end(), ::acestudio::motion::Action::Flap) != list.end();
     m_wingLine->setVisible(flap);
     m_wingLabel->setVisible(flap);
+    m_wingFrom->setVisible(flap);
+    m_wingTo->setVisible(flap);
+    m_spanLabel->setVisible(flap);
     m_clips.clear();
     if (list.empty()) {
         m_timer->stop();

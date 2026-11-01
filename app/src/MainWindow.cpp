@@ -669,7 +669,14 @@ void MainWindow::buildMenus() {
         if (!v) return void(QMessageBox::information(this, tr("Animate Sprite"), tr("Open a sprite first.")));
         const Image img = v->document().composite(v->currentFrame());
         const IntRect b = img.opaqueBounds();
-        animateSprite(b.empty() ? img : img.copy(b), QFileInfo(v->displayName()).completeBaseName());
+        // A selection becomes the wing mask for Wing flap (cropped like the sprite).
+        Mask wings;
+        if (const Mask* sel = v->selection(); sel && !b.empty()) {
+            wings = Mask(b.w, b.h);
+            for (int y = 0; y < b.h; ++y)
+                for (int x = 0; x < b.w; ++x) wings.set(x, y, sel->get(b.x + x, b.y + y));
+        }
+        animateSprite(b.empty() ? img : img.copy(b), QFileInfo(v->displayName()).completeBaseName(), wings);
     }))->setObjectName(QStringLiteral("anim.sprite"));
 
     QMenu* aiMenu = menuBar()->addMenu(tr("AI &Studio"));
@@ -1624,7 +1631,7 @@ DocumentView* MainWindow::openAnimationAsDocument(const std::vector<Image>& fram
     return view;
 }
 
-void MainWindow::animateSprite(const Image& sprite, const QString& name) {
+void MainWindow::animateSprite(const Image& sprite, const QString& name, const Mask& wingMask) {
     if (sprite.isNull() || sprite.isFullyTransparent()) {
         QMessageBox::information(this, tr("Animate Sprite"), tr("Open or select a sprite with a transparent background first."));
         return;
@@ -1634,7 +1641,7 @@ void MainWindow::animateSprite(const Image& sprite, const QString& name) {
                                    const QString& n) {
                                 if (openAnimationAsDocument(frames, durations, n, tags)) showWorkspace(Workspace::Animation);
                             },
-                            this);
+                            this, wingMask);
     dlg.exec();
 }
 

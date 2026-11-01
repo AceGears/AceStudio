@@ -71,7 +71,7 @@ const char* kUsageText =
     "        [--extrude 0] [--trim] [--pot] [--rotate] [--no-merge] [--engines unity] [--ppu N]\n"
     "                                  Deterministic atlas + TexturePacker-style JSON\n"
     "  animate <sprite.png> --out <folder> [--action idle,walk,...|all] [--frames N] [--amount X]\n"
-    "          [--body biped|quadruped|blob|flyer|object] [--face left]\n"
+    "          [--body biped|quadruped|blob|flyer|object] [--face left] [--wing-line 0.45] [--wing-span 0-1]\n"
     "                                  Animate a sprite without AI: one strip PNG + JSON per action\n"
     "  slice <sheet.png> --out <folder> [--grid WxH|auto [--offset X,Y] [--spacing X,Y] [--keep-empty]]\n"
     "        [--background #rrggbb] [--tolerance 8] [--merge 2] [--min-pixels 4]\n"

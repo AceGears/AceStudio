@@ -29,7 +29,7 @@ class SpriteAnimateDialog : public QDialog {
 public:
     using OpenFn = std::function<void(const std::vector<Image>& frames, const std::vector<int>& durations,
                                       const std::vector<AnimationTag>& tags, const QString& name)>;
-    SpriteAnimateDialog(const Image& sprite, const QString& name, OpenFn open, QWidget* parent = nullptr);
+    SpriteAnimateDialog(const Image& sprite, const QString& name, OpenFn open, QWidget* parent = nullptr, const Mask& wingMask = {});
 
 private:
     ::acestudio::motion::Options options() const;
@@ -40,6 +40,7 @@ private:
     void exportStrips();
 
     Image m_sprite;
+    Mask m_wingMask;
     QString m_name;
     OpenFn m_open;
     ::acestudio::motion::Subject m_subject;
@@ -54,6 +55,9 @@ private:
     QSpinBox* m_frames = nullptr;
     QSlider* m_wingLine = nullptr;
     QLabel* m_wingLabel = nullptr;
+    QSpinBox* m_wingFrom = nullptr;
+    QSpinBox* m_wingTo = nullptr;
+    QLabel* m_spanLabel = nullptr;
     QWidget* m_customBox = nullptr;
     QDoubleSpinBox* m_bob = nullptr;
     QDoubleSpinBox* m_sway = nullptr;
