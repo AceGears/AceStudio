@@ -66,7 +66,8 @@ Result<SpriteSheet> buildSpriteSheet(const Document& doc, const FrameRange& rang
 enum class JsonStyle { Hash, Array };
 
 // Aseprite-compatible JSON (read by Phaser's load.aseprite, many engines and
-// texture tools). Frame names are "<baseName> <index>". Tags are remapped to
+// texture tools). Frame names are "<baseName> <index>", or "<index>" when
+// baseName is empty (what Phaser's createFromAseprite expects). Tags are remapped to
 // exported frame positions; tags outside the exported range are dropped.
 std::string spriteSheetJson(const Document& doc, const SpriteSheet& sheet, const std::string& imageFile,
                             const std::string& baseName, JsonStyle style);

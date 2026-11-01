@@ -5,6 +5,8 @@
 #include "acestudio/core/PngCodec.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdio>
 #include <set>
 #include <sstream>
 
@@ -20,12 +22,15 @@ Result<unsigned> parseEngineTargets(const std::string& list) {
         item.erase(std::remove_if(item.begin(), item.end(), [](char c) { return c == ' '; }), item.end());
         std::transform(item.begin(), item.end(), item.begin(), [](char c) { return static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c); });
         if (item.empty() || item == "none") continue;
-        if (item == "all") out |= kEngineGodot | kEngineUnity | kEngineTiled;
+        if (item == "all") out |= kEngineGodot | kEngineUnity | kEngineTiled | kEnginePhaser | kEngineGameMaker;
         else if (item == "godot") out |= kEngineGodot;
         else if (item == "unity") out |= kEngineUnity;
         else if (item == "unity-rule-tiles" || item == "unity-ruletiles") out |= kEngineUnity | kEngineUnityRuleTiles;
         else if (item == "tiled") out |= kEngineTiled;
-        else return Error{ErrorCode::InvalidArgument, "Unknown engine \"" + item + "\" (use godot, unity, unity-rule-tiles, tiled, all or none)"};
+        else if (item == "phaser") out |= kEnginePhaser;
+        else if (item == "gamemaker" || item == "gms2") out |= kEngineGameMaker;
+        else return Error{ErrorCode::InvalidArgument,
+                          "Unknown engine \"" + item + "\" (use godot, unity, unity-rule-tiles, tiled, phaser, gamemaker, all or none)"};
     }
     return out;
 }
@@ -251,7 +256,9 @@ Result<WrittenFiles> writeSheetFiles(const Document& doc, const FrameRange& rang
     Plan plan;
     if (!o.engineFilesOnly) {
         plan.image(png, sheet.value().image);
-        plan.text(dir / (stem + ".json"), spriteSheetJson(doc, sheet.value(), fileName(png), stem, JsonStyle::Hash));
+        // Phaser looks frames up by number, so its sheets name frames "0", "1", ...
+        plan.text(dir / (stem + ".json"),
+                  spriteSheetJson(doc, sheet.value(), fileName(png), (o.engines & kEnginePhaser) ? std::string() : stem, JsonStyle::Hash));
     }
     const EngineSheet es = engineSheet(doc, sheet.value(), stem);
     if (o.engines & kEngineGodot) plan.text(dir / (stem + ".tres"), godotSpriteFrames(es, fileName(png)));
@@ -268,6 +275,56 @@ Result<WrittenFiles> writeSheetFiles(const Document& doc, const FrameRange& rang
             plan.text(anim, unityAnimationClip(es, i, guid));
             plan.text(fs::path(anim.string() + ".meta"), unityAssetMeta(unityGuid("acestudio:" + fileName(anim)), 7400000));
         }
+    }
+    if (o.engines & kEnginePhaser) {
+        // Phaser 3 reads the Aseprite JSON directly (load.aseprite + anims.createFromAseprite).
+        const std::string js = "// Phaser 3 loader for " + stem + " (written by AceStudio).\n"
+                               "// In a scene: preload() { loadSheet(this); }  create() { createAnimations(this); }\n"
+                               "// Animations are named after the tags; frame durations come from the JSON.\n"
+                               "export const key = '" + stem + "';\n"
+                               "export function loadSheet(scene, folder = '') {\n"
+                               "  scene.load.aseprite(key, folder + '" + fileName(png) + "', folder + '" + stem + ".json');\n"
+                               "}\n"
+                               "export function createAnimations(scene) {\n"
+                               "  const made = scene.anims.createFromAseprite(key);\n"
+                               "  // As in Aseprite: a tag without a repeat count loops; \"repeat\": \"N\" plays N times.\n"
+                               "  const tags = scene.cache.json.get(key).meta.frameTags || [];\n"
+                               "  for (const anim of made) {\n"
+                               "    const tag = tags.find((t) => t.name === anim.key);\n"
+                               "    anim.repeat = tag && tag.repeat ? Number(tag.repeat) - 1 : -1;\n"
+                               "  }\n"
+                               "  return made;\n"
+                               "}\n";
+        plan.text(dir / (stem + "_phaser.js"), js);
+    }
+    if (o.engines & kEngineGameMaker) {
+        // One strip per animation, untrimmed frames side by side; GameMaker
+        // splits "<name>_stripN.png" into N frames when it is imported.
+        const SpriteSheet& sh = sheet.value();
+        std::set<std::string> used;
+        std::string speeds = "GameMaker sprites for " + stem + " (drag the PNGs into the Asset Browser, or Import Strip Image).\n"
+                             "Set each sprite's speed (frames per second) to:\n";
+        for (const EngineAnimation& a : es.animations) {
+            if (a.frames.empty()) continue;
+            const int n = static_cast<int>(a.frames.size());
+            Image strip(sh.frameWidth * n, sh.frameHeight);
+            for (int k = 0; k < n; ++k) {
+                const SheetFrame& f = sh.frames[static_cast<std::size_t>(a.frames[static_cast<std::size_t>(k)])];
+                strip.blit(sh.image.copy(f.rect), k * sh.frameWidth + f.source.x, f.source.y);
+            }
+            std::string name = stem + "_" + a.name;
+            for (char& c : name)
+                if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') c = '_';
+            while (!used.insert(name).second) name += "_";
+            plan.image(dir / (name + "_strip" + std::to_string(n) + ".png"), std::move(strip));
+            double total = 0;
+            for (int d : a.durationsMs) total += d;
+            const double fps = total > 0 ? 1000.0 * n / total : 10.0;
+            char line[160];
+            std::snprintf(line, sizeof line, "  %s_strip%d: %.2f fps%s\n", name.c_str(), n, fps, a.loop ? "" : " (plays once)");
+            speeds += line;
+        }
+        plan.text(dir / (stem + "_gamemaker.txt"), speeds);
     }
     std::vector<std::string> notes;
     if (o.engines & kEngineTiled) {

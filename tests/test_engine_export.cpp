@@ -4,6 +4,7 @@
 
 #include "acestudio/core/AssetFiles.h"
 #include "acestudio/core/Document.h"
+#include "acestudio/core/PngCodec.h"
 #include "acestudio/core/EngineExport.h"
 
 #include <algorithm>
@@ -157,12 +158,29 @@ TEST_CASE("Asset files: everything written, nothing overwritten without permissi
     REQUIRE(s);
     for (const char* f : {"hero.png", "hero.json", "hero.tres", "hero.png.meta", "hero_run.anim", "hero_run.anim.meta", "hero_bounce.anim"})
         CHECK(fs::exists(dir / f));
+    {
+        AssetWriteOptions g = o;
+        g.engines = kEnginePhaser | kEngineGameMaker;
+        auto w = writeSheetFiles(animated(), {}, SheetOptions{}, dir / "gm", g);
+        REQUIRE(w);
+        CHECK(fs::exists(dir / "gm_phaser.js"));
+        std::ifstream js(dir / "gm.json");
+        const auto sheetJson = nlohmann::json::parse(js);
+        CHECK(sheetJson["frames"].contains("0"));   // Phaser looks frames up by number
+        CHECK(fs::exists(dir / "gm_gamemaker.txt"));
+        auto strip = readPng(dir / "gm_run_strip4.png");
+        REQUIRE(strip);
+        CHECK(strip.value().width() == 32);
+        for (int k = 0; k < 4; ++k) CHECK(strip.value().pixel(k * 8 + k, 3).a == 255);   // frame k's bar starts at x = k
+        CHECK(fs::exists(dir / "gm_bounce_strip4.png"));   // ping-pong 1,2,3,2 expanded
+    }
     auto u = writeUiKitFiles(generateUiKit({}), dir / "ui.png", o);
     REQUIRE(u);
     CHECK(fs::exists(dir / "ui_panel.tres"));
     CHECK_FALSE(fs::exists(dir / "ui_checkbox_on.tres"));   // fixed-size elements get no StyleBox
     CHECK_FALSE(parseEngineTargets("unreal"));
-    CHECK(parseEngineTargets("all").value() == (kEngineGodot | kEngineUnity | kEngineTiled));
+    CHECK(parseEngineTargets("all").value() == (kEngineGodot | kEngineUnity | kEngineTiled | kEnginePhaser | kEngineGameMaker));
+    CHECK(parseEngineTargets("phaser,gamemaker").value() == (kEnginePhaser | kEngineGameMaker));
     fs::remove_all(dir);
 }
 

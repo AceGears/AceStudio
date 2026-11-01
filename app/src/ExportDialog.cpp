@@ -123,7 +123,7 @@ ExportDialog::ExportDialog(ExportKind kind, const Document& doc, int currentFram
         form->addRow(QString(), m_merge);
         form->addRow(QString(), m_pot);
         form->addRow(tr("&Data:"), m_json);
-        m_engines = new EngineChoice(kEngineGodot | kEngineUnity, box);
+        m_engines = new EngineChoice(kEngineGodot | kEngineUnity | kEnginePhaser | kEngineGameMaker, box);
         form->addRow(tr("&Engines:"), m_engines);
         connect(m_layout, &QComboBox::currentIndexChanged, this, [this] {
             m_columns->setEnabled(m_layout->currentData().toInt() == static_cast<int>(SheetLayout::Grid));

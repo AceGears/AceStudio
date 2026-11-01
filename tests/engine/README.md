@@ -47,3 +47,31 @@ matched: 11 textures, 190 sprites, 3 clips, 13 keys and 1780 painted cells, with
 warnings. Clip lengths equal the
 frame durations: walk 0.40 s, idle 0.45 s, die 0.65 s. The report is kept as
 `unity/report-6000.6.7f1.json`.
+
+## Phaser 3 and 4
+
+    cd <work dir>
+    acestudio-cli run <repo>/tests/engine/phaser/make.lua --base .
+    acestudio-cli export hero.acestudio --format sheet --out out/hero.png --engines phaser,gamemaker
+    npm install --ignore-scripts phaser@3.90.0
+    npm install --ignore-scripts --prefix p4 phaser@4.2.1
+    sed 's#PHASER#node_modules/phaser/dist/phaser.min.js#' <repo>/tests/engine/phaser/check.html.in > check3.html
+    sed 's#PHASER#p4/node_modules/phaser/dist/phaser.min.js#' <repo>/tests/engine/phaser/check.html.in > check4.html
+    NODE_PATH=$(npm root -g) node <repo>/tests/engine/phaser/run.js .
+
+`run.js` serves the folder, opens both pages in headless Chromium (Playwright),
+loads the sheet with the exported `hero_phaser.js` (`load.aseprite`,
+`anims.createFromAseprite`) and prints each animation's frames, durations and
+repeat.
+
+Last run (2026-11-01): Phaser 3.90.0 and 4.2.1 both made `walk` (frames 0-3,
+120/100/100/100 ms) and `hit` (frames 4-5), looping, and played `walk`. The
+first run found a real problem: Phaser looks frames up by number, and the
+sheet named them "hero 0", … so no animation got frames. Sheets exported for
+Phaser now name frames "0", "1", ….
+
+## GameMaker
+
+Not run in GameMaker (not available here). The export follows GameMaker's
+strip convention: `<name>_stripN.png` is split into N frames when imported,
+and `<stem>_gamemaker.txt` lists each sprite's speed in frames per second.

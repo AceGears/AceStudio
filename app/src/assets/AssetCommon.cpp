@@ -54,7 +54,9 @@ EngineChoice::EngineChoice(unsigned available, QWidget* parent) : QWidget(parent
     const std::pair<unsigned, QString> all[] = {{kEngineGodot, tr("Godot")},
                                                 {kEngineUnity, tr("Unity")},
                                                 {kEngineUnityRuleTiles, tr("+ Rule Tiles")},
-                                                {kEngineTiled, tr("Tiled")}};
+                                                {kEngineTiled, tr("Tiled")},
+                                                {kEnginePhaser, tr("Phaser")},
+                                                {kEngineGameMaker, tr("GameMaker")}};
     for (const auto& [bit, label] : all) {
         if (!(available & bit)) continue;
         auto* box = new QCheckBox(label, this);
@@ -71,7 +73,8 @@ EngineChoice::EngineChoice(unsigned available, QWidget* parent) : QWidget(parent
     }
     setToolTip(tr("Godot: .tres resources (SpriteFrames, TileSet terrains, StyleBoxTexture). Unity: .meta files with "
                   "sprites, borders and pivots, .anim clips, and tiles that paint like AceStudio (no package needed). "
-                  "Tiled: .tsx tilesets with Wang sets and tile animations."));
+                  "Tiled: .tsx tilesets with Wang sets and tile animations. Phaser: frame names Phaser's createFromAseprite "
+                  "reads, and a loader module. GameMaker: one _stripN.png per animation."));
 }
 
 unsigned EngineChoice::engines() const {

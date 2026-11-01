@@ -162,7 +162,8 @@ std::string spriteSheetJson(const Document& doc, const SpriteSheet& sheet, const
     json frames = style == JsonStyle::Hash ? json::object() : json::array();
     for (std::size_t i = 0; i < sheet.frames.size(); ++i) {
         const SheetFrame& f = sheet.frames[i];
-        const std::string name = baseName + " " + std::to_string(i);
+        // An empty base name gives Aseprite's "{frame}" naming ("0", "1", ...), which Phaser's createFromAseprite needs.
+        const std::string name = baseName.empty() ? std::to_string(i) : baseName + " " + std::to_string(i);
         json entry = {{"frame", {{"x", f.rect.x}, {"y", f.rect.y}, {"w", f.rect.w}, {"h", f.rect.h}}},
                       {"rotated", false},
                       {"trimmed", f.trimmed},

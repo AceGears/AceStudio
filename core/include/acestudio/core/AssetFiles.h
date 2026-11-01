@@ -30,9 +30,14 @@ enum EngineTarget : unsigned {
     // Also Unity Rule Tiles (needs com.unity.2d.tilemap.extras) for Blob47
     // and Cardinal16; implies kEngineUnity.
     kEngineUnityRuleTiles = 8,
+    // Animation sheets only: Phaser 3 (the Aseprite JSON plus a loader
+    // module) and GameMaker (one <name>_stripN.png per animation, which
+    // GameMaker splits into N frames on import).
+    kEnginePhaser = 16,
+    kEngineGameMaker = 32,
 };
-// "godot", "unity", "unity-rule-tiles", "tiled", comma separated, or "all" /
-// "none" ("all" leaves out Rule Tiles).
+// "godot", "unity", "unity-rule-tiles", "tiled", "phaser", "gamemaker",
+// comma separated, or "all" / "none" ("all" leaves out Rule Tiles).
 Result<unsigned> parseEngineTargets(const std::string& list);
 
 struct AssetWriteOptions {

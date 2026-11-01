@@ -1,0 +1,17 @@
+<!doctype html><html><body><script src="PHASER"></script>
+<script type="module">
+import { loadSheet, createAnimations, key } from './out/hero_phaser.js';
+class S extends Phaser.Scene {
+  preload() { loadSheet(this, 'out/'); }
+  create() {
+    const made = createAnimations(this);
+    const anims = made.map(a => ({ key: a.key, frames: a.frames.length, durations: a.frames.map(f => f.duration),
+                                   frameNames: a.frames.map(f => f.textureFrame), repeat: a.repeat }));
+    const tex = this.textures.get(key);
+    const sprite = this.add.sprite(32, 32, key);
+    sprite.play('walk');
+    window.report = { phaser: Phaser.VERSION, frames: tex.getFrameNames().length, anims, playing: sprite.anims.currentAnim && sprite.anims.currentAnim.key };
+  }
+}
+new Phaser.Game({ type: Phaser.CANVAS, width: 64, height: 64, scene: S, banner: false, audio: { noAudio: true } });
+</script></body></html>
