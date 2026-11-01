@@ -7,6 +7,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -67,6 +68,9 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     basic->setToolTip(tr("Idle, walk, run, jump, attack, hurt and death"));
     auto* all = new QPushButton(tr("All"), this);
     auto* none = new QPushButton(tr("None"), this);
+    // Enter in a spin box must not press one of these (it replaced the chosen
+    // actions with the basic set on the test PC).
+    for (QPushButton* b : {basic, all, none}) b->setAutoDefault(false);
     presets->addWidget(basic);
     presets->addWidget(all);
     presets->addWidget(none);
@@ -186,6 +190,8 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     connect(openBtn, &QPushButton::clicked, this, &SpriteAnimateDialog::openDocument);
     connect(exportBtn, &QPushButton::clicked, this, &SpriteAnimateDialog::exportStrips);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    for (QAbstractButton* b : buttons->buttons())
+        if (auto* pb = qobject_cast<QPushButton*>(b)) pb->setAutoDefault(false);   // Enter in a field does nothing
 
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &SpriteAnimateDialog::showFrame);
@@ -314,8 +320,14 @@ void SpriteAnimateDialog::openDocument() {
 
 void SpriteAnimateDialog::exportStrips() {
     if (m_clips.empty()) return;
-    const QString dir = QFileDialog::getExistingDirectory(this, tr("Export Animation Strips"));
+    // Starts in the last folder used this session, else the home folder (not
+    // the working directory, which is the install folder when started from
+    // the Start menu).
+    static QString lastDir;
+    const QString start = !lastDir.isEmpty() && QDir(lastDir).exists() ? lastDir : QDir::homePath();
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Export Animation Strips"), start);
     if (dir.isEmpty()) return;
+    lastDir = dir;
     QStringList written;
     for (const ::acestudio::motion::Clip& c : m_clips) {
         const int fw = c.frames[0].width(), fh = c.frames[0].height();

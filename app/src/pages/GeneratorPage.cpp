@@ -373,13 +373,14 @@ QWidget* GeneratorPage::buildResults() {
     col->addWidget(m_results, 2);
     connect(m_results, &QListWidget::currentRowChanged, this, &GeneratorPage::showResult);
 
-    // 4 Refine: the selected result, its check and the actions.
+    // 4 Refine: the selected result, its check and the actions (two columns,
+    // so the page fits a 1280 px screen with Windows fonts).
     auto* detail = new QFrame(w);
     detail->setProperty("card", true);
     auto* dl = new QHBoxLayout(detail);
     dl->setContentsMargins(14, 12, 14, 12);
     m_preview = new QLabel(detail);
-    m_preview->setFixedSize(200, 200);
+    m_preview->setFixedSize(180, 180);
     m_preview->setAlignment(Qt::AlignCenter);
     m_preview->setAccessibleName(tr("Selected result"));
     dl->addWidget(m_preview);
@@ -404,10 +405,10 @@ QWidget* GeneratorPage::buildResults() {
         if (!m_view) return void(Q_EMIT statusMessage(tr("Open a project first, or use Open as Document.")));
         Q_EMIT addAsLayer(r.image, r.name);
     });
-    act(tr("Animate…"), 0, 2, [this](Result& r) { Q_EMIT animateRequested(r.image, r.name); });
-    act(tr("More Like This"), 1, 0, [this](Result& r) { generate({r.raw.isNull() ? r.image : r.raw}); });
-    act(tr("Use as Reference"), 1, 1, [this](Result& r) { addReference(r.raw.isNull() ? r.image : r.raw, r.name, style::RefRole::Character); });
-    act(tr("Add to Style"), 2, 0, [this](Result& r) {
+    act(tr("Animate…"), 1, 0, [this](Result& r) { Q_EMIT animateRequested(r.image, r.name); });
+    act(tr("More Like This"), 1, 1, [this](Result& r) { generate({r.raw.isNull() ? r.image : r.raw}); });
+    act(tr("Use as Reference"), 2, 0, [this](Result& r) { addReference(r.raw.isNull() ? r.image : r.raw, r.name, style::RefRole::Character); });
+    act(tr("Add to Style"), 3, 0, [this](Result& r) {
         const std::string id = m_styleCombo->currentData().toString().toStdString();
         if (id.empty()) return void(Q_EMIT statusMessage(tr("Create a style first (Game style › New Style from References).")));
         auto p = m_styles.addReferences(id, {{r.image, style::RefRole::Style}});
@@ -415,9 +416,9 @@ QWidget* GeneratorPage::buildResults() {
         refreshStyles();
         Q_EMIT statusMessage(tr("Added to the style “%1”.").arg(qs(p.value().name)));
     });
-    act(tr("Character Pack…"), 2, 1, [this](Result& r) { startCharacterPack(r); })
+    act(tr("Character Pack…"), 3, 1, [this](Result& r) { startCharacterPack(r); })
         ->setToolTip(tr("Generates the other directions from this character (FLUX.2 klein) and animates every direction."));
-    act(tr("Save PNG…"), 1, 2, [this](Result& r) {
+    act(tr("Save PNG…"), 2, 1, [this](Result& r) {
         const QString f = QFileDialog::getSaveFileName(this, tr("Save PNG"), r.name + QStringLiteral(".png"), tr("PNG (*.png)"));
         if (f.isEmpty()) return;
         if (auto st = writePng(r.image, toPath(f)); !st) QMessageBox::warning(this, tr("Save PNG"), qs(st.error().message));
@@ -1309,7 +1310,7 @@ void GeneratorPage::showResult(int index) {
         return;
     }
     const Result& r = m_resultList[static_cast<std::size_t>(index)];
-    m_preview->setPixmap(thumb(r.image, 200));
+    m_preview->setPixmap(thumb(r.image, 180));
     QString html = tr("<b>%1 × %2 px</b>, %3 colours, score %4/100<br>").arg(r.image.width()).arg(r.image.height())
                        .arg(r.report.colors).arg(r.report.score());
     if (r.styleMatch) html += tr("Style match: %1%<br>").arg(static_cast<int>(*r.styleMatch * 100));
