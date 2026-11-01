@@ -128,6 +128,9 @@ LibraryPage::LibraryPage(AppContext& ctx, QWidget* parent) : QWidget(parent), m_
     m_sort->addItems({tr("Newest first"), tr("Name"), tr("Largest first")});
     m_folders = new QComboBox(this);
     m_folders->setAccessibleName(tr("Library folders"));
+    // A long folder path must not widen the page (and the window).
+    m_folders->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_folders->setMinimumContentsLength(18);
     m_folders->setMinimumWidth(200);
     auto* add = new QPushButton(icon(Glyph::Plus), tr("Add Folder…"), this);
     auto* remove = new QPushButton(tr("Remove Folder"), this);
@@ -135,12 +138,14 @@ LibraryPage::LibraryPage(AppContext& ctx, QWidget* parent) : QWidget(parent), m_
     bar->addWidget(m_search, 2);
     bar->addWidget(m_kind);
     bar->addWidget(m_sort);
-    bar->addSpacing(12);
-    bar->addWidget(m_folders, 1);
-    bar->addWidget(add);
-    bar->addWidget(remove);
-    bar->addWidget(refresh);
     col->addLayout(bar);
+    // Folders on their own row, so the page fits a 1280 px screen with Windows fonts.
+    auto* folderBar = new QHBoxLayout;
+    folderBar->addWidget(m_folders, 1);
+    folderBar->addWidget(add);
+    folderBar->addWidget(remove);
+    folderBar->addWidget(refresh);
+    col->addLayout(folderBar);
 
     m_list = new QListWidget(this);
     m_list->setAccessibleName(tr("Assets"));
