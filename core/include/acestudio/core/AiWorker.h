@@ -199,7 +199,14 @@ struct PythonInfo {
     // A 32-bit Python: ONNX Runtime and PyTorch publish 64-bit wheels only,
     // so no AI runtime profile can be installed.
     bool is32Bit() const noexcept { return bits == 32; }
+    // The embeddable distribution bundled with the installer (a python*._pth
+    // file next to it): it has no venv or pip, so ensureVenv() copies it and
+    // installs pip from the bundled wheel instead.
+    bool embeddable = false;
 };
+
+// The Python bundled with AceStudio (<exe dir>/python/python.exe), if any.
+std::filesystem::path bundledPython();
 
 // Newest Python minor version every pinned AI package publishes Windows
 // wheels for (checked 2026-10-30: onnxruntime 1.31.1 and

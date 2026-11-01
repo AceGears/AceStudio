@@ -1,4 +1,5 @@
 #include "acestudio/core/AiWorker.h"
+#include "acestudio/core/FileUtil.h"
 
 #include "acestudio/core/PngCodec.h"
 
@@ -537,6 +538,11 @@ Result<PythonInfo> probePython(const fs::path& exe, const std::vector<std::strin
         line.resize(sp);
     }
     PythonInfo info{exe, prefixArgs, line, 0, bits};
+    std::error_code pec;
+    for (fs::directory_iterator it(exe.parent_path(), pec), end; !pec && it != end; it.increment(pec)) {
+        const std::string n = it->path().filename().string();
+        if (n.rfind("python", 0) == 0 && it->path().extension() == "._pth") info.embeddable = true;
+    }
     // "3.12.4" -> major 3, minor 12
     int major = 0, minor = 0;
     const char* b = info.version.data();
@@ -550,6 +556,15 @@ Result<PythonInfo> probePython(const fs::path& exe, const std::vector<std::strin
     return info;
 }
 
+fs::path bundledPython() {
+#ifdef _WIN32
+    std::error_code ec;
+    const fs::path p = executableDir() / "python" / "python.exe";
+    if (fs::exists(p, ec)) return p;
+#endif
+    return {};
+}
+
 Result<PythonInfo> findPython(const fs::path& configured) {
     std::string tried;
     auto attempt = [&](const fs::path& exe, std::vector<std::string> pre) -> std::optional<PythonInfo> {
@@ -560,6 +575,10 @@ Result<PythonInfo> findPython(const fs::path& configured) {
     };
     if (!configured.empty())
         if (auto r = attempt(configured, {})) return *r;
+    // The Python bundled with the installer: a known version that the AI
+    // packages support.
+    if (const fs::path b = bundledPython(); !b.empty())
+        if (auto r = attempt(b, {}); r && !r->is32Bit()) return *r;
     // First choice: a version the AI packages support, newest first.
     for (int minor = kNewestAiPythonMinor; minor >= 10; --minor) {
 #ifdef _WIN32
@@ -590,11 +609,60 @@ bool PythonInfo::newerThanAiPackages() const noexcept { return minor > kNewestAi
 
 fs::path venvPython(const fs::path& venvDir) {
 #ifdef _WIN32
+    // A copy of the bundled embeddable Python keeps python.exe at the top.
+    std::error_code ec;
+    if (!fs::exists(venvDir / "Scripts" / "python.exe", ec) && fs::exists(venvDir / "python.exe", ec)) return venvDir / "python.exe";
     return venvDir / "Scripts" / "python.exe";
 #else
     return venvDir / "bin" / "python";
 #endif
 }
+
+namespace {
+
+Result<int> runQuiet(const ProcessSpec& spec, std::chrono::seconds timeout, std::string* err) {
+    auto p = Subprocess::start(spec);
+    if (!p) return p.error();
+    auto code = p.value()->wait(timeout);
+    if (err)
+        for (auto& l : p.value()->takeLines(Subprocess::Stream::Stderr)) *err += "\n" + l;
+    if (!code) return Error{ErrorCode::IoError, spec.program.string() + " did not finish"};
+    return *code;
+}
+
+// The embeddable Python as a private environment: a copy in the user's data
+// folder (the install folder may not be writable), without its ._pth file so
+// it searches paths like a regular install (site-packages, PYTHONPATH), and
+// with pip installed from the wheel bundled next to it.
+Result<fs::path> copyEmbeddable(const PythonInfo& base, const fs::path& venvDir) {
+    std::error_code ec;
+    const fs::path from = base.executable.parent_path();
+    fs::create_directories(venvDir, ec);
+    fs::copy(from, venvDir, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+    if (ec) return Error{ErrorCode::IoError, "Cannot copy the bundled Python to " + venvDir.string() + ": " + ec.message()};
+    fs::path wheel;
+    for (fs::directory_iterator it(venvDir, ec), end; !ec && it != end; it.increment(ec)) {
+        const std::string n = it->path().filename().string();
+        if (it->path().extension() == "._pth") fs::remove(it->path(), ec);
+        if (n.rfind("pip-", 0) == 0 && it->path().extension() == ".whl") wheel = it->path();
+        ec.clear();
+    }
+    const fs::path py = venvDir / "python.exe";
+    if (wheel.empty()) return Error{ErrorCode::NotFound, "The bundled Python has no pip wheel; reinstall AceStudio"};
+    ProcessSpec spec;
+    spec.program = py;
+    spec.args = {utf8(wheel / "pip"), "install", "--no-index", "--no-warn-script-location", "--find-links", utf8(venvDir), "pip"};
+    spec.env = {{"PYTHONIOENCODING", "utf-8"}, {"PYTHONNOUSERSITE", "1"}};
+    std::string err;
+    auto code = runQuiet(spec, std::chrono::minutes(5), &err);
+    if (!code) return code.error();
+    if (code.value() != 0) return Error{ErrorCode::IoError, "Installing pip into the bundled Python failed." + err};
+    auto ok = probePython(py);
+    if (!ok) return ok.error();
+    return py;
+}
+
+} // namespace
 
 Result<fs::path> ensureVenv(const PythonInfo& base, const fs::path& venvDir) {
     const fs::path py = venvPython(venvDir);
@@ -609,6 +677,7 @@ Result<fs::path> ensureVenv(const PythonInfo& base, const fs::path& venvDir) {
         fs::remove_all(venvDir, ec);
         if (ec) return Error{ErrorCode::IoError, "Cannot replace " + venvDir.string() + ": " + ec.message()};
     }
+    if (base.embeddable) return copyEmbeddable(base, venvDir);
     ProcessSpec spec;
     spec.program = base.executable;
     spec.args = base.prefixArgs;

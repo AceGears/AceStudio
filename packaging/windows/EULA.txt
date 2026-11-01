@@ -1,0 +1,67 @@
+ACESTUDIO END USER LICENCE AGREEMENT
+
+DRAFT FOR REVIEW. AceGears must have this text reviewed by a qualified lawyer
+for the countries where AceStudio is sold before the first sale. Items in
+[brackets] are to be completed.
+
+1. Who this agreement is between
+This agreement is between you (the person or organisation installing
+AceStudio) and [AceGears legal name and address] ("AceGears"). By installing or
+using AceStudio you accept it. If you do not accept it, do not install or use
+AceStudio.
+
+2. Trial
+You may use AceStudio free of charge for 14 days from its first start to
+evaluate it. After that, AceStudio keeps opening and showing your files, but
+saving and exporting need a licence key.
+
+3. Licence
+With a licence key bought from AceGears, AceGears grants you a non-exclusive,
+non-transferable licence to install and use AceStudio [on up to N computers
+used by the person or organisation named in the key]. A key with an expiry date
+is valid until that date. Keys are personal: do not share or publish them.
+
+4. Your work
+Everything you create with AceStudio belongs to you, as far as the law allows.
+AceGears claims no rights in your projects, images, animations or exported
+files. AI-generated content may not be protected by copyright in every country,
+and AceGears does not promise that it is free of third-party rights.
+
+5. AI models
+AceStudio can download optional AI models. Each model has its own licence,
+shown before download, which you must accept and follow. Some (for example
+OpenRAIL-M licences) restrict certain uses; those restrictions apply to you.
+
+6. Third-party software
+AceStudio includes third-party components under their own licences, listed in
+the "licences" folder. Nothing in this agreement limits your rights under
+those licences. In particular, Qt is used under the GNU LGPL v3: you may
+replace the Qt libraries shipped with AceStudio with your own build of Qt.
+
+7. Restrictions
+Except where the law or a third-party licence allows it, you may not: resell,
+rent or sublicense AceStudio; remove or bypass the licence check; or
+distribute licence keys.
+
+8. Privacy
+AceStudio does not send telemetry. It contacts the internet only when you ask
+it to download AI models or Python packages. Licence keys are checked on your
+computer, offline.
+
+9. No warranty
+AceStudio is provided "as is", without warranty of any kind, to the extent
+permitted by law. [Consumer rights that cannot be excluded are not affected.]
+
+10. Limitation of liability
+To the extent permitted by law, AceGears' total liability is limited to the
+amount you paid for your licence. AceGears is not liable for indirect or
+consequential loss, including lost data or profits. Keep backups of your work.
+
+11. Termination
+This licence ends if you break this agreement. You must then stop using
+AceStudio and delete it.
+
+12. Governing law
+This agreement is governed by the laws of [country/state]. [Courts of ...]
+
+[Date / version of this agreement]

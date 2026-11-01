@@ -1185,8 +1185,9 @@ void MainWindow::showNotices() {
         "with the WebM project's additional patent grant</li>"
         "<li><b>Lua 5.4.9</b> — MIT License, Copyright (C) 1994-2026 Lua.org, PUC-Rio</li>"
         "<li><b>sol2 3.3.0</b> — MIT License, Copyright (c) 2013-2022 Rapptz, ThePhD, and contributors</li>"
-        "</ul><p>Full license texts will ship in the installer's <i>licenses</i> folder "
-        "(installer packaging is not built yet).</p>")
+        "<li><b>Monocypher 4.0.3</b> — BSD 2-Clause or CC0 (licence key signatures)</li>"
+        "<li><b>Python 3.12</b> (bundled, for the optional AI features) — PSF License; <b>pip</b> — MIT License</li>"
+        "</ul><p>The full licence texts are in the <i>licences</i> folder next to AceStudio.exe.</p>")
                     .arg(QString::fromLatin1(qVersion())));
     box.exec();
 }
