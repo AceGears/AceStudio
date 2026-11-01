@@ -52,6 +52,8 @@ private:
     QComboBox* m_face = nullptr;
     QSlider* m_amount = nullptr;
     QSpinBox* m_frames = nullptr;
+    QSlider* m_wingLine = nullptr;
+    QLabel* m_wingLabel = nullptr;
     QWidget* m_customBox = nullptr;
     QDoubleSpinBox* m_bob = nullptr;
     QDoubleSpinBox* m_sway = nullptr;

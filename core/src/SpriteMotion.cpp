@@ -32,6 +32,7 @@ const std::vector<ActionInfo> kActions = {
     {Action::Cast, "cast", "Cast", 6, 100, false},
     {Action::Swim, "swim", "Swim", 6, 120, true},
     {Action::Fly, "fly", "Fly / hover", 6, 110, true},
+    {Action::Flap, "flap", "Wing flap", 6, 80, true},
     {Action::Climb, "climb", "Climb", 6, 110, true},
     {Action::Sit, "sit", "Sit", 4, 110, false},
     {Action::Sleep, "sleep", "Sleep", 4, 300, true},
@@ -74,12 +75,13 @@ struct FramePose {
     double swingA = 0, swingB = 0;  // leg groups (alternate feet), radians
     double liftA = 0, liftB = 0;    // leg lift, fraction of the height
     double flash = 0;               // > 0.5 draws the frame white
+    double wing = 1;                // wing flap: vertical scale of the part above the wing line (negative = folded down)
 };
 
 FramePose lerp(const FramePose& p, const FramePose& q, double t) {
     auto L = [t](double x, double y) { return x + (y - x) * t; };
     return {L(p.dx, q.dx), L(p.dy, q.dy), L(p.sx, q.sx), L(p.sy, q.sy), L(p.rot, q.rot), L(p.lean, q.lean),
-            L(p.swingA, q.swingA), L(p.swingB, q.swingB), L(p.liftA, q.liftA), L(p.liftB, q.liftB), L(p.flash, q.flash)};
+            L(p.swingA, q.swingA), L(p.swingB, q.swingB), L(p.liftA, q.liftA), L(p.liftB, q.liftB), L(p.flash, q.flash), L(p.wing, q.wing)};
 }
 
 FramePose keyed(const std::vector<std::pair<double, FramePose>>& keys, double t) {
@@ -109,6 +111,7 @@ FramePose fp(std::initializer_list<std::pair<const char*, double>> kv) {
         else if (key == "liftA") p.liftA = v;
         else if (key == "liftB") p.liftB = v;
         else if (key == "flash") p.flash = v;
+        else if (key == "wing") p.wing = v;
     }
     return p;
 }
@@ -246,6 +249,12 @@ ActionPlan plan(Action a, Body body, const Subject& subj, const CustomMotion& cm
                     return fp({{"dy", -0.08 * s - 0.04}, {"sy", 1 + 0.05 * c}, {"sx", 1 - 0.03 * c}, {"swingA", 0.12 * s},
                                {"swingB", 0.08 * s}, {"lean", 0.05}});
                 }};
+    case Action::Flap:
+        return {Pivot::Feet, [](double t) {
+                    const double c = std::cos(tau * t);
+                    // Up (1) to folded below the line (-0.6); the body rises on the down stroke.
+                    return fp({{"wing", 0.2 + 0.8 * c}, {"dy", -0.04 * (0.5 - 0.5 * c)}});
+                }};
     case Action::Climb:
         return {Pivot::Feet, [](double t) {
                     const double s = std::sin(tau * t);
@@ -283,6 +292,8 @@ FramePose scaled(FramePose p, double amount) {
     p.swingB *= amount;
     p.liftA *= amount;
     p.liftB *= amount;
+    p.wing = 1 + (p.wing - 1) * amount;
+    if (std::abs(p.wing) < 0.1) p.wing = p.wing < 0 ? -0.1 : 0.1;   // never flat (the transform must stay invertible)
     // Rotations that define the action (lying down, a full roll) stay whole;
     // small ones scale.
     if (std::abs(p.rot) < 0.5) p.rot *= amount;
@@ -326,7 +337,7 @@ struct RenderedClip {
 };
 
 RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action action, int frames, bool loops, double amount,
-                    const CustomMotion& cm) {
+                    const CustomMotion& cm, double wingLine) {
     const IntRect bb = subj.bounds;
     const double W = bb.w, H = bb.h;
     const bool legs = (body == Body::Biped || body == Body::Quadruped) && subj.legTop >= 0 && !subj.feet.empty();
@@ -342,7 +353,11 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
         for (int x = bb.x; x < bb.x + bb.w; ++x)
             if (sprite.pixel(x, subj.groundTop - 1).a > 0) { if (shadowX1 < 0) shadowX0 = x; shadowX1 = x; }
     }
-    std::vector<IntRect> partBounds(groundPart + 1, IntRect{});
+    // Wing flap: the part above the wing line, n + 2.
+    const std::size_t wingPart = groundPart + 1;
+    const bool flap = action == Action::Flap;
+    const int wingRow = bb.y + static_cast<int>(std::lround(std::clamp(wingLine, 0.05, 0.95) * bb.h));
+    std::vector<IntRect> partBounds(wingPart + 1, IntRect{});
     auto grow = [](IntRect& r, int x, int y) {
         if (r.empty()) { r = {x, y, 1, 1}; return; }
         const int x1 = std::max(r.x + r.w, x + 1), y1 = std::max(r.y + r.h, y + 1);
@@ -355,6 +370,8 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
             std::size_t part = 0;
             if (hasGround && y >= subj.groundTop && (x < shadowX0 || x > shadowX1)) {
                 part = groundPart;
+            } else if (flap && y < wingRow) {
+                part = wingPart;
             } else if (legs && y >= subj.legTop) {
                 int best = 0, bestDist = std::numeric_limits<int>::max();
                 for (std::size_t i = 0; i < subj.feet.size(); ++i) {
@@ -391,6 +408,8 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
             Affine m;
             if (i == groundPart) {
                 m = Affine::translate(dx, 0);
+            } else if (i == wingPart) {
+                local = about(px, wingRow, Affine::scale(1, p.wing));
             } else if (i > 0) {
                 const auto [x0, x1] = subj.feet[i - 1];
                 const bool groupA = (i - 1) % 2 == 0;
@@ -426,10 +445,13 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
         // Draw order: legs of group B (far), group A, then the body on top so it covers the hips.
         std::vector<const Part*> order;
         for (const Part& p : ps) if (p.index == static_cast<int>(groundPart)) order.push_back(&p);
-        auto isLeg = [&](const Part& p) { return p.index > 0 && p.index != static_cast<int>(groundPart); };
+        auto isLeg = [&](const Part& p) {
+            return p.index > 0 && p.index != static_cast<int>(groundPart) && p.index != static_cast<int>(wingPart);
+        };
         for (const Part& p : ps) if (isLeg(p) && (p.index - 1) % 2 == 1) order.push_back(&p);
         for (const Part& p : ps) if (isLeg(p) && (p.index - 1) % 2 == 0) order.push_back(&p);
         for (const Part& p : ps) if (p.index == 0) order.push_back(&p);
+        for (const Part& p : ps) if (p.index == static_cast<int>(wingPart)) order.push_back(&p);
         for (const Part* p : order) {
             for (int y = p->destBox.y; y < p->destBox.y + p->destBox.h; ++y)
                 for (int x = p->destBox.x; x < p->destBox.x + p->destBox.w; ++x) {
@@ -588,7 +610,7 @@ Result<std::vector<Clip>> animatePack(const Image& sprite, const std::vector<Act
     for (Action a : list) {
         const ActionInfo& info = actionInfo(a);
         const int frames = std::clamp(base.frames > 0 && list.size() == 1 ? base.frames : info.frames, 1, 64);
-        rendered.push_back(render(sprite, subj, body, a, frames, info.loops, amount, base.custom));
+        rendered.push_back(render(sprite, subj, body, a, frames, info.loops, amount, base.custom, base.wingLine));
     }
     const IntRect box = usedBox(rendered);
     std::vector<Clip> out;
@@ -621,7 +643,9 @@ ClipCheck checkClip(const Clip& clip) {
         if (i > 0) r.minNeighbourIoU = std::min(r.minNeighbourIoU, iou(clip.frames[i - 1], clip.frames[i]));
     }
     if (clip.loops && clip.frames.size() > 1) r.loopIoU = iou(clip.frames.back(), clip.frames.front());
-    if (r.maxAreaChange > 0.35)
+    // A flap foreshortens the wings on purpose; elsewhere a big change means parts were lost or doubled.
+    const double allowed = clip.name == "flap" ? 0.7 : 0.35;
+    if (r.maxAreaChange > allowed)
         r.issues.push_back("The sprite's size changes by " + std::to_string(static_cast<int>(r.maxAreaChange * 100)) +
                            "% between frames; parts may be stretched or hidden.");
     // A loop seam is a problem when it jumps more than any step inside the clip.

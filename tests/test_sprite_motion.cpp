@@ -157,3 +157,33 @@ TEST_CASE("an empty sprite is refused", "[motion]") {
     CHECK(actionFromKey("attack2") == Action::Attack2);
     CHECK_FALSE(actionFromKey("moonwalk"));
 }
+
+TEST_CASE("a wing flap folds the part above the wing line", "[motion]") {
+    Image dragon(30, 30);
+    dragon.fillRect({8, 16, 16, 10}, kShirt);   // body
+    dragon.fillRect({10, 2, 8, 14}, kSkin);     // wing, above the line
+    Options o;
+    o.action = Action::Flap;
+    o.wingLine = 16.0 / 24.0;                    // the body's top, as a fraction of the opaque height (2..26)
+    auto clip = animate(dragon, o);
+    REQUIRE(clip);
+    const auto& fr = clip.value().frames;
+    REQUIRE(fr.size() == 6);
+    // Frame 0: wing up (skin above the body). Frame 3: folded below the line, so skin appears under the body's top.
+    auto skinBelowRow = [&](const Image& f, int row) {
+        for (int y = row; y < f.height(); ++y)
+            for (int x = 0; x < f.width(); ++x)
+                if (f.pixel(x, y) == kSkin) return true;
+        return false;
+    };
+    // All frames share one canvas; in frame 0 the wing's top is the opaque top and the body starts 14 rows lower.
+    const int line = fr[0].opaqueBounds().y + 14;
+    CHECK_FALSE(skinBelowRow(fr[0], line));
+    bool folded = false;
+    for (const Image& f : fr) folded = folded || skinBelowRow(f, line + 2);
+    CHECK(folded);
+    const ClipCheck chk = checkClip(clip.value());
+    INFO(chk.maxAreaChange << " " << chk.minNeighbourIoU << " " << chk.loopIoU);
+    for (const auto& i : chk.issues) INFO(i);
+    CHECK(chk.issues.empty());
+}

@@ -112,6 +112,14 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     m_frames->setSpecialValueText(tr("Default"));
     m_frames->setToolTip(tr("Frames per action when one action is chosen; Default uses each action's own count."));
     form->addRow(tr("F&rames:"), m_frames);
+    m_wingLine = new QSlider(Qt::Horizontal, this);
+    m_wingLine->setRange(10, 90);
+    m_wingLine->setValue(45);
+    m_wingLine->setToolTip(tr("Wing flap: everything above this line (percent of the height from the top) folds about it."));
+    m_wingLabel = new QLabel(tr("&Wing line:"), this);
+    m_wingLabel->setBuddy(m_wingLine);
+    form->addRow(m_wingLabel, m_wingLine);
+    connect(m_wingLine, &QSlider::valueChanged, this, &SpriteAnimateDialog::rebuild);
     right->addLayout(form);
 
     m_customBox = new QGroupBox(tr("Custom motion"), this);
@@ -192,12 +200,16 @@ std::vector<::acestudio::motion::Action> SpriteAnimateDialog::checkedActions() c
     if (!body.isEmpty()) o.body = ::acestudio::motion::bodyFromString(body.toStdString());
     o.faceLeft = m_face->currentIndex() == 1;
     o.custom = {m_bob->value(), m_sway->value(), m_squash->value(), m_tilt->value(), m_legSwing->value()};
+    o.wingLine = m_wingLine->value() / 100.0;
     return o;
 }
 
 void SpriteAnimateDialog::rebuild() {
     const auto list = checkedActions();
     m_customBox->setVisible(std::find(list.begin(), list.end(), ::acestudio::motion::Action::Custom) != list.end());
+    const bool flap = std::find(list.begin(), list.end(), ::acestudio::motion::Action::Flap) != list.end();
+    m_wingLine->setVisible(flap);
+    m_wingLabel->setVisible(flap);
     m_clips.clear();
     if (list.empty()) {
         m_timer->stop();

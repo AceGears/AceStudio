@@ -25,7 +25,7 @@ namespace acestudio::motion {
 
 enum class Action {
     Idle, Walk, Run, Sprint, Jump, Fall, Land, Attack1, Attack2, Attack3, Dodge, Roll, Dash, Block, Hurt, Death,
-    Cast, Swim, Fly, Climb, Sit, Sleep, Custom
+    Cast, Swim, Fly, Flap, Climb, Sit, Sleep, Custom
 };
 
 struct ActionInfo {
@@ -70,6 +70,9 @@ struct Options {
     double amount = 1.0;        // scales every movement (0.25..2)
     std::optional<Body> body;   // overrides the measured body
     bool faceLeft = false;      // mirror the result
+    // Wing flap: everything above this line (fraction of the sprite's height
+    // from the top) is a wing that folds about the line.
+    double wingLine = 0.45;
     CustomMotion custom;
 };
 
