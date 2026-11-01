@@ -133,8 +133,40 @@ not been run.
   grass texture, so that is now the default.
 - The atlas packer rotates only by 90° clockwise (TexturePacker's convention), never flips.
 
+## Phase 7 integrations (design limits)
+
+### MCP server
+- Tools only: no resources, prompts or completions. The server makes no server-to-client
+  requests (sampling, elicitation, roots). The conformance scenarios for these are in
+  `tests/mcp/conformance-baseline.yml`.
+- No SSE stream resumption (`Last-Event-ID`). It is optional in 2025-11-25 and removed in
+  2026-07-28. A dropped HTTP stream cancels its tool call.
+- Conformance suite 0.1.16 has no 2026-07-28 scenarios. The modern era is checked with the
+  Python SDK 2.3.0 (a dual-era client) and the unit tests, not by the suite.
+- Each tool call starts `acestudio-cli`, so the CLI and the server never disagree. That costs
+  a median of 2.8 ms per `info` call on the Linux build machine; Windows was not timed
+  separately.
+- The `app_*` tools see the document in the app's current tab only. Scripts run on a copy,
+  and their result is not applied if the user edits the document meanwhile; the tool then
+  says so.
+- The client setups are written from each client's documentation (October 2026). Claude Code,
+  Cursor, VS Code and Codex themselves were not run here. The server was tested with the
+  official Python and TypeScript SDK clients.
+
+### Lua
+- No network, processes, `require` or native modules. Files only through the `ace` API and
+  inside the allowed folders.
+- In the app, Run Script is modal and works on a copy of the document.
+
+### Engine export
+- Unity: the sprites are sliced (Multiple), with borders and pivots. Unity Rule Tiles and
+  Tile Palettes are not generated.
+- Unity files are written for single-page atlases only.
+- Tiled has no sprite animation format; sheets get only the PNG and JSON for it.
+- Godot keeps an isolated single cell empty in corner (Wang) mode. That is Godot's own
+  behaviour, reproduced in `tests/engine`.
+
 ## Planned in later phases
-- MCP, Lua and plugin features, and Godot/Tiled/Unity exporters for tilesets, atlases and UI
-  kits (Phase 7). Phase 6 writes TexturePacker-style JSON and its own tileset/parallax JSON.
-- BiRefNet on CUDA spends part of its 2.6 s on CPU pre/post-processing. FP16 weights, I/O binding
-  and GPU-side resizing are to be measured in the Phase 8 profiling pass.
+- Plugin API (Phase 8 or later). Profiling of BiRefNet on CUDA: part of its 2.6 s is CPU
+  pre/post-processing. FP16 weights, I/O binding and GPU-side resizing are to be measured in
+  the Phase 8 profiling pass.

@@ -2,6 +2,77 @@
 
 All notable changes are documented here. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.8.0] — 2026-11-01 — Phase 7: developer integrations (unreleased)
+
+### Added
+- **Engine export (Godot 4, Unity, Tiled)** from one shared writer
+  (`core/AssetFiles`) used by the app, the CLI, Lua and MCP:
+  - Godot: SpriteFrames `.tres` (one animation per tag), TileSet `.tres`
+    with terrain sets and peering bits for every scheme, and StyleBoxTexture
+    `.tres` per stretchable UI element.
+  - Unity: TextureImporter `.meta` files with sprites, 9-slice borders,
+    pivots and stable GUIDs, plus AnimationClip `.anim` files per tag.
+  - Tiled: `.tsx` tilesets with Wang sets.
+  - Nothing is overwritten without permission.
+- **App:** Godot / Unity / Tiled checkboxes in the sprite-sheet Export,
+  Tileset, UI Kit and Atlas dialogs. Existing files are listed and confirmed
+  once, and exporter notes (limits) are shown.
+- **CLI:**
+  - New commands: `tileset`, `seams` (exit 3 on seams), `tileset-template`,
+    `atlas`, `slice` and `uikit`.
+  - `export --engines` and `ai generate --tileable`.
+  - `run` for Lua scripts (exit 6 when a script fails).
+- **Lua 5.4.9 scripting** (sol2 3.3.0), sandboxed:
+  - No `io`, `package` or `debug`; text-only `load`; only `os.time`, `os.clock`
+    and `os.date`.
+  - Memory and time limits, and cancel. `pcall` cannot swallow these stops.
+  - Files only inside the allowed folders.
+  - The `ace` API covers images, documents (layers, cels, frames, tags,
+    export) and every asset tool. See `docs/lua-api.md`.
+  - **Scripts menu:** run a script on the open document as one undo step (rolled
+    back if it fails); a scripts folder with an example; output console with Cancel.
+- **acestudio-mcp**, a dual-era MCP server:
+  - Protocol 2026-07-28: `server/discover`, the per-request `_meta` envelope,
+    `UnsupportedProtocolVersion` (-32022) with the supported list,
+    `resultType` and `serverInfo` stamps, `ttlMs` / `cacheScope`, and a
+    deterministic `tools/list`.
+  - Legacy versions: 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05 through
+    `initialize`, with `ping` and `logging/setLevel`.
+  - Transports: stdio, and Streamable HTTP on loopback. HTTP checks Host and
+    Origin (DNS rebinding), validates the 2026 headers (-32020), keeps
+    sessions for legacy clients, streams tool calls as SSE with progress and
+    log notifications, and cancels when the client disconnects.
+  - 17 tools:
+    - Projects: `document_new`, `document_info`, `render_frame` (returns a PNG)
+      and `export_animation`.
+    - Asset tools: `tileset_generate`, `tileset_check_seams`, `atlas_pack`,
+      `sprites_slice` and `uikit_generate`.
+    - Lua: `run_lua`.
+    - Local AI: `ai_status`, `ai_generate_image`, `ai_remove_background` and
+      `ai_upscale`.
+    - The running app: `app_document`, `app_run_lua` and `app_open_file`.
+  - File access is limited to the `--root` folders.
+- **Live app bridge:** a per-user local socket (a named pipe on Windows).
+  Scripts run on a copy and are applied as one undo step; they are refused
+  if the user edited the document meanwhile. Turn it off with **Scripts ›
+  Allow AI Assistants**.
+- **Client setups:** **Scripts › Set Up AI Assistants** and `acestudio-mcp
+  --print-config` give ready-to-paste setups for Claude Code, Cursor, VS Code
+  and Codex, checked against each client's current docs.
+
+### Testing
+- Godot: Godot 4.6.2 loads every exported resource and paints the fixture
+  map with its own terrain tools; every cell matches AceStudio for Blob47 and
+  Cardinal16 (`tests/engine`).
+- MCP:
+  - Conformance suite 0.1.16: every scenario passes except features the server
+    does not offer, which are listed with reasons in
+    `tests/mcp/conformance-baseline.yml`.
+  - The official Python SDK 2.3.0 (auto, 2026-07-28 and legacy modes) and
+    TypeScript SDK 1.32.2 pass over stdio and HTTP.
+  - Windows CI runs all of these against the packaged build, plus the app
+    bridge over a real named pipe.
+
 ## [0.7.0] — 2026-10-31 — Phase 6: environment and asset tools (unreleased)
 
 ### Added

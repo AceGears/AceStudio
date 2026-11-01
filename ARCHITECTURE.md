@@ -1,6 +1,6 @@
 # AceStudio Architecture
 
-Status: Phase 2a (core editor). This document records the structure that exists today and the
+Status: 0.8.0 (Phase 7: developer integrations). This document records the structure that exists today and the
 decisions (ADRs) that constrain future phases. Planned components are labelled **planned**.
 
 ## 1. Shape of the system
@@ -16,9 +16,10 @@ decisions (ADRs) that constrain future phases. Planned components are labelled *
                     └───────▲──────────────▲──────────────▲──────┘
                             │              │              │
           ┌─────────────────┴──┐   ┌───────┴───────┐  ┌───┴─────────────────┐
-          │ AceStudio (Qt 6    │   │ acestudio-cli │  │ acestudio-mcp       │
-          │ Widgets desktop)   │   │ (headless)    │  │ (planned, Phase 7)  │
-          └─────────┬──────────┘   └───────────────┘  └─────────────────────┘
+          │ AceStudio (Qt 6    │   │ acestudio-cli │◄─┤ acestudio-mcp       │
+          │ Widgets desktop)   │   │ (headless)    │  │ (MCP, Phase 7)      │
+          └─────────┬────▲─────┘   └───────────────┘  └──────────┬──────────┘
+                    │    └──── local bridge (named pipe) ────────┘
                     │ local IPC (planned, Phase 4)
           ┌─────────▼────────────────────────────────┐
           │ AI worker process (Phase 4)               │  Python: PyTorch/Diffusers,
@@ -37,7 +38,8 @@ duplicate implementation of document logic, file formats or export in any front 
 | `core/` | `acestudio_core` static library. Public headers in `core/include/acestudio/core/`. Must never include Qt. |
 | `app/` | Qt 6 Widgets desktop application. `app/src/panels/` holds dock panels. |
 | `cli/` | `acestudio-cli` executable. |
-| `tests/` | Catch2 unit tests and CTest-driven CLI end-to-end test. |
+| `mcp/` | `acestudio-mcp`: protocol layer and tools (Qt-free library `acestudio_mcp_proto`), stdio/HTTP transports and the app bridge client (`main.cpp`, Qt Core/Network). |
+| `tests/` | Catch2 unit tests and CTest-driven CLI end-to-end test. `tests/engine/`: Godot and Unity import checks. `tests/mcp/`: MCP conformance baseline and SDK client checks. |
 | `cmake/` | Dependency pins, warning flags, Qt license guard. |
 | `docs/` | Format specs and research notes (`docs/research/`). |
 | `.github/workflows/` | CI (Linux core build + Windows full build). |
@@ -194,20 +196,51 @@ duplicate implementation of document logic, file formats or export in any front 
   The app's `assets/` dialogs are thin views over these; `AiImageJob` wraps one SDXL job with
   the worker's `tileable` mode (circular padding patched into the UNet and VAE convolutions).
 
-### ADR-005 — MCP server (planned, Phase 7)
-- No official C++ MCP SDK exists. AceStudio will implement the MCP JSON-RPC surface in C++ on
-  top of the core (nlohmann/json), exposed via a thin `acestudio-mcp` stdio executable that
-  connects to the running app (or runs headless). Target spec revision 2026-07-28 with
-  fallback to 2025-11-25; conformance-test with the official Python/TypeScript SDK clients
-  and MCP Inspector.
+### ADR-005 — MCP server (implemented in 0.8.0)
+- There is no official C++ MCP SDK, so `acestudio-mcp` implements JSON-RPC itself on nlohmann/json.
+- **Dual-era.** It speaks 2026-07-28 (stateless: per-request `_meta` envelope,
+  `server/discover`) and the legacy `initialize` handshake (2025-11-25 and earlier).
+  - On stdio, the client's first request locks the era of the connection, as in the
+    reference SDKs.
+  - Over HTTP, each modern request stands alone, and legacy clients get a session per
+    `initialize`.
+- **Tools run `acestudio-cli --json` as a subprocess.**
+  - The CLI is the single implementation; MCP adds argument checks, root-folder limits
+    and image content.
+  - A crash in a tool cannot take the server down, and cancellation kills the child.
+- **The live app bridge is a per-user local socket.**
+  - It is a named pipe on Windows, owned by the user.
+  - Scripts run on a copy of the document on a worker thread and are applied with
+    `Editor::replaceDocument` as one undo step.
+  - The result is dropped if the user edited the document meanwhile.
+- **Verification.**
+  - Catch2 tests of the protocol layer.
+  - The official conformance suite, with a baseline of features not offered.
+  - The Python (dual-era) and TypeScript SDK clients over both transports.
+  - CI runs them against the packaged Windows build.
 
 ### ADR-006 — Packaging: Inno Setup first, MSIX later
 - Inno Setup is free for commercial use; WiX binaries now carry a maintenance-fee EULA above
   US$10k revenue. MSIX added later for Store/enterprise. AI models are a separate optional
   download, never bundled in the base installer.
 
-### ADR-007 — Scripting: Lua 5.4.9 + sol2 3.3.0 (planned, Phase 7)
-- Final, stable pairing; sandboxed environment with no filesystem/process access by default.
+### ADR-007 — Scripting: Lua 5.4.9 + sol2 3.3.0 (implemented in 0.8.0)
+- **Build.** Lua is compiled as C++ (`SOL_USING_CXX_LUA`), so Lua errors unwind C++ frames
+  safely.
+- **Sandbox.**
+  - Available: the base, string, table, math, utf8 and coroutine libraries. Removed:
+    `dofile`, `loadfile` and `string.dump`. `load` takes text chunks only.
+  - Only `os.time`, `os.clock`, `os.date` and `os.difftime` remain of `os`; `io`, `package`
+    and `debug` are gone.
+- **Limits.**
+  - Memory is limited through the Lua allocator.
+  - Time and cancel are checked by a count hook. Once a stop is set it is sticky: the
+    sandbox's `pcall`, `xpcall` and `coroutine.resume` re-raise it, so scripts cannot
+    catch it.
+- **Files.** Scripts reach files only through the `ace` API, and every path is resolved
+  (`weakly_canonical`) and checked against the allowed folders.
+- **Undo.** Edits to the host document go through its `Editor`, so a script is one undo
+  step, rolled back on error.
 
 ## 6. Error-handling rules
 
