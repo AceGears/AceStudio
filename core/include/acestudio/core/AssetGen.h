@@ -113,16 +113,25 @@ QualityReport checkAsset(const Image& img, const CheckOptions& opt);
 // Prompt words for a sheet of `cols` x `rows` different subjects in one image.
 std::string gridPrompt(const std::string& subject, int cols, int rows);
 
+// A large bestiary is made as several small sheets (one image cannot hold
+// 49 distinct, separate creatures). For a generic request ("monsters",
+// "creatures", "enemies") each sheet gets its own creature kinds so sheets do
+// not repeat each other: sheet `index` of a run, `count` kinds. Empty when
+// the subject is specific (it is then the user's choice).
+std::string bestiaryKinds(const std::string& subject, int index, int count);
+
 struct GridCell {
     int column = 0, row = 0;
     IntRect rect;                 // where it was cut from the sheet
     Image image;                  // cropped to its content, background removed
 };
-// Cuts a generated sheet into its cells. The cut lines are placed in the
-// emptiest column/row near each expected line (models rarely space a grid
-// exactly), the background is removed from each cell's border inwards when
-// the sheet is opaque, stray specks under `minPixels` are dropped, and empty
-// cells are left out.
+// Cuts a generated sheet into its subjects. The background is removed
+// (when the sheet is opaque) and every separate piece covering at least 3 %
+// of a cell is a subject; smaller pieces join a nearby subject or are
+// dropped. Models often ignore the grid, so the grid only places the result
+// (column/row of its centre) and splits a subject spanning more than about
+// 1.6 cells along the cut lines, which sit in the emptiest column/row near
+// each expected line. Results are in reading order.
 std::vector<GridCell> extractGrid(const Image& sheet, int cols, int rows, int minPixels = 16);
 
 } // namespace acestudio::gen

@@ -1058,18 +1058,29 @@ void GeneratorPage::startBestiary() {
     b.startedMs = QDateTime::currentMSecsSinceEpoch();
     m_batch = std::move(b);
     if (mode->currentData().toInt() == 0) {
-        JobOptions o;
-        o.description = what;
-        o.type = gen::AssetType::Monster;
-        o.sheetColumns = c;
-        o.sheetRows = r;
-        o.size = std::pair{outW * c, outH * r};
-        o.count = 1;
-        const std::string id = submitJob({}, o);
-        if (id.empty()) { m_batch.reset(); return; }
-        m_batch->sheetColumns = c;
-        m_batch->sheetRows = r;
-        m_batch->jobs[id] = tr("sheet");
+        // One image holds at most 3 x 3 distinct, separate creatures: on the
+        // test PC a 7 x 7 request came back as about a dozen alike beasts
+        // across the cell lines. Larger grids are made as several sheets.
+        const int sc = std::min(c, 3), sr = std::min(r, 3);
+        const int sheets = (c * r + sc * sr - 1) / (sc * sr);
+        m_batch->sheetColumns = sc;
+        m_batch->sheetRows = sr;
+        m_batch->expected = c * r;
+        for (int k = 0; k < sheets; ++k) {
+            JobOptions o;
+            const std::string kinds = gen::bestiaryKinds(what, k, sc * sr);
+            o.description = kinds.empty() ? what : what + " (" + kinds + ")";
+            o.type = gen::AssetType::Monster;
+            o.sheetColumns = sc;
+            o.sheetRows = sr;
+            o.size = std::pair{outW * sc, outH * sr};
+            o.count = 1;
+            if (m_seed->value() >= 0) o.seed = m_seed->value() + k;
+            const std::string id = submitJob({}, o);
+            if (id.empty()) break;
+            m_batch->jobs[id] = tr("sheet %1").arg(k + 1);
+        }
+        if (m_batch->jobs.empty()) { m_batch.reset(); return; }
     } else {
         // Different creatures: one seed each, the same words.
         for (int i = 0; i < c * r; ++i) {
@@ -1189,11 +1200,14 @@ void GeneratorPage::onBatchJobFinished(const std::string& id) {
             if (auto img = readPng(o->second)) {
                 if (m_batch->sheetColumns > 0) {
                     // A sheet: cut the creatures out of the full-size image when there is one (cleaner edges), else the reduced one.
-                    for (const gen::GridCell& c : gen::extractGrid(img.value(), m_batch->sheetColumns, m_batch->sheetRows))
-                        m_batch->results.push_back({c.image, tr("creature %1-%2").arg(c.row + 1).arg(c.column + 1)});
-                    const int expected = m_batch->sheetColumns * m_batch->sheetRows;
-                    if (static_cast<int>(m_batch->results.size()) < expected)
-                        m_batch->problems << tr("%1 of %2 cells held a creature.").arg(m_batch->results.size()).arg(expected);
+                    const int perSheet = m_batch->sheetColumns * m_batch->sheetRows;
+                    int found = 0;
+                    for (const gen::GridCell& c : gen::extractGrid(img.value(), m_batch->sheetColumns, m_batch->sheetRows)) {
+                        ++found;
+                        if (static_cast<int>(m_batch->results.size()) >= m_batch->expected) break;   // the last sheet may give extras
+                        m_batch->results.push_back({c.image, tr("creature %1").arg(m_batch->results.size() + 1)});
+                    }
+                    if (found < perSheet) m_batch->problems << tr("%1: %2 of %3 creatures found.").arg(label).arg(found).arg(perSheet);
                 } else {
                     m_batch->results.push_back({std::move(img).value(), label});
                 }

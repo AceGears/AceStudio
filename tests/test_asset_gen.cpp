@@ -1,5 +1,6 @@
 #include "acestudio/core/AssetGen.h"
 
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 
 using namespace acestudio;
@@ -171,4 +172,48 @@ TEST_CASE("a cell holding two subjects gives two sprites", "[gen]") {
     CHECK(cells[0].column == 0);
     CHECK(cells[1].column == 0);
     CHECK(cells[2].column == 1);
+}
+
+TEST_CASE("creatures drawn across the grid lines are kept whole", "[gen]") {
+    // As on the test PC: 7 x 7 was asked for, the model drew 3 rows of 4
+    // larger creatures that straddle the cell lines, some with a detached horn.
+    Image sheet(700, 700, Rgba8{250, 250, 250, 255});
+    const Rgba8 body{40, 120, 60, 255};
+    int n = 0;
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 4; ++c, ++n) {
+            const int x = 20 + c * 170, y = 40 + r * 220;
+            sheet.fillRect({x, y + 30, 130, 120}, body);   // 130 px: spans two 100 px cells
+            if (n % 3 == 0) sheet.fillRect({x + 100, y + 18, 6, 6}, body);   // a horn, 6 px above the body
+        }
+    const auto cells = gen::extractGrid(sheet, 7, 7);
+    REQUIRE(cells.size() == 12);
+    for (const auto& c : cells) {
+        INFO(c.rect.x << "," << c.rect.y << " " << c.rect.w << "x" << c.rect.h);
+        CHECK(c.rect.w == 130);
+        CHECK((c.rect.h == 120 || c.rect.h == 132));   // with its horn
+    }
+    // Reading order.
+    CHECK(cells[0].rect.x < cells[1].rect.x);
+    CHECK(cells[3].rect.y < cells[4].rect.y);
+}
+
+TEST_CASE("creatures drawn touching are still split by the grid", "[gen]") {
+    Image sheet(300, 100, Rgba8{250, 250, 250, 255});
+    const Rgba8 body{40, 120, 60, 255};
+    sheet.fillRect({10, 20, 180, 60}, body);   // two creatures touching: one piece over cells 0 and 1
+    sheet.fillRect({215, 20, 70, 60}, body);   // cell 2
+    const auto cells = gen::extractGrid(sheet, 3, 1);
+    REQUIRE(cells.size() == 3);
+    CHECK(cells[0].column == 0);
+    CHECK(cells[1].column == 1);
+    CHECK(cells[2].column == 2);
+}
+
+TEST_CASE("generic bestiaries get different creature kinds per sheet", "[gen]") {
+    const std::string a = gen::bestiaryKinds("fantasy RPG monsters", 0, 9), b = gen::bestiaryKinds("fantasy RPG monsters", 1, 9);
+    CHECK_FALSE(a.empty());
+    CHECK(a != b);
+    CHECK(std::count(a.begin(), a.end(), ',') == 8);
+    CHECK(gen::bestiaryKinds("blue slimes", 0, 9).empty());   // a specific subject is left as asked
 }

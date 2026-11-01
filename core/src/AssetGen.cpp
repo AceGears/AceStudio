@@ -3,6 +3,7 @@
 #include "acestudio/core/AnimationQA.h"
 
 #include <algorithm>
+#include <cctype>
 #include <limits>
 #include <cmath>
 #include <set>
@@ -393,6 +394,32 @@ std::string gridPrompt(const std::string& subject, int cols, int rows) {
            " and separate with empty space around it, all the same scale, plain flat background";
 }
 
+std::string bestiaryKinds(const std::string& subject, int index, int count) {
+    std::string lower;
+    for (char ch : subject) lower += static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    bool generic = false;
+    for (const char* w : {"monster", "creature", "enem", "bestiary", "beast", "mob"})
+        generic = generic || lower.find(w) != std::string::npos;
+    if (!generic || count <= 0) return {};
+    // Generic kinds of fantasy creature (no named franchise monsters).
+    static const char* const kinds[] = {
+        "slime", "skeleton warrior", "giant bat", "cave spider", "goblin", "orc brute", "wraith", "treasure-chest mimic",
+        "mushroom creature", "fire elemental", "stone golem", "harpy", "lizard warrior", "dire wolf", "ghost", "imp",
+        "floating eyeball", "walking tree", "giant scorpion", "wyvern", "kobold", "zombie", "lich", "gargoyle",
+        "bull-headed brute", "one-eyed giant", "giant crab", "plague rat", "sea serpent", "basilisk lizard", "troll", "ogre",
+        "snow yeti", "salamander", "fire bird", "griffin", "banshee", "giant beetle", "living armour", "jellyfish",
+        "werewolf", "vampire bat lord", "sand worm", "ice elemental", "toad demon", "bone dragon", "crystal golem",
+        "swamp hag", "cactus creature", "clockwork knight", "shadow cat", "giant snail", "moth spirit", "boar beast",
+        "will-o'-the-wisp", "centipede", "rock crab", "frog warrior", "storm eagle", "lava slug"};
+    constexpr int n = static_cast<int>(sizeof(kinds) / sizeof(kinds[0]));
+    std::string out;
+    for (int i = 0; i < count; ++i) {
+        if (i) out += ", ";
+        out += kinds[(index * count + i) % n];
+    }
+    return out;
+}
+
 std::vector<GridCell> extractGrid(const Image& sheet, int cols, int rows, int minPixels) {
     std::vector<GridCell> out;
     if (sheet.isNull() || cols < 1 || rows < 1 || cols > 16 || rows > 16) return out;
@@ -423,84 +450,120 @@ std::vector<GridCell> extractGrid(const Image& sheet, int cols, int rows, int mi
         return c;
     };
     const std::vector<int> xs = cuts(colInk, cols), ys = cuts(rowInk, rows);
-    for (int r = 0; r < rows; ++r)
-        for (int c = 0; c < cols; ++c) {
-            const IntRect cell{xs[static_cast<std::size_t>(c)], ys[static_cast<std::size_t>(r)], xs[static_cast<std::size_t>(c) + 1] - xs[static_cast<std::size_t>(c)],
-                               ys[static_cast<std::size_t>(r) + 1] - ys[static_cast<std::size_t>(r)]};
-            Image img = clean.copy(cell);
-            // Keep the largest piece and pieces close to it; drop specks.
-            const Mask sil = silhouette(img);
-            std::vector<int> label(static_cast<std::size_t>(img.width()) * static_cast<std::size_t>(img.height()), -1);
-            std::vector<int> sizes;
-            for (int y = 0; y < img.height(); ++y)
-                for (int x = 0; x < img.width(); ++x) {
-                    const std::size_t i = static_cast<std::size_t>(y) * static_cast<std::size_t>(img.width()) + static_cast<std::size_t>(x);
-                    if (!sil.get(x, y) || label[i] >= 0) continue;
-                    const int id = static_cast<int>(sizes.size());
-                    sizes.push_back(0);
-                    std::vector<std::pair<int, int>> stack{{x, y}};
-                    label[i] = id;
-                    while (!stack.empty()) {
-                        auto [px, py] = stack.back();
-                        stack.pop_back();
-                        ++sizes.back();
-                        for (int dy = -1; dy <= 1; ++dy)
-                            for (int dx = -1; dx <= 1; ++dx) {
-                                const int nx = px + dx, ny = py + dy;
-                                if (nx < 0 || ny < 0 || nx >= img.width() || ny >= img.height() || !sil.get(nx, ny)) continue;
-                                const std::size_t j = static_cast<std::size_t>(ny) * static_cast<std::size_t>(img.width()) + static_cast<std::size_t>(nx);
-                                if (label[j] < 0) { label[j] = id; stack.push_back({nx, ny}); }
-                            }
+    auto cellOf = [](const std::vector<int>& c, int v) {
+        int i = 0;
+        while (i + 2 < static_cast<int>(c.size()) && v >= c[static_cast<std::size_t>(i) + 1]) ++i;
+        return i;
+    };
+
+    // Subjects are found in the whole sheet, not per cell: models often ignore
+    // the grid (on the test PC a 7 x 7 request came back as fewer, larger
+    // creatures across the cell lines, and cutting fixed cells gave heads and
+    // feet). The grid only splits a subject that clearly spans several cells
+    // (creatures drawn touching each other).
+    const Mask sil = silhouette(clean);
+    std::vector<int> label(static_cast<std::size_t>(W) * static_cast<std::size_t>(H), -1);
+    std::vector<int> sizes;
+    std::vector<IntRect> box;
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) {
+            const std::size_t i = static_cast<std::size_t>(y) * static_cast<std::size_t>(W) + static_cast<std::size_t>(x);
+            if (!sil.get(x, y) || label[i] >= 0) continue;
+            const int id = static_cast<int>(sizes.size());
+            sizes.push_back(0);
+            IntRect b{x, y, 1, 1};
+            std::vector<std::pair<int, int>> stack{{x, y}};
+            label[i] = id;
+            while (!stack.empty()) {
+                auto [px, py] = stack.back();
+                stack.pop_back();
+                ++sizes.back();
+                const int x1 = std::max(b.x + b.w, px + 1), y1 = std::max(b.y + b.h, py + 1);
+                b.x = std::min(b.x, px); b.y = std::min(b.y, py); b.w = x1 - b.x; b.h = y1 - b.y;
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int nx = px + dx, ny = py + dy;
+                        if (nx < 0 || ny < 0 || nx >= W || ny >= H || !sil.get(nx, ny)) continue;
+                        const std::size_t j = static_cast<std::size_t>(ny) * static_cast<std::size_t>(W) + static_cast<std::size_t>(nx);
+                        if (label[j] < 0) { label[j] = id; stack.push_back({nx, ny}); }
                     }
-                }
-            if (sizes.empty()) continue;
-            const int biggest = *std::max_element(sizes.begin(), sizes.end());
-            if (biggest < minPixels) continue;
-            const int keepMin = std::max(minPixels, biggest / 50);
-            // Models do not always keep to the grid: a cell can hold two
-            // subjects (seen on the test PC with a 3 x 3 request). Every piece
-            // at least a quarter the size of the largest is a subject of its
-            // own; smaller kept pieces join the nearest subject.
-            std::vector<int> owner(sizes.size(), -1);
-            std::vector<IntRect> box(sizes.size());
-            for (int y = 0; y < img.height(); ++y)
-                for (int x = 0; x < img.width(); ++x) {
-                    const int l = label[static_cast<std::size_t>(y) * static_cast<std::size_t>(img.width()) + static_cast<std::size_t>(x)];
-                    if (l < 0) continue;
-                    IntRect& bx = box[static_cast<std::size_t>(l)];
-                    if (bx.empty()) bx = {x, y, 1, 1};
-                    else {
-                        const int x1 = std::max(bx.x + bx.w, x + 1), y1 = std::max(bx.y + bx.h, y + 1);
-                        bx.x = std::min(bx.x, x); bx.y = std::min(bx.y, y);
-                        bx.w = x1 - bx.x; bx.h = y1 - bx.y;
-                    }
-                }
-            std::vector<int> subjects;
-            for (std::size_t i = 0; i < sizes.size(); ++i)
-                if (sizes[i] * 4 >= biggest) { owner[i] = static_cast<int>(subjects.size()); subjects.push_back(static_cast<int>(i)); }
-            for (std::size_t i = 0; i < sizes.size(); ++i) {
-                if (owner[i] >= 0 || sizes[i] < keepMin) continue;
-                long best = std::numeric_limits<long>::max();
-                for (std::size_t k = 0; k < subjects.size(); ++k) {
-                    const IntRect& a = box[i];
-                    const IntRect& b = box[static_cast<std::size_t>(subjects[k])];
-                    const long dx = std::max({0, b.x - (a.x + a.w), a.x - (b.x + b.w)});
-                    const long dy = std::max({0, b.y - (a.y + a.h), a.y - (b.y + b.h)});
-                    if (dx * dx + dy * dy < best) { best = dx * dx + dy * dy; owner[i] = static_cast<int>(k); }
-                }
             }
-            for (std::size_t k = 0; k < subjects.size(); ++k) {
-                Image part(img.width(), img.height());
-                for (int y = 0; y < img.height(); ++y)
-                    for (int x = 0; x < img.width(); ++x) {
-                        const int l = label[static_cast<std::size_t>(y) * static_cast<std::size_t>(img.width()) + static_cast<std::size_t>(x)];
-                        if (l >= 0 && owner[static_cast<std::size_t>(l)] == static_cast<int>(k)) part.setPixel(x, y, img.pixel(x, y));
-                    }
-                const IntRect b = part.opaqueBounds();
-                if (b.empty()) continue;
-                out.push_back({c, r, {cell.x + b.x, cell.y + b.y, b.w, b.h}, part.copy(b)});
-            }
+            box.push_back(b);
         }
+    if (sizes.empty()) return out;
+    const double cellW = static_cast<double>(W) / cols, cellH = static_cast<double>(H) / rows;
+    // A subject covers at least 3 % of a cell; smaller pieces (a detached horn,
+    // a tail tip) join the nearest subject when close, else are dropped.
+    const int subjectMin = std::max(minPixels, static_cast<int>(cellW * cellH * 0.03));
+    const long joinDist = static_cast<long>(std::max(cellW, cellH) * 0.15);
+    std::vector<int> owner(sizes.size(), -1);
+    std::vector<int> subjects;
+    for (std::size_t i = 0; i < sizes.size(); ++i)
+        if (sizes[i] >= subjectMin) { owner[i] = static_cast<int>(subjects.size()); subjects.push_back(static_cast<int>(i)); }
+    if (subjects.empty()) return out;
+    std::vector<IntRect> sbox(subjects.size());
+    for (std::size_t k = 0; k < subjects.size(); ++k) sbox[k] = box[static_cast<std::size_t>(subjects[k])];
+    for (std::size_t i = 0; i < sizes.size(); ++i) {
+        if (owner[i] >= 0 || sizes[i] < std::max(2, minPixels / 4)) continue;
+        long best = std::numeric_limits<long>::max();
+        int to = -1;
+        for (std::size_t k = 0; k < subjects.size(); ++k) {
+            const IntRect& a = box[i];
+            const IntRect& b = sbox[k];
+            const long dx = std::max({0, b.x - (a.x + a.w), a.x - (b.x + b.w)});
+            const long dy = std::max({0, b.y - (a.y + a.h), a.y - (b.y + b.h)});
+            if (dx * dx + dy * dy < best) { best = dx * dx + dy * dy; to = static_cast<int>(k); }
+        }
+        if (to >= 0 && best <= joinDist * joinDist) owner[i] = to;
+    }
+    struct Piece { int col, row; IntRect rect; Image image; };
+    std::vector<Piece> pieces;
+    auto emit = [&](int k, const IntRect& area) {
+        Image part(area.w, area.h);
+        for (int y = area.y; y < area.y + area.h; ++y)
+            for (int x = area.x; x < area.x + area.w; ++x) {
+                const int l = label[static_cast<std::size_t>(y) * static_cast<std::size_t>(W) + static_cast<std::size_t>(x)];
+                if (l >= 0 && owner[static_cast<std::size_t>(l)] == k) part.setPixel(x - area.x, y - area.y, clean.pixel(x, y));
+            }
+        const IntRect b = part.opaqueBounds();
+        if (b.empty()) return;
+        int n = 0;
+        for (const Rgba8& c : part.pixels()) n += c.a > 0;
+        if (n < subjectMin) return;
+        const IntRect r{area.x + b.x, area.y + b.y, b.w, b.h};
+        pieces.push_back({cellOf(xs, r.x + r.w / 2), cellOf(ys, r.y + r.h / 2), r, part.copy(b)});
+    };
+    for (std::size_t k = 0; k < subjects.size(); ++k) {
+        // The subject's extent with the pieces that joined it.
+        IntRect ext = sbox[k];
+        for (std::size_t i = 0; i < sizes.size(); ++i)
+            if (owner[i] == static_cast<int>(k)) {
+                const IntRect& b = box[i];
+                const int x1 = std::max(ext.x + ext.w, b.x + b.w), y1 = std::max(ext.y + ext.h, b.y + b.h);
+                ext.x = std::min(ext.x, b.x); ext.y = std::min(ext.y, b.y); ext.w = x1 - ext.x; ext.h = y1 - ext.y;
+            }
+        const bool wide = ext.w > cellW * 1.6, tall = ext.h > cellH * 1.6;
+        if (!wide && !tall) {
+            emit(static_cast<int>(k), ext);
+            continue;
+        }
+        // Spans several cells: cut it along the grid lines it crosses.
+        const int c0 = wide ? cellOf(xs, ext.x) : 0, c1 = wide ? cellOf(xs, ext.x + ext.w - 1) : 0;
+        const int r0 = tall ? cellOf(ys, ext.y) : 0, r1 = tall ? cellOf(ys, ext.y + ext.h - 1) : 0;
+        for (int r = r0; r <= r1; ++r)
+            for (int c = c0; c <= c1; ++c) {
+                const int ax0 = wide ? std::max(ext.x, xs[static_cast<std::size_t>(c)]) : ext.x;
+                const int ax1 = wide ? std::min(ext.x + ext.w, xs[static_cast<std::size_t>(c) + 1]) : ext.x + ext.w;
+                const int ay0 = tall ? std::max(ext.y, ys[static_cast<std::size_t>(r)]) : ext.y;
+                const int ay1 = tall ? std::min(ext.y + ext.h, ys[static_cast<std::size_t>(r) + 1]) : ext.y + ext.h;
+                if (ax1 > ax0 && ay1 > ay0) emit(static_cast<int>(k), {ax0, ay0, ax1 - ax0, ay1 - ay0});
+            }
+    }
+    // Reading order: by row, then left to right.
+    std::stable_sort(pieces.begin(), pieces.end(), [](const Piece& a, const Piece& b) {
+        return a.row != b.row ? a.row < b.row : a.rect.x + a.rect.w / 2 < b.rect.x + b.rect.w / 2;
+    });
+    for (Piece& p : pieces) out.push_back({p.col, p.row, p.rect, std::move(p.image)});
     return out;
 }
 

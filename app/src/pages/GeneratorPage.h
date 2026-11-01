@@ -156,6 +156,7 @@ private:
         QString title;
         std::map<std::string, QString> jobs;          // job id -> label
         int sheetColumns = 0, sheetRows = 0;          // > 0: cut the result into cells
+        int expected = 0;                             // subjects asked for (a sheet run)
         bool animateIdle = false;
         QString saveDir;                              // write every result here, with a manifest
         std::vector<std::pair<Image, QString>> results;
