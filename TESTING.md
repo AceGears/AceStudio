@@ -67,6 +67,8 @@ Engines:
 | Check | Result |
 |---|---|
 | Godot 4.6.2 headless | ✅ all resources load. AceStudio's placement matches Godot's own terrain painting for every cell (Blob47, Cardinal16) |
+| Windows CI, packaged build (MSVC, Qt 6.12) | ✅ conformance baseline, Python and TypeScript SDK clients, and the app bridge over a real named pipe (offscreen app): every check passes |
+| AceStudio 0.8.0 on the Windows test PC | ✅ the log shows the MCP bridge listening. Scripts › outline_frame on the knight sample adds an Outline layer, and one Ctrl+Z removes it. Set Up AI Assistants shows this PC's `acestudio-mcp.exe` path (JSON-escaped for Claude Code / Cursor / VS Code, a TOML literal for Codex). Sprite Sheet export with Godot + Unity ticked writes `.png`, `.json`, `.tres`, `.png.meta` and `_idle.anim` (+ `.meta`) |
 | Unity 6000.6.7f1 on the Windows test PC | ✅ `compare_unity.py`: 11 textures, 190 sprites (rects, 9-slice borders, pivots, PPU), 3 clips and 13 keys all match; no import errors. The clip lengths equal the frame durations |
 
 ### 2026-10-31 — Phase 6 second review pass, version 0.7.0
