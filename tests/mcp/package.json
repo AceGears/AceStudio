@@ -1,0 +1,10 @@
+{
+  "name": "acestudio-mcp-tests",
+  "private": true,
+  "type": "module",
+  "description": "Pinned MCP test tools for acestudio-mcp (see README.md)",
+  "dependencies": {
+    "@modelcontextprotocol/conformance": "0.1.16",
+    "@modelcontextprotocol/sdk": "1.32.2"
+  }
+}

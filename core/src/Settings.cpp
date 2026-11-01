@@ -48,6 +48,7 @@ Settings::Settings() {
     registerDefault("animation.preview.zoom", 4);
     // AI
     registerDefault("ai.modelDirectory", "");
+    registerDefault("mcp.bridgeEnabled", true);               // AI assistants (acestudio-mcp) may use the open document
     registerDefault("ai.pythonPath", "");                     // empty = find Python 3.10+ automatically
     registerDefault("ai.autoStart", false);                   // start the worker when the app opens
     registerDefault("ai.outputDirectory", "");

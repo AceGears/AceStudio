@@ -16,6 +16,7 @@ endif()
 
 option(ACESTUDIO_BUILD_APP   "Build the Qt desktop application" ON)
 option(ACESTUDIO_BUILD_CLI   "Build acestudio-cli"              ON)
+option(ACESTUDIO_BUILD_MCP   "Build acestudio-mcp (needs Qt Core/Network)" ON)
 option(ACESTUDIO_BUILD_TESTS "Build unit tests"                 ON)
 option(ACESTUDIO_BUILD_BENCH "Build micro-benchmarks"         ON)
 option(ACESTUDIO_WARNINGS_AS_ERRORS "Treat warnings as errors"  OFF)
@@ -34,6 +35,10 @@ add_subdirectory(core)
 
 if(ACESTUDIO_BUILD_CLI)
     add_subdirectory(cli)
+endif()
+
+if(ACESTUDIO_BUILD_MCP)
+    add_subdirectory(mcp)
 endif()
 
 if(ACESTUDIO_BUILD_APP)

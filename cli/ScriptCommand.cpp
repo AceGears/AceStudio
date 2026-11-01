@@ -40,6 +40,12 @@ int cmdRun(const Args& a, Output& out) {
 
     ScriptOptions o;
     o.args.assign(a.positional.begin() + 2, a.positional.end());
+    // Relative paths in the script resolve against --base (default: the
+    // script's folder), which is allowed too.
+    if (auto base = a.opt("base")) {
+        if (!fs::is_directory(*base, ec)) return out.fail(kIo, "run: --base " + *base + " is not a folder");
+        o.allowedRoots.push_back(fs::absolute(*base, ec));
+    }
     o.allowedRoots.push_back(fs::absolute(script, ec).parent_path());
     if (auto allow = a.opt("allow"))
         for (const auto& p : splitPaths(*allow)) {

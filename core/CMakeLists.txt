@@ -12,6 +12,7 @@ add_library(acestudio_core STATIC
     src/EngineExport.cpp
     src/AssetFiles.cpp
     src/Script.cpp
+    src/AppBridge.cpp
     src/BlendMode.cpp
     src/Character.cpp
     src/Color.cpp
@@ -53,7 +54,7 @@ set_source_files_properties(src/AiWorker.cpp PROPERTIES
     COMPILE_DEFINITIONS "ACESTUDIO_DEV_SOURCE_DIR=\"${PROJECT_SOURCE_DIR}\"")
 
 if(WIN32)
-    target_link_libraries(acestudio_core PRIVATE shell32 ole32)
+    target_link_libraries(acestudio_core PRIVATE shell32 ole32 advapi32)
     target_compile_definitions(acestudio_core PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
 endif()
 

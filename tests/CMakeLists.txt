@@ -56,3 +56,9 @@ endif()
 # it needs Godot / Unity, see tests/engine/README.md).
 add_executable(engine_fixture engine/fixture.cpp)
 target_link_libraries(engine_fixture PRIVATE AceStudio::core)
+
+# MCP protocol layer (no Qt needed for these tests).
+if(TARGET acestudio_mcp_proto)
+    target_sources(acestudio_core_tests PRIVATE test_mcp.cpp)
+    target_link_libraries(acestudio_core_tests PRIVATE acestudio_mcp_proto)
+endif()

@@ -13,3 +13,8 @@ compile_commands.json
 # Python
 __pycache__/
 *.pyc
+
+# MCP test tools (tests/mcp)
+tests/mcp/node_modules/
+tests/mcp/package-lock.json
+tests/mcp/.venv/

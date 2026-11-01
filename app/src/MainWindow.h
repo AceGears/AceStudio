@@ -119,6 +119,9 @@ private:
     QDockWidget* m_aiDock = nullptr;
     AiPanel* m_aiPanel = nullptr;
     AiService* m_ai = nullptr;
+    class AppBridgeServer* m_bridge = nullptr;
+    // Opens a project or an image (MCP bridge "open").
+    bool openAnyFile(const QString& path, QString* error);
     QAction* m_onionAction = nullptr;
     LayersPanel* m_layers = nullptr;
     PropertiesPanel* m_props = nullptr;

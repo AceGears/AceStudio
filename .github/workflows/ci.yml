@@ -133,7 +133,9 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item build/app/AceStudio.exe dist/
           Copy-Item build/cli/acestudio-cli.exe dist/
+          Copy-Item build/mcp/acestudio-mcp.exe dist/
           windeployqt --release --no-translations --no-system-d3d-compiler --no-compiler-runtime dist/AceStudio.exe
+          windeployqt --release --no-translations --no-system-d3d-compiler --no-compiler-runtime dist/acestudio-mcp.exe
           # App-local Visual C++ runtime (allowed by the Visual Studio redistribution
           # terms), so the app starts on PCs without the VC++ 2015-2022 redistributable.
           $crt = Get-ChildItem "$env:VCToolsRedistDir\x64" -Directory -Filter "Microsoft.VC14*.CRT" | Select-Object -First 1
@@ -165,6 +167,28 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           dist/acestudio-cli.exe ai status
           if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: MCP conformance and SDK clients (packaged acestudio-mcp)
+        shell: pwsh
+        working-directory: tests/mcp
+        run: |
+          $root = "$env:RUNNER_TEMP/mcproot"
+          New-Item -ItemType Directory -Force $root | Out-Null
+          $mcp = (Resolve-Path ../../dist/acestudio-mcp.exe).Path
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python -m pip install -r requirements.txt
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $server = Start-Process -FilePath $mcp -ArgumentList "--root", $root, "--http", "39200", "--conformance-fixtures" -PassThru -NoNewWindow
+          Start-Sleep -Seconds 2
+          $failed = $false
+          npx conformance server --url http://127.0.0.1:39200/mcp --suite all --expected-failures conformance-baseline.yml
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::MCP conformance: unexpected failures"; $failed = $true }
+          python py_client.py $mcp $root http://127.0.0.1:39200/mcp
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::MCP Python SDK client checks failed"; $failed = $true }
+          node ts_client.mjs $mcp $root http://127.0.0.1:39200/mcp
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::MCP TypeScript SDK client checks failed"; $failed = $true }
+          Stop-Process -Id $server.Id -ErrorAction SilentlyContinue
+          if ($failed) { exit 1 }
       - uses: actions/upload-artifact@v4
         with:
           name: AceStudio-windows-x64

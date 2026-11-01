@@ -1,0 +1,32 @@
+# Expected failures for `npx @modelcontextprotocol/conformance@0.1.16 server`
+# against `acestudio-mcp --http PORT --conformance-fixtures` (see
+# tests/mcp/README.md). Every entry is a feature acestudio-mcp does not offer
+# and does not advertise in its capabilities; the server answers these
+# requests with -32601 Method not found, as the specification requires.
+server:
+  # completions capability: not offered
+  - completion-complete
+  # resources capability: not offered (tools only)
+  - resources-list
+  - resources-read-text
+  - resources-read-binary
+  - resources-templates-read
+  - resources-subscribe
+  - resources-unsubscribe
+  # prompts capability: not offered
+  - prompts-list
+  - prompts-get-simple
+  - prompts-get-with-args
+  - prompts-get-embedded-resource
+  - prompts-get-with-image
+  # server-to-client requests (sampling, elicitation): not used. Sampling is
+  # deprecated in 2026-07-28, and both move to multi round-trip requests there.
+  - tools-call-sampling
+  - tools-call-elicitation
+  - elicitation-sep1034-defaults
+  - elicitation-sep1330-enums
+  # SSE resumability (2025-11-25 priming event ids and `retry`): only
+  # recommended there, and removed in 2026-07-28. Event ids would invite
+  # Last-Event-ID reconnects that this server cannot replay, so it sends none.
+  # The scenario reports these as WARNINGs, which the baseline counts.
+  - server-sse-polling

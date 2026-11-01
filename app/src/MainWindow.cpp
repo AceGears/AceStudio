@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "scripting/AppBridgeServer.h"
 #include "scripting/ScriptDialog.h"
 
 #include "AppContext.h"
@@ -103,6 +104,11 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
 
     m_tools = new ToolState(this);
     buildDocks();
+    m_bridge = new AppBridgeServer(
+        {[this] { return currentView(); }, [this](const QString& p, QString* e) { return openAnyFile(p, e); },
+         scriptsFolder(m_ctx.dataDir())},
+        this);
+    if (m_ctx.settings().get<bool>("mcp.bridgeEnabled")) (void)m_bridge->start();
     buildMenus();
 
     m_statusCursor = new QLabel(this);
@@ -656,6 +662,20 @@ void MainWindow::buildMenus() {
             scripts->addAction(fromPath(f.stem()), this, [f, runScript] { runScript(f); });
         scripts->addSeparator();
         scripts->addAction(tr("Open Scripts &Folder"), this, [dir] { QDesktopServices::openUrl(QUrl::fromLocalFile(fromPath(dir))); });
+        scripts->addSeparator();
+        QAction* allow = scripts->addAction(tr("Allow AI &Assistants to Use the Open Document"));
+        allow->setCheckable(true);
+        allow->setChecked(m_bridge && m_bridge->running());
+        allow->setToolTip(tr("Lets acestudio-mcp (Claude Code, Cursor, VS Code, Codex…) look at the open document and run "
+                             "Lua scripts on it. Every change is one Edit > Undo step."));
+        connect(allow, &QAction::toggled, this, [this](bool on) {
+            (void)m_ctx.settings().set("mcp.bridgeEnabled", on);
+            if (on) {
+                if (!m_bridge->start()) statusBar()->showMessage(tr("Could not open the AI assistant bridge (see the log)"), 5000);
+            } else {
+                m_bridge->stop();
+            }
+        });
     });
     scripts->addAction(tr("&Run Script…"));   // replaced when the menu opens
     QMenu* toolsMenu = menuBar()->addMenu(tr("T&ools"));
@@ -942,6 +962,25 @@ void MainWindow::openProjectDialog() {
                                                            : QFileInfo(m_ctx.recentProjects().first()).absolutePath();
     const QStringList files = QFileDialog::getOpenFileNames(this, tr("Open Project"), start, kProjectFilter);
     for (const QString& f : files) openProject(f);
+}
+
+bool MainWindow::openAnyFile(const QString& path, QString* error) {
+    const QString ext = QFileInfo(path).suffix().toLower();
+    if (!QFileInfo::exists(path)) {
+        if (error) *error = tr("%1 does not exist").arg(path);
+        return false;
+    }
+    if (ext == "acestudio") return openProject(path);
+    if (ext == "png") {
+        auto img = readPng(toPath(path));
+        if (!img) {
+            if (error) *error = qs(img.error().message);
+            return false;
+        }
+        return openImageAsDocument(img.value(), QFileInfo(path).completeBaseName()) != nullptr;
+    }
+    if (error) *error = tr("AceStudio opens .acestudio projects and .png images here");
+    return false;
 }
 
 bool MainWindow::openProject(const QString& pathIn) {

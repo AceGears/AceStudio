@@ -47,6 +47,8 @@ add_executable(AceStudio WIN32
     src/assets/AssetDialogs.cpp
     src/scripting/ScriptDialog.h
     src/scripting/ScriptDialog.cpp
+    src/scripting/AppBridgeServer.h
+    src/scripting/AppBridgeServer.cpp
     src/SingleInstance.h
     src/SingleInstance.cpp
     src/Shortcuts.h
