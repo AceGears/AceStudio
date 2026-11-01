@@ -280,8 +280,12 @@ void SpriteAnimateDialog::showFrame() {
     const ::acestudio::motion::Clip& c = m_clips[static_cast<std::size_t>(m_previewClip)];
     if (m_previewFrame >= static_cast<int>(c.frames.size())) m_previewFrame = 0;
     const Image& f = c.frames[static_cast<std::size_t>(m_previewFrame)];
-    const int scale = std::max(1, std::min(m_preview->width() / std::max(1, f.width()), m_preview->height() / std::max(1, f.height())));
-    m_preview->setPixmap(QPixmap::fromImage(toQImage(f).scaled(f.width() * scale, f.height() * scale, Qt::KeepAspectRatio, Qt::FastTransformation)));
+    // Whole-number zoom for pixel art; a frame larger than the preview is
+    // shrunk to fit (found on the test PC with a 481 px knight).
+    const int scale = std::min(m_preview->width() / std::max(1, f.width()), m_preview->height() / std::max(1, f.height()));
+    const QImage q = toQImage(f);
+    m_preview->setPixmap(QPixmap::fromImage(scale >= 1 ? q.scaled(f.width() * scale, f.height() * scale, Qt::KeepAspectRatio, Qt::FastTransformation)
+                                                       : q.scaled(m_preview->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)));
     const int ms = c.durations[static_cast<std::size_t>(m_previewFrame)];
     // A non-looping action holds its last frame for a moment before replaying.
     const bool last = m_previewFrame + 1 == static_cast<int>(c.frames.size());

@@ -366,6 +366,19 @@ bool ExportDialog::runExport() {
     };
     switch (m_kind) {
     case ExportKind::SpriteSheet: {
+        if (m_engines->engines() & kEnginePhaser) {
+            // Phaser needs frames named by number in the JSON, so the sheet,
+            // its JSON (hash) and the engine files are written together.
+            AssetWriteOptions eo;
+            eo.engines = m_engines->engines();
+            eo.overwrite = true;   // confirmed above
+            auto e = writeSheetFiles(m_doc, range, so, sheetPng, eo);
+            if (!e) return fail(e.error());
+            m_result = tr("Exported the sheet to %1, plus %n file(s) with its JSON and engine files", nullptr,
+                          static_cast<int>(e.value().files.size()) - 1)
+                           .arg(QDir::toNativeSeparators(fromPath(sheetPng)));
+            break;
+        }
         auto r = writeSpriteSheet(m_doc, range, so, target, json, overwrite);
         if (!r) return fail(r.error());
         m_result = tr("Exported %n frame(s) to %1 (%2 × %3)", nullptr, static_cast<int>(r.value().frames))
