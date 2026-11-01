@@ -31,6 +31,20 @@ namespace {
 
 fs::path dataDir(const char* sub) { return fs::path(ACESTUDIO_SOURCE_DIR) / "tests" / "data" / sub; }
 
+// ACESTUDIO_UPDATE_GOLDEN=1 rewrites the golden files instead of comparing.
+bool updateGolden() {
+#ifdef _MSC_VER
+    char* v = nullptr;
+    std::size_t n = 0;
+    const bool on = _dupenv_s(&v, &n, "ACESTUDIO_UPDATE_GOLDEN") == 0 && v && std::string(v) == "1";
+    std::free(v);
+    return on;
+#else
+    const char* v = std::getenv("ACESTUDIO_UPDATE_GOLDEN");
+    return v && std::string(v) == "1";
+#endif
+}
+
 // Number of differing pixels (or -1 when the sizes differ). Pixels where
 // `skip` is opaque are not compared.
 long pixelDiff(const Image& a, const Image& b, const Image* skip = nullptr) {
@@ -49,8 +63,7 @@ long pixelDiff(const Image& a, const Image& b, const Image* skip = nullptr) {
 
 void checkGolden(const Image& img, const std::string& name) {
     const fs::path path = dataDir("golden") / (name + ".png");
-    const char* update = std::getenv("ACESTUDIO_UPDATE_GOLDEN");
-    if (update && std::string(update) == "1") {
+    if (updateGolden()) {
         REQUIRE(writePng(img, path));
         WARN("updated golden " << path.string());
         return;
@@ -241,8 +254,7 @@ TEST_CASE("Golden: onion skin and packed sprite sheet", "[regression][golden]") 
     // The frame rectangles are part of the contract with game engines.
     const std::string json = spriteSheetJson(e.document(), sheet.value(), "sheet.png", "sprite", JsonStyle::Array);
     const fs::path jsonPath = dataDir("golden") / "sheet_packed.json";
-    const char* update = std::getenv("ACESTUDIO_UPDATE_GOLDEN");
-    if (update && std::string(update) == "1") {
+    if (updateGolden()) {
         REQUIRE(writeFileAtomic(jsonPath, std::vector<std::uint8_t>(json.begin(), json.end())));
     } else {
         auto expected = readFileBytes(jsonPath, 1u << 20);

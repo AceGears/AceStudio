@@ -40,7 +40,8 @@ template <BlendMode M> inline Rgba8 blendPixelT(Rgba8 dst, Rgba8 src, std::uint8
     const float ab = dst.a / 255.f;
 
     // Fast exact path for the overwhelmingly common pixel-art case.
-    if (M == BlendMode::Normal && as >= 1.f) return {src.r, src.g, src.b, 255};
+    if constexpr (M == BlendMode::Normal)
+        if (as >= 1.f) return {src.r, src.g, src.b, 255};
 
     const float ao = as + ab * (1.f - as);
     const float cs[3] = {src.r / 255.f, src.g / 255.f, src.b / 255.f};
