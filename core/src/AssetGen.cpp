@@ -384,7 +384,8 @@ QualityReport checkAsset(const Image& img, const CheckOptions& opt) {
 std::string gridPrompt(const std::string& subject, int cols, int rows) {
     return "a character sheet of " + std::to_string(cols * rows) + " different " + subject + ", arranged in a grid of " +
            std::to_string(cols) + " columns and " + std::to_string(rows) +
-           " rows, each one complete and separate with empty space around it, all the same scale, plain flat background";
+           " rows, every one a different species with its own body shape, size and colours (no two alike), each one complete"
+           " and separate with empty space around it, all the same scale, plain flat background";
 }
 
 std::vector<GridCell> extractGrid(const Image& sheet, int cols, int rows, int minPixels) {
@@ -451,14 +452,49 @@ std::vector<GridCell> extractGrid(const Image& sheet, int cols, int rows, int mi
             const int biggest = *std::max_element(sizes.begin(), sizes.end());
             if (biggest < minPixels) continue;
             const int keepMin = std::max(minPixels, biggest / 50);
+            // Models do not always keep to the grid: a cell can hold two
+            // subjects (seen on the test PC with a 3 x 3 request). Every piece
+            // at least a quarter the size of the largest is a subject of its
+            // own; smaller kept pieces join the nearest subject.
+            std::vector<int> owner(sizes.size(), -1);
+            std::vector<IntRect> box(sizes.size());
             for (int y = 0; y < img.height(); ++y)
                 for (int x = 0; x < img.width(); ++x) {
                     const int l = label[static_cast<std::size_t>(y) * static_cast<std::size_t>(img.width()) + static_cast<std::size_t>(x)];
-                    if (l < 0 || sizes[static_cast<std::size_t>(l)] < keepMin) img.setPixel(x, y, Rgba8::transparent());
+                    if (l < 0) continue;
+                    IntRect& bx = box[static_cast<std::size_t>(l)];
+                    if (bx.empty()) bx = {x, y, 1, 1};
+                    else {
+                        const int x1 = std::max(bx.x + bx.w, x + 1), y1 = std::max(bx.y + bx.h, y + 1);
+                        bx.x = std::min(bx.x, x); bx.y = std::min(bx.y, y);
+                        bx.w = x1 - bx.x; bx.h = y1 - bx.y;
+                    }
                 }
-            const IntRect b = img.opaqueBounds();
-            if (b.empty()) continue;
-            out.push_back({c, r, {cell.x + b.x, cell.y + b.y, b.w, b.h}, img.copy(b)});
+            std::vector<int> subjects;
+            for (std::size_t i = 0; i < sizes.size(); ++i)
+                if (sizes[i] * 4 >= biggest) { owner[i] = static_cast<int>(subjects.size()); subjects.push_back(static_cast<int>(i)); }
+            for (std::size_t i = 0; i < sizes.size(); ++i) {
+                if (owner[i] >= 0 || sizes[i] < keepMin) continue;
+                long best = std::numeric_limits<long>::max();
+                for (std::size_t k = 0; k < subjects.size(); ++k) {
+                    const IntRect& a = box[i];
+                    const IntRect& b = box[static_cast<std::size_t>(subjects[k])];
+                    const long dx = std::max({0, b.x - (a.x + a.w), a.x - (b.x + b.w)});
+                    const long dy = std::max({0, b.y - (a.y + a.h), a.y - (b.y + b.h)});
+                    if (dx * dx + dy * dy < best) { best = dx * dx + dy * dy; owner[i] = static_cast<int>(k); }
+                }
+            }
+            for (std::size_t k = 0; k < subjects.size(); ++k) {
+                Image part(img.width(), img.height());
+                for (int y = 0; y < img.height(); ++y)
+                    for (int x = 0; x < img.width(); ++x) {
+                        const int l = label[static_cast<std::size_t>(y) * static_cast<std::size_t>(img.width()) + static_cast<std::size_t>(x)];
+                        if (l >= 0 && owner[static_cast<std::size_t>(l)] == static_cast<int>(k)) part.setPixel(x, y, img.pixel(x, y));
+                    }
+                const IntRect b = part.opaqueBounds();
+                if (b.empty()) continue;
+                out.push_back({c, r, {cell.x + b.x, cell.y + b.y, b.w, b.h}, part.copy(b)});
+            }
         }
     return out;
 }

@@ -157,3 +157,16 @@ TEST_CASE("a failed generation that is only noise is flagged", "[gen]") {
         for (int x = 0; x < 64; ++x) blocks.setPixel(x, y, ((x / 4 + y / 4) % 3) ? Rgba8{200, 60, 60, 255} : Rgba8{30, 30, 40, 255});
     for (const auto& i : gen::checkAsset(blocks, o).issues) CHECK(i.code != "noise");
 }
+
+TEST_CASE("a cell holding two subjects gives two sprites", "[gen]") {
+    Image sheet(200, 100, Rgba8{250, 250, 250, 255});
+    const Rgba8 body{40, 120, 60, 255};
+    sheet.fillRect({10, 5, 60, 35}, body);     // cell (0,0): two creatures stacked
+    sheet.fillRect({15, 55, 50, 35}, body);
+    sheet.fillRect({120, 20, 60, 60}, body);   // cell (1,0): one
+    const auto cells = gen::extractGrid(sheet, 2, 1);
+    REQUIRE(cells.size() == 3);
+    CHECK(cells[0].column == 0);
+    CHECK(cells[1].column == 0);
+    CHECK(cells[2].column == 1);
+}
