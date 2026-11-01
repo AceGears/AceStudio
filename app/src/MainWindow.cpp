@@ -22,6 +22,7 @@
 #include "panels/PalettePanel.h"
 #include "panels/PreviewPanel.h"
 #include "AnimationDialogs.h"
+#include "SpriteAnimateDialog.h"
 #include "ExportDialog.h"
 #include "assets/AssetDialogs.h"
 #include "assets/TilesetDialog.h"
@@ -264,7 +265,10 @@ void MainWindow::buildDocks() {
     m_aiPanel = new AiPanel(*m_ai, m_ctx, this);
     connect(m_aiPanel, &AiPanel::statusMessage, this, [this](const QString& t) { statusBar()->showMessage(t, 6000); });
     connect(m_aiPanel, &AiPanel::resultAsDocument, this, [this](const Image& img, const QString& name) { openImageAsDocument(img, name); });
-    connect(m_aiPanel, &AiPanel::resultAsAnimation, this, &MainWindow::openAnimationAsDocument);
+    connect(m_aiPanel, &AiPanel::resultAsAnimation, this,
+            [this](const std::vector<Image>& frames, const std::vector<int>& durations, const QString& name) {
+                openAnimationAsDocument(frames, durations, name);
+            });
     connect(m_aiPanel, &AiPanel::resultAsLayer, this, [this](DocumentView* v, const Image& img, const QString& name, LayerId above, int frame) {
         // The view may have been closed while the job ran.
         for (int i = 0; i < m_tabs->count(); ++i)
@@ -658,6 +662,14 @@ void MainWindow::buildMenus() {
     });
     m_timeline->addActionButton(m_onionAction);
     anim->addAction(tr("Onion Skin &Settings…"), this, &MainWindow::editOnionSkin);
+    anim->addSeparator();
+    (anim->addAction(tr("&Animate Sprite…"), this, [this] {
+        DocumentView* v = currentView();
+        if (!v) return void(QMessageBox::information(this, tr("Animate Sprite"), tr("Open a sprite first.")));
+        const Image img = v->document().composite(v->currentFrame());
+        const IntRect b = img.opaqueBounds();
+        animateSprite(b.empty() ? img : img.copy(b), QFileInfo(v->displayName()).completeBaseName());
+    }))->setObjectName(QStringLiteral("anim.sprite"));
 
     QMenu* aiMenu = menuBar()->addMenu(tr("AI &Studio"));
     auto showAi = [this](int tab) { m_aiDock->show(); m_aiDock->raise(); m_aiPanel->focusTab(tab); };
@@ -893,10 +905,7 @@ void MainWindow::buildWorkspaces() {
             showWorkspace(Workspace::Editor);
         }
     });
-    connect(m_generator, &GeneratorPage::animateRequested, this, [this](const Image& img, const QString& name) {
-        openImageAsDocument(img, name);
-        showWorkspace(Workspace::Animation);
-    });
+    connect(m_generator, &GeneratorPage::animateRequested, this, [this](const Image& img, const QString& name) { animateSprite(img, name); });
     connect(m_generator, &GeneratorPage::showModelsRequested, this, [this] { m_aiPanel->showModels(); });
     connect(m_generator, &GeneratorPage::showSetupRequested, this, [this] { m_aiPanel->showSetup(); });
     connect(m_generator, &GeneratorPage::statusMessage, this, [this](const QString& t) { statusBar()->showMessage(t, 6000); });
@@ -913,6 +922,12 @@ void MainWindow::buildWorkspaces() {
                     tr("Generate…"), [this] {
                         for (QAction* a : findChildren<QAction*>())
                             if (a->objectName() == QLatin1String("ai.animation")) { a->trigger(); return; }
+                    }});
+    chars->addCard({Glyph::Animation, tr("Animate a Sprite"), tr("Any still sprite into idle, walk, run, jump, attack, hurt, death and 15 "
+                                                                 "more actions, without AI; the motion fits two legs, four legs or none."),
+                    tr("Animate…"), [this] {
+                        for (QAction* a : findChildren<QAction*>())
+                            if (a->objectName() == QLatin1String("anim.sprite")) { a->trigger(); return; }
                     }});
     m_hubs << chars;
     put(Workspace::Characters, chars);
@@ -1564,7 +1579,7 @@ void MainWindow::importPng(bool asLayer) {
 }
 
 DocumentView* MainWindow::openAnimationAsDocument(const std::vector<Image>& frames, const std::vector<int>& durations,
-                                                 const QString& name) {
+                                                 const QString& name, const std::vector<AnimationTag>& tags) {
     if (frames.empty()) return nullptr;
     auto doc = Document::create(frames[0].width(), frames[0].height());
     if (!doc) { report(doc.error()); return nullptr; }
@@ -1576,10 +1591,26 @@ DocumentView* MainWindow::openAnimationAsDocument(const std::vector<Image>& fram
         if (f < durations.size()) (void)d.setFrameDuration(static_cast<int>(f), durations[f]);
         if (!frames[f].isNull()) (void)d.setCel(l, static_cast<int>(f), Cel{frames[f], 0, 0});
     }
+    if (!tags.empty())
+        if (auto st = d.replaceTags(tags); !st) report(st.error());
     auto* view = new DocumentView(std::move(doc).value(), QString(), ProjectInfo{}, m_tools, m_tabs);
     addView(view);
     view->markNeverSaved();
     return view;
+}
+
+void MainWindow::animateSprite(const Image& sprite, const QString& name) {
+    if (sprite.isNull() || sprite.isFullyTransparent()) {
+        QMessageBox::information(this, tr("Animate Sprite"), tr("Open or select a sprite with a transparent background first."));
+        return;
+    }
+    SpriteAnimateDialog dlg(sprite, name,
+                            [this](const std::vector<Image>& frames, const std::vector<int>& durations, const std::vector<AnimationTag>& tags,
+                                   const QString& n) {
+                                if (openAnimationAsDocument(frames, durations, n, tags)) showWorkspace(Workspace::Animation);
+                            },
+                            this);
+    dlg.exec();
 }
 
 DocumentView* MainWindow::openImageAsDocument(const Image& img, const QString& name) {

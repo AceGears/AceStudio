@@ -103,6 +103,7 @@ int cmdSeams(const Args& a, Output& out);
 int cmdAtlas(const Args& a, Output& out);
 int cmdSlice(const Args& a, Output& out);
 int cmdUiKit(const Args& a, Output& out);
+int cmdAnimate(const Args& a, Output& out);
 int cmdTemplate(const Args& a, Output& out);
 int cmdRun(const Args& a, Output& out);
 

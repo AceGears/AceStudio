@@ -3,6 +3,7 @@
 
 #include "CliCommon.h"
 
+#include "acestudio/core/SpriteMotion.h"
 #include "acestudio/core/AssetFiles.h"
 #include "acestudio/core/AssetTools.h"
 #include "acestudio/core/Atlas.h"
@@ -308,6 +309,69 @@ int cmdSlice(const Args& a, Output& out) {
     files.push_back(js.string());
     return out.success({{"files", files}, {"sprites", rects}},
                        "Found " + std::to_string(slices.size()) + " sprite(s); wrote them and " + js.string() + "\n");
+}
+
+// animate sprite.png --out dir [--action a,b|all] [--frames N] [--amount X] [--body B] [--face left]
+int cmdAnimate(const Args& a, Output& out) {
+    if (a.positional.size() != 2) return out.fail(kUsage, "animate: expected one sprite PNG");
+    const auto outDir = a.opt("out");
+    if (!outDir) return out.fail(kUsage, "animate: --out (a folder) is required");
+    auto img = readPng(a.positional[1]);
+    if (!img) return out.fail(img.error());
+    std::vector<motion::Action> list;
+    const std::string spec = a.opt("action").value_or("idle");
+    if (spec == "all") {
+        for (const auto& info : motion::actions())
+            if (info.action != motion::Action::Custom) list.push_back(info.action);
+    } else {
+        std::size_t start = 0;
+        while (start <= spec.size()) {
+            const std::size_t comma = spec.find(',', start);
+            const std::string key = spec.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            auto act = motion::actionFromKey(key);
+            if (!act) return out.fail(kUsage, "animate: unknown action '" + key + "'");
+            list.push_back(*act);
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+    }
+    motion::Options o;
+    o.frames = optInt(a, "frames").value_or(0);
+    if (auto am = a.opt("amount")) {
+        try { o.amount = std::stod(*am); } catch (...) { return out.fail(kUsage, "animate: --amount expects a number"); }
+    }
+    if (auto b = a.opt("body")) {
+        o.body = motion::bodyFromString(*b);
+        if (!o.body) return out.fail(kUsage, "animate: --body expects biped, quadruped, blob, flyer or object");
+    }
+    o.faceLeft = a.opt("face").value_or("right") == "left";
+    auto pack = motion::animatePack(img.value(), list, o);
+    if (!pack) return out.fail(pack.error());
+    const fs::path dir = *outDir;
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    const std::string stem = fs::path(a.positional[1]).stem().string();
+    json clips = json::array(), files = json::array();
+    for (const auto& c : pack.value()) {
+        const fs::path png = dir / (stem + "_" + c.name + ".png");
+        const fs::path js = dir / (stem + "_" + c.name + ".json");
+        if (!a.force && (fs::exists(png, ec) || fs::exists(js, ec))) return out.fail(kIo, png.string() + " already exists (use --force)");
+        const int fw = c.frames[0].width(), fh = c.frames[0].height();
+        Image strip(fw * static_cast<int>(c.frames.size()), fh);
+        for (std::size_t i = 0; i < c.frames.size(); ++i) strip.blit(c.frames[i], static_cast<int>(i) * fw, 0);
+        if (auto st = writePng(strip, png); !st) return out.fail(st.error());
+        const motion::ClipCheck chk = motion::checkClip(c);
+        json j{{"action", c.name}, {"body", motion::toString(c.body)}, {"frameWidth", fw}, {"frameHeight", fh},
+               {"frames", c.frames.size()}, {"durations", c.durations}, {"loop", c.loops}, {"image", png.filename().string()},
+               {"check", {{"maxAreaChange", chk.maxAreaChange}, {"minNeighbourIoU", chk.minNeighbourIoU}, {"loopIoU", chk.loopIoU},
+                          {"issues", chk.issues}}}};
+        if (auto st = writeTextFile(js, j.dump(2)); !st) return out.fail(st.error());
+        files.push_back(png.string());
+        files.push_back(js.string());
+        clips.push_back(j);
+    }
+    return out.success({{"files", files}, {"clips", clips}},
+                       "Wrote " + std::to_string(pack.value().size()) + " animation(s) to " + dir.string() + "\n");
 }
 
 // uikit --out ui.png [--scale N] [--colors base,light,dark,outline,accent,text] [--square]

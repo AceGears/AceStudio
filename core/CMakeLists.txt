@@ -10,6 +10,7 @@ add_library(acestudio_core STATIC
     src/AnimationQA.cpp
     src/AssetTools.cpp
     src/AssetGen.cpp
+    src/SpriteMotion.cpp
     src/StyleProfile.cpp
     src/EngineExport.cpp
     src/AssetFiles.cpp

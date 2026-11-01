@@ -70,6 +70,9 @@ const char* kUsageText =
     "  atlas <a.png> <b.png> ... --out atlas.png [--max 4096] [--padding 1] [--border 0]\n"
     "        [--extrude 0] [--trim] [--pot] [--rotate] [--no-merge] [--engines unity] [--ppu N]\n"
     "                                  Deterministic atlas + TexturePacker-style JSON\n"
+    "  animate <sprite.png> --out <folder> [--action idle,walk,...|all] [--frames N] [--amount X]\n"
+    "          [--body biped|quadruped|blob|flyer|object] [--face left]\n"
+    "                                  Animate a sprite without AI: one strip PNG + JSON per action\n"
     "  slice <sheet.png> --out <folder> [--grid WxH|auto [--offset X,Y] [--spacing X,Y] [--keep-empty]]\n"
     "        [--background #rrggbb] [--tolerance 8] [--merge 2] [--min-pixels 4]\n"
     "                                  Cut a sheet into sprites (PNGs + .slices.json)\n"
@@ -295,7 +298,7 @@ namespace {
 
 // Commands (and ai verbs) that write files.
 bool writesFiles(const Args& a) {
-    static const std::set<std::string> writers{"new", "render", "export", "tileset", "tileset-template", "atlas", "slice", "uikit"};
+    static const std::set<std::string> writers{"new", "render", "export", "tileset", "tileset-template", "atlas", "slice", "uikit", "animate"};
     const std::string& cmd = a.positional[0];
     if (writers.count(cmd)) return true;
     if (cmd == "ai" && a.positional.size() > 1) {
@@ -379,6 +382,7 @@ int main(int argc, char** argv) {
         if (cmd == "atlas") return acestudio::cli::cmdAtlas(*args, out);
         if (cmd == "slice") return acestudio::cli::cmdSlice(*args, out);
         if (cmd == "uikit") return acestudio::cli::cmdUiKit(*args, out);
+        if (cmd == "animate") return acestudio::cli::cmdAnimate(*args, out);
         if (cmd == "run") return acestudio::cli::cmdRun(*args, out);
         if (cmd == "licence" || cmd == "license") return cmdLicence(*args, out);
         return out.fail(kUsage, "Unknown command '" + cmd + "'. Run with --help.");
