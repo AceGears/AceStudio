@@ -65,6 +65,7 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 | Task persistence, real binary over stdio | ✅ a `slow_compute` task keeps running after the client closes stdin; a second acestudio-mcp on the same task folder reports it **completed** with its result; the first exits once it finishes. `notifications/tasks` arrive on a listen stream that asked for them |
 | Windows CI, packaged build (MSVC `/W4 /WX`, Qt 6.12) | ✅ conformance 228/228, 150/150, 80/80, 56/56; Python and TypeScript SDK clients; app bridge over a named pipe |
 | AceStudio 0.8.1 nightly on the test PC | ✅ the start page shows 0.8.1 and the log shows the bridge listening. Scripts › outline_frame on the knight sample: the Run Script window stays open while the main window's menus work; one Undo takes the script back |
+| Nightly `a5326da` on the test PC | ✅ installed over 0.8.1; the Tileset Generator offers Godot / Unity / **+ Rule Tiles** / Tiled |
 
 ### 2026-11-01 — Phase 7, version 0.8.0
 
