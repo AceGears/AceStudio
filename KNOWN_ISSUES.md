@@ -253,7 +253,8 @@ or is a case that has not been run yet.
     reads the sheet's `.json`). Wang-16 (dual-grid) sheets are not supported in the map yet.
 - **Claude Code over MCP (Test F)** has not run on the test PC: this session cannot type into
   a terminal there. The MCP tools are covered by CI.
-- **Uninstall (Test G)** is covered by CI only; it has not been run on the test PC.
+- **Uninstall (Test G)** ran on the test PC: projects, settings and models were kept, and the reinstall
+  worked. The new prompt to close a running AceStudio (`AppMutex`) has not been seen on the PC yet.
 - **`connect claude --global`** prints the `claude mcp add` command instead of editing
   `~/.claude.json`, because Claude Code rewrites that file itself while running.
 - **The VS Code and Claude Desktop user-wide paths** are the documented defaults (`%APPDATA%`).
