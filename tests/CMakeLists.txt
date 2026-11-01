@@ -33,6 +33,7 @@ add_executable(acestudio_core_tests
     test_regression.cpp
     test_asset_gen.cpp
     test_sprite_motion.cpp
+    test_world_map.cpp
     test_style_profile.cpp
 )
 add_executable(acestudio_test_child test_child.cpp)

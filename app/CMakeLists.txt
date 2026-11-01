@@ -24,6 +24,7 @@ add_executable(AceStudio WIN32
     src/pages/LibraryPage.cpp
     src/pages/SettingsPage.h
     src/pages/SettingsPage.cpp
+    src/pages/WorldBuilderPage.cpp
     src/AppContext.h
     src/AppContext.cpp
     src/Theme.h

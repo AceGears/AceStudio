@@ -127,6 +127,7 @@ private:
     class HomePage* m_home = nullptr;
     class GeneratorPage* m_generator = nullptr;
     class LibraryPage* m_library = nullptr;
+    class WorldBuilderPage* m_world = nullptr;
     QList<class HubPage*> m_hubs;
     std::array<QWidget*, kWorkspaceCount> m_pageFor{};
     Workspace m_workspace = Workspace::Home;

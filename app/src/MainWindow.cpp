@@ -23,6 +23,7 @@
 #include "panels/PreviewPanel.h"
 #include "AnimationDialogs.h"
 #include "SpriteAnimateDialog.h"
+#include "pages/WorldBuilderPage.h"
 #include "ExportDialog.h"
 #include "assets/AssetDialogs.h"
 #include "assets/TilesetDialog.h"
@@ -958,7 +959,17 @@ void MainWindow::buildWorkspaces() {
     world->addCard({Glyph::Library, tr("Atlas Packer"), tr("Pack sprites into a deterministic texture atlas."),
                     tr("Open…"), [trigger] { trigger("assets.atlas"); }});
     m_hubs << world;
-    put(Workspace::World, world);
+    m_world = new WorldBuilderPage(m_ctx, [this]() -> std::optional<std::pair<Image, QString>> {
+        DocumentView* v = currentView();
+        if (!v) return std::nullopt;
+        return std::pair{v->document().composite(v->currentFrame()), QFileInfo(v->displayName()).completeBaseName()};
+    }, m_pages);
+    connect(m_world, &WorldBuilderPage::statusMessage, this, [this](const QString& t) { statusBar()->showMessage(t, 6000); });
+    auto* worldTabs = new QTabWidget(m_pages);
+    worldTabs->setDocumentMode(true);
+    worldTabs->addTab(m_world, tr("Map"));
+    worldTabs->addTab(world, tr("Tilesets and Tools"));
+    put(Workspace::World, worldTabs);
 
     // Library.
     m_library = new LibraryPage(m_ctx, m_pages);
@@ -1343,6 +1354,11 @@ bool MainWindow::openAnyFile(const QString& path, QString* error) {
         return false;
     }
     if (ext == "acestudio") return openProject(path);
+    if (ext == "acemap") {
+        if (!m_world->openMap(path)) return false;
+        showWorkspace(Workspace::World);
+        return true;
+    }
     if (ext == "png") {
         auto img = readPng(toPath(path));
         if (!img) {
@@ -1351,11 +1367,16 @@ bool MainWindow::openAnyFile(const QString& path, QString* error) {
         }
         return openImageAsDocument(img.value(), QFileInfo(path).completeBaseName()) != nullptr;
     }
-    if (error) *error = tr("AceStudio opens .acestudio projects and .png images here");
+    if (error) *error = tr("AceStudio opens .acestudio projects, .acemap maps and .png images here");
     return false;
 }
 
 bool MainWindow::openProject(const QString& pathIn) {
+    if (QFileInfo(pathIn).suffix().compare(QLatin1String("acemap"), Qt::CaseInsensitive) == 0) {
+        if (!m_world->openMap(QFileInfo(pathIn).absoluteFilePath())) return false;
+        showWorkspace(Workspace::World);
+        return true;
+    }
     const QString path = QFileInfo(pathIn).absoluteFilePath();
     for (int i = 0; i < m_tabs->count(); ++i) {
         auto* v = static_cast<DocumentView*>(m_tabs->widget(i));

@@ -12,6 +12,7 @@ add_library(acestudio_core STATIC
     src/AssetGen.cpp
     src/SpriteMotion.cpp
     src/StyleProfile.cpp
+    src/WorldMap.cpp
     src/EngineExport.cpp
     src/AssetFiles.cpp
     src/Script.cpp
