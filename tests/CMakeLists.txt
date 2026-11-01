@@ -30,6 +30,7 @@ add_executable(acestudio_core_tests
     test_subprocess.cpp
     test_ai_worker.cpp
     test_model_catalog.cpp
+    test_regression.cpp
 )
 add_executable(acestudio_test_child test_child.cpp)
 acestudio_set_warnings(acestudio_test_child)
@@ -74,4 +75,13 @@ target_link_libraries(engine_fixture PRIVATE AceStudio::core)
 if(TARGET acestudio_mcp_proto)
     target_sources(acestudio_core_tests PRIVATE test_mcp.cpp test_fuzz_regressions.cpp)
     target_link_libraries(acestudio_core_tests PRIVATE acestudio_mcp_proto)
+endif()
+
+# Performance budgets: generous ceilings (bench/perf_budgets.json) that catch
+# large regressions; CI machines vary. Only meaningful for optimised builds.
+if(TARGET acestudio_bench AND (CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo"))
+    add_test(NAME perf_budget
+             COMMAND acestudio_bench --budget ${PROJECT_SOURCE_DIR}/bench/perf_budgets.json
+                     --json ${CMAKE_CURRENT_BINARY_DIR}/bench_results.json)
+    set_tests_properties(perf_budget PROPERTIES LABELS perf RUN_SERIAL TRUE TIMEOUT 600)
 endif()

@@ -4,9 +4,12 @@
 #include "acestudio/core/PngCodec.h"
 #include "acestudio/core/Version.h"
 
+#include "Parallel.h"
 #include "ZipArchive.h"
 
 #include <memory>
+#include <optional>
+#include <set>
 
 namespace fs = std::filesystem;
 using nlohmann::json;
@@ -116,7 +119,34 @@ Result<Document> documentFromJson(const json& j, ZipReader& zip) {
     doc.restoreFrames(std::move(frames));
 
     // Cels. Linked cels (schema 3) carry a "link" id and may share one PNG.
+    // First pass: check names and collect each distinct PNG; the PNGs are then
+    // decoded on all cores (each is independent) before the cels are set.
     std::map<std::string, Image> decoded;
+    std::map<std::string, int> uses;   // the last cel using a PNG takes its image without a copy
+    {
+        std::vector<std::string> files;
+        std::set<std::string> seen;
+        for (const auto& jc : j.at("cels")) {
+            const std::string file = jc.at("file").get<std::string>();
+            ++uses[file];
+            if (zip.contains(file) && seen.insert(file).second) files.push_back(file);
+        }
+        std::vector<std::vector<std::uint8_t>> pngs(files.size());
+        for (std::size_t i = 0; i < files.size(); ++i) {
+            auto png = zip.read(files[i]);
+            if (!png) return png.error();
+            pngs[i] = std::move(png).value();
+        }
+        std::vector<std::optional<Result<Image>>> images(files.size());
+        detail::parallelFor(files.size(), [&](std::size_t i) {
+            images[i] = decodePng(pngs[i]);
+            pngs[i] = {};
+        });
+        for (std::size_t i = 0; i < files.size(); ++i) {
+            if (!*images[i]) return corrupt(files[i] + ": " + images[i]->error().message);
+            decoded.emplace(files[i], std::move(*images[i]).value());
+        }
+    }
     std::map<CelKey, std::uint32_t> links;
     for (const auto& jc : j.at("cels")) {
         const auto layerId = jc.at("layer").get<LayerId>();
@@ -140,7 +170,7 @@ Result<Document> documentFromJson(const json& j, ZipReader& zip) {
             if (!img) return corrupt(file + ": " + img.error().message);
             it = decoded.emplace(file, std::move(img).value()).first;
         }
-        Cel cel{it->second, jc.value("x", 0), jc.value("y", 0)};
+        Cel cel{--uses[file] <= 0 ? std::move(it->second) : it->second, jc.value("x", 0), jc.value("y", 0)};
         if (auto st = doc.setCel(layerId, frame, std::move(cel)); !st)
             return corrupt("Invalid cel " + file + ": " + st.error().message);
         if (link) links[CelKey{layerId, frame}] = link;
@@ -293,17 +323,22 @@ Result<std::vector<std::uint8_t>> serializeProject(const Document& doc, const Sa
     const std::string docText = documentToJson(doc).dump(2);
     if (auto st = zip.add(kDocumentName, asBytes(docText), true); !st) return st.error();
 
+    // Cel and mask PNGs are independent, so they are encoded on all cores and
+    // then added to the archive in the usual order (the file is identical to
+    // a single-threaded save).
+    struct Entry { std::string name; const Image* image; std::optional<Result<std::vector<std::uint8_t>>> png; };
+    std::vector<Entry> entries;
     for (const auto& [k, c] : doc.cels()) {
         // A linked group's pixels are stored once, under its first frame.
         if (doc.celLink(k.layer, k.frame) && doc.linkedFrames(k.layer, k.frame).front() != k.frame) continue;
-        auto png = encodePng(c.image);
-        if (!png) return png.error();
-        if (auto st = zip.add(celFileName(k.layer, k.frame), png.value(), false); !st) return st.error();
+        entries.push_back({celFileName(k.layer, k.frame), &c.image, std::nullopt});
     }
-    for (const auto& [k, c] : doc.maskCels()) {
-        auto png = encodePng(c.image);
-        if (!png) return png.error();
-        if (auto st = zip.add(maskFileName(k.layer, k.frame), png.value(), false); !st) return st.error();
+    for (const auto& [k, c] : doc.maskCels()) entries.push_back({maskFileName(k.layer, k.frame), &c.image, std::nullopt});
+    detail::parallelFor(entries.size(), [&](std::size_t i) { entries[i].png = encodePng(*entries[i].image); });
+    for (auto& e : entries) {
+        if (!*e.png) return e.png->error();
+        if (auto st = zip.add(e.name, e.png->value(), false); !st) return st.error();
+        e.png.reset();   // release as we go
     }
     return zip.finish();
 }

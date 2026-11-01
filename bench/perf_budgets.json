@@ -1,0 +1,22 @@
+{
+  "_comment": "Ceilings in ms for acestudio_bench medians (ctest perf_budget). Roughly 5-30x the times measured on a 2-core cloud VM (0.9.0), so they catch big regressions without failing on slow CI runners. Tighten only with numbers from the slowest CI machine.",
+  "composite 256x256, 20 layers": 25,
+  "composite 32x32 region of 256x256": 2,
+  "stroke 200px + commit on 256x256": 5,
+  "onion skin 1+1 ghosts (uncached) on 256x256": 60,
+  "undo+redo paint step on 256x256": 2,
+  "composite 1024x1024, 20 layers": 350,
+  "composite 32x32 region of 1024x1024": 2,
+  "stroke 200px + commit on 1024x1024": 20,
+  "onion skin 1+1 ghosts (uncached) on 1024x1024": 800,
+  "undo+redo paint step on 1024x1024": 5,
+  "project save 1024x1024, 20 layers x 8 frames": 8000,
+  "project load 1024x1024, 20 layers x 8 frames": 4000,
+  "PNG encode 1024x1024": 120,
+  "PNG decode 1024x1024": 50,
+  "GIF encode 16 frames 256x256": 500,
+  "APNG encode 16 frames 256x256": 400,
+  "WebP encode 16 frames 256x256": 700,
+  "GIF decode 16 frames 256x256": 120,
+  "sprite sheet, 64 frames 64x64, packed+trim": 25
+}

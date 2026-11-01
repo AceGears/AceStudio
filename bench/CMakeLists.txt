@@ -1,3 +1,4 @@
 add_executable(acestudio_bench bench_main.cpp)
 target_link_libraries(acestudio_bench PRIVATE AceStudio::core)
 acestudio_set_warnings(acestudio_bench)
+

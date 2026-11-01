@@ -59,6 +59,7 @@ public:
     ZipReader& operator=(const ZipReader&) = delete;
 
     bool ok() const { return m_ok; }
+    bool contains(const std::string& name) { return mz_zip_reader_locate_file(&m_zip, name.c_str(), nullptr, 0) >= 0; }
 
     // Extracts and CRC-verifies one entry, enforcing size limits.
     Result<std::vector<std::uint8_t>> read(const std::string& name) {

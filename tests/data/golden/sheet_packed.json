@@ -1,0 +1,156 @@
+{
+ "frames": [
+  {
+   "duration": 100,
+   "filename": "sprite 0",
+   "frame": {
+    "h": 16,
+    "w": 12,
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false,
+   "sourceSize": {
+    "h": 48,
+    "w": 48
+   },
+   "spriteSourceSize": {
+    "h": 16,
+    "w": 12,
+    "x": 4,
+    "y": 8
+   },
+   "trimmed": true
+  },
+  {
+   "duration": 100,
+   "filename": "sprite 1",
+   "frame": {
+    "h": 16,
+    "w": 14,
+    "x": 13,
+    "y": 0
+   },
+   "rotated": false,
+   "sourceSize": {
+    "h": 48,
+    "w": 48
+   },
+   "spriteSourceSize": {
+    "h": 16,
+    "w": 14,
+    "x": 10,
+    "y": 12
+   },
+   "trimmed": true
+  },
+  {
+   "duration": 100,
+   "filename": "sprite 2",
+   "frame": {
+    "h": 16,
+    "w": 16,
+    "x": 0,
+    "y": 17
+   },
+   "rotated": false,
+   "sourceSize": {
+    "h": 48,
+    "w": 48
+   },
+   "spriteSourceSize": {
+    "h": 16,
+    "w": 16,
+    "x": 16,
+    "y": 16
+   },
+   "trimmed": true
+  },
+  {
+   "duration": 100,
+   "filename": "sprite 3",
+   "frame": {
+    "h": 16,
+    "w": 18,
+    "x": 0,
+    "y": 34
+   },
+   "rotated": false,
+   "sourceSize": {
+    "h": 48,
+    "w": 48
+   },
+   "spriteSourceSize": {
+    "h": 16,
+    "w": 18,
+    "x": 22,
+    "y": 8
+   },
+   "trimmed": true
+  },
+  {
+   "duration": 100,
+   "filename": "sprite 4",
+   "frame": {
+    "h": 1,
+    "w": 1,
+    "x": 19,
+    "y": 34
+   },
+   "rotated": false,
+   "sourceSize": {
+    "h": 48,
+    "w": 48
+   },
+   "spriteSourceSize": {
+    "h": 1,
+    "w": 1,
+    "x": 0,
+    "y": 0
+   },
+   "trimmed": true
+  },
+  {
+   "duration": 100,
+   "filename": "sprite 5",
+   "frame": {
+    "h": 16,
+    "w": 12,
+    "x": 0,
+    "y": 0
+   },
+   "rotated": false,
+   "sourceSize": {
+    "h": 48,
+    "w": 48
+   },
+   "spriteSourceSize": {
+    "h": 16,
+    "w": 12,
+    "x": 4,
+    "y": 8
+   },
+   "trimmed": true
+  }
+ ],
+ "meta": {
+  "app": "https://github.com/AceGears/AceStudio",
+  "format": "RGBA8888",
+  "frameTags": [],
+  "image": "sheet.png",
+  "layers": [
+   {
+    "blendMode": "normal",
+    "name": "sprite",
+    "opacity": 255
+   }
+  ],
+  "scale": "2",
+  "size": {
+   "h": 50,
+   "w": 27
+  },
+  "slices": [],
+  "version": "0.9.0"
+ }
+}
