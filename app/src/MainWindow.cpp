@@ -906,6 +906,10 @@ void MainWindow::buildWorkspaces() {
         }
     });
     connect(m_generator, &GeneratorPage::animateRequested, this, [this](const Image& img, const QString& name) { animateSprite(img, name); });
+    connect(m_generator, &GeneratorPage::openAnimation, this,
+            [this](const std::vector<Image>& frames, const std::vector<int>& durations, const std::vector<AnimationTag>& tags, const QString& name) {
+                if (openAnimationAsDocument(frames, durations, name, tags)) showWorkspace(Workspace::Animation);
+            });
     connect(m_generator, &GeneratorPage::showModelsRequested, this, [this] { m_aiPanel->showModels(); });
     connect(m_generator, &GeneratorPage::showSetupRequested, this, [this] { m_aiPanel->showSetup(); });
     connect(m_generator, &GeneratorPage::statusMessage, this, [this](const QString& t) { statusBar()->showMessage(t, 6000); });

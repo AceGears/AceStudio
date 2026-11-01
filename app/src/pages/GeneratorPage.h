@@ -6,7 +6,9 @@
 // found are listed next to it.
 
 #include "acestudio/core/AssetGen.h"
+#include "acestudio/core/Document.h"
 #include "acestudio/core/Image.h"
+#include "acestudio/core/SpriteMotion.h"
 #include "acestudio/core/StyleProfile.h"
 
 #include <QPointer>
@@ -44,6 +46,8 @@ Q_SIGNALS:
     void openAsDocument(const acestudio::Image& img, const QString& name);
     void addAsLayer(const acestudio::Image& img, const QString& name);
     void animateRequested(const acestudio::Image& img, const QString& name);
+    void openAnimation(const std::vector<acestudio::Image>& frames, const std::vector<int>& durations,
+                       const std::vector<acestudio::AnimationTag>& tags, const QString& name);
     void showModelsRequested();
     void showSetupRequested();
     void statusMessage(const QString& text);
@@ -71,6 +75,13 @@ private:
     void refreshModels();
     void refreshReferences();
     void generate(const std::vector<Image>& extraRefs = {});
+    // Queues one generation; returns the job id, or "" when it could not start.
+    // A pack view (viewWords set) runs alongside, at a fixed seed and size.
+    std::string submitJob(const std::vector<Image>& extraRefs, const std::string& viewWords = {},
+                          std::optional<long long> seed = {}, std::optional<std::pair<int, int>> size = {});
+    void startCharacterPack(const Result& base);
+    void onPackJobFinished(const std::string& id);
+    void finishPack();
     void onJobChanged(const QString& id);
     void onJobFinished(const QString& id);
     void showResult(int index);
@@ -113,6 +124,18 @@ private:
     QLabel* m_preview = nullptr;
     QLabel* m_report = nullptr;
     QList<QPushButton*> m_resultActions;
+
+    // Character pack: a side view plus generated views for the other
+    // directions, each animated with the chosen actions.
+    struct Pack {
+        QString name;
+        std::map<std::string, Image> views;          // direction key ("e", "s", ...) -> sprite
+        std::map<std::string, std::string> jobs;     // job id -> direction key
+        std::vector<std::string> directions;         // all directions in output order
+        std::vector<::acestudio::motion::Action> actions;
+        QStringList problems;
+    };
+    std::optional<Pack> m_pack;
 
     std::vector<Reference> m_references;
     std::vector<Result> m_resultList;

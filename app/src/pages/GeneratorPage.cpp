@@ -23,6 +23,8 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QDialogButtonBox>
+#include <QDialog>
 #include <QLineEdit>
 #include <QInputDialog>
 #include <QMessageBox>
@@ -396,6 +398,8 @@ QWidget* GeneratorPage::buildResults() {
         refreshStyles();
         Q_EMIT statusMessage(tr("Added to the style “%1”.").arg(qs(p.value().name)));
     });
+    act(tr("Character Pack…"), 2, 1, [this](Result& r) { startCharacterPack(r); })
+        ->setToolTip(tr("Generates the other directions from this character (FLUX.2 klein) and animates every direction."));
     act(tr("Save PNG…"), 1, 2, [this](Result& r) {
         const QString f = QFileDialog::getSaveFileName(this, tr("Save PNG"), r.name + QStringLiteral(".png"), tr("PNG (*.png)"));
         if (f.isEmpty()) return;
@@ -604,21 +608,35 @@ gen::CheckOptions GeneratorPage::checkOptions() const {
 
 void GeneratorPage::generate(const std::vector<Image>& extraRefs) {
     if (!m_job.empty()) return void(Q_EMIT statusMessage(tr("A generation is already running.")));
-    const gen::Spec s = spec();
+    const std::string id = submitJob(extraRefs);
+    if (id.empty()) return;
+    m_job = id;
+    m_generate->setEnabled(false);
+    m_cancel->setEnabled(true);
+    m_progress->setValue(0);
+    m_progress->setVisible(true);
+    m_status->setText(tr("Queued…"));
+}
+
+std::string GeneratorPage::submitJob(const std::vector<Image>& extraRefs, const std::string& viewWords, std::optional<long long> seed,
+                                     std::optional<std::pair<int, int>> size) {
+    gen::Spec s = spec();
     if (s.description.empty()) {
         m_prompt->setFocus();
-        return void(Q_EMIT statusMessage(tr("Describe the asset first.")));
+        Q_EMIT statusMessage(tr("Describe the asset first."));
+        return {};
     }
+    if (!viewWords.empty()) s.description += ", " + viewWords;
     // Choose the backend: klein when installed (and wanted), else SDXL.
     const QString choice = m_model->currentData().toString();
     const ModelEntry* klein = installed(m_ai, "flux2-klein-4b");
     const ModelEntry* sdxl = installed(m_ai, "sdxl-base-1.0");
     gen::Backend backend;
     if (choice == QLatin1String("klein") || (choice == QLatin1String("auto") && klein)) {
-        if (!klein) return void(Q_EMIT showModelsRequested());
+        if (!klein) { Q_EMIT showModelsRequested(); return {}; }
         backend = gen::Backend::Klein;
     } else {
-        if (!sdxl) return void(Q_EMIT showModelsRequested());
+        if (!sdxl) { Q_EMIT showModelsRequested(); return {}; }
         backend = gen::Backend::Sdxl;
     }
     // References: images sent to the model (with their roles) and palette-only references.
@@ -652,7 +670,7 @@ void GeneratorPage::generate(const std::vector<Image>& extraRefs) {
     if (backend == gen::Backend::Sdxl) sp.referenceRoles.clear();
     const gen::Prompt prompt = gen::composePrompt(sp, backend, lora != nullptr);
     const auto preset = gen::presetFromKey(m_preset->currentData().toString().toStdString()).value_or(gen::QualityPreset::Balanced);
-    const auto [outW, outH] = outputSize();
+    const auto [outW, outH] = size.value_or(outputSize());
     auto [gw, gh] = pixel ? gen::generationSize(outW, outH, preset) : std::pair{outW / 16 * 16, outH / 16 * 16};
     const auto& info = gen::presetInfo(preset);
     const ModelEntry* model = backend == gen::Backend::Klein ? klein : sdxl;
@@ -662,8 +680,8 @@ void GeneratorPage::generate(const std::vector<Image>& extraRefs) {
               {"width", gw},
               {"height", gh},
               {"steps", backend == gen::Backend::Klein ? info.kleinSteps : info.sdxlSteps},
-              {"count", m_count->value()},
-              {"seed", m_seed->value()},
+              {"count", viewWords.empty() ? m_count->value() : 1},
+              {"seed", seed.value_or(m_seed->value())},
               {"model_id", model->id}};
     if (backend == gen::Backend::Sdxl) {
         p["negative_prompt"] = prompt.negative;
@@ -684,9 +702,11 @@ void GeneratorPage::generate(const std::vector<Image>& extraRefs) {
         Palette fixed;
         if (!paletteSources.empty()) {
             Image strip(static_cast<int>(paletteSources.size()) * 64, 64);
-            for (std::size_t i = 0; i < paletteSources.size(); ++i)
-                for (std::size_t c = 0; c < extractPalette(paletteSources[i], 64).size(); ++c)
-                    strip.setPixel(static_cast<int>(i * 64 + c % 64), static_cast<int>(c / 64), extractPalette(paletteSources[i], 64).at(c));
+            for (std::size_t i = 0; i < paletteSources.size(); ++i) {
+                const Palette part = extractPalette(paletteSources[i], 64);
+                for (std::size_t c = 0; c < part.size(); ++c)
+                    strip.setPixel(static_cast<int>(i * 64 + c % 64), static_cast<int>(c / 64), part.at(c));
+            }
             fixed = extractPalette(strip, 32);
         } else if (locked && locked->strength >= 3) {
             fixed = locked->features.palette;
@@ -711,22 +731,17 @@ void GeneratorPage::generate(const std::vector<Image>& extraRefs) {
     if (m_ai.catalog() && m_ai.state() == WorkerState::Ready)
         if (auto problem = runtimeProblem(*model, m_ai.capabilities())) {
             QMessageBox::information(this, tr("AI Studio"), qs(*problem));
-            return;
+            return {};
         }
     p.erase("model_id");
     auto id = m_ai.submit(task, std::move(p), tr("Generate: %1").arg(QString::fromStdString(s.description).left(40)), images);
     if (!id) {
         QMessageBox::information(this, tr("AI Studio"), qs(id.error().message));
         if (!m_ai.runtimeInstalled()) Q_EMIT showSetupRequested();
-        return;
+        return {};
     }
-    m_job = id.value();
     m_jobPixel = pixel;
-    m_generate->setEnabled(false);
-    m_cancel->setEnabled(true);
-    m_progress->setValue(0);
-    m_progress->setVisible(true);
-    m_status->setText(tr("Queued…"));
+    return id.value();
 }
 
 void GeneratorPage::onJobChanged(const QString& qid) {
@@ -738,6 +753,7 @@ void GeneratorPage::onJobChanged(const QString& qid) {
 }
 
 void GeneratorPage::onJobFinished(const QString& qid) {
+    if (m_pack && m_pack->jobs.count(qid.toStdString())) return onPackJobFinished(qid.toStdString());
     if (qid.toStdString() != m_job) return;
     const Job* j = m_ai.job(m_job);
     m_job.clear();
@@ -789,6 +805,156 @@ void GeneratorPage::onJobFinished(const QString& qid) {
     if (info.contains("peakVramGb")) timing += tr(" · peak VRAM %1 GB").arg(info.value("peakVramGb", 0.0));
     m_status->setText(tr("%n result(s), seed %1%2", nullptr, added).arg(seed).arg(timing));
     if (added) m_results->setCurrentRow(0);
+}
+
+namespace {
+struct DirectionInfo { const char* key; const char* words; const char* mirrorOf; };
+// The base result is the side view facing right ("e"). Left-facing views are mirrors.
+const std::vector<DirectionInfo> kDirections = {
+    {"e", "", nullptr},
+    {"se", "three-quarter front view, turned towards the viewer and to the right", nullptr},
+    {"s", "front view, facing the viewer", nullptr},
+    {"sw", "", "se"},
+    {"w", "", "e"},
+    {"nw", "", "ne"},
+    {"n", "back view, facing away from the viewer", nullptr},
+    {"ne", "three-quarter back view, turned away from the viewer and to the right", nullptr},
+};
+Image mirrored(const Image& img) {
+    Image out(img.width(), img.height());
+    for (int y = 0; y < img.height(); ++y)
+        for (int x = 0; x < img.width(); ++x) out.setPixel(img.width() - 1 - x, y, img.pixel(x, y));
+    return out;
+}
+} // namespace
+
+void GeneratorPage::startCharacterPack(const Result& base) {
+    if (m_pack) return void(Q_EMIT statusMessage(tr("A character pack is already being made.")));
+    if (!installed(m_ai, "flux2-klein-4b") || m_model->currentData().toString() == QLatin1String("sdxl")) {
+        QMessageBox::information(this, tr("Character Pack"),
+                                 tr("Other directions are drawn from this character as a reference, which needs FLUX.2 [klein] "
+                                    "(Models…). For a side view only, use Animate…"));
+        return;
+    }
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Character Pack"));
+    auto* form = new QFormLayout(&dlg);
+    auto* dirs = new QComboBox(&dlg);
+    dirs->addItem(tr("2 directions (right, and left mirrored)"), 2);
+    dirs->addItem(tr("4 directions (adds front and back)"), 4);
+    dirs->addItem(tr("8 directions (adds the diagonals)"), 8);
+    dirs->setCurrentIndex(1);
+    form->addRow(tr("&Directions:"), dirs);
+    auto* set = new QComboBox(&dlg);
+    set->addItem(tr("Basic: idle, walk, run, jump, attack, hurt, death"), 0);
+    set->addItem(tr("Locomotion: idle, walk, run, sprint, jump, fall, land"), 1);
+    set->addItem(tr("Full: all 22 actions"), 2);
+    form->addRow(tr("&Actions:"), set);
+    auto* note = new QLabel(tr("New views are generated with this result as the character reference (FLUX.2 klein, same seed); "
+                               "then every view is animated without AI. Check the views before using them in a game."),
+                            &dlg);
+    note->setWordWrap(true);
+    note->setProperty("role", "muted");
+    form->addRow(note);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addRow(buttons);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    using A = ::acestudio::motion::Action;
+    Pack pack;
+    pack.name = base.name;
+    switch (set->currentData().toInt()) {
+    case 0: pack.actions = {A::Idle, A::Walk, A::Run, A::Jump, A::Attack1, A::Hurt, A::Death}; break;
+    case 1: pack.actions = {A::Idle, A::Walk, A::Run, A::Sprint, A::Jump, A::Fall, A::Land}; break;
+    default:
+        for (const auto& info : ::acestudio::motion::actions())
+            if (info.action != A::Custom) pack.actions.push_back(info.action);
+    }
+    const int count = dirs->currentData().toInt();
+    pack.directions = count == 2 ? std::vector<std::string>{"e", "w"}
+                    : count == 4 ? std::vector<std::string>{"e", "s", "w", "n"}
+                                 : std::vector<std::string>{"e", "se", "s", "sw", "w", "nw", "n", "ne"};
+    pack.views["e"] = base.image;
+    const Image& ref = base.raw.isNull() ? base.image : base.raw;
+    m_pack = std::move(pack);
+    for (const std::string& d : m_pack->directions)
+        for (const DirectionInfo& info : kDirections)
+            if (d == info.key && info.mirrorOf == nullptr && *info.words) {
+                const std::string id = submitJob({ref}, info.words, base.seed, std::pair{base.image.width(), base.image.height()});
+                if (id.empty()) { m_pack.reset(); return; }
+                m_pack->jobs[id] = d;
+            }
+    if (m_pack->jobs.empty()) return finishPack();
+    m_status->setText(tr("Character pack: generating %n view(s)…", nullptr, static_cast<int>(m_pack->jobs.size())));
+}
+
+void GeneratorPage::onPackJobFinished(const std::string& id) {
+    const std::string dir = m_pack->jobs[id];
+    m_pack->jobs.erase(id);
+    const Job* j = m_ai.job(id);
+    if (j && j->state == JobState::Succeeded) {
+        if (auto o = j->outputs.find("image0"); o != j->outputs.end())
+            if (auto img = readPng(o->second)) m_pack->views[dir] = std::move(img).value();
+    } else {
+        m_pack->problems << tr("The %1 view failed: %2").arg(qs(dir), j ? qs(j->error).section(QLatin1Char('\n'), 0, 0) : tr("job lost"));
+    }
+    if (m_pack->jobs.empty()) finishPack();
+    else m_status->setText(tr("Character pack: %n view(s) to go…", nullptr, static_cast<int>(m_pack->jobs.size())));
+}
+
+void GeneratorPage::finishPack() {
+    Pack pack = std::move(*m_pack);
+    m_pack.reset();
+    // Mirrored views.
+    for (const DirectionInfo& info : kDirections)
+        if (info.mirrorOf && pack.views.count(info.mirrorOf)) pack.views[info.key] = mirrored(pack.views[info.mirrorOf]);
+    // Animate every view; all frames share one size (feet on one line, centred).
+    struct Out { std::string dir; std::vector<::acestudio::motion::Clip> clips; };
+    std::vector<Out> outs;
+    int W = 0, H = 0;
+    for (const std::string& d : pack.directions) {
+        auto it = pack.views.find(d);
+        if (it == pack.views.end()) continue;
+        ::acestudio::motion::Options o;
+        // Front and back views walk with two legs side by side; the source decides for side views.
+        auto clips = ::acestudio::motion::animatePack(it->second, pack.actions, o);
+        if (!clips) { pack.problems << tr("%1: %2").arg(qs(d), qs(clips.error().message)); continue; }
+        for (const auto& c : clips.value()) {
+            W = std::max(W, c.frames[0].width());
+            H = std::max(H, c.frames[0].height());
+            for (const std::string& issue : ::acestudio::motion::checkClip(c).issues) pack.problems << qs(c.name + "_" + d + ": " + issue);
+        }
+        outs.push_back({d, std::move(clips).value()});
+    }
+    if (outs.empty()) {
+        m_status->setText(tr("Character pack failed. %1").arg(pack.problems.join(QStringLiteral(" "))));
+        return;
+    }
+    std::vector<Image> frames;
+    std::vector<int> durations;
+    std::vector<AnimationTag> tags;
+    for (const Out& o : outs)
+        for (const auto& c : o.clips) {
+            AnimationTag t;
+            t.name = c.name + "_" + o.dir;
+            t.fromFrame = static_cast<int>(frames.size());
+            t.repeat = c.loops ? 0 : 1;
+            for (std::size_t i = 0; i < c.frames.size(); ++i) {
+                Image f(W, H);
+                f.blit(c.frames[i], (W - c.frames[i].width()) / 2, H - c.frames[i].height());
+                frames.push_back(std::move(f));
+                durations.push_back(c.durations[i]);
+            }
+            t.toFrame = static_cast<int>(frames.size()) - 1;
+            tags.push_back(std::move(t));
+        }
+    m_status->setText(tr("Character pack: %1 animations in %2 directions.%3")
+                          .arg(tags.size())
+                          .arg(outs.size())
+                          .arg(pack.problems.isEmpty() ? QString() : QStringLiteral(" ") + pack.problems.join(QStringLiteral("; "))));
+    Q_EMIT openAnimation(frames, durations, tags, pack.name);
 }
 
 GeneratorPage::Result* GeneratorPage::selected() {
