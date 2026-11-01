@@ -217,8 +217,9 @@ or is a case that has not been run yet.
     (goblin 87 %, sword 71 %).
   - The pixel-art LoRA gave pure noise at adapter weight 1.0, because it is an rsLoRA with
     alpha 128. It now runs at 0.05; that fix has not been re-run on the PC.
+  - The 7×7 bestiary works on the PC: 49 whole creatures in 192 s, made as six 3×3 sheets.
+    Several brutes still look alike.
   - Not yet measured on the PC:
-    - the 7×7 bestiary;
     - the grid-versus-staged benchmark;
     - Pet to Pixel.
   - At Medium, a style's reference image leaks its subject: a goblin took the knight's
@@ -244,11 +245,15 @@ or is a case that has not been run yet.
 - **World Builder.**
   - Maps are exported to Tiled `.tmx`; there is no direct Godot TileMapLayer or Unity
     Tilemap scene export yet. The `.tmx` was checked structurally (unit tests, Python TOML
-    and XML parsing) and has not been opened in Tiled.
+    and XML parsing; a PC-made level re-rendered from the TMX alone matches the preview) and has
+    not been opened in Tiled itself.
   - The map canvas re-renders the whole map on every edit. That is fine for typical levels
     (a few thousand cells) and slow for maps near the 4096×4096 limit.
-  - Terrain autotiling inside the map canvas is not built. Use the tileset sandbox, then add
-    the sheet as a tile sheet.
+  - The Terrain tool paints blob-47 and cardinal-16 sheets from the Tileset Generator (it
+    reads the sheet's `.json`). Wang-16 (dual-grid) sheets are not supported in the map yet.
+- **Claude Code over MCP (Test F)** has not run on the test PC: this session cannot type into
+  a terminal there. The MCP tools are covered by CI.
+- **Uninstall (Test G)** is covered by CI only; it has not been run on the test PC.
 - **`connect claude --global`** prints the `claude mcp add` command instead of editing
   `~/.claude.json`, because Claude Code rewrites that file itself while running.
 - **The VS Code and Claude Desktop user-wide paths** are the documented defaults (`%APPDATA%`).
