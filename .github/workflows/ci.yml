@@ -167,6 +167,8 @@ jobs:
           New-Item -ItemType Directory -Force dist/ai_worker | Out-Null
           Copy-Item -Recurse ai_worker/acestudio_worker, ai_worker/requirements, ai_worker/catalog dist/ai_worker/
           Get-ChildItem dist/ai_worker -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
+          New-Item -ItemType Directory -Force dist/docs | Out-Null
+          Copy-Item docs/user-guide.md, PRIVACY.md dist/docs/
       - name: Bundle the embeddable Python
         shell: pwsh
         run: packaging/windows/bundle-python.ps1 -Dist dist

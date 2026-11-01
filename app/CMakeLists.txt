@@ -91,3 +91,11 @@ acestudio_check_qt_licenses(AceStudio)
 if(WIN32)
     set_target_properties(AceStudio PROPERTIES OUTPUT_NAME "AceStudio")
 endif()
+
+# Help › User Guide and Help › Privacy read these from docs/ next to the
+# executable (CI copies them into the distribution the same way).
+add_custom_command(TARGET AceStudio POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:AceStudio>/docs
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PROJECT_SOURCE_DIR}/docs/user-guide.md
+            ${PROJECT_SOURCE_DIR}/PRIVACY.md $<TARGET_FILE_DIR:AceStudio>/docs/
+    VERBATIM)

@@ -736,6 +736,12 @@ ProcessSpec workerProcess(const fs::path& python, const fs::path& workerDir, boo
                 {"PYTHONIOENCODING", "utf-8"},
                 {"PYTHONUNBUFFERED", "1"},
                 {"PYTHONNOUSERSITE", "1"},   // ignore the user's site-packages
+                // Models are local folders; AceStudio's own downloader fetches them.
+                // The Hugging Face libraries must never call home or the Hub.
+                {"HF_HUB_OFFLINE", "1"},
+                {"HF_HUB_DISABLE_TELEMETRY", "1"},
+                {"TRANSFORMERS_OFFLINE", "1"},
+                {"DO_NOT_TRACK", "1"},
                 {"ACESTUDIO_WORKER_DIAG", diagnostics ? "1" : ""}};
     return spec;
 }

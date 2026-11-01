@@ -56,6 +56,11 @@
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QCoreApplication>
+#include <QDialog>
+#include <QFile>
+#include <QDialogButtonBox>
+#include <QTextBrowser>
 #include <QMimeData>
 #include <QPushButton>
 #include <QScrollArea>
@@ -756,6 +761,9 @@ void MainWindow::buildMenus() {
     help->addAction(tr("Open &Logs Folder"), this, [this] {
         QDesktopServices::openUrl(QUrl::fromLocalFile(fromPath(m_ctx.logDir())));
     });
+    help->addAction(tr("&User Guide"), this, [this] { showDocument(QStringLiteral("user-guide.md"), tr("User Guide")); });
+    help->addAction(tr("&Privacy"), this, [this] { showDocument(QStringLiteral("PRIVACY.md"), tr("Privacy")); });
+    help->addSeparator();
     help->addAction(tr("&Licence…"), this, &MainWindow::showLicence);
     help->addAction(tr("Third-Party &Notices"), this, &MainWindow::showNotices);
     QAction* about = help->addAction(tr("&About AceStudio"), this, &MainWindow::showAbout);
@@ -1206,6 +1214,29 @@ void MainWindow::showNotices() {
         "</ul><p>The full licence texts are in the <i>licences</i> folder next to AceStudio.exe.</p>")
                     .arg(QString::fromLatin1(qVersion())));
     box.exec();
+}
+
+// Documents shipped in the docs folder next to AceStudio.exe, shown as formatted text.
+void MainWindow::showDocument(const QString& fileName, const QString& title) {
+    QFile file(QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("docs/") + fileName));
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, title, tr("%1 was not found next to AceStudio. Reinstalling AceStudio restores it.")
+                                              .arg(QDir::toNativeSeparators(file.fileName())));
+        return;
+    }
+    QDialog dlg(this);
+    dlg.setWindowTitle(title);
+    auto* layout = new QVBoxLayout(&dlg);
+    auto* text = new QTextBrowser(&dlg);
+    text->setAccessibleName(title);
+    text->setOpenExternalLinks(true);
+    text->setMarkdown(QString::fromUtf8(file.readAll()));
+    layout->addWidget(text);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(buttons);
+    dlg.resize(820, 680);
+    dlg.exec();
 }
 
 bool MainWindow::report(const Status& st) {

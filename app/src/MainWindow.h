@@ -79,6 +79,7 @@ private:
     void showLicence();
     void updateLicenceStatus();
     void showNotices();
+    void showDocument(const QString& fileName, const QString& title);
     void importPng(bool asLayer);
 public:
     // Used by AI Studio for results.
