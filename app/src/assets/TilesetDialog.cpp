@@ -1,4 +1,5 @@
 #include "TilesetDialog.h"
+#include "../licensing/Licensing.h"
 
 #include "AssetCommon.h"
 
@@ -435,6 +436,7 @@ void TilesetDialog::rebuild() {
 
 void TilesetDialog::exportFiles() {
     if (m_levels.empty()) return;
+    if (!licenceAllows(this, tr("Exporting"))) return;
     const QString f = QFileDialog::getSaveFileName(this, tr("Export Tileset"), QStringLiteral("tileset.png"), tr("PNG image (*.png)"));
     if (f.isEmpty()) return;
     fs::path png = toPath(f);
@@ -587,6 +589,7 @@ void TerrainSandbox::redraw() {
 }
 
 void TerrainSandbox::exportMap() {
+    if (!licenceAllows(this, tr("Exporting"))) return;
     const QString f = QFileDialog::getSaveFileName(this, tr("Export Map Image"), QStringLiteral("map.png"), tr("PNG image (*.png)"));
     if (f.isEmpty()) return;
     auto img = renderLevels(m_map, m_levels);

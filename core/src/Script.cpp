@@ -168,6 +168,13 @@ fs::path resolvePath(Runtime& rt, const std::string& p) {
     fail("the script may not use files outside the allowed folders: " + p);
 }
 
+// A path the script writes to: inside the allowed folders, and only when
+// writing is allowed (the licence's trial may have ended).
+fs::path writePath(Runtime& rt, const std::string& p) {
+    if (!rt.opts.readOnlyReason.empty()) fail(rt.opts.readOnlyReason);
+    return resolvePath(rt, p);
+}
+
 void noteWritten(Runtime& rt, const fs::path& p) { rt.result.written.push_back(p); }
 
 // ---------------------------------------------------------------- colours
@@ -369,7 +376,7 @@ void bind(sol::state_view lua, Runtime& rt) {
             return LImage{outline(i.img, toColor(c), OutlineMode::Outside, diagonal.value_or(false))};
         },
         "save", [&rt](const LImage& i, const std::string& path) {
-            const fs::path p = resolvePath(rt, path);
+            const fs::path p = writePath(rt, path);
             check(writePng(i.img, p));
             noteWritten(rt, p);
         });
@@ -382,7 +389,7 @@ void bind(sol::state_view lua, Runtime& rt) {
     };
     ace["load_png"] = [&rt](const std::string& path) { return LImage{unwrap(readPng(resolvePath(rt, path)))}; };
     ace["write_text"] = [&rt](const std::string& path, const std::string& text) {
-        const fs::path p = resolvePath(rt, path);
+        const fs::path p = writePath(rt, path);
         check(writeTextFile(p, text));
         noteWritten(rt, p);
     };
@@ -522,7 +529,7 @@ void bind(sol::state_view lua, Runtime& rt) {
             return LImage{ed.document().composite(f)};
         },
         "save", [&rt](LDoc& d, const std::string& path) {
-            const fs::path p = resolvePath(rt, path);
+            const fs::path p = writePath(rt, path);
             check(saveProject(editorOf(d).document(), p));
             noteWritten(rt, p);
         },
@@ -540,7 +547,7 @@ void bind(sol::state_view lua, Runtime& rt) {
                 wo.engines = enginesFrom(*opts);
                 wo.overwrite = (*opts)["overwrite"].get_or(false);
             }
-            const WrittenFiles w = unwrap(writeSheetFiles(editorOf(d).document(), range, so, resolvePath(rt, path), wo));
+            const WrittenFiles w = unwrap(writeSheetFiles(editorOf(d).document(), range, so, writePath(rt, path), wo));
             for (const auto& f : w.files) noteWritten(rt, f);
             return static_cast<int>(w.files.size());
         });
@@ -590,7 +597,7 @@ void bind(sol::state_view lua, Runtime& rt) {
                     for (std::size_t i = 2; i <= n->size(); ++i) names.levels.push_back((*n)[i].get_or(std::string()));
                 }
             }
-            const WrittenFiles w = unwrap(writeTilesetFiles(t.levels, resolvePath(rt, path), wo, names));
+            const WrittenFiles w = unwrap(writeTilesetFiles(t.levels, writePath(rt, path), wo, names));
             for (const auto& f : w.files) noteWritten(rt, f);
             return static_cast<int>(w.files.size());
         });
@@ -700,7 +707,7 @@ void bind(sol::state_view lua, Runtime& rt) {
             wo.engines = enginesFrom(*opts);
             wo.overwrite = (*opts)["overwrite"].get_or(false);
         }
-        const WrittenFiles w = unwrap(writeUiKitFiles(generateUiKit(th), resolvePath(rt, path), wo));
+        const WrittenFiles w = unwrap(writeUiKitFiles(generateUiKit(th), writePath(rt, path), wo));
         for (const auto& f : w.files) noteWritten(rt, f);
         return static_cast<int>(w.files.size());
     };

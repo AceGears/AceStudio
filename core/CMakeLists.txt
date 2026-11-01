@@ -33,6 +33,7 @@ add_library(acestudio_core STATIC
     src/Recovery.cpp
     src/Settings.cpp
     src/StbImageImpl.cpp
+    src/Licence.cpp
     src/Subprocess.cpp
     src/Transform.cpp
     src/UndoStack.cpp
@@ -47,7 +48,7 @@ target_include_directories(acestudio_core
 find_package(Threads REQUIRED)
 target_link_libraries(acestudio_core
     PUBLIC  nlohmann_json::nlohmann_json
-    PRIVATE miniz acestudio_stb webp webpdemux libwebpmux Threads::Threads acestudio_sol2)
+    PRIVATE miniz acestudio_stb webp webpdemux libwebpmux Threads::Threads acestudio_sol2 acestudio_monocypher)
 
 # Lets development builds find ai_worker/ in the source tree.
 set_source_files_properties(src/AiWorker.cpp PROPERTIES

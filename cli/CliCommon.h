@@ -19,7 +19,7 @@ namespace acestudio::cli {
 
 using nlohmann::json;
 
-enum Exit : int { kOk = 0, kUsage = 1, kIo = 2, kCorrupt = 3, kUnsupported = 4, kInternal = 5, kScript = 6 };
+enum Exit : int { kOk = 0, kUsage = 1, kIo = 2, kCorrupt = 3, kUnsupported = 4, kInternal = 5, kScript = 6, kLicence = 7 };
 
 inline int exitFor(ErrorCode c) {
     switch (c) {

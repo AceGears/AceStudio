@@ -5,10 +5,12 @@
 //   4 unsupported (newer) version, 5 internal error, 6 the Lua script failed.
 
 #include "CliCommon.h"
+
 #include "acestudio/core/AssetFiles.h"
 #include "acestudio/core/Document.h"
 #include "acestudio/core/Export.h"
 #include "acestudio/core/FileUtil.h"
+#include "acestudio/core/Licence.h"
 #include "acestudio/core/Log.h"
 #include "acestudio/core/PngCodec.h"
 #include "acestudio/core/ProjectIO.h"
@@ -74,6 +76,9 @@ const char* kUsageText =
     "  uikit --out ui.png [--scale 1] [--colors base,light,dark,outline,accent,text] [--square]\n"
     "        [--texture pattern.png] [--engines godot,unity]\n"
     "                                  Themed UI kit with 9-slice data (Godot StyleBoxTexture .tres)\n"
+    "  licence [status | install <key or @file> | remove]\n"
+    "                                  Show or change the licence (after the 14-day trial,\n"
+    "                                  commands that write files need a key; exit 7)\n"
     "  run <script.lua> [args...] [--allow dir;dir] [--base dir] [--doc in.acestudio [--save out.acestudio]]\n"
     "        [--timeout 30] [--memory 512]\n"
     "                                  Run a sandboxed Lua script (docs/lua-api.md). It may use\n"
@@ -286,6 +291,62 @@ int cmdExport(const Args& a, Output& out) {
 
 } // namespace
 
+namespace {
+
+// Commands (and ai verbs) that write files.
+bool writesFiles(const Args& a) {
+    static const std::set<std::string> writers{"new", "render", "export", "tileset", "tileset-template", "atlas", "slice", "uikit"};
+    const std::string& cmd = a.positional[0];
+    if (writers.count(cmd)) return true;
+    if (cmd == "ai" && a.positional.size() > 1) {
+        const std::string& verb = a.positional[1];
+        return verb == "generate" || verb == "remove-bg" || verb == "upscale";
+    }
+    return false;
+}
+
+std::optional<int> licenceGate(const Args& a, Output& out) {
+    if (!writesFiles(a)) return std::nullopt;
+    auto dir = userDataDir();
+    if (!dir) return std::nullopt;   // no data folder: nothing to check against
+    if (writesAllowed(licenceStatus(dir.value()))) return std::nullopt;
+    return out.fail(kLicence, licenceRequiredMessage("Writing files"));
+}
+
+int cmdLicence(const Args& a, Output& out) {
+    auto dir = userDataDir();
+    if (!dir) return out.fail(dir.error());
+    const std::string verb = a.positional.size() > 1 ? a.positional[1] : "status";
+    if (verb == "install") {
+        if (a.positional.size() < 3) return out.fail(kUsage, "licence install needs a key (or @file with the key)");
+        std::string text = a.positional[2];
+        if (!text.empty() && text[0] == '@') {
+            auto bytes = readFileBytes(text.substr(1), 1u << 16);
+            if (!bytes) return out.fail(bytes.error());
+            text.assign(bytes.value().begin(), bytes.value().end());
+        }
+        auto k = installLicenceKey(dir.value(), text);
+        if (!k) return out.fail(kLicence, k.error().message);
+    } else if (verb == "remove") {
+        if (auto s = removeLicenceKey(dir.value()); !s) return out.fail(s.error());
+    } else if (verb != "status") {
+        return out.fail(kUsage, "licence: use status, install <key> or remove");
+    }
+    const LicenceStatus st = licenceStatus(dir.value());
+    json j{{"mode", st.mode == LicenceMode::Licensed ? "licensed" : st.mode == LicenceMode::Trial ? "trial" : "trial-ended"},
+           {"description", describeLicence(st)},
+           {"writesAllowed", writesAllowed(st)},
+           {"developmentKey", usingDevelopmentLicenceKey()}};
+    if (st.mode == LicenceMode::Trial) j["trialDaysLeft"] = st.trialDaysLeft;
+    if (!st.trialStarted.empty()) j["trialStarted"] = st.trialStarted;
+    if (st.key) j["licensee"] = {{"name", st.key->name}, {"email", st.key->email}, {"edition", st.key->edition}, {"id", st.key->id},
+                                 {"expires", st.key->expires.empty() ? json() : json(st.key->expires)}};
+    if (!st.problem.empty()) j["problem"] = st.problem;
+    return out.success(j, describeLicence(st) + (st.problem.empty() ? "" : "\n(the saved key was not accepted: " + st.problem + ")") + "\n");
+}
+
+} // namespace
+
 int main(int argc, char** argv) {
     std::string err;
     auto args = parseArgs(argc, argv, err);
@@ -304,6 +365,8 @@ int main(int argc, char** argv) {
     try {
         const std::string& cmd = args->positional[0];
         if (cmd == "version") return cmdVersion(*args, out);
+        // After the trial, commands that write files need a licence key.
+        if (auto refused = licenceGate(*args, out)) return *refused;
         if (cmd == "new") return cmdNew(*args, out);
         if (cmd == "info") return cmdInfo(*args, out, false);
         if (cmd == "validate") return cmdInfo(*args, out, true);
@@ -317,6 +380,7 @@ int main(int argc, char** argv) {
         if (cmd == "slice") return acestudio::cli::cmdSlice(*args, out);
         if (cmd == "uikit") return acestudio::cli::cmdUiKit(*args, out);
         if (cmd == "run") return acestudio::cli::cmdRun(*args, out);
+        if (cmd == "licence" || cmd == "license") return cmdLicence(*args, out);
         return out.fail(kUsage, "Unknown command '" + cmd + "'. Run with --help.");
     } catch (const std::exception& e) {
         return out.fail(kInternal, std::string("Unexpected error: ") + e.what());

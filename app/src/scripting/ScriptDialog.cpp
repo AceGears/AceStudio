@@ -1,4 +1,5 @@
 #include "ScriptDialog.h"
+#include "../licensing/Licensing.h"
 
 #include "../DocumentView.h"
 #include "../QtBridge.h"
@@ -116,6 +117,7 @@ void ScriptDialog::start() {
         o.document = m_copy.get();
     }
     o.cancel = &m_cancel;
+    o.readOnlyReason = licenceReadOnlyReason();   // after the trial, scripts may read but not write files
     QPointer<ScriptDialog> self(this);
     o.output = [self](const std::string& s) {
         const QString text = qs(s);

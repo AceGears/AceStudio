@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "licensing/Licensing.h"
 #include "scripting/AppBridgeServer.h"
 #include "scripting/McpSetupDialog.h"
 #include "scripting/ScriptDialog.h"
@@ -103,6 +104,7 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
     m_stack->addWidget(m_tabs);
     setCentralWidget(m_stack);
 
+    initLicensing(m_ctx.dataDir());
     m_tools = new ToolState(this);
     buildDocks();
     m_bridge = new AppBridgeServer(
@@ -124,6 +126,19 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
         l->setMinimumWidth(110);
         statusBar()->addPermanentWidget(l);
     }
+    // Trial / licence state; click it to open Help › Licence.
+    m_statusLicence = new QPushButton(this);
+    m_statusLicence->setFlat(true);
+    m_statusLicence->setAccessibleName(tr("Licence status"));
+    connect(m_statusLicence, &QPushButton::clicked, this, &MainWindow::showLicence);
+    statusBar()->addPermanentWidget(m_statusLicence);
+    updateLicenceStatus();
+    if (!writesAllowed(currentLicence()))
+        QTimer::singleShot(0, this, [this] {
+            statusBar()->showMessage(tr("The trial has ended: you can open and view your work; saving and exporting need a licence key "
+                                        "(Help › Licence)."),
+                                     15000);
+        });
 
     connect(&m_ctx, &AppContext::recentProjectsChanged, this, &MainWindow::rebuildRecentMenus);
     rebuildRecentMenus();
@@ -336,6 +351,7 @@ void MainWindow::buildMenus() {
         const int i = m_tools->currentTip();
         if (i < 0) { report(Error{ErrorCode::InvalidArgument, "No brush tip is selected"}); return; }
         const auto& tip = m_tools->tips()[static_cast<std::size_t>(i)];
+        if (!licenceAllows(this, tr("Exporting"))) return;
         const QString f = QFileDialog::getSaveFileName(this, tr("Export Brush Tip"), tip.name + QStringLiteral(".png"), tr("PNG images (*.png)"));
         if (!f.isEmpty()) report(saveBrushTip(*tip.image, toPath(f)));
     });
@@ -724,6 +740,7 @@ void MainWindow::buildMenus() {
     help->addAction(tr("Open &Logs Folder"), this, [this] {
         QDesktopServices::openUrl(QUrl::fromLocalFile(fromPath(m_ctx.logDir())));
     });
+    help->addAction(tr("&Licence…"), this, &MainWindow::showLicence);
     help->addAction(tr("Third-Party &Notices"), this, &MainWindow::showNotices);
     QAction* about = help->addAction(tr("&About AceStudio"), this, &MainWindow::showAbout);
     about->setMenuRole(QAction::AboutRole);
@@ -1030,6 +1047,7 @@ bool MainWindow::openProject(const QString& pathIn) {
 
 bool MainWindow::save(DocumentView* view) {
     if (!view) return false;
+    if (!licenceAllows(this, tr("Saving"))) return false;
     if (view->filePath().isEmpty()) return saveAs(view);
     const QString err = view->saveTo(QString());
     if (!err.isEmpty()) {
@@ -1044,6 +1062,7 @@ bool MainWindow::save(DocumentView* view) {
 
 bool MainWindow::saveAs(DocumentView* view) {
     if (!view) return false;
+    if (!licenceAllows(this, tr("Saving"))) return false;
     QString suggested = view->filePath();
     if (suggested.isEmpty()) {
         const QString dir = m_ctx.recentProjects().isEmpty() ? QDir::homePath()
@@ -1120,14 +1139,35 @@ void MainWindow::setThemeAndPersist(const QString& theme) {
     applyTheme(*qApp, themeFromString(theme), settingColor(m_ctx.settings(), "general.accentColor", "#4F8CFF"));
 }
 
+void MainWindow::showLicence() {
+    LicenceDialog dlg(this);
+    connect(&dlg, &LicenceDialog::licenceChanged, this, &MainWindow::updateLicenceStatus);
+    dlg.exec();
+    updateLicenceStatus();
+}
+
+void MainWindow::updateLicenceStatus() {
+    const LicenceStatus& s = currentLicence();
+    QString text;
+    switch (s.mode) {
+    case LicenceMode::Licensed: text = tr("Licensed"); break;
+    case LicenceMode::Trial: text = tr("Trial: %n day(s) left", nullptr, s.trialDaysLeft); break;
+    case LicenceMode::TrialEnded: text = tr("Trial ended: enter a key"); break;
+    }
+    m_statusLicence->setText(text);
+    m_statusLicence->setToolTip(qs(describeLicence(s)));
+}
+
 void MainWindow::showAbout() {
     QMessageBox::about(this, tr("About AceStudio"),
         tr("<h3>AceStudio %1</h3>"
            "<p>AI-assisted game asset creation and 2D animation studio.</p>"
+           "<p>%4</p>"
            "<p>Project format schema %2.</p>"
            "<p>Built with Qt %3, used under the GNU LGPL v3 and dynamically linked. "
            "See Help › Third-Party Notices.</p>")
-            .arg(QString::fromLatin1(kVersionString)).arg(kProjectSchemaVersion).arg(QString::fromLatin1(qVersion())));
+            .arg(QString::fromLatin1(kVersionString)).arg(kProjectSchemaVersion).arg(QString::fromLatin1(qVersion()))
+            .arg(qs(describeLicence(currentLicence())).toHtmlEscaped()));
 }
 
 void MainWindow::showNotices() {
@@ -1246,6 +1286,7 @@ bool MainWindow::insertImageAsLayer(DocumentView* v, const Image& src, const QSt
 void MainWindow::exportAnimation(int kind) {
     DocumentView* v = currentView();
     if (!v) return;
+    if (!licenceAllows(this, tr("Exporting"))) return;
     const auto k = static_cast<ExportKind>(kind);
     nlohmann::json presets = m_ctx.settings().get("export.presets");
     if (!presets.is_object()) presets = nlohmann::json::object();
@@ -1316,6 +1357,7 @@ void MainWindow::exportPng() {
                                            : v->filePath().left(v->filePath().lastIndexOf(QLatin1Char('.')));
     const QString suggested = v->document().frameCount() > 1 ? QStringLiteral("%1_%2.png").arg(base).arg(v->currentFrame() + 1)
                                                             : base + QStringLiteral(".png");
+    if (!licenceAllows(this, tr("Exporting"))) return;
     const QString path = QFileDialog::getSaveFileName(this, tr("Export Frame as PNG"), suggested, tr("PNG Images (*.png)"));
     if (path.isEmpty()) return;
     if (auto st = writePng(v->document().composite(v->currentFrame()), toPath(path)); !st) {

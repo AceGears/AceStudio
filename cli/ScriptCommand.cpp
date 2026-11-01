@@ -2,6 +2,9 @@
 
 #include "CliCommon.h"
 
+#include "acestudio/core/FileUtil.h"
+#include "acestudio/core/Licence.h"
+
 #include "acestudio/core/Editor.h"
 #include "acestudio/core/ProjectIO.h"
 #include "acestudio/core/Script.h"
@@ -40,6 +43,11 @@ int cmdRun(const Args& a, Output& out) {
 
     ScriptOptions o;
     o.args.assign(a.positional.begin() + 2, a.positional.end());
+    // After the trial, scripts may read but not write files.
+    if (auto dir = userDataDir(); dir && !writesAllowed(licenceStatus(dir.value()))) {
+        if (a.opt("save")) return out.fail(kLicence, licenceRequiredMessage("Saving"));
+        o.readOnlyReason = licenceRequiredMessage("Writing files");
+    }
     // Relative paths in the script resolve against --base (default: the
     // script's folder), which is allowed too.
     if (auto base = a.opt("base")) {

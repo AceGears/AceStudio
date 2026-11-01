@@ -1,4 +1,5 @@
 #include "AppBridgeServer.h"
+#include "../licensing/Licensing.h"
 
 #include "../DocumentView.h"
 #include "../QtBridge.h"
@@ -223,6 +224,7 @@ void AppBridgeServer::runLua(QLocalSocket* sock, const json& id, const json& par
     auto copy = std::make_shared<Editor>(v->document());
     o.document = copy.get();
     o.cancel = m_cancel.get();
+    o.readOnlyReason = licenceReadOnlyReason();
     auto output = std::make_shared<std::string>();
     o.output = [output](const std::string& text) { *output += text; };   // worker thread only
     const std::size_t markBefore = v->editor().history().mark();

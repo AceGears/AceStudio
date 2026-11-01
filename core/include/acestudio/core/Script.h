@@ -42,6 +42,8 @@ struct ScriptOptions {
     std::function<void(const std::string&)> output;
     // Set to true from another thread to stop the script at the next check.
     const std::atomic<bool>* cancel = nullptr;
+    // Not empty: writing files fails with this message (reading still works).
+    std::string readOnlyReason;
     // Arguments, visible to the script as `arg` (a list of strings).
     std::vector<std::string> args;
 };

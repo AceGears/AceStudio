@@ -18,6 +18,7 @@ option(ACESTUDIO_BUILD_APP   "Build the Qt desktop application" ON)
 option(ACESTUDIO_BUILD_CLI   "Build acestudio-cli"              ON)
 option(ACESTUDIO_BUILD_MCP   "Build acestudio-mcp (needs Qt Core/Network)" ON)
 option(ACESTUDIO_BUILD_TESTS "Build unit tests"                 ON)
+option(ACESTUDIO_BUILD_TOOLS "Build AceGears tools (licence keys)" ON)
 option(ACESTUDIO_BUILD_BENCH "Build micro-benchmarks"         ON)
 option(ACESTUDIO_WARNINGS_AS_ERRORS "Treat warnings as errors"  OFF)
 
@@ -29,6 +30,18 @@ include(Dependencies)
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/core/include/acestudio/core/Version.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/generated/acestudio/core/Version.h"
+    @ONLY)
+
+# Licence keys are checked against this Ed25519 public key (64 hex digits).
+# Release builds set it to AceGears' key (tools/licence/README.md); empty means
+# the built-in development key, whose secret half is public, and the app says so.
+set(ACESTUDIO_LICENCE_PUBLIC_KEY "" CACHE STRING "Ed25519 public key for licence keys (hex); empty = development key")
+if(ACESTUDIO_LICENCE_PUBLIC_KEY AND NOT ACESTUDIO_LICENCE_PUBLIC_KEY MATCHES "^[0-9a-fA-F]+$")
+    message(FATAL_ERROR "ACESTUDIO_LICENCE_PUBLIC_KEY must be 64 hex digits")
+endif()
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/include/acestudio/core/LicenceConfig.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/acestudio/core/LicenceConfig.h"
     @ONLY)
 
 add_subdirectory(core)
@@ -43,6 +56,10 @@ endif()
 
 if(ACESTUDIO_BUILD_APP)
     add_subdirectory(app)
+endif()
+
+if(ACESTUDIO_BUILD_TOOLS)
+    add_subdirectory(tools/licence)
 endif()
 
 if(ACESTUDIO_BUILD_BENCH)

@@ -26,6 +26,7 @@ add_executable(acestudio_core_tests
     test_asset_tools.cpp
     test_engine_export.cpp
     test_script.cpp
+    test_licence.cpp
     test_subprocess.cpp
     test_ai_worker.cpp
     test_model_catalog.cpp
@@ -49,6 +50,7 @@ if(ACESTUDIO_BUILD_CLI)
             -DCLI=$<TARGET_FILE:acestudio-cli>
             -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/cli_smoke
             -DTEXTURES=${CMAKE_CURRENT_SOURCE_DIR}/engine/textures
+            "-DLICENCE_TOOL=$<$<TARGET_EXISTS:acestudio-licence>:$<TARGET_FILE:acestudio-licence>>"
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cli_smoke.cmake)
 endif()
 

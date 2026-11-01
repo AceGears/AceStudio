@@ -16,6 +16,7 @@ class QAction;
 class QActionGroup;
 class QDockWidget;
 class QLabel;
+class QPushButton;
 class QListWidget;
 class QMenu;
 class QStackedWidget;
@@ -75,6 +76,8 @@ private:
     void setThemeAndPersist(const QString& theme);
     void resetLayout();
     void showAbout();
+    void showLicence();
+    void updateLicenceStatus();
     void showNotices();
     void importPng(bool asLayer);
 public:
@@ -130,6 +133,7 @@ private:
     LogPanel* m_log = nullptr;
 
     QLabel* m_statusCursor = nullptr;
+    QPushButton* m_statusLicence = nullptr;
     QLabel* m_statusZoom = nullptr;
     QLabel* m_statusCanvas = nullptr;
 

@@ -89,6 +89,28 @@ if(NOT TARGET acestudio_lua)
     target_link_libraries(acestudio_sol2 INTERFACE acestudio_lua)
 endif()
 
+# Monocypher 4.0.3 — CC0-1.0 or BSD-2-Clause (Ed25519 signature checks for
+# licence keys; the optional/monocypher-ed25519 part is RFC 8032 Ed25519).
+FetchContent_Declare(monocypher
+    GIT_REPOSITORY https://github.com/LoupVaillant/Monocypher.git
+    GIT_TAG        4.0.3
+    GIT_SHALLOW    TRUE)
+FetchContent_GetProperties(monocypher)
+if(NOT monocypher_POPULATED)
+    FetchContent_Populate(monocypher)
+endif()
+if(NOT TARGET acestudio_monocypher)
+    add_library(acestudio_monocypher STATIC "${monocypher_SOURCE_DIR}/src/monocypher.c"
+                                            "${monocypher_SOURCE_DIR}/src/optional/monocypher-ed25519.c")
+    target_include_directories(acestudio_monocypher SYSTEM PUBLIC "${monocypher_SOURCE_DIR}/src" "${monocypher_SOURCE_DIR}/src/optional")
+    if(MSVC)
+        target_compile_options(acestudio_monocypher PRIVATE /W0)
+    else()
+        target_compile_options(acestudio_monocypher PRIVATE -w)
+    endif()
+    set_target_properties(acestudio_monocypher PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
+
 if(NOT TARGET acestudio_stb)
     add_library(acestudio_stb INTERFACE)
     target_include_directories(acestudio_stb SYSTEM INTERFACE "${stb_SOURCE_DIR}")

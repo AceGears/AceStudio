@@ -55,6 +55,8 @@ add_executable(AceStudio WIN32
     ${PROJECT_SOURCE_DIR}/mcp/ClientConfigs.cpp
     src/SingleInstance.h
     src/SingleInstance.cpp
+    src/licensing/Licensing.h
+    src/licensing/Licensing.cpp
     src/Shortcuts.h
     src/Shortcuts.cpp
     src/ToolState.h
