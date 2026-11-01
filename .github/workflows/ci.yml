@@ -21,6 +21,9 @@ jobs:
         run: cmake --build build -j
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Benchmark results (perf_budget)
+        if: always()
+        run: cat build/tests/bench_results.json || true
       - name: AI worker tests (protocol, cancellation, crash, downloads)
         working-directory: ai_worker
         run: python3 -m unittest discover -s tests -v
@@ -132,6 +135,10 @@ jobs:
             build.log
             test.log
           if-no-files-found: ignore
+      - name: Benchmark results (perf_budget)
+        if: always()
+        shell: pwsh
+        run: if (Test-Path build/tests/bench_results.json) { Get-Content build/tests/bench_results.json }
       - name: Stage application (windeployqt, dynamic Qt)
         shell: pwsh
         run: |
