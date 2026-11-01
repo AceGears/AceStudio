@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "scripting/AppBridgeServer.h"
+#include "scripting/McpSetupDialog.h"
 #include "scripting/ScriptDialog.h"
 
 #include "AppContext.h"
@@ -668,6 +669,10 @@ void MainWindow::buildMenus() {
         allow->setChecked(m_bridge && m_bridge->running());
         allow->setToolTip(tr("Lets acestudio-mcp (Claude Code, Cursor, VS Code, Codex…) look at the open document and run "
                              "Lua scripts on it. Every change is one Edit > Undo step."));
+        scripts->addAction(tr("Set &Up AI Assistants (MCP)…"), this, [this] {
+            McpSetupDialog dlg(this);
+            dlg.exec();
+        });
         connect(allow, &QAction::toggled, this, [this](bool on) {
             (void)m_ctx.settings().set("mcp.bridgeEnabled", on);
             if (on) {

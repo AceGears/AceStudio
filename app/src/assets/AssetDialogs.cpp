@@ -569,10 +569,12 @@ UiKitDialog::UiKitDialog(DocumentView* view, OpenImageFn openImage, QWidget* par
     m_info->setWordWrap(true);
     auto* open = new QPushButton(tr("Open as &Document"), this);
     auto* exportBtn = new QPushButton(tr("&Export…"), this);
+    m_engines = new EngineChoice(kEngineGodot | kEngineUnity, this);
     auto* close = new QPushButton(tr("Close"), this);
     auto* buttons = new QHBoxLayout;
     buttons->addWidget(open);
     buttons->addWidget(exportBtn);
+    buttons->addWidget(m_engines);
     buttons->addStretch();
     buttons->addWidget(close);
     auto* right = new QVBoxLayout;
@@ -638,13 +640,10 @@ void UiKitDialog::exportFiles() {
     const QString f = QFileDialog::getSaveFileName(this, tr("Export UI Kit"), QStringLiteral("ui_kit.png"), tr("PNG image (*.png)"));
     if (f.isEmpty()) return;
     const fs::path png = withExtension(f, ".png");
-    const fs::path json = fs::path(png).replace_extension(".json");
-    auto files = packUiKit(m_kit, png.filename().string());
-    if (!files) { QMessageBox::warning(this, windowTitle(), qs(files.error().message)); return; }
-    Status st = writePng(files.value().atlas.pages.front(), png);
-    if (st) st = writeTextFile(json, files.value().json);
-    if (!st) { QMessageBox::warning(this, windowTitle(), qs(st.error().message)); return; }
-    QMessageBox::information(this, windowTitle(), tr("Wrote %1 and %2.").arg(fromPath(png.filename()), fromPath(json.filename())));
+    AssetWriteOptions opts;
+    opts.engines = m_engines->engines();
+    const auto kit = m_kit;
+    (void)writeAssetFiles(this, opts, png, [&](const AssetWriteOptions& o) { return writeUiKitFiles(kit, png, o); });
 }
 
 // ================================================================ slicer
@@ -987,10 +986,12 @@ AtlasDialog::AtlasDialog(DocumentView* view, QWidget* parent) : QDialog(parent),
     m_info = new QLabel(this);
     m_info->setWordWrap(true);
     m_export = new QPushButton(tr("&Export…"), this);
+    m_engines = new EngineChoice(kEngineUnity, this);
     auto* close = new QPushButton(tr("Close"), this);
     auto* buttons = new QHBoxLayout;
     buttons->addWidget(m_page);
     buttons->addStretch();
+    buttons->addWidget(m_engines);
     buttons->addWidget(m_export);
     buttons->addWidget(close);
     auto* right = new QVBoxLayout;
@@ -1105,11 +1106,21 @@ void AtlasDialog::exportFiles() {
     const QString f = QFileDialog::getSaveFileName(this, tr("Export Atlas"), QStringLiteral("atlas.png"), tr("PNG image (*.png)"));
     if (f.isEmpty()) return;
     const fs::path png = withExtension(f, ".png");
+    if (m_atlas->pages.size() == 1) {
+        AssetWriteOptions opts;
+        opts.engines = m_engines->engines();
+        const Atlas atlas = *m_atlas;
+        (void)writeAssetFiles(this, opts, png, [&](const AssetWriteOptions& o) { return writeAtlasFiles(atlas, png, o); });
+        return;
+    }
+    // Several pages: <stem>_N.png + one JSON (engine files need one page).
+    if (m_engines->engines() != kEngineNone)
+        QMessageBox::information(this, windowTitle(), tr("Unity files are written for single-page atlases only; raise the maximum "
+                                                         "size to fit everything on one page. Writing the pages and JSON."));
     const fs::path json = fs::path(png).replace_extension(".json");
     std::vector<std::string> files;
-    const bool multi = m_atlas->pages.size() > 1;
     for (std::size_t i = 0; i < m_atlas->pages.size(); ++i) {
-        const std::string name = multi ? png.stem().string() + "_" + std::to_string(i) + ".png" : png.filename().string();
+        const std::string name = png.stem().string() + "_" + std::to_string(i) + ".png";
         if (Status st = writePng(m_atlas->pages[i], png.parent_path() / name); !st) {
             QMessageBox::warning(this, windowTitle(), qs(st.error().message));
             return;

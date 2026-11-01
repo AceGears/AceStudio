@@ -6,6 +6,10 @@
 #include "acestudio/core/FileUtil.h"
 #include "acestudio/core/Transform.h"
 
+#include <QCheckBox>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
@@ -36,6 +40,71 @@ Image fitSquare(const Image& img, int size) {
 
 Status writeTextFile(const std::filesystem::path& path, const std::string& text) {
     return writeFileAtomic(path, std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(text.data()), text.size()));
+}
+
+namespace {
+unsigned s_lastEngines = kEngineNone;
+}
+
+EngineChoice::EngineChoice(unsigned available, QWidget* parent) : QWidget(parent) {
+    auto* lay = new QHBoxLayout(this);
+    lay->setContentsMargins(0, 0, 0, 0);
+    lay->addWidget(new QLabel(tr("Also for:"), this));
+    const std::pair<unsigned, QString> all[] = {{kEngineGodot, tr("Godot")}, {kEngineUnity, tr("Unity")}, {kEngineTiled, tr("Tiled")}};
+    for (const auto& [bit, label] : all) {
+        if (!(available & bit)) continue;
+        auto* box = new QCheckBox(label, this);
+        box->setChecked(s_lastEngines & bit);
+        connect(box, &QCheckBox::toggled, this, [bit = bit](bool on) {
+            if (on) s_lastEngines |= bit;
+            else s_lastEngines &= ~bit;
+        });
+        m_boxes.push_back({bit, box});
+        lay->addWidget(box);
+    }
+    setToolTip(tr("Godot: .tres resources (SpriteFrames, TileSet terrains, StyleBoxTexture). Unity: .meta files with "
+                  "sprites, borders and pivots, and .anim clips. Tiled: .tsx tilesets with Wang sets."));
+}
+
+unsigned EngineChoice::engines() const {
+    unsigned e = kEngineNone;
+    for (const auto& [bit, box] : m_boxes)
+        if (box->isChecked()) e |= bit;
+    return e;
+}
+
+bool writeAssetFiles(QWidget* parent, AssetWriteOptions opts, const std::filesystem::path& confirmedFile,
+                     const std::function<Result<WrittenFiles>(const AssetWriteOptions&)>& write) {
+    const QString title = parent ? parent->windowTitle() : QString();
+    AssetWriteOptions dry = opts;
+    dry.dryRun = true;
+    auto plan = write(dry);
+    if (!plan) {
+        QMessageBox::warning(parent, title, qs(plan.error().message));
+        return false;
+    }
+    QStringList others;
+    for (const auto& p : plan.value().existing)
+        if (p != confirmedFile) others << fromPath(p.filename());
+    if (!others.isEmpty()) {
+        const QString list = others.size() > 8 ? QObject::tr("%n file(s)", nullptr, static_cast<int>(others.size())) : others.join('\n');
+        if (QMessageBox::question(parent, title, QObject::tr("These files already exist. Replace them?\n\n%1").arg(list),
+                                  QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+            return false;
+    }
+    opts.overwrite = true;   // everything that exists was confirmed
+    opts.dryRun = false;
+    auto done = write(opts);
+    if (!done) {
+        QMessageBox::warning(parent, title, qs(done.error().message));
+        return false;
+    }
+    QStringList names;
+    for (const auto& p : done.value().files) names << fromPath(p.filename());
+    QString text = QObject::tr("Wrote %1.").arg(names.join(QStringLiteral(", ")));
+    for (const auto& n : done.value().notes) text += "\n\n" + qs(n);
+    QMessageBox::information(parent, title, text);
+    return true;
 }
 
 void noDefaultButtons(QWidget* dialog) {

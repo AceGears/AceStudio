@@ -188,6 +188,20 @@ jobs:
           node ts_client.mjs $mcp $root http://127.0.0.1:39200/mcp
           if ($LASTEXITCODE -ne 0) { Write-Host "::error::MCP TypeScript SDK client checks failed"; $failed = $true }
           Stop-Process -Id $server.Id -ErrorAction SilentlyContinue
+          # The live bridge over a real Windows named pipe: the packaged app,
+          # offscreen (the plugin is copied in for this test only).
+          $dist = (Resolve-Path ../../dist).Path
+          Copy-Item "$env:QT_ROOT_DIR/plugins/platforms/qoffscreen.dll" "$dist/platforms/"
+          & "$dist/acestudio-cli.exe" new "$root/bridge.acestudio" --width 16 --height 16 --frames 2 --force
+          $env:ACESTUDIO_DATA_DIR = "$env:RUNNER_TEMP/acestudio-bridge-data"
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $app = Start-Process -FilePath "$dist/AceStudio.exe" -ArgumentList "$root/bridge.acestudio" -PassThru -NoNewWindow
+          python bridge_client.py $mcp $root
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::MCP app bridge checks failed"; $failed = $true }
+          Stop-Process -Id $app.Id -ErrorAction SilentlyContinue
+          Remove-Item Env:QT_QPA_PLATFORM
+          Start-Sleep -Seconds 1
+          Remove-Item "$dist/platforms/qoffscreen.dll" -ErrorAction SilentlyContinue
           if ($failed) { exit 1 }
       - uses: actions/upload-artifact@v4
         with:

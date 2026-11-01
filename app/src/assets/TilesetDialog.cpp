@@ -176,6 +176,7 @@ TilesetDialog::TilesetDialog(AiService& ai, DocumentView* view, OpenImageFn open
     m_sandbox = new QPushButton(tr("Terrain &Sandbox…"), this);
     m_open = new QPushButton(tr("Open as &Document"), this);
     m_export = new QPushButton(tr("&Export…"), this);
+    m_engines = new EngineChoice(kEngineGodot | kEngineUnity | kEngineTiled, this);
     auto* close = new QPushButton(tr("Close"), this);
     connect(close, &QPushButton::clicked, this, &QDialog::reject);
     connect(m_sandbox, &QPushButton::clicked, this, &TilesetDialog::openSandbox);
@@ -193,6 +194,7 @@ TilesetDialog::TilesetDialog(AiService& ai, DocumentView* view, OpenImageFn open
     buttons->addWidget(m_sandbox);
     buttons->addWidget(m_open);
     buttons->addWidget(m_export);
+    buttons->addWidget(m_engines);
     buttons->addStretch();
     buttons->addWidget(close);
 
@@ -437,35 +439,10 @@ void TilesetDialog::exportFiles() {
     if (f.isEmpty()) return;
     fs::path png = toPath(f);
     if (png.extension() != ".png") png += ".png";
-    const fs::path dir = png.parent_path();
-    const std::string stem = png.stem().string();
-    const Tileset& first = m_levels.front();
-    const bool withBase = !first.base.isNull();
-    const fs::path base = dir / (stem + "_base.png");
-    std::vector<std::string> images, jsons;
-    QStringList written;
-    auto fail = [this](const Status& st) { QMessageBox::warning(this, windowTitle(), qs(st.error().message)); };
-    if (withBase) {
-        if (Status st = writePng(first.base, base); !st) return fail(st);
-        written << fromPath(base.filename());
-    }
-    const bool single = m_levels.size() == 1;
-    for (std::size_t i = 0; i < m_levels.size(); ++i) {
-        const std::string name = single ? stem : stem + "_level" + std::to_string(i + 1);
-        const fs::path img = dir / (name + ".png"), js = dir / (name + ".json");
-        Status st = writePng(m_levels[i].image, img);
-        if (st) st = writeTextFile(js, tilesetJson(m_levels[i], img.filename().string(), i == 0 && withBase ? base.filename().string() : std::string()));
-        if (!st) return fail(st);
-        images.push_back(img.filename().string());
-        jsons.push_back(js.filename().string());
-        written << fromPath(img.filename()) << fromPath(js.filename());
-    }
-    if (!single) {
-        const fs::path set = dir / (stem + "_terrain.json");
-        if (Status st = writeTextFile(set, terrainSetJson(m_levels, images, jsons, withBase ? base.filename().string() : std::string())); !st) return fail(st);
-        written << fromPath(set.filename());
-    }
-    QMessageBox::information(this, windowTitle(), tr("Wrote %1.").arg(written.join(QStringLiteral(", "))));
+    AssetWriteOptions opts;
+    opts.engines = m_engines->engines();
+    const auto levels = m_levels;
+    (void)writeAssetFiles(this, opts, png, [&](const AssetWriteOptions& o) { return writeTilesetFiles(levels, png, o); });
 }
 
 void TilesetDialog::openSandbox() {

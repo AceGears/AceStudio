@@ -1,5 +1,6 @@
 #pragma once
 
+#include "acestudio/core/AssetFiles.h"
 #include "acestudio/core/Image.h"
 #include "acestudio/core/Result.h"
 
@@ -7,7 +8,12 @@
 #include <QWidget>
 
 #include <filesystem>
+#include <functional>
 #include <string>
+#include <utility>
+#include <vector>
+
+class QCheckBox;
 
 namespace acestudio::ui {
 
@@ -21,6 +27,25 @@ Image documentImage(const DocumentView* view);
 Image fitSquare(const Image& img, int size);
 
 Status writeTextFile(const std::filesystem::path& path, const std::string& text);
+
+// "Also write files for: [ ] Godot [ ] Unity [ ] Tiled", with the engines an
+// export supports. The choice is remembered for the session.
+class EngineChoice : public QWidget {
+    Q_OBJECT
+public:
+    EngineChoice(unsigned available, QWidget* parent = nullptr);
+    unsigned engines() const;
+
+private:
+    std::vector<std::pair<unsigned, QCheckBox*>> m_boxes;
+};
+
+// Writes asset files through `write` (an AssetFiles writer): a dry run first,
+// one question before replacing existing files other than `confirmedFile`
+// (which the save dialog already asked about), then the write and a report
+// that includes the writer's notes. Returns false if nothing was written.
+bool writeAssetFiles(QWidget* parent, AssetWriteOptions opts, const std::filesystem::path& confirmedFile,
+                     const std::function<Result<WrittenFiles>(const AssetWriteOptions&)>& write);
 
 // Return in a spin box or combo box must not press a dialog button (it used
 // to add a terrain level): turns off auto-default on every button inside.

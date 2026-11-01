@@ -98,6 +98,7 @@ private:
     UiTheme m_theme;
     std::vector<UiElement> m_kit;
     std::optional<UiKitFiles> m_files;
+    class EngineChoice* m_engines = nullptr;
     std::vector<QPushButton*> m_colors;
     QSpinBox* m_scale = nullptr;
     QCheckBox* m_rounded = nullptr;
@@ -188,6 +189,7 @@ private:
     PixelView* m_preview = nullptr;
     QLabel* m_info = nullptr;
     QPushButton* m_export = nullptr;
+    class EngineChoice* m_engines = nullptr;
 };
 
 // Assets › New Tileset Template: a guide image for drawing a tileset by hand.

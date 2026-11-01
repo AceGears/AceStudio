@@ -7,4 +7,4 @@ installed; each task imports its heavy dependencies lazily.
 """
 
 PROTOCOL_VERSION = 1
-__version__ = "0.7.0"
+__version__ = "0.8.0"

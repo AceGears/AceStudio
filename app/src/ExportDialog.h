@@ -57,6 +57,7 @@ private:
     QCheckBox* m_merge = nullptr;
     QCheckBox* m_pot = nullptr;
     QComboBox* m_json = nullptr;
+    class EngineChoice* m_engines = nullptr;
     QLineEdit* m_path = nullptr;
     QLabel* m_summary = nullptr;
 };

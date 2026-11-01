@@ -1,5 +1,6 @@
 #include "ExportDialog.h"
 #include "QtBridge.h"
+#include "assets/AssetCommon.h"
 
 #include "acestudio/core/Export.h"
 #include "acestudio/core/Log.h"
@@ -120,6 +121,8 @@ ExportDialog::ExportDialog(ExportKind kind, const Document& doc, int currentFram
         form->addRow(QString(), m_merge);
         form->addRow(QString(), m_pot);
         form->addRow(tr("&Data:"), m_json);
+        m_engines = new EngineChoice(kEngineGodot | kEngineUnity, box);
+        form->addRow(tr("&Engines:"), m_engines);
         connect(m_layout, &QComboBox::currentIndexChanged, this, [this] {
             m_columns->setEnabled(m_layout->currentData().toInt() == static_cast<int>(SheetLayout::Grid));
             updateSummary();
@@ -323,6 +326,15 @@ bool ExportDialog::runExport() {
             j2.replace_extension(".json");
             if (fs::exists(j2, ec)) existing << fromPath(j2);
         }
+        if (m_engines->engines() != kEngineNone) {
+            AssetWriteOptions dry;
+            dry.engines = m_engines->engines();
+            dry.engineFilesOnly = true;
+            dry.dryRun = true;
+            auto plan = writeSheetFiles(m_doc, range, so, sheetPng, dry);
+            if (!plan) { QMessageBox::critical(this, windowTitle(), qs(plan.error().message)); return false; }
+            for (const auto& p : plan.value().existing) existing << fromPath(p);
+        }
     } else if (m_kind == ExportKind::PngSequence) {
         if (fs::exists(target, ec) && !fs::is_directory(target, ec)) {
             QMessageBox::warning(this, windowTitle(), tr("%1 is a file, not a folder.").arg(path));
@@ -356,6 +368,15 @@ bool ExportDialog::runExport() {
         if (!r) return fail(r.error());
         m_result = tr("Exported %n frame(s) to %1 (%2 × %3)", nullptr, static_cast<int>(r.value().frames))
                        .arg(QDir::toNativeSeparators(fromPath(r.value().image))).arg(r.value().width).arg(r.value().height);
+        if (m_engines->engines() != kEngineNone) {
+            AssetWriteOptions eo;
+            eo.engines = m_engines->engines();
+            eo.engineFilesOnly = true;
+            eo.overwrite = true;   // confirmed above
+            auto e = writeSheetFiles(m_doc, range, so, sheetPng, eo);
+            if (!e) return fail(e.error());
+            m_result += tr(", plus %n engine file(s)", nullptr, static_cast<int>(e.value().files.size()));
+        }
         break;
     }
     case ExportKind::PngSequence: {

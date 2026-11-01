@@ -49,6 +49,10 @@ add_executable(AceStudio WIN32
     src/scripting/ScriptDialog.cpp
     src/scripting/AppBridgeServer.h
     src/scripting/AppBridgeServer.cpp
+    src/scripting/McpSetupDialog.h
+    src/scripting/McpSetupDialog.cpp
+    ${PROJECT_SOURCE_DIR}/mcp/ClientConfigs.h
+    ${PROJECT_SOURCE_DIR}/mcp/ClientConfigs.cpp
     src/SingleInstance.h
     src/SingleInstance.cpp
     src/Shortcuts.h
@@ -72,6 +76,7 @@ add_executable(AceStudio WIN32
 )
 
 target_include_directories(AceStudio PRIVATE src)
+target_include_directories(AceStudio PRIVATE "${PROJECT_SOURCE_DIR}/mcp")
 target_link_libraries(AceStudio PRIVATE AceStudio::core Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
 target_compile_definitions(AceStudio PRIVATE QT_NO_KEYWORDS QT_DISABLE_DEPRECATED_BEFORE=0x060400)
 acestudio_set_warnings(AceStudio)

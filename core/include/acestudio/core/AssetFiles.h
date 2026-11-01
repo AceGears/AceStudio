@@ -35,11 +35,18 @@ struct AssetWriteOptions {
     unsigned engines = kEngineNone;
     bool overwrite = false;
     int pixelsPerUnit = 0;            // Unity; 0 = the tile / frame height
+    // Write nothing: return the files that would be written, and in
+    // `existing` the ones already there (so a UI can ask once).
+    bool dryRun = false;
+    // writeSheetFiles only: the engine files, not the sheet PNG and JSON
+    // (for exports that write the sheet themselves).
+    bool engineFilesOnly = false;
 };
 
 struct WrittenFiles {
     std::vector<std::filesystem::path> files;    // in the order written
     std::vector<std::string> notes;              // limits the user should know about
+    std::vector<std::filesystem::path> existing; // dry run: targets that already exist
 };
 
 Status writeTextFile(const std::filesystem::path& path, const std::string& text);

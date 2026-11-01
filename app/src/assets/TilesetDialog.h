@@ -81,6 +81,7 @@ private:
     PixelView* m_mapPreview = nullptr;
     QLabel* m_seams = nullptr;
     QPushButton* m_export = nullptr;
+    class EngineChoice* m_engines = nullptr;
     QPushButton* m_sandbox = nullptr;
     QPushButton* m_open = nullptr;
 };

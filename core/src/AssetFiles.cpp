@@ -41,15 +41,25 @@ public:
     void image(fs::path p, Image img) { m_items.push_back({std::move(p), std::move(img), {}, true}); }
     void text(fs::path p, std::string s) { m_items.push_back({std::move(p), {}, std::move(s), false}); }
 
-    Result<WrittenFiles> commit(bool overwrite, std::vector<std::string> notes) {
+    Result<WrittenFiles> commit(bool overwrite, std::vector<std::string> notes, bool dryRun = false) {
         std::set<fs::path> seen;
+        WrittenFiles w;
         for (const auto& it : m_items) {
             if (!seen.insert(it.path).second) return Error{ErrorCode::Internal, "Two outputs share the path " + it.path.string()};
             std::error_code ec;
-            if (!overwrite && fs::exists(it.path, ec))
+            const bool exists = fs::exists(it.path, ec);
+            if (dryRun) {
+                w.files.push_back(it.path);
+                if (exists) w.existing.push_back(it.path);
+                continue;
+            }
+            if (!overwrite && exists)
                 return Error{ErrorCode::IoError, it.path.string() + " already exists (use overwrite / --force to replace it)"};
         }
-        WrittenFiles w;
+        if (dryRun) {
+            w.notes = std::move(notes);
+            return w;
+        }
         for (const auto& it : m_items) {
             Status st = it.isImage ? writePng(it.img, it.path) : writeTextFile(it.path, it.text);
             if (!st) return st.error();
@@ -150,7 +160,7 @@ Result<WrittenFiles> writeTilesetFiles(const std::vector<Tileset>& levels, const
                         "(AceStudio draws Wang tiles on the dual grid); paint upper levels at least 2x2");
     if (o.engines & kEngineUnity)
         notes.push_back("Unity: the images are sliced into one sprite per tile; Unity's Rule Tiles are not generated");
-    return plan.commit(o.overwrite, std::move(notes));
+    return plan.commit(o.overwrite, std::move(notes), o.dryRun);
 }
 
 Result<WrittenFiles> writeSheetFiles(const Document& doc, const FrameRange& range, const SheetOptions& so, const fs::path& pngIn,
@@ -162,8 +172,10 @@ Result<WrittenFiles> writeSheetFiles(const Document& doc, const FrameRange& rang
     const std::string stem = png.stem().string();
     const fs::path dir = png.parent_path();
     Plan plan;
-    plan.image(png, sheet.value().image);
-    plan.text(dir / (stem + ".json"), spriteSheetJson(doc, sheet.value(), fileName(png), stem, JsonStyle::Hash));
+    if (!o.engineFilesOnly) {
+        plan.image(png, sheet.value().image);
+        plan.text(dir / (stem + ".json"), spriteSheetJson(doc, sheet.value(), fileName(png), stem, JsonStyle::Hash));
+    }
     const EngineSheet es = engineSheet(doc, sheet.value(), stem);
     if (o.engines & kEngineGodot) plan.text(dir / (stem + ".tres"), godotSpriteFrames(es, fileName(png)));
     if (o.engines & kEngineUnity) {
@@ -182,7 +194,7 @@ Result<WrittenFiles> writeSheetFiles(const Document& doc, const FrameRange& rang
     }
     std::vector<std::string> notes;
     if (o.engines & kEngineTiled) notes.push_back("Tiled has no sprite animation format; only the sheet and JSON were written for it");
-    return plan.commit(o.overwrite, std::move(notes));
+    return plan.commit(o.overwrite, std::move(notes), o.dryRun);
 }
 
 Result<WrittenFiles> writeAtlasFiles(const Atlas& atlas, const fs::path& pngIn, const AssetWriteOptions& o,
@@ -200,7 +212,7 @@ Result<WrittenFiles> writeAtlasFiles(const Atlas& atlas, const fs::path& pngIn, 
         if (rotated) return Error{ErrorCode::InvalidArgument, "Unity cannot use rotated atlas sprites; pack without rotation"};
         plan.text(fs::path(png.string() + ".meta"), unityTextureMeta(engineSheet(atlas, 0, borders), guidFor(png), ppuOr(o.pixelsPerUnit, 16)));
     }
-    return plan.commit(o.overwrite, {});
+    return plan.commit(o.overwrite, {}, o.dryRun);
 }
 
 Result<WrittenFiles> writeUiKitFiles(const std::vector<UiElement>& kit, const fs::path& pngIn, const AssetWriteOptions& o) {
@@ -223,7 +235,7 @@ Result<WrittenFiles> writeUiKitFiles(const std::vector<UiElement>& kit, const fs
         plan.text(fs::path(png.string() + ".meta"), unityTextureMeta(engineSheet(atlas, 0, borders), guidFor(png), ppuOr(o.pixelsPerUnit, 16)));
     std::vector<std::string> notes;
     if (o.engines & kEngineTiled) notes.push_back("Tiled has no UI format; only the atlas and JSON were written for it");
-    return plan.commit(o.overwrite, std::move(notes));
+    return plan.commit(o.overwrite, std::move(notes), o.dryRun);
 }
 
 } // namespace acestudio

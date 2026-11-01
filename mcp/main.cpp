@@ -8,6 +8,7 @@
 // the current folder).
 
 #include "AceTools.h"
+#include "ClientConfigs.h"
 #include "ConformanceFixtures.h"
 #include "McpProtocol.h"
 
@@ -425,7 +426,9 @@ int usage(const char* why) {
                  "Usage: acestudio-mcp [--root DIR]... [--cli PATH] [--http PORT [--host 127.0.0.1]]\n"
                  "  stdio by default; --http serves Streamable HTTP at http://127.0.0.1:PORT/mcp\n"
                  "  Tools may use files inside the --root folders only (default: the current folder).\n"
-                 "  Protocol: MCP 2026-07-28, and 2025-11-25 / 2025-06-18 / 2025-03-26 / 2024-11-05 via initialize.\n");
+                 "  Protocol: MCP 2026-07-28, and 2025-11-25 / 2025-06-18 / 2025-03-26 / 2024-11-05 via initialize.\n"
+                 "  --print-config claude-code|cursor|vscode|codex   print a client setup for this executable\n"
+                 "  --conformance-fixtures   (testing) add the MCP conformance suite's fixture tools\n");
     return 1;
 }
 
@@ -465,6 +468,15 @@ int main(int argc, char** argv) {
             if (!host.isLoopback()) return usage("--host must be a loopback address (127.0.0.1 or ::1)");
         } else if (a == "--conformance-fixtures") {
             fixtures = true;
+        } else if (a == "--print-config") {
+            auto v = next();
+            if (!v) return usage("--print-config needs claude-code, cursor, vscode or codex");
+            for (const auto& c : clientConfigs(executableDir() / fs::path(argv[0]).filename())) {
+                if (c.id != *v) continue;
+                std::printf("# %s: %s\n# %s\n\n%s", c.name.c_str(), c.file.c_str(), c.note.c_str(), c.content.c_str());
+                return 0;
+            }
+            return usage(("unknown client " + *v).c_str());
         } else if (a == "--version") {
             std::printf("acestudio-mcp %s\n", kVersionString);
             return 0;

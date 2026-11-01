@@ -6,6 +6,7 @@
 #include "acestudio/core/Document.h"
 #include "acestudio/core/EngineExport.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <regex>
@@ -162,5 +163,40 @@ TEST_CASE("Asset files: everything written, nothing overwritten without permissi
     CHECK_FALSE(fs::exists(dir / "ui_checkbox_on.tres"));   // fixed-size elements get no StyleBox
     CHECK_FALSE(parseEngineTargets("unreal"));
     CHECK(parseEngineTargets("all").value() == (kEngineGodot | kEngineUnity | kEngineTiled));
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Asset files: dry runs list targets, engine-only sheets", "[engine]") {
+    const fs::path dir = fs::temp_directory_path() / "acestudio_engine_dry";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    AssetWriteOptions o;
+    o.engines = kEngineGodot | kEngineUnity;
+    o.dryRun = true;
+    auto plan = writeSheetFiles(animated(), {}, SheetOptions{}, dir / "hero.png", o);
+    REQUIRE(plan);
+    CHECK(plan.value().files.size() >= 6);
+    CHECK(plan.value().existing.empty());
+    CHECK(fs::is_empty(dir));   // a dry run writes nothing
+
+    // The app writes the sheet itself, then only the engine files.
+    std::ofstream(dir / "hero.png") << "x";
+    std::ofstream(dir / "hero.tres") << "x";
+    o.engineFilesOnly = true;
+    plan = writeSheetFiles(animated(), {}, SheetOptions{}, dir / "hero.png", o);
+    REQUIRE(plan);
+    CHECK(std::find(plan.value().files.begin(), plan.value().files.end(), dir / "hero.png") == plan.value().files.end());
+    REQUIRE(plan.value().existing.size() == 1);
+    CHECK(plan.value().existing[0] == dir / "hero.tres");
+    o.dryRun = false;
+    CHECK_FALSE(writeSheetFiles(animated(), {}, SheetOptions{}, dir / "hero.png", o));   // hero.tres exists
+    o.overwrite = true;
+    auto w = writeSheetFiles(animated(), {}, SheetOptions{}, dir / "hero.png", o);
+    REQUIRE(w);
+    CHECK_FALSE(fs::exists(dir / "hero.json"));
+    CHECK(fs::exists(dir / "hero.png.meta"));
+    std::ifstream png(dir / "hero.png");
+    std::string content((std::istreambuf_iterator<char>(png)), {});
+    CHECK(content == "x");   // the sheet itself was left alone
     fs::remove_all(dir);
 }
