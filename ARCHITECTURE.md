@@ -231,10 +231,25 @@ duplicate implementation of document logic, file formats or export in any front 
   - The Python (dual-era) and TypeScript SDK clients over both transports.
   - CI runs them against the packaged Windows build.
 
-### ADR-006 — Packaging: Inno Setup first, MSIX later
-- Inno Setup is free for commercial use; WiX binaries now carry a maintenance-fee EULA above
-  US$10k revenue. MSIX added later for Store/enterprise. AI models are a separate optional
-  download, never bundled in the base installer.
+### ADR-006 — Packaging: Inno Setup per-user installer with a bundled Python (implemented in 0.9.0)
+- **Why Inno Setup.** Free for commercial use; WiX binaries now carry a maintenance-fee EULA
+  above US$10k revenue. MSIX may follow for the Store and enterprises.
+- **Per-user by default** (`PrivilegesRequired=lowest`, override allowed): no UAC prompt, and
+  the `.acestudio` association goes to HKCU. Installs into `{autopf}\AceStudio`
+  (`%LOCALAPPDATA%\Programs\AceStudio` for a per-user install).
+- **Contents.** The program, Qt (dynamic, LGPL), the app-local VC++ runtime, the AI worker
+  source, `licences\`, `docs\` and `EULA.txt`. CI checks that every DLL an executable imports is
+  present.
+- **Python.** The 3.12 embeddable package (python.org's SHA-256 checked in CI) and a pinned
+  pip wheel. On first AI setup the embeddable Python is copied to the user's AI folder, its
+  `._pth` removed so it behaves like a normal install, and pip unpacked into it (a wheel is a
+  zip; running pip from the wheel failed on the runner). Users no longer need to install
+  Python; a system Python is used only if the bundled one is missing.
+- **Models are never bundled**: each is an optional download after its licence is accepted.
+- **Uninstall keeps user data** (settings, recovery files, licence, models).
+- **CI test.** A silent per-user install, the files and association, the CLI from the install
+  folder, `ai setup` with the bundled Python, then a silent uninstall that must remove the
+  program and keep the data.
 
 ### ADR-007 — Scripting: Lua 5.4.9 + sol2 3.3.0 (implemented in 0.8.0)
 - **Build.** Lua is compiled as C++ (`SOL_USING_CXX_LUA`), so Lua errors unwind C++ frames
@@ -255,6 +270,53 @@ duplicate implementation of document logic, file formats or export in any front 
   (`weakly_canonical`) and checked against the allowed folders.
 - **Undo.** Edits to the host document go through its `Editor`, so a script is one undo
   step, rolled back on error.
+
+### ADR-008 — Licensing: offline Ed25519 keys and a 14-day trial (0.9.0)
+- **Keys** are `ACESTUDIO-1.<base64url JSON>.<base64url signature>`. The JSON holds the
+  licensee, e-mail, edition, issue date and optional expiry; the signature is Ed25519
+  (Monocypher 4.0.3, checked against the RFC 8032 vectors). Verification is offline: only the
+  public key is in the program.
+- **Key pairs.** The release public key is a CMake variable (`ACESTUDIO_LICENCE_PUBLIC_KEY`,
+  from a CI variable). Without it, builds use a development key whose seed is public; the
+  licence dialog and `acestudio-cli licence` (`developmentKey`) say so, and CI warns when a
+  nightly is built that way. The private key lives only with the publisher
+  (`tools/licence`, never shipped).
+- **Trial.** 14 days of everything. The start date is kept in `trial.json` and in the
+  registry; the earliest wins, so deleting one does not restart the trial. A test data folder
+  (`ACESTUDIO_DATA_DIR`) keeps the registry out.
+- **After the trial, read-only** rather than locked out: files open and render; saving,
+  exporting and write commands (app, CLI exit 7, Lua, MCP) are refused with a clear message.
+  Autosave and crash recovery keep working, so no work is ever lost to licensing.
+- **Not DRM.** A determined user can patch a binary; the aim is honest users' convenience and
+  a clear line, without activation servers or telemetry.
+
+### ADR-009 — Accessibility is tested, not reviewed (0.9.0)
+- Every control gets an accessible name. Most are derived automatically when a window is
+  shown (from its label, form row, grid cell, tool tip or placeholder); the rest are set
+  explicitly.
+- `AceStudio --ui-audit` opens every window by triggering every menu command, and fails if any
+  visible control is unnamed or cannot be reached with Tab (`ui_audit` test; it runs wherever
+  the app is built, on the Windows CI runner and on the Linux development machine).
+- High-contrast theme (and Windows high-contrast detection), text size 100–200%, and
+  rebindable shortcuts for every command.
+
+### ADR-010 — Untrusted input: own decoders where fuzzing found problems (0.9.0)
+- Every parser of untrusted input has a libFuzzer target (`tests/fuzz`): project, PNG, GIF,
+  APNG, WebP, palette, licence key, Lua and MCP messages. Findings become regression inputs.
+- Decoders check the total decoded size (1 GB for an animation) before allocating.
+- GIF is decoded by AceStudio's own bounds-checked decoder: fuzzing found a use-after-free in
+  stb_image's GIF loader. stb_image is compiled for PNG only. See SECURITY.md.
+
+### ADR-011 — Regression suite: old files, golden renders, performance budgets (0.9.0)
+- **Old projects.** `tests/data/compat` holds projects saved by 0.1.0, 0.5.0 and 0.8.1 and their
+  renders, written by those versions built from git. The current build must render them
+  identically (one documented exception: group compositing changed on purpose in 0.2.0).
+- **Golden renders** of every blend mode, adjustment, mask, clipping, onion skin and the packed
+  sprite sheet with its JSON. Updating them is a deliberate act
+  (`ACESTUDIO_UPDATE_GOLDEN=1`), explained in the commit.
+- **Performance budgets.** `acestudio_bench --budget bench/perf_budgets.json` runs as the
+  `perf_budget` test in optimised builds. The ceilings are several times the measured times,
+  so they catch real regressions rather than runner noise.
 
 ## 6. Error-handling rules
 

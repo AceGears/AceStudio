@@ -17,8 +17,8 @@ libwebp 1.6.0                 BSD 3-Clause (+ patent grant)    libwebp-COPYING.t
 Lua 5.4.9                     MIT                              lua-LICENSE.txt
 sol2 3.3.0                    MIT                              sol2-LICENSE.txt
 Monocypher 4.0.3              BSD 2-Clause or CC0              monocypher-LICENCE.txt
-Python 3.12 (embeddable)      PSF License                      python\LICENSE.txt
-pip                           MIT                              python\pip-*.whl (pip-*.dist-info)
+Python 3.12.10 (embeddable)   PSF License                      python\LICENSE.txt
+pip 26.2.2                    MIT                              python\pip-LICENSE.txt
 Microsoft Visual C++ runtime  Microsoft Visual Studio          redistributed under its
   (msvcp140*.dll, vcruntime*)  redistributable terms           distributable-code terms
 

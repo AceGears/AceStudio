@@ -110,6 +110,9 @@ void LicenceDialog::updateStatus() {
                     .arg(qs(s.trialStarted))
                     .arg(kTrialDays);
     if (!s.problem.empty()) text += QStringLiteral("<br><span style='color:#d9534f'>%1</span>").arg(tr("The saved key was not accepted: %1").arg(qs(s.problem).toHtmlEscaped()));
+    if (usingDevelopmentLicenceKey())
+        text += tr("<br><i>Development build: keys are checked against the public development key, so anyone can make "
+                   "one. Release builds use the publisher's key.</i>");
     m_status->setText(text);
     m_remove->setEnabled(s.mode == LicenceMode::Licensed || !s.problem.empty());
 }

@@ -27,5 +27,13 @@ $pip = Join-Path $py $PipWheel
 Invoke-WebRequest $PipUrl -OutFile $pip
 $ph = (Get-FileHash $pip -Algorithm SHA256).Hash.ToLower()
 if ($ph -ne $PipSha256) { throw "pip wheel hash $ph does not match $PipSha256" }
+# pip's licence as a plain file next to the wheel (the notices point to it).
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$wz = [IO.Compression.ZipFile]::OpenRead($pip)
+try {
+  $lic = $wz.Entries | Where-Object { $_.FullName -match '^pip-[^/]+\.dist-info/(licenses/)?LICENSE(\.txt)?$' } | Select-Object -First 1
+  if (-not $lic) { throw "pip wheel has no LICENSE file" }
+  [IO.Compression.ZipFileExtensions]::ExtractToFile($lic, (Join-Path $py "pip-LICENSE.txt"), $true)
+} finally { $wz.Dispose() }
 & (Join-Path $py "python.exe") -c "import sys, struct; print(sys.version, struct.calcsize('P') * 8, 'bit')"
 if ($LASTEXITCODE -ne 0) { throw "the bundled Python does not run" }

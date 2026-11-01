@@ -1,7 +1,7 @@
 # License Audit
 
 Distribution model: commercial, closed-source Windows application. Qt used under LGPLv3 with
-dynamic linking. Last reviewed 2026-10-29. Not legal advice — have counsel review before the
+dynamic linking. Last reviewed 2026-11-01 (0.9.0). Not legal advice — have counsel review before the
 first paid release.
 
 ## Software bill of materials — shipped components
@@ -15,6 +15,10 @@ first paid release.
 | Lua | 5.4.9 (github.com/lua/lua tag v5.4.9) | MIT | Static, compiled as C++ | Include copyright + licence text (Lua.org, PUC-Rio) | ✅ |
 | sol2 | 3.3.0 (github.com/ThePhD/sol2 tag v3.3.0) | MIT | Header-only | Include copyright + licence text | ✅ |
 | libwebp (libwebp, libwebpdemux, libwebpmux) | 1.6.0 | BSD-3-Clause | Static | Include copyright notice, licence text and the PATENTS grant file in the notices; do not use WebM project names to endorse the product | ✅ |
+| Monocypher | 4.0.3 | BSD-2-Clause or CC0-1.0 (dual; we use BSD-2-Clause) | Static (licence-key signature check) | Include copyright + licence text | ✅ |
+| Python (embeddable package) | 3.12.10, SHA-256 checked against python.org's release manifest in CI | PSF License Agreement (+ the licences of its bundled parts, all in its LICENSE.txt) | Separate program in `python\`, unmodified | Keep `python\LICENSE.txt`; state that it is included (Third-Party Notices) | ✅ |
+| pip (wheel) | 26.2.2, SHA-256 pinned | MIT | Separate program, unpacked into the user's private AI environment on first AI setup | Keep licence text (`python\pip-LICENSE.txt`) | ✅ |
+| Microsoft Visual C++ runtime (msvcp140, vcruntime140, concrt140) | from the VS 2022 redist folder | Visual Studio distributable code terms | App-local DLLs | Redistribute only the listed files, unmodified, with our application | ✅ |
 
 | AceStudio AI worker (`ai_worker/`, Python source) | 0.5.0 | Proprietary (ours) | Shipped as source next to the executable | Includes an independent implementation of the RRDBNet architecture compatible with the published Real-ESRGAN (BSD-3) weights | ✅ |
 
@@ -46,6 +50,10 @@ download starts. The catalogue only contains models whose licences allow commerc
 | mcp (Python SDK, PyPI) | 2.3.0 | MIT | MCP tests only (`tests/mcp`); installed by CI, not shipped |
 | Godot, Unity | 4.6.2, 6000.6.7f1 | MIT; Unity's own licence (the user's install) | Engine import checks only (`tests/engine`), never redistributed |
 | CMake | ≥ 3.25 | BSD-3 | Build tool |
+| Inno Setup | 6.x (the runner's, or Chocolatey's) | Inno Setup licence (free for commercial use; keep its copyright notice in the installer, which it adds itself) | Builds the installer; its setup stub runs on users' machines, as its licence allows |
+| clang / libFuzzer, AddressSanitizer, UBSan | LLVM 18 | Apache-2.0 with LLVM exception | Fuzzing builds only (`tests/fuzz`) |
+| Pillow | 12.3 | MIT-CMU | Wrote the reference GIFs and their decoded frames in `tests/data/gif` |
+| AceStudio 0.1.0 / 0.5.0 / 0.8.1 | — | Ours | Built from git history to write `tests/data/compat` |
 | jurplel/install-qt-action, ilammy/msvc-dev-cmd | v4 / v1 | MIT | CI only |
 
 ## Qt modules that must never be linked (GPL-only or commercial-only in open-source Qt)
@@ -59,11 +67,11 @@ time only and must not ship.
 
 | Component | License | Phase |
 |---|---|---|
-| Inno Setup 7.x | Free for commercial use (keep notices) | 8 |
 | Qt Advanced Docking System | LGPL-2.1 (dynamic link) | optional |
 
-GIF is written by AceStudio's own encoder (LZW; the LZW patents expired in 2004) and read by
-stb_image, so giflib is not needed.
+GIF is written and read by AceStudio's own encoder and decoder (LZW; the LZW patents expired in
+2004), so giflib is not needed. stb_image is compiled for PNG only (0.9.0): fuzzing found a
+use-after-free in its GIF loader, so AceStudio no longer uses it for GIF (SECURITY.md).
 
 Rejected: WiX binary releases (Open Source Maintenance Fee EULA above US$10k revenue) unless
 built from source or the fee is budgeted.
@@ -123,5 +131,8 @@ and the EULA.
 1. Read Black Forest Labs "Self-Hosted Commercial License Terms" for FLUX.2-klein-4B.
 2. Verify text-encoder sub-licenses inside FLUX.2-klein and Z-Image repositories.
 3. Draft EULA incorporating OpenRAIL Attachment A use restrictions.
-4. Add `licenses/` folder with full third-party license texts to the installer (Phase 8).
+4. ~~Add a licences folder with the full third-party texts to the installer~~ — done in 0.9.0
+   (`packaging/licences`, installed to `{app}\licences`).
+6. Have the EULA draft (`packaging/windows/EULA.txt`) and the privacy policy draft
+   (`PRIVACY.md`) reviewed by counsel; fill in the publisher's legal name and address.
 5. Fonts and icons: none bundled yet; any added must be audited here first.

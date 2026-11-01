@@ -98,7 +98,10 @@ jobs:
         # build uses the development key and says so in Help › Licence.
         env:
           LICENCE_PUBLIC_KEY: ${{ vars.ACESTUDIO_LICENCE_PUBLIC_KEY }}
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DACESTUDIO_WARNINGS_AS_ERRORS=ON "-DACESTUDIO_LICENCE_PUBLIC_KEY=${{ env.LICENCE_PUBLIC_KEY }}"
+        shell: pwsh
+        run: |
+          if (-not $env:LICENCE_PUBLIC_KEY) { Write-Host "::warning::No ACESTUDIO_LICENCE_PUBLIC_KEY repository variable: this build accepts licence keys signed with the public development key. Set it before any release." }
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DACESTUDIO_WARNINGS_AS_ERRORS=ON "-DACESTUDIO_LICENCE_PUBLIC_KEY=${{ env.LICENCE_PUBLIC_KEY }}"
       - name: Build
         shell: pwsh
         run: |
