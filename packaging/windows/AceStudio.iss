@@ -44,6 +44,9 @@ WizardStyle=modern
 ChangesAssociations=yes
 CloseApplications=yes
 RestartApplications=no
+; AceStudio holds this mutex while it runs, so Setup and the uninstaller ask
+; for it to be closed (on the test PC the uninstaller ran with AceStudio open).
+AppMutex=AceGears.AceStudio.Running
 UninstallDisplayIcon={app}\AceStudio.exe
 UninstallDisplayName=AceStudio {#AppVersion}
 ; Branding: the AceStudio logo (app/resources/branding), unmodified, at each DPI.

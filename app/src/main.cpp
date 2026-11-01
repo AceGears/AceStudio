@@ -10,6 +10,12 @@
 #include "acestudio/core/Log.h"
 #include "acestudio/core/Version.h"
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 #include <QApplication>
 #include <QDir>
 #include <QFileInfo>
@@ -64,6 +70,12 @@ int main(int argc, char* argv[]) {
         }
     if (!auditReport.isEmpty()) QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);   // so the audit can close them
     QApplication app(argc, argv);
+#ifdef _WIN32
+    // Held for the life of the process: the installer's AppMutex, so Setup
+    // and the uninstaller ask to close AceStudio first. The handle is never
+    // closed; Windows releases it when the process ends.
+    (void)CreateMutexW(nullptr, FALSE, L"AceGears.AceStudio.Running");
+#endif
     QApplication::setApplicationName(QStringLiteral("AceStudio"));
     QApplication::setOrganizationName(QStringLiteral("AceStudio"));
     QApplication::setApplicationVersion(QString::fromLatin1(kVersionString));
