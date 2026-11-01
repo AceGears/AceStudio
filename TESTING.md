@@ -43,8 +43,54 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 | `tests/mcp/` (CI, Windows) | end-to-end | conformance suite 0.2.0-alpha.12, every scenario and each spec version, no baseline; Python SDK 2.3.0 (auto, 2026-07-28, legacy) and TypeScript SDK 1.32.2 over stdio and HTTP; the app bridge over a named pipe |
 | `tests/engine/` | end-to-end (manual) | Godot 4 headless and Unity imports of the engine fixture |
 | `cli_smoke` | end-to-end | every CLI command, JSON output, exit codes, overwrite protection, corrupt-file handling |
+| `test_regression` | regression | projects written by 0.1.0, 0.5.0 and 0.8.1 (`tests/data/compat`) open and render identically; golden renders of blend modes, adjustments/masks/clipping, onion skin and the packed sheet with its JSON (`tests/data/golden`) |
+| `test_fuzz_regressions` | regression | every input the fuzzers found (`tests/fuzz/regressions`) |
+| `test_licence` | unit | Ed25519 against RFC 8032 vectors, key format, tampering, expiry, trial start (earliest of file and registry), read-only after the trial |
+| `ui_audit` | end-to-end (app, offscreen) | every menu command runs; every window it opens has a name for each control and keyboard access; background autosave writes and removes recovery files |
+| `perf_budget` | performance | `acestudio_bench` medians against `bench/perf_budgets.json` (optimised builds only) |
+| `tests/fuzz` | fuzzing (manual) | libFuzzer + ASan/UBSan targets for projects, PNG, GIF, APNG, WebP, palettes, licence keys, Lua, MCP (SECURITY.md) |
+| Installer test (CI, Windows) | end-to-end | silent per-user install, files and association, CLI from the install folder, AI setup with the bundled Python, silent uninstall keeping user data |
 
 ## Recorded results
+
+### 2026-11-01 — Phase 8, version 0.9.0
+
+| Environment | Build | Result |
+|---|---|---|
+| Linux, GCC 13.3, Qt 6.4.2 | everything, Release | ✅ 269/269 CTest, including `ui_audit` (136 commands, 55 windows, 689 controls, 0 unnamed, 0 unreachable; autosave checked) and `perf_budget` |
+| Linux, clang 18, AddressSanitizer + LeakSanitizer | all core tests | ✅ 251 test cases, no errors or leaks |
+| Linux, clang 18, ThreadSanitizer | core tests except the Python-worker ones | ✅ 234 test cases, no data races (copy-on-write images, parallel compositing and cel compression) |
+| Windows CI (MSVC `/W4 /WX`, Qt 6.12), packaged build | everything | see the CI rows below |
+
+**Fuzzing** (libFuzzer, ASan + UBSan, clang 18):
+- First pass: all nine targets, 10 minutes each from seed files (about 12 million inputs).
+- Second pass: GIF, MCP, WebP, Lua, PNG and APNG, 10 more minutes each on the grown corpus.
+- Then the new GIF decoder: 20 minutes with 4 workers, which found finding 6, and after that
+  fix 20 more minutes with 4 workers (391,286 inputs) with no findings.
+
+Six findings were fixed (SECURITY.md); each crashing input is now a regression test.
+
+**Benchmarks** (median ms; `acestudio_bench`):
+
+| Benchmark | VM 2 vCPU, GCC, before | VM after | Linux CI 4 vCPU, GCC | Windows CI, MSVC |
+|---|---|---|---|---|
+| composite 1024², 20 layers | 58–68 | 34–44 | 28.6 | 33.2 |
+| composite 256², 20 layers | 4.4 | 2.2–2.9 | 1.8 | 2.4 |
+| onion skin 1+1 (uncached), 1024² | 132–168 | 102–109 | 77.9 | 98.2 |
+| stroke 200 px + commit, 1024² | 1.7 | 0.8 | 0.29 | 1.43 |
+| project save, 160 cels of 1024² | 1920 | 1057–1270 | 880 | 715 |
+| project load, same | 1488 | 474–498 | 333 | 434 |
+| autosave cost on the UI thread, same | 1100–1300 (synchronous save) | 0.01 (snapshot) | 0.01 | 0.014 |
+| GIF / APNG / WebP encode, 16 × 256² | not changed | 48 / 38 / 76 | 33 / 31 / 64 | 53 / 37 / 111 |
+
+"Before" was measured on the idle VM with this benchmark built against the previous code for
+each change: the blend loops, serial cel coding, and deep image copies.
+
+**Golden and old-file checks:**
+- 0.5.0 and 0.8.1 projects render identically.
+- In the 0.1.0 project, pixels differ only under group content: the documented 0.2.0 change
+  to isolated groups. Everything else matches.
+
 
 ### 2026-11-01 — Phase 7 pass, version 0.8.1
 
