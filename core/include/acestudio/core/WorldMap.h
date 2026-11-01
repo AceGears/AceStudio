@@ -11,11 +11,14 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace acestudio::world {
 
 struct TileSheet {
+    TileSheet() = default;
+    TileSheet(std::string n, Image img, int w, int h) : name(std::move(n)), image(std::move(img)), tileW(w), tileH(h) {}
     std::string name;
     Image image;
     int tileW = 16, tileH = 16;
