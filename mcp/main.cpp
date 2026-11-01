@@ -58,7 +58,8 @@ const char* kInstructions =
 // them to subscribers.
 class Hub {
 public:
-    using Listener = std::function<void(const std::string& uri)>;
+    // A changed resource (uri), or a task status change (task, uri empty).
+    using Listener = std::function<void(const std::string& uri, const json& task)>;
     int add(Listener l) {
         std::lock_guard lk(m_mutex);
         m_listeners[++m_next] = std::move(l);
@@ -74,7 +75,15 @@ public:
             std::lock_guard lk(m_mutex);
             for (auto& [k, l] : m_listeners) ls.push_back(l);
         }
-        for (auto& l : ls) l(uri);
+        for (auto& l : ls) l(uri, json());
+    }
+    void taskChanged(const json& task) {
+        std::vector<Listener> ls;
+        {
+            std::lock_guard lk(m_mutex);
+            for (auto& [k, l] : m_listeners) ls.push_back(l);
+        }
+        for (auto& l : ls) l(std::string(), task);
     }
 
 private:
@@ -224,7 +233,7 @@ bool isSlow(const std::string& method) { return method == "tools/call" || method
 class StdioTransport {
 public:
     StdioTransport(McpServer& s, Hub& hub, BridgeWatcher& watcher) : m_server(s), m_hub(hub), m_watcher(watcher) {
-        m_hubId = m_hub.add([this](const std::string& uri) { onChanged(uri); });
+        m_hubId = m_hub.add([this](const std::string& uri, const json& task) { onChanged(uri, task); });
     }
     ~StdioTransport() { m_hub.remove(m_hubId); }
 
@@ -294,9 +303,17 @@ public:
         }
         // stdin closed: let running calls finish (the client may still read
         // their results), end subscriptions gracefully.
-        std::unique_lock lk(m_mutex);
-        m_done.wait(lk, [this] { return m_active == 0; });
-        for (auto& [k, sub] : m_subs) send(m_server.listenClosed(sub));
+        {
+            std::unique_lock lk(m_mutex);
+            m_done.wait(lk, [this] { return m_active == 0; });
+            for (auto& [k, sub] : m_subs) send(m_server.listenClosed(sub));
+        }
+        // Tasks keep running (up to their TTL) so that a client that comes
+        // back, through a new acestudio-mcp, still gets their results.
+        if (m_server.activeTasks() > 0) {
+            std::fprintf(stderr, "acestudio-mcp: waiting for %d task(s) to finish\n", m_server.activeTasks());
+            (void)m_server.waitForTasks(std::chrono::hours(1));
+        }
         return 0;
     }
 
@@ -330,12 +347,16 @@ private:
         for (const auto& u : uris)
             if (isAppUri(u)) m_watcher.want();
     }
-    void onChanged(const std::string& uri) {
+    void onChanged(const std::string& uri, const json& task) {
         std::vector<json> out;
         {
             std::lock_guard lk(m_mutex);
             for (auto& [k, sub] : m_subs)
-                if (auto n = McpServer::updateFor(sub, uri)) out.push_back(*n);
+                if (auto n = task.is_null() ? McpServer::updateFor(sub, uri) : McpServer::taskUpdateFor(sub, task)) out.push_back(*n);
+        }
+        if (!task.is_null()) {
+            for (auto& n : out) send(n);
+            return;
         }
         {
             std::lock_guard lk(m_connMutex);
@@ -483,8 +504,8 @@ class HttpTransport : public QObject {
 public:
     HttpTransport(McpServer& s, Hub& hub, BridgeWatcher& watcher, std::string token, QObject* parent)
         : QObject(parent), m_server(s), m_hub(hub), m_watcher(watcher), m_token(std::move(token)) {
-        m_hubId = m_hub.add([this](const std::string& uri) {
-            QMetaObject::invokeMethod(this, [this, uri] { onChanged(uri); }, Qt::QueuedConnection);
+        m_hubId = m_hub.add([this](const std::string& uri, const json& task) {
+            QMetaObject::invokeMethod(this, [this, uri, task] { onChanged(uri, task); }, Qt::QueuedConnection);
         });
         connect(&m_keepAlive, &QTimer::timeout, this, [this] {
             for (auto& [sock, sub] : m_listens)
@@ -604,10 +625,11 @@ private:
         }
     }
 
-    void onChanged(const std::string& uri) {
+    void onChanged(const std::string& uri, const json& task) {
         for (auto& [sock, sub] : m_listens)
             if (sock)
-                if (auto n = McpServer::updateFor(sub, uri)) sock->write(event(*n));
+                if (auto n = task.is_null() ? McpServer::updateFor(sub, uri) : McpServer::taskUpdateFor(sub, task)) sock->write(event(*n));
+        if (!task.is_null()) return;
         for (auto& [sid, sess] : m_sessions)
             if (sess.stream)
                 if (auto n = McpServer::legacyUpdateFor(*sess.conn, uri)) sess.stream->write(event(*n));
@@ -853,6 +875,7 @@ int usage(const char* why) {
                  "  Tools may use files inside the --root folders only (default: the current folder).\n"
                  "  Protocol: MCP 2026-07-28, and 2025-11-25 / 2025-06-18 / 2025-03-26 / 2024-11-05 via initialize.\n"
                  "  --print-config claude-code|cursor|vscode|codex   print a client setup for this executable\n"
+                 "  --task-dir DIR   keep MCP tasks here (default: <user data>/mcp-tasks); --no-task-files: memory only\n"
                  "  --conformance-fixtures   (testing) add the MCP conformance suite's fixtures\n");
     return 1;
 }
@@ -865,6 +888,8 @@ int main(int argc, char** argv) {
     std::optional<int> httpPort;
     bool fixtures = false;   // test only: the conformance suite's fixtures
     std::string token;
+    std::optional<fs::path> taskDir;
+    bool taskFiles = true;
     if (qEnvironmentVariableIsSet("ACESTUDIO_MCP_TOKEN")) token = qEnvironmentVariable("ACESTUDIO_MCP_TOKEN").toStdString();
     QHostAddress host(QHostAddress::LocalHost);
     for (int i = 1; i < argc; ++i) {
@@ -897,6 +922,12 @@ int main(int argc, char** argv) {
             auto v = next();
             if (!v || v->empty()) return usage("--token needs a value");
             token = *v;
+        } else if (a == "--task-dir") {
+            auto v = next();
+            if (!v) return usage("--task-dir needs a folder");
+            taskDir = fs::path(std::u8string(v->begin(), v->end()));
+        } else if (a == "--no-task-files") {
+            taskFiles = false;
         } else if (a == "--conformance-fixtures") {
             fixtures = true;
         } else if (a == "--print-config") {
@@ -950,6 +981,13 @@ int main(int argc, char** argv) {
         for (auto& t : f.templates) content.templates.push_back(std::move(t));
     }
     McpServer server(id, std::move(content.tools), std::move(content.prompts), std::move(content.resources), std::move(content.templates));
+    // Tasks outlive the process in the user's data folder (mcp-tasks).
+    if (taskFiles) {
+        if (!taskDir)
+            if (auto d = userDataDir()) taskDir = d.value() / "mcp-tasks";
+        if (taskDir) server.setTaskDirectory(*taskDir);
+    }
+    server.setTaskObserver([&hub](const json& task) { hub.taskChanged(task); });
 
     if (httpPort) {
         HttpTransport http(server, hub, watcher, token, &app);

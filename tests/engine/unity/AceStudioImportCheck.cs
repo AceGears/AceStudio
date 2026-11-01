@@ -5,8 +5,8 @@
 // everything it writes <project>/acestudio_unity_report.json: every sprite
 // Unity made from AceStudio's .meta files (name, rect, border, pivot, pixels
 // per unit), the import settings, and every AnimationClip's sprite keys.
-// It also paints the fixture's level map (map.json) with AceStudio's Rule
-// Tiles (needs com.unity.2d.tilemap.extras) and records the sprite Unity
+// It also paints the fixture's level map (map.json) with AceStudio's tiles
+// (autotiles, Rule Tiles, the Wang16 dual grid) and records the sprite Unity
 // chose for every cell.
 // tests/engine/compare_unity.py compares the report with AceStudio's files.
 // Menu: AceStudio > Write Import Report (to run it again).
@@ -117,67 +117,135 @@ public static class AceStudioImportCheck
 
     // Paints map.json's levels like a user would: level 1 (or the base tile)
     // on one Tilemap, level 2 on another; map row y goes to Unity row -y.
+    // AceStudio's own autotiles and the Rule Tiles for Blob47 / Cardinal16,
+    // AceStudioDualGrid for Wang16.
     static void Paint(StringBuilder sb)
     {
         string mapPath = Path.Combine(Folder, "map.json");
         if (!File.Exists(mapPath)) { sb.Append("null"); return; }
         var map = JsonUtility.FromJson<LevelMapJson>(File.ReadAllText(mapPath));
         sb.Append('{');
-        bool firstScheme = true;
+        bool first = true;
         foreach (var scheme in new[] { "blob47", "cardinal16" })
-        {
-            if (!firstScheme) sb.Append(',');
-            firstScheme = false;
-            sb.Append(Q(scheme)).Append(':');
-            var baseTile = AssetDatabase.LoadAssetAtPath<TileBase>(Folder + "/" + scheme + "_base.asset");
-            var rule1 = AssetDatabase.LoadAssetAtPath<TileBase>(Folder + "/" + scheme + "_level1.asset");
-            var rule2 = AssetDatabase.LoadAssetAtPath<TileBase>(Folder + "/" + scheme + "_level2.asset");
-            if (baseTile == null || rule1 == null || rule2 == null)
+            foreach (var suffix in new[] { "", "_ruletile" })
             {
-                sb.Append("{\"error\":").Append(Q("could not load the tiles (is com.unity.2d.tilemap.extras installed?)")).Append('}');
-                continue;
+                if (!first) sb.Append(',');
+                first = false;
+                sb.Append(Q(scheme + suffix)).Append(':');
+                PaintCells(sb, map, scheme, suffix);
             }
-            var grid = new GameObject("AceStudioCheckGrid", typeof(Grid));
-            try
+        sb.Append(",\"wang16\":");
+        PaintWang(sb, map);
+        sb.Append('}');
+    }
+
+    static void PaintCells(StringBuilder sb, LevelMapJson map, string scheme, string suffix)
+    {
+        var baseTile = AssetDatabase.LoadAssetAtPath<TileBase>(Folder + "/" + scheme + "_base.asset");
+        var rule1 = AssetDatabase.LoadAssetAtPath<TileBase>(Folder + "/" + scheme + "_level1" + suffix + ".asset");
+        var rule2 = AssetDatabase.LoadAssetAtPath<TileBase>(Folder + "/" + scheme + "_level2" + suffix + ".asset");
+        if (baseTile == null || rule1 == null || rule2 == null)
+        {
+            sb.Append("{\"error\":").Append(Q("could not load the tiles")).Append('}');
+            return;
+        }
+        var grid = new GameObject("AceStudioCheckGrid", typeof(Grid));
+        try
+        {
+            var layers = new Tilemap[2];
+            for (int l = 0; l < 2; ++l)
             {
-                var layers = new Tilemap[2];
-                for (int l = 0; l < 2; ++l)
+                var go = new GameObject("Level" + (l + 1), typeof(Tilemap));
+                go.transform.SetParent(grid.transform);
+                layers[l] = go.GetComponent<Tilemap>();
+            }
+            for (int y = 0; y < map.h; ++y)
+                for (int x = 0; x < map.w; ++x)
                 {
-                    var go = new GameObject("Level" + (l + 1), typeof(Tilemap));
-                    go.transform.SetParent(grid.transform);
-                    layers[l] = go.GetComponent<Tilemap>();
+                    int level = map.levels[y * map.w + x];
+                    var cell = new Vector3Int(x, -y, 0);
+                    layers[0].SetTile(cell, level >= 1 ? rule1 : baseTile);
+                    if (level >= 2) layers[1].SetTile(cell, rule2);
                 }
+            sb.Append("{\"ruleType\":").Append(Q(rule1.GetType().FullName)).Append(",\"levels\":[");
+            for (int l = 0; l < 2; ++l)
+            {
+                layers[l].RefreshAllTiles();
+                if (l > 0) sb.Append(',');
+                sb.Append('[');
                 for (int y = 0; y < map.h; ++y)
                     for (int x = 0; x < map.w; ++x)
                     {
-                        int level = map.levels[y * map.w + x];
-                        var cell = new Vector3Int(x, -y, 0);
-                        layers[0].SetTile(cell, level >= 1 ? rule1 : baseTile);
-                        if (level >= 2) layers[1].SetTile(cell, rule2);
+                        if (y > 0 || x > 0) sb.Append(',');
+                        var sprite = layers[l].GetSprite(new Vector3Int(x, -y, 0));
+                        sb.Append(sprite ? Q(sprite.name) : "null");
                     }
-                sb.Append("{\"ruleType\":").Append(Q(rule1.GetType().FullName)).Append(",\"levels\":[");
-                for (int l = 0; l < 2; ++l)
-                {
-                    layers[l].RefreshAllTiles();
-                    if (l > 0) sb.Append(',');
-                    sb.Append('[');
-                    for (int y = 0; y < map.h; ++y)
-                        for (int x = 0; x < map.w; ++x)
-                        {
-                            if (y > 0 || x > 0) sb.Append(',');
-                            var sprite = layers[l].GetSprite(new Vector3Int(x, -y, 0));
-                            sb.Append(sprite ? Q(sprite.name) : "null");
-                        }
-                    sb.Append(']');
-                }
-                sb.Append("]}");
+                sb.Append(']');
             }
-            finally
-            {
-                Object.DestroyImmediate(grid);
-            }
+            sb.Append("]}");
         }
-        sb.Append('}');
+        finally
+        {
+            Object.DestroyImmediate(grid);
+        }
+    }
+
+    // Wang16 on the dual grid: AceStudio's corner tile (i, j) shows at
+    // display cell (i, 1 - j). Read once as painted (incremental updates)
+    // and once after Rebuild().
+    static void PaintWang(StringBuilder sb, LevelMapJson map)
+    {
+        var sets = new AceStudio.AceStudioWangSet[2];
+        for (int l = 0; l < 2; ++l)
+            sets[l] = AssetDatabase.LoadAssetAtPath<AceStudio.AceStudioWangSet>(Folder + "/wang16_level" + (l + 1) + ".asset");
+        if (sets[0] == null || sets[1] == null)
+        {
+            sb.Append("{\"error\":").Append(Q("could not load the Wang sets")).Append('}');
+            return;
+        }
+        var grid = new GameObject("AceStudioCheckGrid", typeof(Grid));
+        try
+        {
+            sb.Append("{\"setType\":").Append(Q(sets[0].GetType().FullName)).Append(",\"levels\":[");
+            for (int l = 0; l < 2; ++l)
+            {
+                var go = new GameObject("Level" + (l + 1), typeof(Tilemap), typeof(TilemapRenderer));
+                go.transform.SetParent(grid.transform);
+                var dual = go.AddComponent<AceStudio.AceStudioDualGrid>();
+                dual.wangSet = sets[l];
+                dual.Rebuild();
+                var cells = go.GetComponent<Tilemap>();
+                for (int y = 0; y < map.h; ++y)
+                    for (int x = 0; x < map.w; ++x)
+                        cells.SetTile(new Vector3Int(x, -y, 0), map.levels[y * map.w + x] >= l + 1 ? sets[l].terrain : sets[l].ground);
+                if (l > 0) sb.Append(',');
+                sb.Append("{\"painted\":");
+                ReadDisplay(sb, dual.Display, map);
+                dual.Rebuild();
+                sb.Append(",\"rebuilt\":");
+                ReadDisplay(sb, dual.Display, map);
+                var offset = dual.Display.transform.localPosition;
+                sb.Append(",\"offset\":[").Append(F(offset.x)).Append(',').Append(F(offset.y)).Append("]}");
+            }
+            sb.Append("]}");
+        }
+        finally
+        {
+            Object.DestroyImmediate(grid);
+        }
+    }
+
+    static void ReadDisplay(StringBuilder sb, Tilemap display, LevelMapJson map)
+    {
+        sb.Append('[');
+        for (int j = 0; j <= map.h; ++j)
+            for (int i = 0; i <= map.w; ++i)
+            {
+                if (i > 0 || j > 0) sb.Append(',');
+                var sprite = display.GetSprite(new Vector3Int(i, 1 - j, 0));
+                sb.Append(sprite ? Q(sprite.name) : "null");
+            }
+        sb.Append(']');
     }
 
     [System.Serializable]

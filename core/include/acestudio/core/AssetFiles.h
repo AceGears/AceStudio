@@ -27,8 +27,12 @@ enum EngineTarget : unsigned {
     kEngineGodot = 1,
     kEngineUnity = 2,
     kEngineTiled = 4,
+    // Also Unity Rule Tiles (needs com.unity.2d.tilemap.extras) for Blob47
+    // and Cardinal16; implies kEngineUnity.
+    kEngineUnityRuleTiles = 8,
 };
-// "godot", "unity", "tiled", comma separated, or "all" / "none".
+// "godot", "unity", "unity-rule-tiles", "tiled", comma separated, or "all" /
+// "none" ("all" leaves out Rule Tiles).
 Result<unsigned> parseEngineTargets(const std::string& list);
 
 struct AssetWriteOptions {

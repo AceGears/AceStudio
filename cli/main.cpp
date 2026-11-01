@@ -60,6 +60,7 @@ const char* kUsageText =
     "                                  --scheme blob47|wang16|cardinal16 --tile 16 --phases 1..4\n"
     "                                  --roundness 1 --noise 0.3 --noise-scale 4 --seed 1 --no-outline\n"
     "                                  --names base,level1,... --engines godot,unity,tiled --ppu N\n"
+    "                                  (unity-rule-tiles: also Unity Rule Tiles, for 2D Tilemap Extras)\n"
     "  seams <tiles.png> --scheme S [--phases N] [--base base.png]\n"
     "                                  Seam check of a tileset (exit 3 when there are seams)\n"
     "  tileset-template --scheme S --tile N --out t.png\n"

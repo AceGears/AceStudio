@@ -8,8 +8,9 @@
 //              9-slice UI elements.
 //   Unity      TextureImporter .meta files that slice a sheet into named
 //              sprites (with 9-slice borders and pivots), AnimationClip
-//              (.anim) files per animation, and Rule Tiles (2D Tilemap
-//              Extras) for Blob47 and Cardinal16 tilesets.
+//              (.anim) files per animation, autotiles for every scheme
+//              (AceStudio's own scripts, no package), and optionally Rule
+//              Tiles (2D Tilemap Extras) for Blob47 and Cardinal16.
 //   Tiled      .tsx tilesets with Wang sets for the terrain brush, and .tsx
 //              tilesets with tile animations for grid sprite sheets.
 //
@@ -97,6 +98,24 @@ std::string unityTextureMeta(const EngineSheet& sheet, const std::string& guid, 
 std::string unityAnimationClip(const EngineSheet& sheet, std::size_t animation, const std::string& textureGuid);
 // A plain .meta for a generated asset (the .anim), so Unity keeps its GUID.
 std::string unityAssetMeta(const std::string& guid, std::int64_t mainObjectFileId);
+
+// AceStudio's own Unity tile scripts (core/unity/*.cs), written next to
+// tilesets so the tiles need no package: AceStudioAutoTile (Blob47,
+// Cardinal16), AceStudioWangSet and AceStudioDualGrid (Wang16).
+struct UnityScript {
+    std::string file;   // "AceStudioAutoTile.cs"
+    std::string guid;   // fixed, so assets find the script wherever it is
+    std::string text;
+};
+const std::vector<UnityScript>& unityTileScripts();
+std::string unityScriptMeta(const std::string& guid);
+// An AceStudioAutoTile asset for a Blob47 or Cardinal16 level (empty for
+// Wang16). Sprites are `spriteStem_<k>` of `textureGuid`; phase 0 only.
+std::string unityAutoTile(const Tileset& t, const std::string& name, const std::string& spriteStem, const std::string& textureGuid);
+// An AceStudioWangSet asset for a Wang16 level, holding its 16 corner tiles
+// and the terrain and ground tiles to paint with as sub-assets (empty for
+// other schemes).
+std::string unityWangSet(const Tileset& t, const std::string& name, const std::string& spriteStem, const std::string& textureGuid);
 
 // The RuleTile script of com.unity.2d.tilemap.extras (RuleTile.cs.meta).
 inline constexpr const char* kUnityRuleTileScriptGuid = "9d1514134bc4fbd41bb739b1b9a49231";

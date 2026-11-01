@@ -138,8 +138,8 @@ not been run.
 ### MCP server
 - No SSE stream resumption (`Last-Event-ID`). It is optional in 2025-11-25 and removed in
   2026-07-28. A dropped HTTP stream cancels its tool call (tasks keep running; poll them).
-- Tasks live in memory: they end with the server process. The server sends no
-  `notifications/tasks`; clients poll `tasks/get` (both are allowed by the extension).
+- A task cannot continue in another process: if the server that runs it is killed, the task
+  reads as failed (its result is kept when it finished first).
 - Each tool call starts `acestudio-cli`, so the CLI and the server never disagree. That costs
   a median of 2.8 ms per `info` call on the Linux build machine; Windows was not timed
   separately.
@@ -156,8 +156,10 @@ not been run.
   the document while it runs (run it again to apply it).
 
 ### Engine export
-- Unity: Rule Tiles need the 2D Tilemap Extras package. Wang16 (a dual grid) gets no Rule
-  Tile, and Rule Tiles use phase variant 0 only. Tile Palettes are not generated.
+- Unity: the tiles use phase variant 0 only, and Tile Palettes are not generated. The optional
+  Rule Tiles need 2D Tilemap Extras and cover Blob47 and Cardinal16 only; Wang16 uses
+  AceStudio's dual grid. AceStudio's tile scripts use only Unity's built-in Tilemap module;
+  they were checked in a project that also had Tilemap Extras installed.
 - Tiled: sprite sheets get a `.tsx` with tile animations only when untrimmed and on a grid
   (horizontal, vertical or grid layout). The `.tsx` files were checked by tests, not loaded in
   Tiled itself.

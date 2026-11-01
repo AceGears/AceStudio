@@ -141,7 +141,10 @@ The 0.8.1 pass removed the 0.8.0 limits: MCP now passes conformance 0.2.0-alpha.
 (228/228, tasks extension included) with prompts, resources, templates, completions,
 elicitation and live document notifications; Lua counts images against the memory limit
 and has `require`; Unity gets Rule Tiles (all 560 painted cells match in Unity 6000.6.7f1);
-Claude Code was run against the printed setup.
+Claude Code was run against the printed setup. A last pass made MCP tasks outlive the
+server (task files, cross-process cancel and answers, status notifications) and gave Unity
+package-free tiles for every scheme, including the Wang16 dual grid (1780 painted cells match
+in Unity).
 
 
 | Criterion | Status |

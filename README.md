@@ -47,7 +47,9 @@ AI-assisted game asset creation and 2D animation studio for Windows.
   - Smart Slicer and a deterministic atlas packer.
 - **Game engines:**
   - Godot 4: SpriteFrames, TileSet terrains and StyleBoxTexture `.tres` files.
-  - Unity: sprite `.meta` files with borders and pivots, and `.anim` clips.
+  - Unity: sprite `.meta` files with borders and pivots, `.anim` clips, and tiles that paint like
+    AceStudio for every scheme, the Wang16 dual grid included (no package needed; Rule Tiles
+    optional).
   - Tiled: `.tsx` Wang sets.
   - Choose them in the Export, Tileset, UI kit and Atlas dialogs, the CLI (`--engines`), Lua or MCP.
 - **Lua scripting:** sandboxed Lua 5.4 with the `ace` API (images, documents, every asset
@@ -160,7 +162,8 @@ claude mcp add --transport stdio --scope user acestudio -- "C:\path\to\AceStudio
   unless the assistant asks to overwrite.
 - **What it offers.** 18 tools, resources (the Lua API reference, the app's open document and
   its frame as PNG, project files through URI templates), prompts and completions. Long AI
-  jobs run as MCP tasks for clients that support them. Before replacing a file, the tools ask
+  jobs run as MCP tasks for clients that support them; tasks are kept in your data folder,
+  so their results survive a restart of the server. Before replacing a file, the tools ask
   you through the client.
 - **The open document.** `app_documents`, `app_document`, `app_run_lua` and `app_open_file`
   work with the documents open in a running AceStudio, and clients can subscribe to changes. Each change is one Edit › Undo step. Turn this off with

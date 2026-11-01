@@ -9,8 +9,10 @@ The report comes from tests/engine/unity/AceStudioImportCheck.cs. Checked:
     9-slice borders, pivots, pixels per unit);
   * the rects are the JSON frames flipped to Unity's bottom-left origin;
   * every .anim became a clip whose sprite keys, length and loop flag match;
-  * painting map.json with AceStudio's Rule Tiles (Blob47, Cardinal16) puts
-    the same tile in every cell as AceStudio's own placement.
+  * painting map.json with AceStudio's tiles puts the same tile in every
+    cell as AceStudio's own placement: its autotiles and the Rule Tiles for
+    Blob47 and Cardinal16, and the dual grid (AceStudioDualGrid) for Wang16,
+    both as painted and after a rebuild.
 Exit 1 with a list of problems if anything differs.
 """
 import json
@@ -139,28 +141,41 @@ for anim in sorted(f for f in os.listdir(fixture) if f.endswith(".anim")):
     if c["loop"] != loop:
         problem(f"{anim}: loop {c['loop']} in Unity, {loop} in the .anim")
 
-# Rule Tiles: Unity's choice per cell against AceStudio's placement.
+# Painted tiles: Unity's choice per cell against AceStudio's placement.
 checked["cells"] = 0
 level_map = json.load(open(os.path.join(fixture, "map.json"), encoding="utf-8"))
 paint = report.get("paint") or {}
 for scheme, cols in (("blob47", 8), ("cardinal16", 4)):
-    got = paint.get(scheme)
-    if not got or "error" in got:
-        problem(f"{scheme}: no Rule Tile paint result ({(got or {}).get('error', 'missing')})")
-        continue
-    if not got.get("ruleType", "").endswith("RuleTile"):
-        problem(f"{scheme}: the tile asset loaded as {got.get('ruleType')}, not a RuleTile")
-    for li, (unity_cells, want_cells) in enumerate(zip(got["levels"], level_map["expected"][scheme])):
-        for i, (u, (src, c, r)) in enumerate(zip(unity_cells, want_cells)):
-            if src < 0:
-                want = None
-            elif src == 0:
-                want = f"{scheme}_base"
-            else:
-                want = f"{scheme}_level{src}_{r * cols + c}"
-            checked["cells"] += 1
-            if u != want:
-                problem(f"{scheme} level {li + 1} cell ({i % level_map['w']}, {i // level_map['w']}): Unity drew {u}, AceStudio places {want}")
+    for suffix, want_type in (("", "AceStudio.AceStudioAutoTile"), ("_ruletile", "UnityEngine.RuleTile")):
+        got = paint.get(scheme + suffix)
+        if not got or "error" in got:
+            problem(f"{scheme}{suffix}: no paint result ({(got or {}).get('error', 'missing')})")
+            continue
+        if got.get("ruleType") != want_type:
+            problem(f"{scheme}{suffix}: the tile asset loaded as {got.get('ruleType')}, not {want_type}")
+        for li, (unity_cells, want_cells) in enumerate(zip(got["levels"], level_map["expected"][scheme])):
+            for i, (u, (src, c, r)) in enumerate(zip(unity_cells, want_cells)):
+                want = None if src < 0 else f"{scheme}_base" if src == 0 else f"{scheme}_level{src}_{r * cols + c}"
+                checked["cells"] += 1
+                if u != want:
+                    problem(f"{scheme}{suffix} level {li + 1} cell ({i % level_map['w']}, {i // level_map['w']}): "
+                            f"Unity drew {u}, AceStudio places {want}")
+wang = paint.get("wang16")
+if not wang or "error" in wang:
+    problem(f"wang16: no paint result ({(wang or {}).get('error', 'missing')})")
+else:
+    if wang.get("setType") != "AceStudio.AceStudioWangSet":
+        problem(f"wang16: the Wang set loaded as {wang.get('setType')}")
+    cols = level_map["w"] + 1
+    for li, (got, want_cells) in enumerate(zip(wang["levels"], level_map["expectedWang16"])):
+        if got["offset"] != [-0.5, -0.5]:
+            problem(f"wang16 level {li + 1}: the corner tiles sit at {got['offset']}, not half a cell down-left")
+        for how in ("painted", "rebuilt"):
+            for i, (u, k) in enumerate(zip(got[how], want_cells)):
+                want = None if k < 0 else f"wang16_level{li + 1}_{k}"
+                checked["cells"] += 1
+                if u != want:
+                    problem(f"wang16 level {li + 1} ({how}) corner ({i % cols}, {i // cols}): Unity drew {u}, AceStudio places {want}")
 
 print(f"Unity {report.get('unity')}: {checked['textures']} textures, {checked['sprites']} sprites, "
       f"{checked['clips']} clips, {checked['keys']} keys, {checked['cells']} painted cells checked")

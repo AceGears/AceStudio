@@ -5,7 +5,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <fstream>
+#include <mutex>
 #include <thread>
 
 using namespace acestudio;
@@ -524,4 +527,83 @@ TEST_CASE("MCP tasks extension (io.modelcontextprotocol/tasks)", "[mcp]") {
     auto failed = waitFor(s, c, tasks, bad, "failed");
     CHECK(failed["error"]["code"] == -32603);
     CHECK_FALSE(failed.contains("result"));
+}
+
+TEST_CASE("MCP tasks survive restarts and work across processes", "[mcp]") {
+    TempDir dir;
+    const json caps{{"elicitation", json::object()}, {"extensions", {{kTasksExtension, json::object()}}}};
+    Connection c;
+    std::string done;
+    {
+        McpServer a = taskServer();
+        a.setTaskDirectory(dir.path());
+        std::vector<std::string> seen;
+        std::mutex m;
+        a.setTaskObserver([&](const json& t) {
+            std::lock_guard lk(m);
+            seen.push_back(t["status"]);
+        });
+        done = (*a.handle(modernWith(1, "tools/call", {{"name", "job"}}, caps), c))["result"]["taskId"];
+        REQUIRE(waitFor(a, c, caps, done, "input_required")["status"] == "input_required");
+        a.handle(modernWith(2, "tasks/update", {{"taskId", done}, {"inputResponses", {{"a", {{"content", {{"v", "x"}}}}}, {"b", {{"content", {{"v", "y"}}}}}}}}, caps), c);
+        REQUIRE(waitFor(a, c, caps, done, "completed")["status"] == "completed");
+        CHECK(a.waitForTasks(std::chrono::seconds(5)));
+        std::lock_guard lk(m);
+        CHECK(seen.front() == "working");
+        CHECK(std::find(seen.begin(), seen.end(), "input_required") != seen.end());
+        CHECK(seen.back() == "completed");
+    }
+    // A new server (a restart) still knows the finished task and its result.
+    McpServer b = taskServer();
+    b.setTaskDirectory(dir.path());
+    auto again = (*b.handle(modernWith(3, "tasks/get", {{"taskId", done}}, caps), c))["result"];
+    CHECK(again["status"] == "completed");
+    CHECK(again["result"]["content"][0]["text"] == "got xy");
+    CHECK(errorCode(b.handle(modernWith(4, "tasks/get", {{"taskId", "task-0000"}}, caps), c)) == code::kInvalidParams);
+    CHECK(errorCode(b.handle(modernWith(5, "tasks/get", {{"taskId", "../../etc/passwd"}}, caps), c)) == code::kInvalidParams);
+
+    // A task whose process stopped mid-way reads as failed.
+    {
+        json orphan{{"taskId", "task-00000001"}, {"owner", "deadbeefdeadbeef"}, {"status", "working"}, {"createdMs", 1}, {"updatedMs", 4102444800000LL - 3600000},
+                    {"ttlMs", 3600000}, {"pollIntervalMs", 500}, {"pending", json::object()}};
+        orphan["updatedMs"] = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        std::ofstream(dir.path() / "task-00000001.json") << orphan.dump();
+    }
+    auto orphan = (*b.handle(modernWith(6, "tasks/get", {{"taskId", "task-00000001"}}, caps), c))["result"];
+    CHECK(orphan["status"] == "failed");
+    CHECK(orphan["error"]["message"].get<std::string>().find("stopped") != std::string::npos);
+
+    // Two live servers on one folder: B sees A's task, answers it and cancels another.
+    McpServer a = taskServer();
+    a.setTaskDirectory(dir.path());
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));   // A's heartbeat
+    const std::string asking = (*a.handle(modernWith(7, "tools/call", {{"name", "job"}}, caps), c))["result"]["taskId"];
+    REQUIRE(waitFor(a, c, caps, asking, "input_required")["status"] == "input_required");
+    CHECK((*b.handle(modernWith(8, "tasks/get", {{"taskId", asking}}, caps), c))["result"]["inputRequests"].size() == 2);
+    auto ack = (*b.handle(modernWith(9, "tasks/update", {{"taskId", asking}, {"inputResponses", {{"a", {{"content", {{"v", "1"}}}}}, {"b", {{"content", {{"v", "2"}}}}}}}}, caps), c))["result"];
+    CHECK(ack["resultType"] == "complete");
+    json fromB;
+    for (int i = 0; i < 100; ++i) {
+        fromB = (*b.handle(modernWith(10, "tasks/get", {{"taskId", asking}}, caps), c))["result"];
+        if (fromB["status"] == "completed") break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    CHECK(fromB["status"] == "completed");
+    CHECK(fromB["result"]["content"][0]["text"] == "got 12");
+    const std::string spin = (*a.handle(modernWith(11, "tools/call", {{"name", "spin"}}, caps), c))["result"]["taskId"];
+    b.handle(modernWith(12, "tasks/cancel", {{"taskId", spin}}, caps), c);
+    CHECK(waitFor(a, c, caps, spin, "cancelled")["status"] == "cancelled");
+    CHECK(a.waitForTasks(std::chrono::seconds(5)));
+
+    // listen streams that ask for tasks get notifications/tasks.
+    auto l = a.listenRequest(modern(13, "subscriptions/listen", {{"notifications", {{"tasks", true}}}}));
+    REQUIRE(std::holds_alternative<McpServer::Listen>(l));
+    const auto& listen = std::get<McpServer::Listen>(l);
+    CHECK(listen.acknowledgement["params"]["notifications"]["tasks"] == true);
+    auto n = McpServer::taskUpdateFor(listen.sub, {{"taskId", spin}, {"status", "cancelled"}});
+    REQUIRE(n);
+    CHECK((*n)["method"] == "notifications/tasks");
+    CHECK((*n)["params"]["_meta"][meta::kSubscriptionId] == 13);
+    Subscription plain;
+    CHECK_FALSE(McpServer::taskUpdateFor(plain, {{"taskId", spin}}));
 }

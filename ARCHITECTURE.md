@@ -224,6 +224,10 @@ duplicate implementation of document logic, file formats or export in any front 
   `TaskStore`; `ask()` then parks the task as `input_required` until `tasks/update` brings
   the answers. A tool may gather input first and hand back `asyncWork`, which becomes the
   task (MRTR, then task).
+- **Durable tasks.** Every change is also written to `<task dir>/<taskId>.json`. The owner
+  refreshes `<instance>.alive` every second and picks up `<taskId>.cancel` and
+  `<taskId>.update-*.json` requests left by other processes. A task file whose owner has gone
+  quiet for 10 s reads as failed. A listen stream with `tasks` gets `notifications/tasks`.
   - The Python (dual-era) and TypeScript SDK clients over both transports.
   - CI runs them against the packaged Windows build.
 

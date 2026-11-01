@@ -42,9 +42,33 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
     the CLI.
   - Tiled `.tsx` with tile animations for untrimmed grid sprite sheets.
 
+- **MCP tasks outlive the server.** Each task is also kept in `<user data>/mcp-tasks`
+  (`--task-dir`, or `--no-task-files` for memory only):
+  - A restarted server, or a second acestudio-mcp sharing the folder, still answers `tasks/get`
+    with the status and result. A task whose server stopped mid-way reads as failed, with a
+    message, instead of being unknown.
+  - Another acestudio-mcp can answer (`tasks/update`) or cancel a task; the server running it
+    picks the request up within a second.
+  - When a stdio client goes away, the server finishes its running tasks (up to their TTL)
+    before it exits, so the results are kept.
+  - Expired task files are removed.
+- **Task status notifications.** A `subscriptions/listen` stream that asks for `tasks` gets
+  `notifications/tasks` (the DetailedTask) on every status change.
+- **Unity tiles without packages, for every scheme.** Exports now include AceStudio's own
+  scripts (`AceStudioAutoTile.cs`, `AceStudioWangSet.cs`, `AceStudioDualGrid.cs`, one copy per
+  project):
+  - Blob47 and Cardinal16 levels get an AceStudioAutoTile `.asset`.
+  - Wang16 levels get an AceStudioWangSet `.asset` (16 corner tiles plus terrain and ground
+    tiles to paint with) for the AceStudioDualGrid component. That component draws the dual grid
+    as AceStudio does and updates as you paint.
+  - Rule Tiles for 2D Tilemap Extras are now an option: `unity-rule-tiles`, or **+ Rule Tiles**
+    in the Tileset dialog.
+
 ### Testing
-- Unity 6000.6.7f1 with 2D Tilemap Extras 9.0.1 paints the fixture map with the Rule Tiles,
-  and every one of the 560 cells matches AceStudio's placement.
+- Unity 6000.6.7f1 (test PC) paints the fixture map with every kind of tile, and all 1780
+  cells match AceStudio's placement: AceStudio autotiles and Rule Tiles for Blob47 and
+  Cardinal16, and the Wang16 dual grid, both as painted and after a rebuild. No console
+  warnings.
 - Claude Code 2.1.316 loads the printed setup and reports the server as connected. Codex
   0.166.0 reads the printed `config.toml` (`codex mcp list/get`); starting a Codex session
   needs a sign-in, which was not done.

@@ -5,6 +5,8 @@
 #include <condition_variable>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <thread>
 #include <random>
@@ -311,6 +313,16 @@ std::optional<std::map<std::string, std::string>> matchUriTemplate(const std::st
 }
 
 // ------------------------------------------------------------------ tasks
+//
+// Tasks of this process live in memory and, when a task folder is set, in
+// <dir>/<taskId>.json too, rewritten on every change. That lets a restarted
+// server (or a second acestudio-mcp sharing the folder) answer tasks/get. The
+// owner process keeps <dir>/<instance>.alive fresh; a task whose owner stopped
+// before finishing reads as failed. Others ask the owner to cancel a task, or
+// pass it answers, through <taskId>.cancel and <taskId>.update-*.json files,
+// which the owner picks up within a second.
+
+namespace fs = std::filesystem;
 
 struct Task {
     std::string id;
@@ -331,9 +343,18 @@ struct Task {
 struct TaskStore {
     std::mutex m;
     std::map<std::string, std::shared_ptr<Task>> tasks;
+    fs::path dir;                      // empty: memory only
+    std::string instance;              // this process, for the .alive file
+    McpServer::TaskObserver observer;
+    int running = 0;                   // task threads still working
+    std::condition_variable idle;
+    std::thread watcher;
+    std::atomic<bool> stop{false};
 };
 
 namespace {
+
+constexpr long long kAliveMs = 10000;   // an owner that has not shown signs of life for this long has stopped
 
 long long nowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -353,7 +374,24 @@ std::string isoTime(long long ms) {
     return buf;
 }
 
+std::string randomHex(int words) {
+    std::random_device rd;
+    std::string out;
+    char buf[16];
+    for (int i = 0; i < words; ++i) {
+        std::snprintf(buf, sizeof buf, "%08x", rd());
+        out += buf;
+    }
+    return out;
+}
+
 bool terminal(const std::string& status) { return status == "completed" || status == "failed" || status == "cancelled"; }
+
+// Task ids are "task-" + hex; anything else is never a file name.
+bool validTaskId(const std::string& id) {
+    if (id.size() < 6 || id.size() > 64 || id.rfind("task-", 0) != 0) return false;
+    return std::all_of(id.begin() + 5, id.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
+}
 
 bool hasTasksExtension(const json& caps) {
     return caps.is_object() && caps.contains("extensions") && caps["extensions"].is_object() && caps["extensions"].contains(kTasksExtension);
@@ -377,44 +415,232 @@ json taskEnvelope(const Task& t) {
     return j;
 }
 
+json detailed(const Task& t) {
+    json r = taskEnvelope(t);
+    if (t.status == "completed") r["result"] = t.result;
+    if (t.status == "failed") r["error"] = t.error;
+    if (t.status == "input_required" && !t.pending.empty()) r["inputRequests"] = t.pending;
+    return r;
+}
+
 json toolResultJson(const ToolResult& r) {
     json j{{"content", r.content}, {"isError", r.isError}};
     if (r.structured) j["structuredContent"] = *r.structured;
     return j;
 }
 
+// ---- files
+
+bool writeAtomically(const fs::path& file, const std::string& text) {
+    const fs::path tmp = file.string() + "." + randomHex(1) + ".tmp";
+    {
+        std::ofstream o(tmp, std::ios::binary | std::ios::trunc);
+        if (!o) return false;
+        o << text;
+        if (!o.flush()) return false;
+    }
+    std::error_code ec;
+    fs::rename(tmp, file, ec);   // replaces atomically on POSIX and Windows (MoveFileEx)
+    if (ec) fs::remove(tmp, ec);
+    return !ec;
+}
+
+std::optional<json> readJsonFile(const fs::path& file) {
+    std::ifstream f(file, std::ios::binary);
+    if (!f) return std::nullopt;
+    std::string text((std::istreambuf_iterator<char>(f)), {});
+    json j = json::parse(text, nullptr, false);
+    if (j.is_discarded() || !j.is_object()) return std::nullopt;
+    return j;
+}
+
+json taskFile(const Task& t, const std::string& owner) {
+    json j{{"taskId", t.id},   {"owner", owner},     {"status", t.status},       {"statusMessage", t.statusMessage},
+           {"createdMs", t.createdMs}, {"updatedMs", t.updatedMs}, {"ttlMs", t.ttlMs}, {"pollIntervalMs", t.pollIntervalMs},
+           {"pending", t.pending}};
+    if (!t.result.is_null()) j["result"] = t.result;
+    if (!t.error.is_null()) j["error"] = t.error;
+    return j;
+}
+
+std::shared_ptr<Task> taskFromFile(const json& j) {
+    auto t = std::make_shared<Task>();
+    t->id = j.value("taskId", std::string());
+    t->status = j.value("status", std::string("failed"));
+    t->statusMessage = j.value("statusMessage", std::string());
+    t->createdMs = j.value("createdMs", 0LL);
+    t->updatedMs = j.value("updatedMs", t->createdMs);
+    t->ttlMs = j.value("ttlMs", 3600000);
+    t->pollIntervalMs = j.value("pollIntervalMs", 500);
+    t->pending = j.value("pending", json::object());
+    t->result = j.value("result", json());
+    t->error = j.value("error", json());
+    return t;
+}
+
+bool ownerAlive(const fs::path& dir, const std::string& owner) {
+    if (owner.empty() || owner.find_first_not_of("0123456789abcdef") != std::string::npos) return false;
+    const auto j = readJsonFile(dir / (owner + ".alive"));
+    return j && nowMs() - j->value("at", 0LL) < kAliveMs;
+}
+
+// Call with task->m held: write the file and tell the observer.
+void changed(TaskStore& store, const Task& t) {
+    if (!store.dir.empty()) (void)writeAtomically(store.dir / (t.id + ".json"), taskFile(t, store.instance).dump());
+    if (store.observer) store.observer(detailed(t));
+}
+
+// tasks/update: answers to pending questions (others are ignored).
+void deliver(Task& t, const json& responses) {
+    for (const auto& [k, v] : responses.items())
+        if (v.is_object() && t.pending.contains(k)) {
+            t.responses[k] = v;
+            t.pending.erase(k);
+        }
+    t.updatedMs = nowMs();
+    t.cv.notify_all();
+}
+
+void cancelTask(TaskStore& store, Task& t) {
+    if (terminal(t.status)) return;
+    t.cancel = true;
+    t.status = "cancelled";
+    t.statusMessage.clear();
+    t.pending = json::object();
+    t.updatedMs = nowMs();
+    t.cv.notify_all();
+    changed(store, t);
+}
+
+// The owner's housekeeping, about once a second: the .alive heartbeat,
+// cancel and update requests from other processes, expired task files.
+void watch(TaskStore* store) {
+    long long lastSweep = 0;
+    while (!store->stop) {
+        const long long now = nowMs();
+        (void)writeAtomically(store->dir / (store->instance + ".alive"), json{{"at", now}}.dump());
+        std::vector<std::shared_ptr<Task>> mine;
+        {
+            std::lock_guard lk(store->m);
+            for (auto& [id, t] : store->tasks) mine.push_back(t);
+        }
+        std::error_code ec;
+        for (auto& t : mine) {
+            const fs::path cancel = store->dir / (t->id + ".cancel");
+            if (fs::exists(cancel, ec)) {
+                fs::remove(cancel, ec);
+                std::lock_guard tl(t->m);
+                cancelTask(*store, *t);
+            }
+        }
+        for (fs::directory_iterator it(store->dir, ec), end; !ec && it != end; it.increment(ec)) {
+            const std::string name = it->path().filename().string();
+            const auto dash = name.find(".update-");
+            if (dash == std::string::npos || it->path().extension() != ".json") continue;
+            const std::string id = name.substr(0, dash);
+            std::shared_ptr<Task> t;
+            {
+                std::lock_guard lk(store->m);
+                if (auto f = store->tasks.find(id); f != store->tasks.end()) t = f->second;
+            }
+            if (!t) continue;
+            const auto update = readJsonFile(it->path());
+            std::error_code rec;
+            fs::remove(it->path(), rec);
+            if (!update) continue;
+            std::lock_guard tl(t->m);
+            deliver(*t, update->value("inputResponses", json::object()));
+            changed(*store, *t);
+        }
+        if (now - lastSweep > 60000) {   // expired files of any process
+            lastSweep = now;
+            for (fs::directory_iterator it(store->dir, ec), end; !ec && it != end; it.increment(ec)) {
+                const fs::path& f = it->path();
+                if (f.extension() != ".json" && f.extension() != ".alive" && f.extension() != ".cancel") continue;
+                std::error_code fec;
+                const auto age = std::chrono::duration_cast<std::chrono::milliseconds>(fs::file_time_type::clock::now() -
+                                                                                       fs::last_write_time(f, fec)).count();
+                if (fec) continue;
+                if (f.extension() == ".json" && validTaskId(f.stem().string())) {
+                    const auto j = readJsonFile(f);
+                    if (j && now > j->value("updatedMs", 0LL) + j->value("ttlMs", 3600000)) fs::remove(f, fec);
+                } else if (age > 24LL * 3600 * 1000) {
+                    fs::remove(f, fec);   // stale heartbeats and requests
+                }
+            }
+        }
+        for (int i = 0; i < 10 && !store->stop; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
+
 } // namespace
+
+void McpServer::setTaskDirectory(const std::filesystem::path& dir) {
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    m_tasks->dir = dir;
+    m_tasks->instance = randomHex(4);
+    m_tasks->watcher = std::thread([store = m_tasks.get()] { watch(store); });   // joined by ~McpServer
+}
+
+McpServer::~McpServer() {
+    m_tasks->stop = true;
+    if (m_tasks->watcher.joinable()) m_tasks->watcher.join();
+    std::error_code ec;
+    if (!m_tasks->dir.empty()) fs::remove(m_tasks->dir / (m_tasks->instance + ".alive"), ec);
+}
+
+void McpServer::setTaskObserver(TaskObserver o) { m_tasks->observer = std::move(o); }
+
+int McpServer::activeTasks() const {
+    std::lock_guard lk(m_tasks->m);
+    return m_tasks->running;
+}
+
+bool McpServer::waitForTasks(std::chrono::milliseconds timeout) const {
+    std::unique_lock lk(m_tasks->m);
+    return m_tasks->idle.wait_for(lk, timeout, [this] { return m_tasks->running == 0; });
+}
+
+std::optional<json> McpServer::taskUpdateFor(const Subscription& s, const json& task) {
+    if (!s.tasks) return std::nullopt;
+    json params = task;
+    params["_meta"] = {{meta::kSubscriptionId, s.id}};
+    return json{{"jsonrpc", "2.0"}, {"method", "notifications/tasks"}, {"params", std::move(params)}};
+}
 
 json McpServer::createTask(const json& id, const Tool& tool, const json& /*args*/, const json& caps,
                            std::function<ToolResult(const ToolCall&)> work) {
     auto task = std::make_shared<Task>();
-    {
-        std::random_device rd;
-        char buf[40];
-        std::snprintf(buf, sizeof buf, "task-%08x%08x%08x%08x", rd(), rd(), rd(), rd());
-        task->id = buf;
-    }
+    task->id = "task-" + randomHex(4);
     task->createdMs = task->updatedMs = nowMs();
     task->statusMessage = "Running " + tool.name;
+    auto store = m_tasks;
     {
-        std::lock_guard lk(m_tasks->m);
-        // Expired terminal tasks go.
-        for (auto it = m_tasks->tasks.begin(); it != m_tasks->tasks.end();) {
+        std::lock_guard lk(store->m);
+        // Finished tasks past their TTL go.
+        for (auto it = store->tasks.begin(); it != store->tasks.end();) {
             std::lock_guard tl(it->second->m);
-            if (terminal(it->second->status) && nowMs() > it->second->createdMs + it->second->ttlMs) it = m_tasks->tasks.erase(it);
+            if (terminal(it->second->status) && nowMs() > it->second->updatedMs + it->second->ttlMs) it = store->tasks.erase(it);
             else ++it;
         }
-        m_tasks->tasks[task->id] = task;   // durable before the result is returned
+        store->tasks[task->id] = task;
+        ++store->running;
     }
-    std::thread([task, caps, work = std::move(work)] {
+    {
+        std::lock_guard tl(task->m);
+        changed(*store, *task);   // durable before the result is returned
+    }
+    std::thread([task, store, caps, work = std::move(work)] {
         InputContext in(caps, true, json(), json(), nullptr, &task->cancel);
-        in.setTaskWaiter([task](const std::vector<InputRequest>& reqs) {
+        in.setTaskWaiter([task, store](const std::vector<InputRequest>& reqs) {
             std::unique_lock lk(task->m);
             for (const auto& r : reqs)
                 if (!task->responses.contains(r.key)) task->pending[r.key] = {{"method", r.method}, {"params", r.params}};
-            if (!task->pending.empty()) {
+            if (!task->pending.empty() && !task->cancel) {
                 task->status = "input_required";
                 task->updatedMs = nowMs();
+                changed(*store, *task);
             }
             task->cv.wait(lk, [&] {
                 if (task->cancel) return true;
@@ -434,16 +660,19 @@ json McpServer::createTask(const json& id, const Tool& tool, const json& /*args*
             if (!task->cancel) {
                 task->status = "working";
                 task->updatedMs = nowMs();
+                changed(*store, *task);
             }
             return out;
         });
         ToolCall call;
         call.cancel = &task->cancel;
         call.input = &in;
-        call.progress = [task](double progress, std::optional<double> total, const std::string& message) {
+        call.progress = [task, store](double progress, std::optional<double> total, const std::string& message) {
             std::lock_guard lk(task->m);
+            if (terminal(task->status)) return;
             task->statusMessage = (total ? std::to_string(static_cast<int>(100.0 * progress / *total)) + "% " : std::string()) + message;
             task->updatedMs = nowMs();
+            changed(*store, *task);
         };
         ToolResult r;
         json error;
@@ -453,18 +682,25 @@ json McpServer::createTask(const json& id, const Tool& tool, const json& /*args*
             error = {{"code", code::kInternalError}, {"message", std::string("The task failed: ") + e.what()}};
         }
         if (error.is_null() && r.protocolError) error = *r.protocolError;
-        std::lock_guard lk(task->m);
-        if (terminal(task->status)) return;   // cancelled meanwhile
-        if (!error.is_null()) {
-            task->status = "failed";
-            task->error = error;
-        } else {
-            task->status = "completed";
-            task->result = toolResultJson(r);
+        {
+            std::lock_guard lk(task->m);
+            if (!terminal(task->status)) {   // not cancelled meanwhile
+                if (!error.is_null()) {
+                    task->status = "failed";
+                    task->error = error;
+                } else {
+                    task->status = "completed";
+                    task->result = toolResultJson(r);
+                }
+                task->statusMessage.clear();
+                task->pending = json::object();
+                task->updatedMs = nowMs();
+                changed(*store, *task);
+            }
         }
-        task->statusMessage.clear();
-        task->pending = json::object();
-        task->updatedMs = nowMs();
+        std::lock_guard lk(store->m);
+        --store->running;
+        store->idle.notify_all();
     }).detach();
 
     std::lock_guard lk(task->m);
@@ -476,43 +712,53 @@ json McpServer::createTask(const json& id, const Tool& tool, const json& /*args*
 json McpServer::tasksMethod(const json& id, const std::string& method, const json& params, const json& caps) {
     if (!hasTasksExtension(caps)) return taskRequiredError(id);
     if (!params.contains("taskId") || !params["taskId"].is_string()) return errorResponse(id, code::kInvalidParams, method + " needs a taskId");
+    const std::string taskId = params["taskId"].get<std::string>();
+    json responses = json::object();
+    if (method == "tasks/update") {
+        responses = params.value("inputResponses", json::object());
+        if (!responses.is_object()) return errorResponse(id, code::kInvalidParams, "inputResponses must be an object");
+        for (const auto& [k, v] : responses.items())
+            if (!v.is_object()) return errorResponse(id, code::kInvalidParams, "inputResponses[\"" + k + "\"] must be an object");
+    }
+    auto store = m_tasks;
     std::shared_ptr<Task> task;
     {
-        std::lock_guard lk(m_tasks->m);
-        auto it = m_tasks->tasks.find(params["taskId"].get<std::string>());
-        if (it != m_tasks->tasks.end()) task = it->second;
+        std::lock_guard lk(store->m);
+        if (auto it = store->tasks.find(taskId); it != store->tasks.end()) task = it->second;
     }
-    if (!task) return errorResponse(id, code::kInvalidParams, "Unknown task", {{"taskId", params["taskId"]}});
-    std::lock_guard lk(task->m);
-    if (method == "tasks/get") {
-        json r = taskEnvelope(*task);
-        if (task->status == "completed") r["result"] = task->result;
-        if (task->status == "failed") r["error"] = task->error;
-        if (task->status == "input_required" && !task->pending.empty()) r["inputRequests"] = task->pending;
-        return okResponse(id, std::move(r));
-    }
-    if (method == "tasks/update") {
-        const json responses = params.value("inputResponses", json::object());
-        if (!responses.is_object()) return errorResponse(id, code::kInvalidParams, "inputResponses must be an object");
-        for (const auto& [k, v] : responses.items()) {
-            if (!v.is_object()) return errorResponse(id, code::kInvalidParams, "inputResponses[\"" + k + "\"] must be an object");
-            if (task->pending.contains(k)) {   // answers to questions not asked are ignored
-                task->responses[k] = v;
-                task->pending.erase(k);
-            }
+    if (task) {   // one of ours
+        std::lock_guard lk(task->m);
+        if (method == "tasks/get") return okResponse(id, detailed(*task));
+        if (method == "tasks/update") {
+            deliver(*task, responses);
+            changed(*store, *task);
+        } else {
+            cancelTask(*store, *task);   // idempotent: a finished task stays as it is
         }
-        task->updatedMs = nowMs();
-        task->cv.notify_all();
         return okResponse(id, json::object());
     }
-    // tasks/cancel: idempotent; a terminal task stays as it is.
-    if (!terminal(task->status)) {
-        task->cancel = true;
-        task->status = "cancelled";
-        task->statusMessage.clear();
-        task->pending = json::object();
-        task->updatedMs = nowMs();
-        task->cv.notify_all();
+    // Another process's task, or one from before a restart.
+    std::optional<json> file;
+    if (!store->dir.empty() && validTaskId(taskId)) file = readJsonFile(store->dir / (taskId + ".json"));
+    if (!file || nowMs() > file->value("updatedMs", 0LL) + file->value("ttlMs", 3600000))
+        return errorResponse(id, code::kInvalidParams, "Unknown task", {{"taskId", taskId}});
+    auto t = taskFromFile(*file);
+    const std::string owner = file->value("owner", std::string());
+    if (!terminal(t->status) && !ownerAlive(store->dir, owner)) {
+        t->status = "failed";
+        t->error = {{"code", code::kInternalError},
+                    {"message", "acestudio-mcp stopped before the task finished; run the tool again"}};
+        t->statusMessage.clear();
+        t->pending = json::object();
+        t->updatedMs = nowMs();
+        (void)writeAtomically(store->dir / (taskId + ".json"), taskFile(*t, owner).dump());
+    }
+    if (method == "tasks/get") return okResponse(id, detailed(*t));
+    if (!terminal(t->status)) {   // the owner applies these within a second
+        if (method == "tasks/update")
+            (void)writeAtomically(store->dir / (taskId + ".update-" + randomHex(2) + ".json"), json{{"inputResponses", responses}}.dump());
+        else
+            (void)writeAtomically(store->dir / (taskId + ".cancel"), "{}");
     }
     return okResponse(id, json::object());
 }
@@ -1029,6 +1275,10 @@ std::variant<McpServer::Listen, json> McpServer::listenRequest(const json& msg) 
     l.sub.toolsListChanged = honored.contains("toolsListChanged");
     l.sub.promptsListChanged = honored.contains("promptsListChanged");
     l.sub.resourcesListChanged = honored.contains("resourcesListChanged");
+    if (filter.value("tasks", false)) {   // task status changes (tasks extension)
+        honored["tasks"] = true;
+        l.sub.tasks = true;
+    }
     if (filter.contains("resourceSubscriptions")) {
         if (!filter["resourceSubscriptions"].is_array()) return errorResponse(id, code::kInvalidParams, "resourceSubscriptions must be a list of URIs");
         json uris = json::array();

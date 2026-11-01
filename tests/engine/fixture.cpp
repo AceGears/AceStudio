@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
     const fs::path out = argv[1];
     fs::create_directories(out);
     AssetWriteOptions all;
-    all.engines = kEngineGodot | kEngineUnity | kEngineTiled;
+    all.engines = kEngineGodot | kEngineUnity | kEngineUnityRuleTiles | kEngineTiled;
     all.overwrite = true;
 
     // A 24x32 hero with 6 frames: a walk (0-3, forward), an idle (4-5,
@@ -104,6 +104,18 @@ int main(int argc, char** argv) {
                 per.push_back(grid);
             }
             j["expected"][std::string(toString(s))] = per;
+        }
+        // Wang16: (w+1) x (h+1) corner tiles on the dual grid, tile = corner mask.
+        {
+            nlohmann::json per = nlohmann::json::array();
+            for (int level = 1; level <= 2; ++level) {
+                const TilePlacement p = autotile(m.atLeast(level), AutotileScheme::Wang16);
+                nlohmann::json grid = nlohmann::json::array();
+                for (int y = 0; y < p.rows; ++y)
+                    for (int x = 0; x < p.columns; ++x) grid.push_back(p.at(x, y));
+                per.push_back(grid);
+            }
+            j["expectedWang16"] = per;
         }
         if (auto st = writeTextFile(out / "map.json", j.dump()); !st) return fail(st.error());
     }

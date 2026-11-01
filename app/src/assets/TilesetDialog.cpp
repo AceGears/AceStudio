@@ -176,7 +176,7 @@ TilesetDialog::TilesetDialog(AiService& ai, DocumentView* view, OpenImageFn open
     m_sandbox = new QPushButton(tr("Terrain &Sandbox…"), this);
     m_open = new QPushButton(tr("Open as &Document"), this);
     m_export = new QPushButton(tr("&Export…"), this);
-    m_engines = new EngineChoice(kEngineGodot | kEngineUnity | kEngineTiled, this);
+    m_engines = new EngineChoice(kEngineGodot | kEngineUnity | kEngineUnityRuleTiles | kEngineTiled, this);
     auto* close = new QPushButton(tr("Close"), this);
     connect(close, &QPushButton::clicked, this, &QDialog::reject);
     connect(m_sandbox, &QPushButton::clicked, this, &TilesetDialog::openSandbox);

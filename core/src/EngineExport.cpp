@@ -482,6 +482,80 @@ std::string unityTile(const std::string& name, std::int64_t spriteFileId, const 
     return o.str();
 }
 
+namespace {
+const unsigned char kAutoTileCs[] = {
+#include "AceStudioAutoTile.cs.inc"
+};
+const unsigned char kWangSetCs[] = {
+#include "AceStudioWangSet.cs.inc"
+};
+const unsigned char kDualGridCs[] = {
+#include "AceStudioDualGrid.cs.inc"
+};
+std::string fromBytes(const unsigned char* b, std::size_t n) {
+    std::string s(reinterpret_cast<const char*>(b), n);
+    s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());   // the same bytes on every platform
+    return s;
+}
+std::string scriptGuid(const std::string& file) { return unityGuid("acestudio:script:" + file); }
+std::string scriptRef(const std::string& file) { return "{fileID: 11500000, guid: " + scriptGuid(file) + ", type: 3}"; }
+const char* kBuiltinTile = "{fileID: 13312, guid: 0000000000000000e000000000000000, type: 0}";
+
+std::string tileObject(std::int64_t fileId, const std::string& name, const std::string& sprite) {
+    std::ostringstream o;
+    o << "--- !u!114 &" << fileId << "\nMonoBehaviour:\n  m_ObjectHideFlags: 0\n  m_CorrespondingSourceObject: {fileID: 0}\n"
+         "  m_PrefabInstance: {fileID: 0}\n  m_PrefabAsset: {fileID: 0}\n  m_GameObject: {fileID: 0}\n  m_Enabled: 1\n"
+         "  m_EditorHideFlags: 0\n  m_Script: " << kBuiltinTile << "\n  m_Name: " << name << "\n  m_EditorClassIdentifier: \n"
+      << "  m_Sprite: " << sprite << "\n  m_Color: {r: 1, g: 1, b: 1, a: 1}\n"
+         "  m_Transform:\n    e00: 1\n    e01: 0\n    e02: 0\n    e03: 0\n    e10: 0\n    e11: 1\n    e12: 0\n    e13: 0\n"
+         "    e20: 0\n    e21: 0\n    e22: 1\n    e23: 0\n    e30: 0\n    e31: 0\n    e32: 0\n    e33: 1\n"
+         "  m_InstancedGameObject: {fileID: 0}\n  m_Flags: 1\n  m_ColliderType: 1\n";
+    return o.str();
+}
+} // namespace
+
+const std::vector<UnityScript>& unityTileScripts() {
+    static const std::vector<UnityScript> scripts = [] {
+        std::vector<UnityScript> v;
+        v.push_back({"AceStudioAutoTile.cs", scriptGuid("AceStudioAutoTile.cs"), fromBytes(kAutoTileCs, sizeof kAutoTileCs)});
+        v.push_back({"AceStudioWangSet.cs", scriptGuid("AceStudioWangSet.cs"), fromBytes(kWangSetCs, sizeof kWangSetCs)});
+        v.push_back({"AceStudioDualGrid.cs", scriptGuid("AceStudioDualGrid.cs"), fromBytes(kDualGridCs, sizeof kDualGridCs)});
+        return v;
+    }();
+    return scripts;
+}
+
+std::string unityScriptMeta(const std::string& guid) {
+    return "fileFormatVersion: 2\nguid: " + guid +
+           "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n"
+           "  icon: {instanceID: 0}\n  userData: \n  assetBundleName: \n  assetBundleVariant: \n";
+}
+
+std::string unityAutoTile(const Tileset& t, const std::string& name, const std::string& spriteStem, const std::string& textureGuid) {
+    if (t.scheme == AutotileScheme::Wang16) return {};
+    std::ostringstream o;
+    o << monoHeader(name, scriptRef("AceStudioAutoTile.cs"));
+    o << "  scheme: " << (t.scheme == AutotileScheme::Blob47 ? 1 : 0) << "\n  sprites:\n";
+    for (int k = 0; k < tileCount(t.scheme); ++k)
+        o << "  - " << unityRef(unityFileId(textureGuid + "/" + spriteStem + "_" + std::to_string(k)), textureGuid) << "\n";
+    o << "  colliderType: 1\n  color: {r: 1, g: 1, b: 1, a: 1}\n";
+    return o.str();
+}
+
+std::string unityWangSet(const Tileset& t, const std::string& name, const std::string& spriteStem, const std::string& textureGuid) {
+    if (t.scheme != AutotileScheme::Wang16) return {};
+    auto sprite = [&](int k) { return unityRef(unityFileId(textureGuid + "/" + spriteStem + "_" + std::to_string(k)), textureGuid); };
+    auto sub = [&](const std::string& what) { return unityFileId("acestudio:wangset/" + name + "/" + what); };
+    std::ostringstream o;
+    o << monoHeader(name, scriptRef("AceStudioWangSet.cs"));
+    o << "  terrain: {fileID: " << sub("terrain") << "}\n  ground: {fileID: " << sub("ground") << "}\n  tiles:\n";
+    for (int k = 0; k < 16; ++k) o << "  - {fileID: " << sub(std::to_string(k)) << "}\n";
+    o << tileObject(sub("terrain"), name + "_terrain", sprite(15));
+    o << tileObject(sub("ground"), name + "_ground", sprite(0));
+    for (int k = 0; k < 16; ++k) o << tileObject(sub(std::to_string(k)), name + "_" + std::to_string(k), sprite(k));
+    return o.str();
+}
+
 // ------------------------------------------------------------------ Tiled
 
 std::string tiledTileset(const Tileset& t, const std::string& imageFile, const std::string& name, const std::string& terrainName,

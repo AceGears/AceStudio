@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <regex>
+#include <set>
 #include <sstream>
 
 using namespace acestudio;
@@ -143,8 +144,7 @@ TEST_CASE("Asset files: everything written, nothing overwritten without permissi
     AssetWriteOptions o;
     o.engines = parseEngineTargets("godot,unity,tiled").value();
     std::vector<Tileset> levels{generateTileset(AutotileScheme::Blob47, tex({40, 80, 200, 255}), tex({220, 200, 120, 255})).value()};
-    auto w = writeTilesetFiles(levels, dir / "t.png", o);
-    REQUIRE(w);
+    REQUIRE(writeTilesetFiles(levels, dir / "t.png", o));
     for (const char* f : {"t.png", "t.json", "t_base.png", "t.tres", "t.tsx", "t.png.meta", "t_base.png.meta"}) CHECK(fs::exists(dir / f));
     // A second write is refused and changes nothing.
     const auto before = fs::last_write_time(dir / "t.png");
@@ -256,7 +256,7 @@ TEST_CASE("Tiled sprite sheets: tile animations for grid layouts", "[engine]") {
     fs::remove_all(dir);
 }
 
-TEST_CASE("Asset files: Rule Tiles for tilesets, multi-page atlases", "[engine]") {
+TEST_CASE("Asset files: Unity tiles for every scheme, multi-page atlases", "[engine]") {
     const fs::path dir = fs::temp_directory_path() / "acestudio_engine_rules";
     fs::remove_all(dir);
     fs::create_directories(dir);
@@ -264,25 +264,78 @@ TEST_CASE("Asset files: Rule Tiles for tilesets, multi-page atlases", "[engine]"
     o.engines = kEngineUnity | kEngineTiled;
     std::vector<Tileset> levels{generateTileset(AutotileScheme::Blob47, tex({40, 80, 200, 255}), tex({220, 200, 120, 255})).value(),
                                 generateTileset(AutotileScheme::Blob47, Image(), tex({60, 160, 60, 255})).value()};
-    REQUIRE(writeTilesetFiles(levels, dir / "t.png", o));
-    for (const char* f : {"t_level1.asset", "t_level1.asset.meta", "t_level2.asset", "t_base.asset", "t_base.asset.meta"}) CHECK(fs::exists(dir / f));
-    {
-        // Every sprite a Rule Tile uses is defined by the texture's .meta.
-        auto read = [](const fs::path& p) {
-            std::ifstream f(p);
-            return std::string((std::istreambuf_iterator<char>(f)), {});
-        };
-        const std::string rule = read(dir / "t_level2.asset"), meta = read(dir / "t_level2.png.meta");
+    auto read = [](const fs::path& p) {
+        std::ifstream f(p);
+        return std::string((std::istreambuf_iterator<char>(f)), {});
+    };
+    // Every sprite an asset uses is defined by the texture's .meta; scripts are AceStudio's or Unity's.
+    auto checkRefs = [&](const std::string& asset, const std::string& meta, std::set<std::string> scripts) {
         const std::regex ref("fileID: (-?[0-9]+), guid: ([0-9a-f]{32})");
         int refs = 0;
-        for (std::sregex_iterator it(rule.begin(), rule.end(), ref), end; it != end; ++it) {
-            if ((*it)[2] == kUnityRuleTileScriptGuid) continue;
+        for (std::sregex_iterator it(asset.begin(), asset.end(), ref), end; it != end; ++it) {
+            if (scripts.count((*it)[2].str()) || (*it)[2] == "0000000000000000e000000000000000") continue;
             ++refs;
             CHECK(meta.find("internalID: " + (*it)[1].str()) != std::string::npos);
             CHECK(meta.find("guid: " + (*it)[2].str()) != std::string::npos);
         }
-        CHECK(refs == 48);   // default sprite + one per rule
-    }
+        return refs;
+    };
+    std::set<std::string> scriptGuids{kUnityRuleTileScriptGuid};
+    for (const auto& sc : unityTileScripts()) scriptGuids.insert(sc.guid);
+
+    REQUIRE(writeTilesetFiles(levels, dir / "t.png", o));
+    for (const char* f : {"t_level1.asset", "t_level1.asset.meta", "t_level2.asset", "t_base.asset", "t_base.asset.meta",
+                          "AceStudioAutoTile.cs", "AceStudioAutoTile.cs.meta", "AceStudioWangSet.cs", "AceStudioDualGrid.cs.meta"})
+        CHECK(fs::exists(dir / f));
+    CHECK_FALSE(fs::exists(dir / "t_level1_ruletile.asset"));   // Rule Tiles are opt-in
+    const std::string auto2 = read(dir / "t_level2.asset");
+    CHECK(auto2.find("guid: " + unityTileScripts()[0].guid) != std::string::npos);
+    CHECK(checkRefs(auto2, read(dir / "t_level2.png.meta"), scriptGuids) == 47);
+    CHECK(read(dir / "AceStudioAutoTile.cs") == unityTileScripts()[0].text);
+    CHECK(read(dir / "AceStudioAutoTile.cs").find("class AceStudioAutoTile : TileBase") != std::string::npos);
+
+    // The shared scripts are not "existing files" on a second export, so it
+    // needs no overwrite permission for them.
+    o.dryRun = true;
+    auto again = writeTilesetFiles(levels, dir / "u.png", o);
+    REQUIRE(again);
+    CHECK(again.value().existing.empty());
+    o.dryRun = false;
+    REQUIRE(writeTilesetFiles(levels, dir / "u.png", o));
+
+    // Inside a Unity project with the scripts elsewhere under Assets, they are not written again.
+    const fs::path project = dir / "Game";
+    fs::create_directories(project / "ProjectSettings");
+    fs::create_directories(project / "Assets" / "Scripts");
+    fs::create_directories(project / "Assets" / "Art");
+    for (const auto& sc : unityTileScripts()) std::ofstream(project / "Assets" / "Scripts" / sc.file) << "// someone's copy";
+    o.overwrite = true;
+    REQUIRE(writeTilesetFiles(levels, project / "Assets" / "Art" / "t.png", o));
+    CHECK_FALSE(fs::exists(project / "Assets" / "Art" / "AceStudioAutoTile.cs"));
+    CHECK(read(project / "Assets" / "Scripts" / "AceStudioAutoTile.cs") == unityTileScripts()[0].text);   // updated in place
+    o.overwrite = false;
+
+    // Rule Tiles on request.
+    AssetWriteOptions r = o;
+    r.engines = parseEngineTargets("unity-rule-tiles").value();
+    CHECK((r.engines & kEngineUnity) != 0);
+    REQUIRE(writeTilesetFiles(levels, dir / "r.png", r));
+    const std::string rule = read(dir / "r_level2_ruletile.asset");
+    CHECK(rule.find(std::string("guid: ") + kUnityRuleTileScriptGuid) != std::string::npos);
+    CHECK(checkRefs(rule, read(dir / "r_level2.png.meta"), scriptGuids) == 48);   // default sprite + one per rule
+
+    // Wang16: a Wang set with its 16 corner tiles and the two tiles to paint with.
+    std::vector<Tileset> wang{generateTileset(AutotileScheme::Wang16, tex({40, 80, 200, 255}), tex({220, 200, 120, 255})).value()};
+    auto ww = writeTilesetFiles(wang, dir / "w.png", r);
+    REQUIRE(ww);
+    const std::string set = read(dir / "w.asset");
+    CHECK(set.find("guid: " + unityTileScripts()[1].guid) != std::string::npos);
+    CHECK(count(set, "--- !u!114 &") == 19);   // the set + terrain + ground + 16 tiles
+    CHECK(checkRefs(set, read(dir / "w.png.meta"), scriptGuids) == 18);
+    CHECK_FALSE(fs::exists(dir / "w_ruletile.asset"));
+    bool noted = false;
+    for (const auto& n : ww.value().notes) noted = noted || n.find("AceStudioDualGrid") != std::string::npos;
+    CHECK(noted);
     REQUIRE(writeSheetFiles(animated(), {}, SheetOptions{}, dir / "hero.png", o));
     CHECK(fs::exists(dir / "hero.tsx"));
 

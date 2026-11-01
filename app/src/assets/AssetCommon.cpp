@@ -50,7 +50,10 @@ EngineChoice::EngineChoice(unsigned available, QWidget* parent) : QWidget(parent
     auto* lay = new QHBoxLayout(this);
     lay->setContentsMargins(0, 0, 0, 0);
     lay->addWidget(new QLabel(tr("Also for:"), this));
-    const std::pair<unsigned, QString> all[] = {{kEngineGodot, tr("Godot")}, {kEngineUnity, tr("Unity")}, {kEngineTiled, tr("Tiled")}};
+    const std::pair<unsigned, QString> all[] = {{kEngineGodot, tr("Godot")},
+                                                {kEngineUnity, tr("Unity")},
+                                                {kEngineUnityRuleTiles, tr("+ Rule Tiles")},
+                                                {kEngineTiled, tr("Tiled")}};
     for (const auto& [bit, label] : all) {
         if (!(available & bit)) continue;
         auto* box = new QCheckBox(label, this);
@@ -59,17 +62,22 @@ EngineChoice::EngineChoice(unsigned available, QWidget* parent) : QWidget(parent
             if (on) s_lastEngines |= bit;
             else s_lastEngines &= ~bit;
         });
+        if (bit == kEngineUnityRuleTiles)
+            box->setToolTip(tr("Also Unity Rule Tiles (_ruletile.asset) for Blob47 and 4-neighbour sets. They need Unity's 2D "
+                               "Tilemap Extras package; AceStudio's own Unity tiles work without it."));
         m_boxes.push_back({bit, box});
         lay->addWidget(box);
     }
     setToolTip(tr("Godot: .tres resources (SpriteFrames, TileSet terrains, StyleBoxTexture). Unity: .meta files with "
-                  "sprites, borders and pivots, and .anim clips. Tiled: .tsx tilesets with Wang sets."));
+                  "sprites, borders and pivots, .anim clips, and tiles that paint like AceStudio (no package needed). "
+                  "Tiled: .tsx tilesets with Wang sets and tile animations."));
 }
 
 unsigned EngineChoice::engines() const {
     unsigned e = kEngineNone;
     for (const auto& [bit, box] : m_boxes)
         if (box->isChecked()) e |= bit;
+    if (e & kEngineUnityRuleTiles) e |= kEngineUnity;
     return e;
 }
 

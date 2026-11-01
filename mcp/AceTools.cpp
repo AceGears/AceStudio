@@ -86,7 +86,7 @@ json strings(const std::string& d) { return {{"type", "array"}, {"items", {{"typ
 json oneOf(const std::string& d, std::vector<std::string> values) { return {{"type", "string"}, {"enum", values}, {"description", d}}; }
 
 const char* kPathNote = " Relative paths are inside the server's first --root folder.";
-const json kEngines = str("Also write engine files: comma list of godot, unity, tiled (e.g. \"godot,unity\")");
+const json kEngines = str("Also write engine files: comma list of godot, unity, unity-rule-tiles (Unity Rule Tiles, needs 2D Tilemap Extras), tiled (e.g. \"godot,unity\")");
 const json kOverwrite = boolean("Replace existing files (default false: the tool refuses to overwrite)");
 
 json readOnly() { return {{"readOnlyHint", true}, {"destructiveHint", false}, {"openWorldHint", false}}; }
@@ -735,7 +735,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
 
 namespace {
 
-const std::vector<std::string> kEngineValues{"godot", "unity", "tiled", "godot,unity", "godot,unity,tiled"};
+const std::vector<std::string> kEngineValues{"godot", "unity", "tiled", "unity-rule-tiles", "godot,unity", "godot,unity,tiled"};
 
 std::vector<std::string> prefixed(const std::vector<std::string>& all, const std::string& value) {
     std::vector<std::string> out;

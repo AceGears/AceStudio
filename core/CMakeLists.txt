@@ -65,3 +65,14 @@ if(MSVC)
 else()
     set_source_files_properties(src/StbImageImpl.cpp PROPERTIES COMPILE_OPTIONS "-w")
 endif()
+
+# The Unity tile scripts (core/unity/*.cs) that engine export writes next to
+# tilesets, built in as byte arrays (MSVC limits string literals to 16 KB).
+foreach(_script AceStudioAutoTile AceStudioWangSet AceStudioDualGrid)
+    set(_cs "${CMAKE_CURRENT_SOURCE_DIR}/unity/${_script}.cs")
+    file(READ "${_cs}" _hex HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _bytes "${_hex}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/${_script}.cs.inc" "${_bytes}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_cs}")
+endforeach()
+target_include_directories(acestudio_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")

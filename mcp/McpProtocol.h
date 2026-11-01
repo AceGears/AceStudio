@@ -27,6 +27,8 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <chrono>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
@@ -235,6 +237,7 @@ struct Subscription {
     bool toolsListChanged = false;
     bool promptsListChanged = false;
     bool resourcesListChanged = false;
+    bool tasks = false;            // notifications/tasks (tasks extension)
     std::set<std::string> resources;
 };
 
@@ -264,6 +267,9 @@ class McpServer {
 public:
     McpServer(ServerIdentity id, std::vector<Tool> tools, std::vector<Prompt> prompts = {}, std::vector<Resource> resources = {},
               std::vector<ResourceTemplate> templates = {});
+    ~McpServer();
+    McpServer(const McpServer&) = delete;
+    McpServer& operator=(const McpServer&) = delete;
 
     // Handles one JSON-RPC message. Returns the response for requests, or
     // nullopt for notifications. subscriptions/listen is the transport's
@@ -283,6 +289,21 @@ public:
     // A resources/updated notification for a subscriber, or nullopt.
     static std::optional<json> updateFor(const Subscription& s, const std::string& uri);
     static std::optional<json> legacyUpdateFor(const Connection& c, const std::string& uri);
+
+    // ---- tasks extension
+    // Keeps every task in <dir>/<taskId>.json as well, so tasks/get still
+    // answers after a restart and from another acestudio-mcp sharing the
+    // folder (see McpProtocol.cpp). Without it tasks live in memory only.
+    void setTaskDirectory(const std::filesystem::path& dir);
+    // Called with the DetailedTask after every status change (any thread).
+    using TaskObserver = std::function<void(const json& task)>;
+    void setTaskObserver(TaskObserver o);
+    // Tasks of this process still running or waiting for input.
+    int activeTasks() const;
+    // Waits until none is; false on timeout.
+    bool waitForTasks(std::chrono::milliseconds timeout) const;
+    // A notifications/tasks for a listen stream that asked for them, or nullopt.
+    static std::optional<json> taskUpdateFor(const Subscription& s, const json& task);
 
     // For notifications/cancelled: the request id it names.
     static std::optional<json> cancelledRequestId(const json& message);

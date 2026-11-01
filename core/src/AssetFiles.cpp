@@ -23,8 +23,9 @@ Result<unsigned> parseEngineTargets(const std::string& list) {
         if (item == "all") out |= kEngineGodot | kEngineUnity | kEngineTiled;
         else if (item == "godot") out |= kEngineGodot;
         else if (item == "unity") out |= kEngineUnity;
+        else if (item == "unity-rule-tiles" || item == "unity-ruletiles") out |= kEngineUnity | kEngineUnityRuleTiles;
         else if (item == "tiled") out |= kEngineTiled;
-        else return Error{ErrorCode::InvalidArgument, "Unknown engine \"" + item + "\" (use godot, unity, tiled, all or none)"};
+        else return Error{ErrorCode::InvalidArgument, "Unknown engine \"" + item + "\" (use godot, unity, unity-rule-tiles, tiled, all or none)"};
     }
     return out;
 }
@@ -40,14 +41,28 @@ class Plan {
 public:
     void image(fs::path p, Image img) { m_items.push_back({std::move(p), std::move(img), {}, true}); }
     void text(fs::path p, std::string s) { m_items.push_back({std::move(p), {}, std::move(s), false}); }
+    // A file that may already be there with the same content (shared
+    // scripts): then it is left alone and not reported.
+    void shared(fs::path p, std::string s) {
+        Item it{std::move(p), {}, std::move(s), false};
+        it.skipIfSame = true;
+        m_items.push_back(std::move(it));
+    }
 
     Result<WrittenFiles> commit(bool overwrite, std::vector<std::string> notes, bool dryRun = false) {
         std::set<fs::path> seen;
         WrittenFiles w;
-        for (const auto& it : m_items) {
+        for (auto& it : m_items) {
             if (!seen.insert(it.path).second) return Error{ErrorCode::Internal, "Two outputs share the path " + it.path.string()};
             std::error_code ec;
             const bool exists = fs::exists(it.path, ec);
+            if (exists && it.skipIfSame) {
+                auto bytes = readFileBytes(it.path, 4u << 20);
+                if (bytes && std::string(bytes.value().begin(), bytes.value().end()) == it.text) {
+                    it.skip = true;
+                    continue;
+                }
+            }
             if (dryRun) {
                 w.files.push_back(it.path);
                 if (exists) w.existing.push_back(it.path);
@@ -61,6 +76,7 @@ public:
             return w;
         }
         for (const auto& it : m_items) {
+            if (it.skip) continue;
             Status st = it.isImage ? writePng(it.img, it.path) : writeTextFile(it.path, it.text);
             if (!st) return st.error();
             w.files.push_back(it.path);
@@ -75,6 +91,8 @@ private:
         Image img;
         std::string text;
         bool isImage = false;
+        bool skipIfSame = false;
+        bool skip = false;
     };
     std::vector<Item> m_items;
 };
@@ -102,6 +120,33 @@ EngineSheet tileGrid(const Tileset& t, const std::string& stem) {
                 s.frames.push_back(f);
             }
     return s;
+}
+
+// Where AceStudio's Unity tile scripts go: if `dir` is inside a Unity project
+// that already has them (anywhere under Assets), there; otherwise into `dir`.
+// One copy per project, so their classes are not defined twice.
+fs::path unityScriptPath(const fs::path& dir, const std::string& file) {
+    std::error_code ec;
+    fs::path abs = fs::weakly_canonical(fs::absolute(dir, ec), ec);
+    for (fs::path p = abs; !p.empty(); p = p.parent_path()) {
+        if (fs::is_directory(p / "Assets", ec) && fs::is_directory(p / "ProjectSettings", ec)) {
+            int budget = 20000;   // entries looked at, so a huge project cannot stall an export
+            for (fs::recursive_directory_iterator it(p / "Assets", fs::directory_options::skip_permission_denied, ec), end;
+                 !ec && it != end && --budget > 0; it.increment(ec))
+                if (it->path().filename() == file) return it->path();
+            break;
+        }
+        if (p == p.parent_path()) break;
+    }
+    return dir / file;
+}
+
+void addUnityScripts(Plan& plan, const fs::path& dir) {
+    for (const UnityScript& sc : unityTileScripts()) {
+        const fs::path cs = unityScriptPath(dir, sc.file);
+        plan.shared(cs, sc.text);
+        plan.shared(fs::path(cs.string() + ".meta"), unityScriptMeta(sc.guid));
+    }
 }
 
 int ppuOr(int ppu, int fallback) { return ppu > 0 ? ppu : std::max(1, fallback); }
@@ -137,11 +182,19 @@ Result<WrittenFiles> writeTilesetFiles(const std::vector<Tileset>& levels, const
         if (o.engines & kEngineUnity) {
             plan.text(fs::path(img.string() + ".meta"),
                       unityTextureMeta(tileGrid(levels[i], name), guidFor(img), ppuOr(o.pixelsPerUnit, levels[i].tileSize)));
-            const std::string rule = unityRuleTile(levels[i], name, name, guidFor(img));
-            if (!rule.empty()) {
-                const fs::path asset = dir / (name + ".asset");
-                plan.text(asset, rule);
-                plan.text(fs::path(asset.string() + ".meta"), unityAssetMeta(unityGuid("acestudio:" + fileName(asset)), 11400000));
+            // AceStudio's tiles (no package needed): an autotile, or a Wang set for the dual grid.
+            const std::string tile = levels[i].scheme == AutotileScheme::Wang16 ? unityWangSet(levels[i], name, name, guidFor(img))
+                                                                                : unityAutoTile(levels[i], name, name, guidFor(img));
+            const fs::path asset = dir / (name + ".asset");
+            plan.text(asset, tile);
+            plan.text(fs::path(asset.string() + ".meta"), unityAssetMeta(unityGuid("acestudio:" + fileName(asset)), 11400000));
+            if (o.engines & kEngineUnityRuleTiles) {
+                const std::string rule = unityRuleTile(levels[i], name + "_ruletile", name, guidFor(img));
+                if (!rule.empty()) {
+                    const fs::path ruleAsset = dir / (name + "_ruletile.asset");
+                    plan.text(ruleAsset, rule);
+                    plan.text(fs::path(ruleAsset.string() + ".meta"), unityAssetMeta(unityGuid("acestudio:" + fileName(ruleAsset)), 11400000));
+                }
             }
         }
     }
@@ -168,14 +221,22 @@ Result<WrittenFiles> writeTilesetFiles(const std::vector<Tileset>& levels, const
     if (first.scheme == AutotileScheme::Wang16 && levels.size() > 1 && (o.engines & kEngineGodot))
         notes.push_back("Godot's corner mode works on the cell grid: a single isolated cell of an upper level stays empty "
                         "(AceStudio draws Wang tiles on the dual grid); paint upper levels at least 2x2");
-    if ((o.engines & kEngineUnity) && first.scheme == AutotileScheme::Wang16)
-        notes.push_back("Unity: Wang16 is a dual grid, which Rule Tiles cannot express; the images are sliced into one sprite per "
-                        "tile for placing by hand");
-    else if (o.engines & kEngineUnity)
-        notes.push_back("Unity: the Rule Tiles (.asset) need the 2D Tilemap Extras package (com.unity.2d.tilemap.extras); paint "
-                        "each level on its own Tilemap, lowest first" + std::string(withBase ? ", and the base with the _base tile" : ""));
-    if ((o.engines & kEngineUnity) && first.phases > 1 && first.scheme != AutotileScheme::Wang16)
-        notes.push_back("Unity: the Rule Tiles use the first of the tile variants only");
+    if (o.engines & kEngineUnity) {
+        addUnityScripts(plan, dir);
+        if (first.scheme == AutotileScheme::Wang16)
+            notes.push_back("Unity: add the AceStudioDualGrid component to a Tilemap, set its Wang Set (the .asset), and paint with "
+                            "the set's _terrain and _ground tiles; one Tilemap per level, lowest first. The AceStudio*.cs scripts "
+                            "need no package; keep one copy per project");
+        else
+            notes.push_back("Unity: paint each level's .asset autotile on its own Tilemap, lowest first" +
+                            std::string(withBase ? ", and the base with the _base tile" : "") +
+                            ". The AceStudio*.cs scripts need no package; keep one copy per project");
+        if ((o.engines & kEngineUnityRuleTiles) && first.scheme == AutotileScheme::Wang16)
+            notes.push_back("Unity: Rule Tiles cannot express Wang16's dual grid; use the AceStudioDualGrid tiles");
+        else if (o.engines & kEngineUnityRuleTiles)
+            notes.push_back("Unity: the _ruletile.asset files need the 2D Tilemap Extras package (com.unity.2d.tilemap.extras)");
+        if (first.phases > 1) notes.push_back("Unity: the tiles use the first of the tile variants only");
+    }
     return plan.commit(o.overwrite, std::move(notes), o.dryRun);
 }
 
