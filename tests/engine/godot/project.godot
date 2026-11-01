@@ -1,0 +1,6 @@
+; Minimal Godot 4 project for the engine-export check (tests/engine/README.md).
+config_version=5
+
+[application]
+config/name="AceStudio export check"
+config/features=PackedStringArray("4.6")

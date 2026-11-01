@@ -1,0 +1,388 @@
+// acestudio-cli asset commands (Phase 7): tilesets, seam checks, atlases,
+// slicing, UI kits and engine export, over the same core code as the app.
+
+#include "CliCommon.h"
+
+#include "acestudio/core/AssetFiles.h"
+#include "acestudio/core/AssetTools.h"
+#include "acestudio/core/Atlas.h"
+#include "acestudio/core/Autotile.h"
+#include "acestudio/core/PngCodec.h"
+#include "acestudio/core/Transform.h"
+
+#include <filesystem>
+#include <sstream>
+
+namespace acestudio::cli {
+
+namespace fs = std::filesystem;
+
+namespace {
+
+std::vector<std::string> splitList(const std::string& s) {
+    std::vector<std::string> out;
+    std::stringstream ss(s);
+    std::string item;
+    while (std::getline(ss, item, ',')) {
+        while (!item.empty() && item.front() == ' ') item.erase(item.begin());
+        while (!item.empty() && item.back() == ' ') item.pop_back();
+        if (!item.empty()) out.push_back(item);
+    }
+    return out;
+}
+
+std::optional<double> optDouble(const Args& a, const std::string& k) {
+    auto v = a.opt(k);
+    if (!v) return std::nullopt;
+    try {
+        std::size_t used = 0;
+        const double d = std::stod(*v, &used);
+        if (used != v->size()) return std::nullopt;
+        return d;
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+// WxH, e.g. 16x16.
+std::optional<std::pair<int, int>> parseSize(const std::string& s) {
+    const std::size_t x = s.find('x');
+    if (x == std::string::npos) return std::nullopt;
+    auto w = parseInt(s.substr(0, x)), h = parseInt(s.substr(x + 1));
+    if (!w || !h || *w < 1 || *h < 1) return std::nullopt;
+    return std::pair{*w, *h};
+}
+
+// A,B, e.g. 2,0.
+std::optional<std::pair<int, int>> parsePair(const std::string& s) {
+    const auto p = splitList(s);
+    if (p.size() != 2) return std::nullopt;
+    auto a = parseInt(p[0]), b = parseInt(p[1]);
+    if (!a || !b) return std::nullopt;
+    return std::pair{*a, *b};
+}
+
+// Square crop from the centre, nearest-scaled to size x size.
+Result<Image> fitSquare(const Image& img, int size) {
+    const int side = std::min(img.width(), img.height());
+    Image sq = img.copy({(img.width() - side) / 2, (img.height() - side) / 2, side, side});
+    if (side == size) return sq;
+    return scaleNearest(sq, size, size);
+}
+
+json filesJson(const WrittenFiles& w) {
+    json files = json::array(), notes = json::array();
+    for (const auto& f : w.files) files.push_back(f.string());
+    for (const auto& n : w.notes) notes.push_back(n);
+    return {{"files", files}, {"notes", notes}};
+}
+
+std::string filesHuman(const WrittenFiles& w) {
+    std::string s = "Wrote " + std::to_string(w.files.size()) + " file(s):\n";
+    for (const auto& f : w.files) s += "  " + f.string() + "\n";
+    for (const auto& n : w.notes) s += "Note: " + n + "\n";
+    return s;
+}
+
+std::optional<AutotileScheme> schemeArg(const Args& a) {
+    return autotileSchemeFromString(a.opt("scheme").value_or("blob47"));
+}
+
+Result<unsigned> enginesArg(const Args& a) { return parseEngineTargets(a.opt("engines").value_or("none")); }
+
+} // namespace
+
+// tileset --base B.png --terrain T1.png[,T2.png,...] --out tiles.png
+int cmdTileset(const Args& a, Output& out) {
+    const auto scheme = schemeArg(a);
+    if (!scheme) return out.fail(kUsage, "tileset: --scheme must be blob47, wang16 or cardinal16");
+    const auto basePath = a.opt("base");
+    const auto terrains = splitList(a.opt("terrain").value_or(""));
+    const auto outPath = a.opt("out");
+    if (!basePath || terrains.empty() || !outPath) return out.fail(kUsage, "tileset: --base, --terrain and --out are required");
+    if (terrains.size() > 3) return out.fail(kUsage, "tileset: at most three terrain levels");
+    const int tile = optInt(a, "tile").value_or(16);
+    const int phases = optInt(a, "phases").value_or(1);
+    if (tile < 4 || tile > 256) return out.fail(kUsage, "tileset: --tile must be 4..256");
+    if (phases < 1 || phases > 4) return out.fail(kUsage, "tileset: --phases must be 1..4");
+    TilesetStyle st;
+    st.roundness = optDouble(a, "roundness").value_or(1.0);
+    st.edgeNoise = optDouble(a, "noise").value_or(0.3);
+    st.noiseScale = optInt(a, "noise-scale").value_or(4);
+    st.outline = a.flags.count("no-outline") == 0;
+    st.seed = static_cast<std::uint32_t>(optInt(a, "seed").value_or(1));
+    auto engines = enginesArg(a);
+    if (!engines) return out.fail(engines.error());
+
+    auto load = [&](const std::string& p) -> Result<Image> {
+        auto img = readPng(p);
+        if (!img) return img.error();
+        return fitSquare(img.value(), tile * phases);
+    };
+    auto base = load(*basePath);
+    if (!base) return out.fail(base.error());
+    std::vector<Tileset> levels;
+    for (std::size_t i = 0; i < terrains.size(); ++i) {
+        auto tex = load(terrains[i]);
+        if (!tex) return out.fail(tex.error());
+        auto t = generateTileset(*scheme, i == 0 ? base.value() : Image(), tex.value(), st, tile);
+        if (!t) return out.fail(t.error());
+        levels.push_back(std::move(t).value());
+    }
+    // Seam check of the result, and of the textures themselves.
+    json seams = json::array();
+    int issues = 0;
+    for (std::size_t i = 0; i < levels.size(); ++i) {
+        auto rep = checkSeams(levels[i]);
+        if (!rep) return out.fail(rep.error());
+        seams.push_back({{"level", i + 1}, {"pairs", rep.value().pairsChecked}, {"seams", rep.value().issues.size()}});
+        issues += static_cast<int>(rep.value().issues.size());
+    }
+    GodotTerrainNames names;
+    const auto nameList = splitList(a.opt("names").value_or(""));
+    if (!nameList.empty()) names.base = nameList[0];
+    for (std::size_t i = 1; i < nameList.size(); ++i) names.levels.push_back(nameList[i]);
+    AssetWriteOptions wo;
+    wo.engines = engines.value();
+    wo.overwrite = a.force;
+    wo.pixelsPerUnit = optInt(a, "ppu").value_or(0);
+    auto w = writeTilesetFiles(levels, *outPath, wo, names);
+    if (!w) return out.fail(w.error());
+    json j = filesJson(w.value());
+    j["seamCheck"] = seams;
+    j["scheme"] = std::string(toString(*scheme));
+    j["tileSize"] = tile;
+    j["phases"] = phases;
+    std::string human = filesHuman(w.value());
+    human += issues == 0 ? "Seam check: no seams.\n" : "Seam check: " + std::to_string(issues) + " seam(s); the textures probably do not tile.\n";
+    return out.success(std::move(j), human);
+}
+
+// seams tiles.png --scheme S [--phases N] [--base base.png]
+int cmdSeams(const Args& a, Output& out) {
+    if (a.positional.size() != 2) return out.fail(kUsage, "seams: expected one tileset PNG");
+    const auto scheme = schemeArg(a);
+    if (!scheme) return out.fail(kUsage, "seams: --scheme must be blob47, wang16 or cardinal16");
+    auto img = readPng(a.positional[1]);
+    if (!img) return out.fail(img.error());
+    Tileset t;
+    t.scheme = *scheme;
+    t.phases = optInt(a, "phases").value_or(1);
+    t.image = std::move(img).value();
+    if (t.phases < 1 || t.phases > 4) return out.fail(kUsage, "seams: --phases must be 1..4");
+    t.tileSize = t.image.width() / (tilesetGrid(*scheme).first * t.phases);
+    if (auto b = a.opt("base")) {
+        auto bi = readPng(*b);
+        if (!bi) return out.fail(bi.error());
+        t.base = std::move(bi).value();
+    }
+    auto rep = checkSeams(t);
+    if (!rep) return out.fail(rep.error());
+    json issues = json::array();
+    std::string human;
+    for (const auto& i : rep.value().issues) {
+        issues.push_back({{"a", i.a}, {"b", i.b}, {"edge", i.horizontal ? "right" : "bottom"}, {"jump", i.jump}, {"phase", {i.phaseX, i.phaseY}}});
+        human += "  tile " + std::to_string(i.a) + (i.horizontal ? " -> right -> " : " -> below -> ") + std::to_string(i.b) + "\n";
+    }
+    json j = {{"pairs", rep.value().pairsChecked}, {"seams", rep.value().issues.size()}, {"issues", issues}, {"tileSize", t.tileSize}};
+    if (!rep.value().ok()) {
+        // Seams are invalid data for a tileset: exit 3, with the details.
+        if (out.isJson()) {
+            j["ok"] = false;
+            j["exitCode"] = kCorrupt;
+            std::cout << j.dump() << "\n";
+            return kCorrupt;
+        }
+        std::cerr << rep.value().issues.size() << " seam(s) in " << rep.value().pairsChecked << " pairs:\n" << human;
+        return kCorrupt;
+    }
+    return out.success(std::move(j), "No seams in " + std::to_string(rep.value().pairsChecked) + " pairs of tiles that can touch.\n");
+}
+
+// atlas a.png b.png ... --out atlas.png
+int cmdAtlas(const Args& a, Output& out) {
+    if (a.positional.size() < 2) return out.fail(kUsage, "atlas: expected PNG files to pack");
+    const auto outPath = a.opt("out");
+    if (!outPath) return out.fail(kUsage, "atlas: --out is required");
+    std::vector<AtlasItem> items;
+    for (std::size_t i = 1; i < a.positional.size(); ++i) {
+        auto img = readPng(a.positional[i]);
+        if (!img) return out.fail(img.error());
+        items.push_back({fs::path(a.positional[i]).stem().string(), std::move(img).value()});
+    }
+    AtlasOptions o;
+    o.maxWidth = o.maxHeight = optInt(a, "max").value_or(4096);
+    o.padding = optInt(a, "padding").value_or(1);
+    o.border = optInt(a, "border").value_or(0);
+    o.extrude = optInt(a, "extrude").value_or(0);
+    o.trim = a.flags.count("trim") > 0;
+    o.powerOfTwo = a.flags.count("pot") > 0;
+    o.allowRotation = a.flags.count("rotate") > 0;
+    o.mergeDuplicates = a.flags.count("no-merge") == 0;
+    o.multiplePages = true;
+    auto atlas = packAtlas(items, o);
+    if (!atlas) return out.fail(atlas.error());
+    auto engines = enginesArg(a);
+    if (!engines) return out.fail(engines.error());
+    fs::path png = *outPath;
+    if (png.extension() != ".png") png += ".png";
+    if (atlas.value().pages.size() == 1) {
+        AssetWriteOptions wo;
+        wo.engines = engines.value();
+        wo.overwrite = a.force;
+        wo.pixelsPerUnit = optInt(a, "ppu").value_or(0);
+        auto w = writeAtlasFiles(atlas.value(), png, wo);
+        if (!w) return out.fail(w.error());
+        json j = filesJson(w.value());
+        j["pages"] = 1;
+        j["sprites"] = items.size();
+        return out.success(std::move(j), filesHuman(w.value()));
+    }
+    if (engines.value() != kEngineNone) return out.fail(kUsage, "atlas: engine files need a single page; raise --max");
+    std::vector<std::string> names;
+    std::vector<fs::path> paths;
+    for (std::size_t p = 0; p < atlas.value().pages.size(); ++p) {
+        paths.push_back(png.parent_path() / (png.stem().string() + "_" + std::to_string(p) + ".png"));
+        names.push_back(paths.back().filename().string());
+    }
+    const fs::path js = fs::path(png).replace_extension(".json");
+    std::error_code ec;
+    if (!a.force) {
+        for (const auto& p : paths)
+            if (fs::exists(p, ec)) return out.fail(kIo, p.string() + " already exists (use --force)");
+        if (fs::exists(js, ec)) return out.fail(kIo, js.string() + " already exists (use --force)");
+    }
+    json files = json::array();
+    for (std::size_t p = 0; p < paths.size(); ++p) {
+        if (auto st = writePng(atlas.value().pages[p], paths[p]); !st) return out.fail(st.error());
+        files.push_back(paths[p].string());
+    }
+    if (auto st = writeTextFile(js, atlasJson(atlas.value(), names)); !st) return out.fail(st.error());
+    files.push_back(js.string());
+    return out.success({{"files", files}, {"pages", paths.size()}, {"sprites", items.size()}},
+                       "Wrote " + std::to_string(paths.size()) + " pages and " + js.string() + "\n");
+}
+
+// slice sheet.png --out folder [--grid WxH [--offset X,Y] [--spacing X,Y]]
+int cmdSlice(const Args& a, Output& out) {
+    if (a.positional.size() != 2) return out.fail(kUsage, "slice: expected one sprite sheet PNG");
+    const auto outDir = a.opt("out");
+    if (!outDir) return out.fail(kUsage, "slice: --out (a folder) is required");
+    auto img = readPng(a.positional[1]);
+    if (!img) return out.fail(img.error());
+    SliceOptions so;
+    so.tolerance = optInt(a, "tolerance").value_or(8);
+    so.mergeDistance = optInt(a, "merge").value_or(2);
+    so.minPixels = optInt(a, "min-pixels").value_or(4);
+    if (auto bg = a.opt("background")) {
+        auto c = Rgba8::fromHex(*bg);
+        if (!c) return out.fail(kUsage, "slice: --background expects #rrggbb");
+        so.background = *c;
+    }
+    std::vector<SlicedSprite> slices;
+    if (auto g = a.opt("grid")) {
+        GridGuess grid;
+        if (*g == "auto") {
+            grid = detectGrid(img.value(), so);
+            if (!grid.found) return out.fail(kCorrupt, "slice: no regular grid found; try without --grid");
+        } else {
+            auto sz = parseSize(*g);
+            if (!sz) return out.fail(kUsage, "slice: --grid expects WxH or auto");
+            grid.cellWidth = sz->first;
+            grid.cellHeight = sz->second;
+            if (auto off = a.opt("offset")) {
+                auto p = parsePair(*off);
+                if (!p) return out.fail(kUsage, "slice: --offset expects X,Y");
+                grid.offsetX = p->first;
+                grid.offsetY = p->second;
+            }
+            if (auto sp = a.opt("spacing")) {
+                auto p = parsePair(*sp);
+                if (!p) return out.fail(kUsage, "slice: --spacing expects X,Y");
+                grid.spacingX = p->first;
+                grid.spacingY = p->second;
+            }
+            grid.columns = (img.value().width() - grid.offsetX + grid.spacingX) / (grid.cellWidth + grid.spacingX);
+            grid.rows = (img.value().height() - grid.offsetY + grid.spacingY) / (grid.cellHeight + grid.spacingY);
+            grid.found = grid.columns > 0 && grid.rows > 0;
+        }
+        slices = sliceGrid(img.value(), grid, a.flags.count("keep-empty") == 0, so);
+    } else {
+        slices = detectSprites(img.value(), so);
+    }
+    if (slices.empty()) return out.fail(kCorrupt, "slice: no sprites found");
+    const fs::path dir = *outDir;
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    const std::string stem = fs::path(a.positional[1]).stem().string();
+    const fs::path js = dir / (stem + ".slices.json");
+    if (!a.force) {
+        for (const auto& s : slices)
+            if (fs::exists(dir / (s.name + ".png"), ec)) return out.fail(kIo, (dir / (s.name + ".png")).string() + " already exists (use --force)");
+        if (fs::exists(js, ec)) return out.fail(kIo, js.string() + " already exists (use --force)");
+    }
+    json files = json::array(), rects = json::array();
+    for (const auto& s : slices) {
+        const fs::path p = dir / (s.name + ".png");
+        if (auto st = writePng(img.value().copy(s.rect), p); !st) return out.fail(st.error());
+        files.push_back(p.string());
+        rects.push_back({{"name", s.name}, {"x", s.rect.x}, {"y", s.rect.y}, {"w", s.rect.w}, {"h", s.rect.h}});
+    }
+    if (auto st = writeTextFile(js, slicesJson(slices, fs::path(a.positional[1]).filename().string(), img.value().width(), img.value().height())); !st)
+        return out.fail(st.error());
+    files.push_back(js.string());
+    return out.success({{"files", files}, {"sprites", rects}},
+                       "Found " + std::to_string(slices.size()) + " sprite(s); wrote them and " + js.string() + "\n");
+}
+
+// uikit --out ui.png [--scale N] [--colors base,light,dark,outline,accent,text] [--square]
+int cmdUiKit(const Args& a, Output& out) {
+    const auto outPath = a.opt("out");
+    if (!outPath) return out.fail(kUsage, "uikit: --out is required");
+    UiTheme th;
+    th.scale = optInt(a, "scale").value_or(1);
+    if (th.scale < 1 || th.scale > 8) return out.fail(kUsage, "uikit: --scale must be 1..8");
+    th.rounded = a.flags.count("square") == 0;
+    if (auto c = a.opt("colors")) {
+        const auto list = splitList(*c);
+        Rgba8* slots[] = {&th.base, &th.light, &th.dark, &th.outline, &th.accent, &th.text};
+        if (list.size() != 6) return out.fail(kUsage, "uikit: --colors expects 6 colours: base,light,dark,outline,accent,text");
+        for (std::size_t i = 0; i < 6; ++i) {
+            auto col = Rgba8::fromHex(list[i]);
+            if (!col) return out.fail(kUsage, "uikit: bad colour " + list[i]);
+            *slots[i] = *col;
+        }
+    }
+    if (auto tex = a.opt("texture")) {
+        auto img = readPng(*tex);
+        if (!img) return out.fail(img.error());
+        th.texture = std::move(img).value();
+    }
+    auto engines = enginesArg(a);
+    if (!engines) return out.fail(engines.error());
+    AssetWriteOptions wo;
+    wo.engines = engines.value();
+    wo.overwrite = a.force;
+    wo.pixelsPerUnit = optInt(a, "ppu").value_or(0);
+    auto w = writeUiKitFiles(generateUiKit(th), *outPath, wo);
+    if (!w) return out.fail(w.error());
+    return out.success(filesJson(w.value()), filesHuman(w.value()));
+}
+
+// tileset-template --scheme S --tile N --out t.png
+int cmdTemplate(const Args& a, Output& out) {
+    const auto scheme = schemeArg(a);
+    if (!scheme) return out.fail(kUsage, "tileset-template: --scheme must be blob47, wang16 or cardinal16");
+    const auto outPath = a.opt("out");
+    if (!outPath) return out.fail(kUsage, "tileset-template: --out is required");
+    const int tile = optInt(a, "tile").value_or(16);
+    if (tile < 4 || tile > 256) return out.fail(kUsage, "tileset-template: --tile must be 4..256");
+    std::error_code ec;
+    if (fs::exists(*outPath, ec) && !a.force) return out.fail(kIo, *outPath + " already exists (use --force)");
+    const Image img = tilesetTemplate(*scheme, tile, {96, 168, 72, 255}, {150, 108, 70, 255});
+    if (auto st = writePng(img, *outPath); !st) return out.fail(st.error());
+    return out.success({{"path", *outPath}, {"width", img.width()}, {"height", img.height()}},
+                       "Wrote " + *outPath + " (" + std::to_string(img.width()) + "x" + std::to_string(img.height()) + ")\n");
+}
+
+} // namespace acestudio::cli

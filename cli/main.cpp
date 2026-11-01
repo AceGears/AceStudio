@@ -5,6 +5,7 @@
 //   4 unsupported (newer) version, 5 internal error.
 
 #include "CliCommon.h"
+#include "acestudio/core/AssetFiles.h"
 #include "acestudio/core/Document.h"
 #include "acestudio/core/Export.h"
 #include "acestudio/core/FileUtil.h"
@@ -51,6 +52,27 @@ const char* kUsageText =
     "                                         --padding N --spacing N --trim --merge-duplicates --pot\n"
     "                                         --data hash|array (writes <out>.json beside the PNG)\n"
     "                                  png:   --out is a folder; writes <name>_NNN.png per frame\n"
+    "                                  --engines godot,unity: with sheet, also a Godot SpriteFrames .tres\n"
+    "                                  (one animation per tag) and Unity .meta + .anim files\n"
+    "\n"
+    "  tileset --base B.png --terrain T1.png[,T2.png,T3.png] --out tiles.png [options]\n"
+    "                                  Autotile set (terrain levels over a base), seam-checked.\n"
+    "                                  --scheme blob47|wang16|cardinal16 --tile 16 --phases 1..4\n"
+    "                                  --roundness 1 --noise 0.3 --noise-scale 4 --seed 1 --no-outline\n"
+    "                                  --names base,level1,... --engines godot,unity,tiled --ppu N\n"
+    "  seams <tiles.png> --scheme S [--phases N] [--base base.png]\n"
+    "                                  Seam check of a tileset (exit 3 when there are seams)\n"
+    "  tileset-template --scheme S --tile N --out t.png\n"
+    "                                  Guide image for drawing a tileset by hand\n"
+    "  atlas <a.png> <b.png> ... --out atlas.png [--max 4096] [--padding 1] [--border 0]\n"
+    "        [--extrude 0] [--trim] [--pot] [--rotate] [--no-merge] [--engines unity] [--ppu N]\n"
+    "                                  Deterministic atlas + TexturePacker-style JSON\n"
+    "  slice <sheet.png> --out <folder> [--grid WxH|auto [--offset X,Y] [--spacing X,Y] [--keep-empty]]\n"
+    "        [--background #rrggbb] [--tolerance 8] [--merge 2] [--min-pixels 4]\n"
+    "                                  Cut a sheet into sprites (PNGs + .slices.json)\n"
+    "  uikit --out ui.png [--scale 1] [--colors base,light,dark,outline,accent,text] [--square]\n"
+    "        [--texture pattern.png] [--engines godot,unity]\n"
+    "                                  Themed UI kit with 9-slice data (Godot StyleBoxTexture .tres)\n"
     "\n"
     "  ai status                       Show the AI runtime, GPU and available tasks\n"
     "  ai setup --profile P --yes      Create the AI Python environment and install packages\n"
@@ -61,7 +83,7 @@ const char* kUsageText =
     "  ai upscale <in.png> --out <png> [--model id] [--tile 192] [--cpu]\n"
     "  ai generate --prompt TEXT --out <png> [--negative TEXT] [--width W --height H] [--steps N]\n"
     "              [--guidance G] [--seed S] [--lora pixel-art-xl] [--pixel 64x64 [--colors 16]]\n"
-    "              [--init in.png --strength 0.6] [--cpu]\n"
+    "              [--init in.png --strength 0.6] [--tileable x|xy] [--cpu]\n"
     "\n"
     "Existing files are never overwritten unless --force is given.\n";
 
@@ -71,7 +93,8 @@ std::optional<Args> parseArgs(int argc, char** argv, std::string& err) {
         std::string s = argv[i];
         if (s == "--json") a.json = true;
         else if (s == "--force") a.force = true;
-        else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot" || s == "--yes" || s == "--cpu")
+        else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot" || s == "--yes" || s == "--cpu" || s == "--rotate" ||
+                 s == "--no-outline" || s == "--no-merge" || s == "--square" || s == "--keep-empty")
             a.flags.insert(s.substr(2));
         else if (s == "-h" || s == "--help") { a.positional = {"help"}; return a; }
         else if (s.rfind("--", 0) == 0) {
@@ -215,6 +238,21 @@ int cmdExport(const Args& a, Output& out) {
         o.scale = scale;
         const std::string style = a.opt("data").value_or("hash");
         if (style != "hash" && style != "array") return out.fail(kUsage, "export: --data must be hash or array");
+        if (auto eng = a.opt("engines")) {
+            auto targets = parseEngineTargets(*eng);
+            if (!targets) return out.fail(targets.error());
+            AssetWriteOptions wo;
+            wo.engines = targets.value();
+            wo.overwrite = a.force;
+            wo.pixelsPerUnit = optInt(a, "ppu").value_or(0);
+            auto w = writeSheetFiles(doc.value(), range, o, target, wo);
+            if (!w) return out.fail(w.error());
+            json files = json::array(), notes = json::array();
+            std::string human = "Wrote " + std::to_string(w.value().files.size()) + " file(s):\n";
+            for (const auto& f : w.value().files) { files.push_back(f.string()); human += "  " + f.string() + "\n"; }
+            for (const auto& n : w.value().notes) { notes.push_back(n); human += "Note: " + n + "\n"; }
+            return out.success({{"files", files}, {"notes", notes}}, human);
+        }
         auto files = writeSpriteSheet(doc.value(), range, o, target, style == "hash" ? JsonStyle::Hash : JsonStyle::Array, a.force);
         if (!files) return out.fail(files.error());
         const SheetFiles& f = files.value();
@@ -266,6 +304,12 @@ int main(int argc, char** argv) {
         if (cmd == "render") return cmdRender(*args, out);
         if (cmd == "export") return cmdExport(*args, out);
         if (cmd == "ai") return acestudio::cli::cmdAi(*args, out);
+        if (cmd == "tileset") return acestudio::cli::cmdTileset(*args, out);
+        if (cmd == "seams") return acestudio::cli::cmdSeams(*args, out);
+        if (cmd == "tileset-template") return acestudio::cli::cmdTemplate(*args, out);
+        if (cmd == "atlas") return acestudio::cli::cmdAtlas(*args, out);
+        if (cmd == "slice") return acestudio::cli::cmdSlice(*args, out);
+        if (cmd == "uikit") return acestudio::cli::cmdUiKit(*args, out);
         return out.fail(kUsage, "Unknown command '" + cmd + "'. Run with --help.");
     } catch (const std::exception& e) {
         return out.fail(kInternal, std::string("Unexpected error: ") + e.what());

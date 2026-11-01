@@ -24,6 +24,7 @@ add_executable(acestudio_core_tests
     test_atlas.cpp
     test_autotile.cpp
     test_asset_tools.cpp
+    test_engine_export.cpp
     test_subprocess.cpp
     test_ai_worker.cpp
     test_model_catalog.cpp
@@ -46,5 +47,11 @@ if(ACESTUDIO_BUILD_CLI)
         COMMAND ${CMAKE_COMMAND}
             -DCLI=$<TARGET_FILE:acestudio-cli>
             -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/cli_smoke
+            -DTEXTURES=${CMAKE_CURRENT_SOURCE_DIR}/engine/textures
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cli_smoke.cmake)
 endif()
+
+# Engine-export fixture for the real-engine checks (not a CTest test itself:
+# it needs Godot / Unity, see tests/engine/README.md).
+add_executable(engine_fixture engine/fixture.cpp)
+target_link_libraries(engine_fixture PRIVATE AceStudio::core)

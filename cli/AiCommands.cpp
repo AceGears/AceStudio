@@ -256,6 +256,10 @@ int cmdImageTask(const Args& a, Output& out, const AiContext& c, const ModelCata
                   {"steps", optInt(a, "steps").value_or(30)}, {"seed", optInt(a, "seed").value_or(-1)}};
         if (a.flags.count("cpu")) params["device"] = "cpu";
         if (a.opt("guidance")) params["guidance"] = std::stod(*a.opt("guidance"));
+        if (auto t = a.opt("tileable")) {
+            if (*t != "none" && *t != "x" && *t != "xy") return out.fail(kUsage, "--tileable must be none, x or xy");
+            params["tileable"] = *t;
+        }
         if (auto lora = a.opt("lora")) {
             const ModelEntry* l = cat.find(*lora);
             if (!l || l->kind != "lora" || store.state(*l) != InstallState::Installed)
@@ -269,6 +273,7 @@ int cmdImageTask(const Args& a, Output& out, const AiContext& c, const ModelCata
             if (!w || !h || *w < 1 || *h < 1)
                 return out.fail(kUsage, "--pixel expects WIDTHxHEIGHT, e.g. 64x64");
             params["pixel"] = {{"width", *w}, {"height", *h}};
+            if (params.value("tileable", std::string("none")) != "none") params["pixel"]["crop"] = false;
             if (optInt(a, "colors")) params["pixel"]["colors"] = *optInt(a, "colors");
         }
         if (auto init = a.opt("init")) {

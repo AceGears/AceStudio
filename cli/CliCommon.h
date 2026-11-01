@@ -71,6 +71,8 @@ public:
         return kOk;
     }
 
+    bool isJson() const { return m_json; }
+
 private:
     bool m_json;
 };
@@ -88,5 +90,11 @@ inline std::optional<int> optInt(const Args& a, const std::string& key) {
 }
 
 int cmdAi(const Args& a, Output& out);
+int cmdTileset(const Args& a, Output& out);
+int cmdSeams(const Args& a, Output& out);
+int cmdAtlas(const Args& a, Output& out);
+int cmdSlice(const Args& a, Output& out);
+int cmdUiKit(const Args& a, Output& out);
+int cmdTemplate(const Args& a, Output& out);
 
 } // namespace acestudio::cli
