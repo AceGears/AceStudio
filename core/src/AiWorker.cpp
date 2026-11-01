@@ -701,11 +701,16 @@ Result<fs::path> ensureVenv(const PythonInfo& base, const fs::path& venvDir) {
     std::error_code ec;
     if (fs::exists(py, ec)) {
         auto existing = probePython(py);
-        // Reuse it only if it was made from the same Python minor version;
-        // otherwise (e.g. it was built on a Python too new for the AI
-        // packages) rebuild it. It is AceStudio's own folder: no user data.
-        if (existing && existing.value().minor == base.minor && existing.value().bits == base.bits) return py;
-        ACE_LOG_INFO("ai", "Rebuilding the AI Python environment for Python " + base.version);
+        // Keep a working environment whose Python the AI packages support,
+        // even if it was made from another Python than `base` (say a system
+        // 3.13 before the installer bundled 3.12): rebuilding would throw
+        // away gigabytes of installed packages. Rebuild only one that no
+        // longer runs, is 32-bit, or is too new for the AI packages. It is
+        // AceStudio's own folder: no user data.
+        if (existing && !existing.value().is32Bit() && existing.value().minor >= 10 && !existing.value().newerThanAiPackages())
+            return py;
+        ACE_LOG_INFO("ai", "Rebuilding the AI Python environment for Python " + base.version +
+                               (existing ? " (the old one used Python " + existing.value().version + ")" : std::string(" (the old one no longer runs)")));
         fs::remove_all(venvDir, ec);
         if (ec) return Error{ErrorCode::IoError, "Cannot replace " + venvDir.string() + ": " + ec.message()};
     }

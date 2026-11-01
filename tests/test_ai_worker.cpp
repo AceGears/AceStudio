@@ -68,6 +68,36 @@ TEST_CASE("probePython reports version and pointer size", "[ai]") {
     CHECK((p.value().bits == 32 || p.value().bits == 64));
 }
 
+TEST_CASE("A working AI environment survives setup with another supported Python", "[ai]") {
+    REQUIRE_PYTHON();
+    if (python()->newerThanAiPackages()) SKIP("this Python is newer than the AI packages support");
+    TempDir tmp;
+    const auto venvDir = tmp / "python";
+    auto made = ensureVenv(*python(), venvDir);
+    REQUIRE(made);
+    // Something installed into it, standing for gigabytes of packages.
+    const auto marker = venvDir / "installed-profile.txt";
+    { std::ofstream(marker) << "diffusion-cuda"; }
+
+    // Setup again with a base of another minor version (as when the installer
+    // bundles 3.12 and the environment was made from a system 3.13): kept.
+    PythonInfo other = *python();
+    other.minor = python()->minor == 10 ? 11 : python()->minor - 1;
+    other.version = "3." + std::to_string(other.minor) + ".0";
+    auto again = ensureVenv(other, venvDir);
+    REQUIRE(again);
+    CHECK(again.value() == made.value());
+    CHECK(std::filesystem::exists(marker));
+
+    // An environment that no longer runs is rebuilt.
+    std::filesystem::remove(made.value());
+    { std::ofstream(made.value()) << "not a python"; }
+    auto rebuilt = ensureVenv(*python(), venvDir);
+    REQUIRE(rebuilt);
+    CHECK_FALSE(std::filesystem::exists(marker));
+    CHECK(probePython(rebuilt.value()));
+}
+
 TEST_CASE("AI worker starts, reports tasks and runs a job with progress", "[ai]") {
     REQUIRE_PYTHON();
     Fixture f;

@@ -39,7 +39,9 @@ Fuzzing: libFuzzer with AddressSanitizer and UndefinedBehaviorSanitizer (clang 1
 targets (`tests/fuzz`): project files, PNG, GIF, APNG, WebP, palettes, licence keys, Lua
 scripts and MCP messages. Each target ran 10 minutes from seed files (about 12 million
 inputs in all); GIF, MCP, WebP, Lua, PNG and APNG ran a second 10 minutes on the grown corpus
-after the first fixes, and the new GIF decoder 20 more minutes.
+after the first fixes. The new GIF decoder then ran twice more: 20 minutes with 4 workers
+(which found finding 6), and after that fix another 20 minutes with 4 workers (about 391,000
+inputs) with no findings.
 
 Found and fixed:
 
@@ -62,8 +64,12 @@ Found and fixed:
    uses AceStudio's own bounds-checked decoder (LZW with chain-length checks, interlacing,
    disposal 0–3, local palettes, transparency, NETSCAPE loop count), and stb_image is built
    with PNG support only. The new decoder matches Pillow 12.3 pixel for pixel on interlaced,
-   animated and multi-palette test GIFs (`tests/data/gif`) and ran 20 more minutes under the
-   fuzzer.
+   animated and multi-palette test GIFs (`tests/data/gif`).
+6. **The new GIF decoder trusted a frame's declared size** (fuzzing, third round). A 16×16
+   GIF whose frame descriptor claimed 65535×65535 made the decoder reserve 4 GB for the
+   frame's colour indices before reading any data. Frames are now decoded only up to the last
+   row that lands on the screen (browsers also clip such frames), a frame needing more than
+   256 MB of indices is refused, and buffers grow with the data actually present.
 
 Third-party notes: UBSan reports "applying zero offset to null pointer" inside miniz's
 inflate (`miniz.c:474`, `miniz_tinfl.c:202`) on APNG input. This is pointer arithmetic on a
@@ -78,6 +84,8 @@ left in the upstream code.
   must stay private, or anyone can build without the check.
 - **pip packages are pinned by version, not hash.** A compromised release of a pinned
   version on PyPI would be installed. Moving to `--require-hashes` lock files is planned.
+- **Nightly builds are public while the repository is public.** The GitHub release with the
+  nightly installer can be downloaded by anyone until the repository is made private.
 - **The installer and executables are not code-signed yet.** Windows SmartScreen will warn,
   and users cannot verify the publisher. AceGears needs a code-signing certificate (an EV or
   OV certificate, or Azure Trusted Signing) before the first public release.
