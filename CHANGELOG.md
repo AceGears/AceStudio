@@ -2,6 +2,60 @@
 
 All notable changes are documented here. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.10.0] — 2026-11-01 — Premium AI game asset studio (unreleased)
+
+### Added
+- **Ten workspaces** on a left rail: Home, AI Studio, Characters, Animation, World, Library,
+  Pixel Editor, Export, Connect and Settings.
+  - Charcoal dark theme with a light theme, and electric blue (#0A6CF5) sampled from the logo.
+  - Motion that honours Reduced motion and the Windows animation setting.
+  - The unmodified logo on the app, .ico, installer, shortcuts, splash, About and Home.
+- **AI Studio, a single generator** for 20 asset types, 6 styles and 5 perspectives.
+  - Quality presets, palettes, transparency and up to four reference images, each with a
+    role: character, style, palette, environment, creature, equipment, animation or
+    composition.
+  - Every result is checked automatically.
+  - Backends: FLUX.2 [klein] 4B (Apache-2.0, FP8 + offload for 8 GB GPUs) and SDXL with
+    Pixel Art XL.
+- **Game styles.** Profiles are measured from reference images without AI: palette, pixel
+  scale, outline, shading depth, light direction, saturation, value and detail.
+  - Lock Game Style at three strengths.
+  - Every result is scored against the locked style.
+- **Animate Sprite**, without AI. One still sprite becomes 23 actions (idle, walk, run,
+  sprint, jump, fall, land, three attacks, dodge, roll, dash, block, hurt, death, cast, swim,
+  fly, wing flap, climb, sit, sleep) plus custom motion.
+  - The motion fits the subject: two legs, four legs, blob or object.
+  - Frames use only the sprite's colours.
+  - Each clip is checked for size drift, jumps and loop seams.
+  - Also available as `acestudio-cli animate` and the `sprite_animate` MCP tool.
+- **Character Pack.** From one generated side view, the other views are generated (front,
+  back, diagonals; left views mirrored) and every view is animated, for 2, 4 or 8 directions.
+- **Bestiary sheets.** Grids from 3×3 to 7×7, or custom, generated as one sheet and cut into
+  creatures, or one creature per generation. Both report time per creature. An idle can be
+  added to each creature.
+- **Asset packs.** Dungeon, Forest, Sci-fi and Town templates, an item family in five tiers,
+  or your own list. Optionally saved to a folder with a manifest.
+- **Pet to Pixel:** a photo becomes a sprite.
+- **World Builder map canvas.**
+  - Tile layers, props, collision, lights with a lighting preview, and parallax backgrounds
+    with a camera preview.
+  - Saved as `.acemap`; exported to Tiled `.tmx` with a collision object layer and a preview
+    PNG.
+  - Command line: `acestudio-cli map info|render|export`.
+- **`acestudio-cli connect`** registers acestudio-mcp with Claude Code, Claude Desktop, Codex,
+  Cursor, OpenCode or VS Code.
+  - It merges into the client's own configuration file and keeps a backup.
+  - Connect › AI Assistants › Add for Me does the same.
+- **MCP tools:** `sprite_animate`, `sheet_cut`, `map_info` and `map_export`, for 22 in all.
+- **Phaser and GameMaker** sprite-sheet exports. Phaser was checked in Phaser 3.90.0 and
+  4.2.1 (headless Chromium).
+- **`acestudio-cli slice --cells CxR`** cuts AI-generated sheets whose spacing is uneven.
+
+### Fixed
+- Sprite sheets exported for Phaser named their frames "name 0", which Phaser's
+  `createFromAseprite` cannot find, so no animation got frames. They are now named "0",
+  "1", …. Found by running Phaser.
+
 ## [0.9.0] — 2026-11-01 — Phase 8: commercial polish (unreleased)
 
 ### Added

@@ -14,6 +14,7 @@
 #include "acestudio/core/Animation.h"
 #include "acestudio/core/Editor.h"
 #include "acestudio/core/Export.h"
+#include "acestudio/core/Version.h"
 #include "acestudio/core/FileUtil.h"
 #include "acestudio/core/PngCodec.h"
 #include "acestudio/core/ProjectIO.h"
@@ -252,7 +253,10 @@ TEST_CASE("Golden: onion skin and packed sprite sheet", "[regression][golden]") 
     REQUIRE(sheet);
     checkGolden(sheet.value().image, "sheet_packed");
     // The frame rectangles are part of the contract with game engines.
-    const std::string json = spriteSheetJson(e.document(), sheet.value(), "sheet.png", "sprite", JsonStyle::Array);
+    // The app version in meta changes with every release; the golden holds a fixed one.
+    std::string json = spriteSheetJson(e.document(), sheet.value(), "sheet.png", "sprite", JsonStyle::Array);
+    const std::string current = std::string("\"version\": \"") + kVersionString + "\"";
+    if (const auto at = json.find(current); at != std::string::npos) json.replace(at, current.size(), "\"version\": \"0.9.0\"");
     const fs::path jsonPath = dataDir("golden") / "sheet_packed.json";
     if (updateGolden()) {
         REQUIRE(writeFileAtomic(jsonPath, std::vector<std::uint8_t>(json.begin(), json.end())));

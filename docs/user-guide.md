@@ -106,9 +106,79 @@ Everything runs on your PC; nothing is uploaded.
      **Generate Animation…** draws one frame per pose of an idle, walk, run or jump cycle,
      checks them for consistency, redoes the outliers and adds them as one undoable step.
 
+### The AI Studio workspace
+
+The **AI Studio** workspace (Alt+2) is one form for every kind of asset.
+
+1. **Describe** what you want.
+2. **Configure** it: the type (character, monster, weapon, tileset, background, …), the art
+   style, the perspective, the output size, the palette and whether to remove the background.
+3. **References** (up to four, FLUX.2 [klein] only). Choose what each image is for:
+   - *Character* keeps that character.
+   - *Style* copies the drawing style but not the subject.
+   - *Palette* is not sent to the model; its colours are used for the final pixels.
+   - The other roles work the same way for their aspect.
+4. **Generate.** Every result is checked for cut-off parts, stray pixels, soft edges, an
+   opaque background, the size and the colours.
+
+From a result, you can:
+
+- **Open as Document**, **Add as Layer**, **Animate…**, **More Like This** or **Use as
+  Reference**.
+- **Add to Style:** adds the result to the current game style.
+- **Character Pack…:** generates the front, back and diagonal views of the character with it
+  as the reference, and animates every view (2, 4 or 8 directions).
+
+**Game style.** **New Style from References…** measures your reference images: palette,
+outlines, shading, light direction, colour and detail. **Lock Game Style** then applies that
+style to every generation:
+
+- *Light* adds the style's words.
+- *Medium* also sends its reference images.
+- *Strong* also uses its exact palette.
+
+Each result shows how closely it matches the style and is flagged when it drifts.
+
+**Batches:**
+
+- **Bestiary Sheet…** makes a 3×3 to 7×7 (or custom) grid of different creatures. You can
+  generate it as one sheet that is cut into sprites, or as one image per creature. Both report
+  the time per creature, so you can compare them on your GPU. Optionally, each creature gets
+  an idle animation.
+- **Asset Pack…** makes a themed set (dungeon, forest, sci-fi, town), one item in five tiers,
+  or your own list. With a game style locked, the pack matches it.
+- **Pet to Pixel…** turns a photo of your pet into a sprite.
+
+FLUX.2 [klein] 4B (Apache-2.0, about 16 GB) is the default model when it is installed. It
+runs on an 8 GB NVIDIA GPU by storing weights in 8 bits and moving parts to system memory.
+SDXL with Pixel Art XL is used otherwise; it cannot use reference images.
+
 Jobs show progress in the AI panel and can be cancelled. The AI runs in a separate process:
 if it crashes, the editor and your documents are unaffected; **Restart AI Worker** starts it
 again.
+
+### Animate a sprite (no AI)
+
+**Animation › Animate Sprite…** (or **Animate…** on an AI result) turns one still sprite with a
+transparent background into animations. AceStudio measures the sprite's silhouette:
+
+- Two separate feet walk.
+- Four feet trot in diagonal pairs.
+- A round shape without feet hops.
+- Anything else rocks.
+
+If the guess is wrong, choose the **Body** yourself.
+
+Tick the actions you want: idle, walk, run, sprint, jump, fall, land, three attacks, dodge,
+roll, dash, block, hurt, death, cast, swim, fly, wing flap, climb, sit, sleep, or custom
+(bob, sway, squash, tilt and leg swing). The preview plays the highlighted action.
+
+**Open as Document** puts every action in one document, with a tag for each.
+**Export Strips…** writes one PNG strip per action.
+
+Frames use only the sprite's own colours (the hurt flash is the exception). Every clip is
+checked for parts that vanish, jumps between frames and a loop that does not close. For
+**Wing flap**, set the **Wing line** just below the wings' root: everything above it folds.
 
 ## 8. Assets
 
@@ -120,7 +190,39 @@ The **Assets** menu:
 - **Parallax Background**, **UI Kit Generator** (9-slice buttons and panels with exact
   borders), **Smart Slicer** (cut a sheet into sprites) and **Pack Sprite Atlas**.
 
-Each can also write Godot, Unity and Tiled files.
+Each can also write Godot, Unity and Tiled files. Sprite sheets can also be written for
+**Phaser** (with frame names that `anims.createFromAseprite` reads, plus a small loader module)
+and **GameMaker** (one `_stripN.png` per animation, which GameMaker splits on import).
+
+### World Builder
+
+The **World** workspace (Alt+5) opens on a map canvas. **Add** brings in:
+
+- tile sheets, from a PNG or the open document;
+- props;
+- parallax backgrounds.
+
+The tools:
+
+- **Paint**, **Erase**, **Fill** and **Rect** work on the selected layer.
+- **Prop** places the selected prop; drag a prop to move it, and right-click it to remove it.
+- **Solid** marks collision cells.
+- **Light** adds a lamp for the lighting preview.
+
+Layers can be hidden and reordered. **Show collision**, **Lighting preview** and
+**Camera / parallax preview** (with a camera slider) show the level as a game would.
+Ctrl+Z undoes.
+
+**Save** writes a `.acemap` file, with its images in a `.assets` folder beside it.
+**Export to Tiled…** writes a `.tmx` map with:
+
+- its tile sheets and props;
+- the parallax layers;
+- a collision object layer (solid cells merged into rectangles);
+- a preview PNG.
+
+Godot (with a Tiled importer), Unity (SuperTiled2Unity), GameMaker and Phaser import Tiled maps.
+The **Tilesets and Tools** tab has the tileset generator and the other asset tools.
 
 ## 9. Scripts and AI assistants
 
@@ -129,7 +231,13 @@ Each can also write Godot, Unity and Tiled files.
 - **Scripts › Set Up AI Assistants (MCP)…** connects Claude Code, Cursor, VS Code, Codex or
   another MCP client so it can create, edit, render and export projects for you. **Allow AI
   Assistants to Use the Open Document** controls whether they may change the document you have
-  open; each change they make is one undo step.
+  open; each change they make is one undo step. **Add for Me** adds AceStudio to the assistant's
+  own settings file for you. Your other settings are kept, and the old file is saved as
+  `.bak`.
+- From a terminal: `acestudio-cli connect claude|claude-desktop|codex|cursor|opencode|vscode`.
+  Add `--project <folder>` for one project or `--global` for all, `--remove` to take it out,
+  and `--dry-run` to see the change first. For Claude Code's user-wide setting, it prints the
+  `claude mcp add` command to run, because Claude Code manages that file itself.
 
 ## 10. Accessibility
 

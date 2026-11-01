@@ -1,5 +1,5 @@
 ; AceStudio installer (Inno Setup 6). Built by CI from the packaged build:
-;   iscc /DAppVersion=0.9.0 /DDistDir=..\..\dist /DOutputDir=..\..\installer packaging\windows\AceStudio.iss
+;   iscc /DAppVersion=0.10.0 /DDistDir=..\..\dist /DOutputDir=..\..\installer packaging\windows\AceStudio.iss
 ;
 ; - Installs for the current user by default (no admin); "Install for all
 ;   users" is offered too (needs admin).

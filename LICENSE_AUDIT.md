@@ -82,7 +82,7 @@ See `docs/research/ai-models.md` for the full survey with sources. Summary:
 
 - **Default set (commercial-compatible, no revenue cap):** SDXL base 1.0 (OpenRAIL++-M — use
   restrictions must be passed to users in the EULA), nerijs/pixel-art-xl (OpenRAIL-M),
-  FLUX.2-klein-4B (Apache-2.0; BFL self-hosted terms still to be read), BiRefNet (MIT),
+  FLUX.2-klein-4B (Apache-2.0), BiRefNet (MIT),
   SAM 2.1 (Apache-2.0), Real-ESRGAN (BSD-3), xinsir ControlNet OpenPose SDXL (Apache-2.0),
   DWPose ONNX (Apache-2.0), h94/IP-Adapter (Apache-2.0) + LAION OpenCLIP (MIT).
 - **Excluded:** FLUX.1-dev and derivatives, FLUX.2-klein-9B, BRIA RMBG-1.4/2.0, 4x-UltraSharp,
@@ -106,6 +106,8 @@ accept its terms" before each download.
 | pixel-art-xl | nerijs/pixel-art-xl LoRA | CreativeML OpenRAIL-M | 8bf4a4d9ea28 | pass use restrictions to users |
 | taesdxl | madebyollin/taesdxl (live preview decoder) | MIT | b20258aaef75 | keep notice |
 | controlnet-openpose-sdxl | xinsir/controlnet-openpose-sdxl-1.0 | Apache-2.0 | 23f966cd5cfd | keep licence + NOTICE; state changes |
+| flux2-klein-4b | black-forest-labs/FLUX.2-klein-4B (transformer, Qwen3-4B text encoder, VAE) | Apache-2.0 | e7b7dc27f91d | keep licence + NOTICE |
+| pixel-art-klein-lora | pixel-art LoRA for FLUX.2 [klein] 4B | Apache-2.0 | 0ac8e5c3 | keep licence |
 | ip-adapter-plus-sdxl | h94/IP-Adapter (ip-adapter-plus_sdxl_vit-h) + OpenCLIP ViT-H/14 encoder | Apache-2.0 (encoder weights: LAION OpenCLIP, MIT) | 018e402774ae | keep licence + NOTICE |
 
 Phase 5 deliberately uses AceStudio's own pose skeleton editor and procedural cycles instead
@@ -128,11 +130,23 @@ and the EULA.
 
 ## Open items
 
-1. Read Black Forest Labs "Self-Hosted Commercial License Terms" for FLUX.2-klein-4B.
-2. Verify text-encoder sub-licenses inside FLUX.2-klein and Z-Image repositories.
+1. ~~FLUX.2-klein-4B terms~~: checked 2026-11-01. The model card and metadata say Apache-2.0 and
+   "open weights available for commercial use". The "Self-Hosted Commercial License Terms" the
+   card mentions are for BFL's commercial models; the 9B variant is non-commercial and is
+   excluded. The repository's text encoder (Qwen3-4B) has no separate licence on the card;
+   Qwen3-4B is published under Apache-2.0.
+2. Z-Image is not in the catalogue (not used).
 3. Draft EULA incorporating OpenRAIL Attachment A use restrictions.
 4. ~~Add a licences folder with the full third-party texts to the installer~~ — done in 0.9.0
    (`packaging/licences`, installed to `{app}\licences`).
 6. Have the EULA draft (`packaging/windows/EULA.txt`) and the privacy policy draft
    (`PRIVACY.md`) reviewed by counsel; fill in the publisher's legal name and address.
 5. Fonts and icons: none bundled yet; any added must be audited here first.
+
+## Test-only tools (not shipped)
+
+- Phaser 3.90.0 and 4.2.1 (MIT): installed with npm into a scratch folder to check the Phaser
+  export in headless Chromium (Playwright, already on the build machine). Neither is in the
+  repository or the installer.
+- The reference artwork the user supplied for style testing is local test input only. It is not
+  in the repository, the installer or the documentation.
