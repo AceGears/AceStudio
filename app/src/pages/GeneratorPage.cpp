@@ -207,6 +207,13 @@ QWidget* GeneratorPage::buildForm() {
     m_transparent = new QCheckBox(tr("Transparent background"), w);
     m_transparent->setChecked(true);
     form->addRow(QString(), m_transparent);
+    // Backgrounds and textures fill the image; sprites are cut out. (A
+    // background was generated with transparency on during the PC tests.)
+    connect(m_type, &QComboBox::currentIndexChanged, this, [this] {
+        using T = gen::AssetType;
+        const auto t = gen::assetTypeFromKey(m_type->currentData().toString().toStdString());
+        m_transparent->setChecked(!(t == T::Background || t == T::Tileset || t == T::Terrain));
+    });
     col->addLayout(form);
 
     auto* refLabel = new QLabel(tr("&References (up to 4)"), w);
