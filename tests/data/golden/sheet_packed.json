@@ -1,156 +1,156 @@
 {
  "frames": [
   {
-   "duration": 100,
-   "filename": "sprite 0",
    "frame": {
-    "h": 16,
-    "w": 12,
     "x": 0,
-    "y": 0
+    "y": 0,
+    "w": 12,
+    "h": 16
    },
    "rotated": false,
-   "sourceSize": {
-    "h": 48,
-    "w": 48
-   },
+   "trimmed": true,
    "spriteSourceSize": {
-    "h": 16,
-    "w": 12,
     "x": 4,
-    "y": 8
+    "y": 8,
+    "w": 12,
+    "h": 16
    },
-   "trimmed": true
+   "sourceSize": {
+    "w": 48,
+    "h": 48
+   },
+   "duration": 100,
+   "filename": "sprite 0"
   },
   {
-   "duration": 100,
-   "filename": "sprite 1",
    "frame": {
-    "h": 16,
-    "w": 14,
     "x": 13,
-    "y": 0
-   },
-   "rotated": false,
-   "sourceSize": {
-    "h": 48,
-    "w": 48
-   },
-   "spriteSourceSize": {
-    "h": 16,
+    "y": 0,
     "w": 14,
+    "h": 16
+   },
+   "rotated": false,
+   "trimmed": true,
+   "spriteSourceSize": {
     "x": 10,
-    "y": 12
+    "y": 12,
+    "w": 14,
+    "h": 16
    },
-   "trimmed": true
+   "sourceSize": {
+    "w": 48,
+    "h": 48
+   },
+   "duration": 100,
+   "filename": "sprite 1"
   },
   {
-   "duration": 100,
-   "filename": "sprite 2",
    "frame": {
-    "h": 16,
-    "w": 16,
     "x": 0,
-    "y": 17
+    "y": 17,
+    "w": 16,
+    "h": 16
    },
    "rotated": false,
-   "sourceSize": {
-    "h": 48,
-    "w": 48
-   },
+   "trimmed": true,
    "spriteSourceSize": {
-    "h": 16,
-    "w": 16,
     "x": 16,
-    "y": 16
+    "y": 16,
+    "w": 16,
+    "h": 16
    },
-   "trimmed": true
+   "sourceSize": {
+    "w": 48,
+    "h": 48
+   },
+   "duration": 100,
+   "filename": "sprite 2"
   },
   {
-   "duration": 100,
-   "filename": "sprite 3",
    "frame": {
-    "h": 16,
-    "w": 18,
     "x": 0,
-    "y": 34
+    "y": 34,
+    "w": 18,
+    "h": 16
    },
    "rotated": false,
-   "sourceSize": {
-    "h": 48,
-    "w": 48
-   },
+   "trimmed": true,
    "spriteSourceSize": {
-    "h": 16,
-    "w": 18,
     "x": 22,
-    "y": 8
+    "y": 8,
+    "w": 18,
+    "h": 16
    },
-   "trimmed": true
+   "sourceSize": {
+    "w": 48,
+    "h": 48
+   },
+   "duration": 100,
+   "filename": "sprite 3"
   },
   {
-   "duration": 100,
-   "filename": "sprite 4",
    "frame": {
-    "h": 1,
-    "w": 1,
     "x": 19,
-    "y": 34
+    "y": 34,
+    "w": 1,
+    "h": 1
    },
    "rotated": false,
-   "sourceSize": {
-    "h": 48,
-    "w": 48
-   },
+   "trimmed": true,
    "spriteSourceSize": {
-    "h": 1,
-    "w": 1,
     "x": 0,
-    "y": 0
+    "y": 0,
+    "w": 1,
+    "h": 1
    },
-   "trimmed": true
+   "sourceSize": {
+    "w": 48,
+    "h": 48
+   },
+   "duration": 100,
+   "filename": "sprite 4"
   },
   {
-   "duration": 100,
-   "filename": "sprite 5",
    "frame": {
-    "h": 16,
-    "w": 12,
     "x": 0,
-    "y": 0
+    "y": 0,
+    "w": 12,
+    "h": 16
    },
    "rotated": false,
-   "sourceSize": {
-    "h": 48,
-    "w": 48
-   },
+   "trimmed": true,
    "spriteSourceSize": {
-    "h": 16,
-    "w": 12,
     "x": 4,
-    "y": 8
+    "y": 8,
+    "w": 12,
+    "h": 16
    },
-   "trimmed": true
+   "sourceSize": {
+    "w": 48,
+    "h": 48
+   },
+   "duration": 100,
+   "filename": "sprite 5"
   }
  ],
  "meta": {
   "app": "https://github.com/AceGears/AceStudio",
-  "format": "RGBA8888",
-  "frameTags": [],
+  "version": "0.9.0",
   "image": "sheet.png",
+  "format": "RGBA8888",
+  "size": {
+   "w": 27,
+   "h": 50
+  },
+  "scale": "2",
+  "frameTags": [],
   "layers": [
    {
-    "blendMode": "normal",
     "name": "sprite",
-    "opacity": 255
+    "opacity": 255,
+    "blendMode": "normal"
    }
   ],
-  "scale": "2",
-  "size": {
-   "h": 50,
-   "w": 27
-  },
-  "slices": [],
-  "version": "0.9.0"
+  "slices": []
  }
 }

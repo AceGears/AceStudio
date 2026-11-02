@@ -5,6 +5,12 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 ## [0.10.0] — 2026-11-01 — Premium AI game asset studio (unreleased)
 
 ### Added
+- **Swimmers.** Animate Sprite detects footless, wider-than-tall subjects (fish) and which way
+  they face. Their idle, swim and dash bend the body with a wave from head to tail; idle and
+  swim have 12 frames.
+- **Character Pack can turn by rotation** (fish, birds, ships). The side view is pointed nose
+  up, down and diagonally with a palette-safe RotSprite rotation, so no AI views are needed.
+  The dialog also asks which way the image faces, and has a Swimming action set.
 - **Ten workspaces** on a left rail: Home, AI Studio, Characters, Animation, World, Library,
   Pixel Editor, Export, Connect and Settings.
   - Charcoal dark theme with a light theme, and electric blue (#0A6CF5) sampled from the logo.

@@ -150,6 +150,7 @@ private:
         std::vector<std::string> directions;         // all directions in output order
         std::vector<::acestudio::motion::Action> actions;
         QStringList problems;
+        bool rotate = false;                          // turn by rotating the side view (no AI views)
     };
     std::optional<Pack> m_pack;
     struct Batch {

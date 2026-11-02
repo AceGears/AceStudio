@@ -37,6 +37,7 @@ const char* bodyLabel(::acestudio::motion::Body b) {
     case ::acestudio::motion::Body::Blob: return QT_TRANSLATE_NOOP("SpriteAnimateDialog", "Blob (hops)");
     case ::acestudio::motion::Body::Flyer: return QT_TRANSLATE_NOOP("SpriteAnimateDialog", "Flyer (hovers)");
     case ::acestudio::motion::Body::Object: return QT_TRANSLATE_NOOP("SpriteAnimateDialog", "Object (rocks)");
+    case ::acestudio::motion::Body::Swimmer: return QT_TRANSLATE_NOOP("SpriteAnimateDialog", "Swimmer (body wave)");
     }
     return "";
 }
@@ -116,7 +117,7 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     auto* form = new QFormLayout;
     m_body = new QComboBox(this);
     m_body->addItem(tr("Automatic (%1)").arg(tr(bodyLabel(m_subject.body))), QString());
-    for (::acestudio::motion::Body b : {::acestudio::motion::Body::Biped, ::acestudio::motion::Body::Quadruped, ::acestudio::motion::Body::Blob, ::acestudio::motion::Body::Flyer, ::acestudio::motion::Body::Object})
+    for (::acestudio::motion::Body b : {::acestudio::motion::Body::Biped, ::acestudio::motion::Body::Quadruped, ::acestudio::motion::Body::Blob, ::acestudio::motion::Body::Flyer, ::acestudio::motion::Body::Object, ::acestudio::motion::Body::Swimmer})
         m_body->addItem(tr(bodyLabel(b)), QString::fromLatin1(::acestudio::motion::toString(b)));
     m_body->setToolTip(tr("How the sprite moves. Automatic is measured from its silhouette: separate feet walk, "
                           "a round shape hops, anything else rocks."));

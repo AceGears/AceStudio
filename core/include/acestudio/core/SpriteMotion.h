@@ -41,7 +41,10 @@ const std::vector<ActionInfo>& actions();
 const ActionInfo& actionInfo(Action a);
 std::optional<Action> actionFromKey(std::string_view key);
 
-enum class Body { Biped, Quadruped, Blob, Flyer, Object };
+// Swimmer: a footless, wider-than-tall body (a fish). Its idle, swim and dash
+// bend the body with a wave that runs from the head to the tail instead of
+// moving it rigidly.
+enum class Body { Biped, Quadruped, Blob, Flyer, Object, Swimmer };
 const char* toString(Body b);
 std::optional<Body> bodyFromString(std::string_view s);
 
@@ -53,6 +56,7 @@ struct Subject {
     std::vector<std::pair<int, int>> feet;   // [x0, x1] column runs of the feet, left to right
     int footRow = -1;            // lowest row of the feet (above any ground shadow)
     int groundTop = -1;          // first row of a ground shadow / base line, -1 = none
+    bool headLeft = false;       // swimmers: the head is on the left (the sprite faces left)
 };
 Subject analyzeSubject(const Image& sprite);
 
@@ -98,6 +102,18 @@ Result<Clip> animate(const Image& sprite, const Options& opt);
 // Several actions at once, all cropped to one shared frame size so the clips
 // line up in a sprite sheet.
 Result<std::vector<Clip>> animatePack(const Image& sprite, const std::vector<Action>& actions, const Options& base);
+
+// Which way a side-view sprite faces, for swimmers: the narrow tail stalk is
+// nearer the tail end (falls back to the side holding less of the body).
+// False (right) when it cannot tell.
+bool spriteFacesLeft(const Image& sprite);
+
+// Rotates a pixel-art sprite clockwise by `radians` about its centre without
+// blurring or adding colours (RotSprite: Scale2x up 8x, rotate, sample back
+// down). Large sprites (over 256 px) use a plain nearest-neighbour rotation.
+// The result is the whole rotated canvas (not cropped), so frames of one
+// size rotated by one angle stay aligned.
+Image rotateSprite(const Image& sprite, double radians);
 
 // Automatic checks of a clip: pixel-count drift (parts lost or doubled),
 // frame-to-frame jumps, and the loop seam.

@@ -513,7 +513,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                       {"actions", strings("Action names (default: idle); \"all\" for every action")},
                       {"frames", integer("Frames when one action is given (default: the action's own)", 1, 64)},
                       {"amount", number("Movement amount, 0.25-2 (default 1)")},
-                      {"body", oneOf("Override the measured body", {"biped", "quadruped", "blob", "flyer", "object"})},
+                      {"body", oneOf("Override the measured body", {"biped", "quadruped", "blob", "flyer", "object", "swimmer"})},
                       {"face_left", boolean("Mirror the result to face left")},
                       {"overwrite", kOverwrite}},
                      {"image", "out"}),

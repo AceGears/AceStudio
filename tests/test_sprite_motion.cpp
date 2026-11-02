@@ -208,3 +208,93 @@ TEST_CASE("a wing mask chooses exactly which pixels flap", "[motion]") {
         CHECK(head == 60);
     }
 }
+
+namespace {
+// A side-view fish facing left: round head end, thin tail stalk, forked tail fin,
+// and two short belly fins that must not count as legs.
+Image fish() {
+    Image img(40, 22);
+    for (int y = 0; y < 22; ++y)
+        for (int x = 0; x < 40; ++x) {
+            const double bx = (x - 13.0) / 13.0, by = (y - 10.0) / 7.0;
+            if (bx * bx + by * by <= 1.0) img.setPixel(x, y, kShirt);           // body, x 0..26
+        }
+    img.fillRect({26, 9, 4, 3}, kShirt);                                          // tail stalk
+    for (int i = 0; i < 7; ++i) img.fillRect({30 + i, 9 - i, 2, 3 + 2 * i}, kSkin);   // tail fin, opening right
+    img.fillRect({8, 17, 3, 1}, kSkin);                                           // belly fins, tapering
+    img.setPixel(9, 18, kSkin);
+    img.fillRect({16, 17, 3, 1}, kSkin);
+    img.setPixel(17, 18, kSkin);
+    img.setPixel(3, 9, kInk);                                                     // eye
+    return img;
+}
+} // namespace
+
+TEST_CASE("a fish is a swimmer: fins are not legs, and its head is found", "[motion]") {
+    const Subject s = analyzeSubject(fish());
+    CHECK(s.body == Body::Swimmer);
+    CHECK(s.feet.empty());
+    CHECK(s.headLeft);
+    CHECK(spriteFacesLeft(fish()));
+    Image right(40, 22);
+    const Image f = fish();
+    for (int y = 0; y < 22; ++y)
+        for (int x = 0; x < 40; ++x) right.setPixel(39 - x, y, f.pixel(x, y));
+    CHECK_FALSE(spriteFacesLeft(right));
+    // The legged test figures are unchanged.
+    CHECK(analyzeSubject(biped()).body == Body::Biped);
+    CHECK(analyzeSubject(quadruped()).body == Body::Quadruped);
+}
+
+TEST_CASE("a swimmer's swim bends the tail and keeps the head", "[motion]") {
+    Options o;
+    o.action = Action::Swim;
+    auto clip = animate(fish(), o);
+    REQUIRE(clip);
+    const Clip& c = clip.value();
+    CHECK(c.body == Body::Swimmer);
+    REQUIRE(c.frames.size() == 12);   // a longer cycle for smoothness
+    CHECK(c.durations[0] == 70);
+    const ClipCheck chk = checkClip(c);
+    for (const auto& i : chk.issues) INFO(i);
+    CHECK(chk.issues.empty());
+    // The eye (head end) hardly moves; the tail tip moves a lot.
+    auto rowOf = [](const Image& img, Rgba8 colour, bool lastColumn) {
+        int bestX = lastColumn ? -1 : 1 << 20, row = -1;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = 0; x < img.width(); ++x)
+                if (img.pixel(x, y) == colour && (lastColumn ? x > bestX : x < bestX)) { bestX = x; row = y; }
+        return row;
+    };
+    int eyeMin = 1 << 20, eyeMax = -1, tailMin = 1 << 20, tailMax = -1;
+    for (const Image& f : c.frames) {
+        const int e = rowOf(f, kInk, false), t = rowOf(f, kSkin, true);
+        eyeMin = std::min(eyeMin, e); eyeMax = std::max(eyeMax, e);
+        tailMin = std::min(tailMin, t); tailMax = std::max(tailMax, t);
+    }
+    CHECK(eyeMax - eyeMin <= 1);
+    CHECK(tailMax - tailMin >= 2);
+}
+
+TEST_CASE("rotating a sprite keeps its pixels and colours", "[motion]") {
+    const Image f = fish();
+    const auto palette = colours(f);
+    // A quarter turn is exact: a transposed copy.
+    const Image q = rotateSprite(f, 3.14159265358979323846 / 2);
+    const IntRect b = q.opaqueBounds();
+    CHECK(b.w == f.opaqueBounds().h);
+    CHECK(b.h == f.opaqueBounds().w);
+    std::size_t before = 0, after = 0;
+    for (const Rgba8& c : f.pixels()) before += c.a > 0;
+    for (const Rgba8& c : q.pixels()) after += c.a > 0;
+    CHECK(after == before);
+    // 45 degrees: no new colours (no blending), and about the same area.
+    const Image d = rotateSprite(f, 3.14159265358979323846 / 4);
+    for (std::uint32_t c : colours(d)) CHECK(palette.count(c) == 1);
+    std::size_t diag = 0;
+    for (const Rgba8& c : d.pixels()) diag += c.a > 0;
+    CHECK(diag > before * 8 / 10);
+    CHECK(diag < before * 12 / 10);
+    // Same size in, same size out: rotated animation frames stay aligned.
+    CHECK(rotateSprite(f, 0.7).width() == rotateSprite(fish(), 0.7).width());
+}

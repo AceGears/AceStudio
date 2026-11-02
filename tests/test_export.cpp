@@ -124,6 +124,20 @@ TEST_CASE("Aseprite JSON metadata", "[export][json]") {
     CHECK(pj["frames"].size() == 2);
 }
 
+TEST_CASE("Hash JSON lists frames in frame order", "[export][json]") {
+    // A plain json object sorted the keys ("x 10" before "x 2"), so readers
+    // that walk the hash in order got the frames scrambled past frame 9.
+    auto d = Document::create(4, 4).value();
+    const auto l = d.addLayer("body").value();
+    for (int f = 1; f < 12; ++f) REQUIRE(d.insertFrame(f, 100));
+    for (int f = 0; f < 12; ++f) REQUIRE(d.setCel(l, f, Cel{Image(2, 2, Rgba8::opaque(static_cast<std::uint8_t>(f * 20), 0, 0)), 0, 0}));
+    auto sheet = buildSpriteSheet(d, {}, {}).value();
+    const auto j = nlohmann::ordered_json::parse(spriteSheetJson(d, sheet, "x.png", "x", JsonStyle::Hash));
+    int i = 0;
+    for (const auto& [key, value] : j["frames"].items()) CHECK(key == "x " + std::to_string(i++));
+    CHECK(i == 12);
+}
+
 TEST_CASE("GIF round trip is exact for <=255 colours with transparency", "[export][gif]") {
     const Document d = sampleAnim();
     auto bytes = encodeGif(framesOf(d), 0);

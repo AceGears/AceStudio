@@ -159,12 +159,16 @@ Result<SpriteSheet> buildSpriteSheet(const Document& doc, const FrameRange& rang
 
 std::string spriteSheetJson(const Document& doc, const SpriteSheet& sheet, const std::string& imageFile,
                             const std::string& baseName, JsonStyle style) {
-    json frames = style == JsonStyle::Hash ? json::object() : json::array();
+    // Ordered like Aseprite's own output: a plain json object sorts its keys,
+    // which listed "name 10" before "name 2" and broke readers that take the
+    // hash in order.
+    using ojson = nlohmann::ordered_json;
+    ojson frames = style == JsonStyle::Hash ? ojson::object() : ojson::array();
     for (std::size_t i = 0; i < sheet.frames.size(); ++i) {
         const SheetFrame& f = sheet.frames[i];
         // An empty base name gives Aseprite's "{frame}" naming ("0", "1", ...), which Phaser's createFromAseprite needs.
         const std::string name = baseName.empty() ? std::to_string(i) : baseName + " " + std::to_string(i);
-        json entry = {{"frame", {{"x", f.rect.x}, {"y", f.rect.y}, {"w", f.rect.w}, {"h", f.rect.h}}},
+        ojson entry = {{"frame", {{"x", f.rect.x}, {"y", f.rect.y}, {"w", f.rect.w}, {"h", f.rect.h}}},
                       {"rotated", false},
                       {"trimmed", f.trimmed},
                       {"spriteSourceSize", {{"x", f.source.x}, {"y", f.source.y}, {"w", f.source.w}, {"h", f.source.h}}},
@@ -174,23 +178,23 @@ std::string spriteSheetJson(const Document& doc, const SpriteSheet& sheet, const
         else { entry["filename"] = name; frames.push_back(entry); }
     }
     // Tags remapped to exported positions.
-    json tags = json::array();
+    ojson tags = ojson::array();
     if (!sheet.frames.empty()) {
         const int first = sheet.frames.front().frame, last = sheet.frames.back().frame;
         for (const auto& t : doc.tags()) {
             if (t.fromFrame < first || t.toFrame > last) continue;
-            json jt = {{"name", t.name}, {"from", t.fromFrame - first}, {"to", t.toFrame - first},
+            ojson jt = {{"name", t.name}, {"from", t.fromFrame - first}, {"to", t.toFrame - first},
                        {"direction", std::string(toString(t.direction))}, {"color", t.color}};
             if (t.repeat > 0) jt["repeat"] = std::to_string(t.repeat);
             tags.push_back(jt);
         }
     }
-    json layers = json::array();
+    ojson layers = ojson::array();
     for (const auto& l : doc.layers())
         if (l.kind == LayerKind::Raster)
             layers.push_back({{"name", l.name}, {"opacity", l.opacity}, {"blendMode", std::string(toString(l.blend))}});
     const int scale = doc.width() > 0 ? sheet.frameWidth / doc.width() : 1;
-    json meta = {{"app", "https://github.com/AceGears/AceStudio"},
+    ojson meta = {{"app", "https://github.com/AceGears/AceStudio"},
                  {"version", kVersionString},
                  {"image", imageFile},
                  {"format", "RGBA8888"},
@@ -198,8 +202,8 @@ std::string spriteSheetJson(const Document& doc, const SpriteSheet& sheet, const
                  {"scale", std::to_string(scale)},
                  {"frameTags", tags},
                  {"layers", layers},
-                 {"slices", json::array()}};
-    return json{{"frames", frames}, {"meta", meta}}.dump(1, ' ');
+                 {"slices", ojson::array()}};
+    return ojson{{"frames", frames}, {"meta", meta}}.dump(1, ' ');
 }
 
 Result<std::vector<fs::path>> pngSequencePaths(const Document& doc, const FrameRange& range, const fs::path& dir,

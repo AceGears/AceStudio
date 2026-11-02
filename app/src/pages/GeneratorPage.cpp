@@ -853,15 +853,26 @@ Image mirrored(const Image& img) {
 
 void GeneratorPage::startCharacterPack(const Result& base) {
     if (m_pack) return void(Q_EMIT statusMessage(tr("A character pack is already being made.")));
-    if (!installed(m_ai, "flux2-klein-4b") || m_model->currentData().toString() == QLatin1String("sdxl")) {
-        QMessageBox::information(this, tr("Character Pack"),
-                                 tr("Other directions are drawn from this character as a reference, which needs FLUX.2 [klein] "
-                                    "(Models…). For a side view only, use Animate…"));
-        return;
-    }
+    using B = ::acestudio::motion::Body;
+    const ::acestudio::motion::Subject subject = ::acestudio::motion::analyzeSubject(base.image);
+    // A fish (and a bird or a ship) turns by pointing its side view the new
+    // way: on the test PC, asking klein for a fish's "front view" gave more
+    // side views.
+    const bool turner = subject.body == B::Swimmer || subject.body == B::Flyer;
     QDialog dlg(this);
     dlg.setWindowTitle(tr("Character Pack"));
     auto* form = new QFormLayout(&dlg);
+    auto* turn = new QComboBox(&dlg);
+    turn->addItem(tr("New views drawn by AI (characters: front, back, three-quarter)"), 0);
+    turn->addItem(tr("Rotating the side view (fish, birds, ships: nose up, down and diagonal)"), 1);
+    turn->setCurrentIndex(turner ? 1 : 0);
+    form->addRow(tr("&Turn by:"), turn);
+    auto* faces = new QComboBox(&dlg);
+    faces->addItem(tr("Right"), false);
+    faces->addItem(tr("Left"), true);
+    faces->setCurrentIndex(subject.body == B::Swimmer && subject.headLeft ? 1 : 0);
+    faces->setToolTip(tr("Which way this image faces. The east-facing views are made from a right-facing copy."));
+    form->addRow(tr("This image &faces:"), faces);
     auto* dirs = new QComboBox(&dlg);
     dirs->addItem(tr("2 directions (right, and left mirrored)"), 2);
     dirs->addItem(tr("4 directions (adds front and back)"), 4);
@@ -872,6 +883,8 @@ void GeneratorPage::startCharacterPack(const Result& base) {
     set->addItem(tr("Basic: idle, walk, run, jump, attack, hurt, death"), 0);
     set->addItem(tr("Locomotion: idle, walk, run, sprint, jump, fall, land"), 1);
     set->addItem(tr("Full: all 22 actions"), 2);
+    set->addItem(tr("Swimming: idle, swim, dash, hurt, death"), 3);
+    if (subject.body == B::Swimmer) set->setCurrentIndex(3);
     form->addRow(tr("&Actions:"), set);
     auto* note = new QLabel(tr("New views are generated with this result as the character reference (FLUX.2 klein, same seed); "
                                "then every view is animated without AI. Check the views before using them in a game."),
@@ -884,13 +897,22 @@ void GeneratorPage::startCharacterPack(const Result& base) {
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     form->addRow(buttons);
     if (dlg.exec() != QDialog::Accepted) return;
+    const bool rotate = turn->currentData().toInt() == 1;
+    if (!rotate && (!installed(m_ai, "flux2-klein-4b") || m_model->currentData().toString() == QLatin1String("sdxl"))) {
+        QMessageBox::information(this, tr("Character Pack"),
+                                 tr("Other directions are drawn from this character as a reference, which needs FLUX.2 [klein] "
+                                    "(Models…). Turning by rotation needs no AI."));
+        return;
+    }
 
     using A = ::acestudio::motion::Action;
     Pack pack;
     pack.name = base.name;
+    pack.rotate = rotate;
     switch (set->currentData().toInt()) {
     case 0: pack.actions = {A::Idle, A::Walk, A::Run, A::Jump, A::Attack1, A::Hurt, A::Death}; break;
     case 1: pack.actions = {A::Idle, A::Walk, A::Run, A::Sprint, A::Jump, A::Fall, A::Land}; break;
+    case 3: pack.actions = {A::Idle, A::Swim, A::Dash, A::Hurt, A::Death}; break;
     default:
         for (const auto& info : ::acestudio::motion::actions())
             if (info.action != A::Custom) pack.actions.push_back(info.action);
@@ -899,8 +921,16 @@ void GeneratorPage::startCharacterPack(const Result& base) {
     pack.directions = count == 2 ? std::vector<std::string>{"e", "w"}
                     : count == 4 ? std::vector<std::string>{"e", "s", "w", "n"}
                                  : std::vector<std::string>{"e", "se", "s", "sw", "w", "nw", "n", "ne"};
-    pack.views["e"] = base.image;
-    const Image& ref = base.raw.isNull() ? base.image : base.raw;
+    // "e" faces right: a left-facing image is mirrored first (on the test PC
+    // a left-facing fish came out with east and west swapped).
+    const bool left = faces->currentData().toBool();
+    pack.views["e"] = left ? mirrored(base.image) : base.image;
+    if (rotate) {
+        m_pack = std::move(pack);
+        return finishPack();
+    }
+    const Image refImage = left ? mirrored(base.raw.isNull() ? base.image : base.raw) : (base.raw.isNull() ? base.image : base.raw);
+    const Image& ref = refImage;
     m_pack = std::move(pack);
     for (const std::string& d : m_pack->directions)
         for (const DirectionInfo& info : kDirections)
@@ -935,14 +965,37 @@ void GeneratorPage::onPackJobFinished(const std::string& id) {
 void GeneratorPage::finishPack() {
     Pack pack = std::move(*m_pack);
     m_pack.reset();
-    // Mirrored views.
-    for (const DirectionInfo& info : kDirections)
-        if (info.mirrorOf && pack.views.count(info.mirrorOf)) pack.views[info.key] = mirrored(pack.views[info.mirrorOf]);
-    // Animate every view; all frames share one size (feet on one line, centred).
     struct Out { std::string dir; std::vector<::acestudio::motion::Clip> clips; };
     std::vector<Out> outs;
     int W = 0, H = 0;
-    for (const std::string& d : pack.directions) {
+    if (pack.rotate) {
+        // One set of clips facing east, then each heading by mirroring and
+        // rotating every frame (clockwise; a right-facing nose goes up with a
+        // negative angle, a left-facing one with a positive angle).
+        auto clips = ::acestudio::motion::animatePack(pack.views["e"], pack.actions, {});
+        if (!clips) return void(m_status->setText(tr("Character pack failed. %1").arg(qs(clips.error().message))));
+        constexpr double deg = 3.14159265358979323846 / 180.0;
+        const std::map<std::string, std::pair<bool, double>> heading = {
+            {"e", {false, 0}}, {"ne", {false, -45 * deg}}, {"n", {false, -90 * deg}}, {"se", {false, 45 * deg}}, {"s", {false, 90 * deg}},
+            {"w", {true, 0}},  {"nw", {true, 45 * deg}},   {"sw", {true, -45 * deg}}};
+        for (const std::string& d : pack.directions) {
+            const auto [flip, angle] = heading.at(d);
+            Out o{d, clips.value()};
+            for (auto& c : o.clips)
+                for (Image& f : c.frames) {
+                    if (flip) f = mirrored(f);
+                    if (angle != 0) f = ::acestudio::motion::rotateSprite(f, angle);
+                    W = std::max(W, f.width());
+                    H = std::max(H, f.height());
+                }
+            outs.push_back(std::move(o));
+        }
+    }
+    // Mirrored views.
+    for (const DirectionInfo& info : kDirections)
+        if (!pack.rotate && info.mirrorOf && pack.views.count(info.mirrorOf)) pack.views[info.key] = mirrored(pack.views[info.mirrorOf]);
+    // Animate every view; all frames share one size (feet on one line, centred).
+    for (const std::string& d : pack.rotate ? std::vector<std::string>{} : pack.directions) {
         auto it = pack.views.find(d);
         if (it == pack.views.end()) continue;
         ::acestudio::motion::Options o;
@@ -971,7 +1024,8 @@ void GeneratorPage::finishPack() {
             t.repeat = c.loops ? 0 : 1;
             for (std::size_t i = 0; i < c.frames.size(); ++i) {
                 Image f(W, H);
-                f.blit(c.frames[i], (W - c.frames[i].width()) / 2, H - c.frames[i].height());
+                // Rotated views keep their centre (a swimmer has no ground line).
+                f.blit(c.frames[i], (W - c.frames[i].width()) / 2, pack.rotate ? (H - c.frames[i].height()) / 2 : H - c.frames[i].height());
                 frames.push_back(std::move(f));
                 durations.push_back(c.durations[i]);
             }

@@ -76,12 +76,15 @@ struct FramePose {
     double liftA = 0, liftB = 0;    // leg lift, fraction of the height
     double flash = 0;               // > 0.5 draws the frame white
     double wing = 1;                // wing flap: vertical scale of the part above the wing line (negative = folded down)
+    double wave = 0;                // swimmer body wave: tail amplitude, fraction of the height
+    double wavePhase = 0;           // radians
 };
 
 FramePose lerp(const FramePose& p, const FramePose& q, double t) {
     auto L = [t](double x, double y) { return x + (y - x) * t; };
     return {L(p.dx, q.dx), L(p.dy, q.dy), L(p.sx, q.sx), L(p.sy, q.sy), L(p.rot, q.rot), L(p.lean, q.lean),
-            L(p.swingA, q.swingA), L(p.swingB, q.swingB), L(p.liftA, q.liftA), L(p.liftB, q.liftB), L(p.flash, q.flash), L(p.wing, q.wing)};
+            L(p.swingA, q.swingA), L(p.swingB, q.swingB), L(p.liftA, q.liftA), L(p.liftB, q.liftB), L(p.flash, q.flash), L(p.wing, q.wing),
+            L(p.wave, q.wave), L(p.wavePhase, q.wavePhase)};
 }
 
 FramePose keyed(const std::vector<std::pair<double, FramePose>>& keys, double t) {
@@ -112,6 +115,8 @@ FramePose fp(std::initializer_list<std::pair<const char*, double>> kv) {
         else if (key == "liftB") p.liftB = v;
         else if (key == "flash") p.flash = v;
         else if (key == "wing") p.wing = v;
+        else if (key == "wave") p.wave = v;
+        else if (key == "wavePhase") p.wavePhase = v;
     }
     return p;
 }
@@ -137,6 +142,11 @@ FramePose gait(Body body, double phase, double swing, double lift, double bob, d
         p.lean = lean * 0.5;
         break;
     }
+    case Body::Swimmer:
+        p.wave = 0.06 * (swing / 0.35);
+        p.wavePhase = phase;
+        p.dy = -bob * 0.5 * s;
+        break;
     case Body::Flyer:
         p.dy = -bob * 1.5 * s;
         p.sy = 1 + 0.04 * c;
@@ -160,6 +170,26 @@ ActionPlan plan(Action a, Body body, const Subject& subj, const CustomMotion& cm
     using K = std::vector<std::pair<double, FramePose>>;
     auto keys = [](K k) { return [k = std::move(k)](double t) { return keyed(k, t); }; };
     constexpr double tau = 2 * kPi;
+    if (body == Body::Swimmer) {
+        // A wave from the head to the tail: gentle when idle, strong when swimming.
+        switch (a) {
+        case Action::Idle:
+            return {Pivot::Centre, [](double t) {
+                        return fp({{"wave", 0.035}, {"wavePhase", tau * t}, {"dy", 0.015 * std::sin(tau * t)}});
+                    }};
+        case Action::Swim:
+            return {Pivot::Centre, [](double t) {
+                        return fp({{"wave", 0.075}, {"wavePhase", tau * t}, {"dy", -0.02 * std::sin(tau * t)},
+                                   {"rot", -0.03 * std::cos(tau * t)}});
+                    }};
+        case Action::Dash:
+            return {Pivot::Centre, [](double t) {
+                        return fp({{"wave", 0.11}, {"wavePhase", 2 * tau * t}, {"dx", 0.12 * std::sin(kPi * t)}, {"sx", 1 + 0.06 * std::sin(kPi * t)},
+                                   {"sy", 1 - 0.04 * std::sin(kPi * t)}});
+                    }};
+        default: break;
+        }
+    }
     switch (a) {
     case Action::Idle:
         return {Pivot::Feet, [](double t) {
@@ -292,6 +322,7 @@ FramePose scaled(FramePose p, double amount) {
     p.swingB *= amount;
     p.liftA *= amount;
     p.liftB *= amount;
+    p.wave *= amount;
     p.wing = 1 + (p.wing - 1) * amount;
     if (std::abs(p.wing) < 0.1) p.wing = p.wing < 0 ? -0.1 : 0.1;   // never flat (the transform must stay invertible)
     // Rotations that define the action (lying down, a full roll) stay whole;
@@ -329,6 +360,8 @@ struct Part {
     int index = 0;            // 0 = body, 1.. = foot run + 1
     Affine toSource;          // canvas -> sprite coordinates
     IntRect destBox;          // where it can land in the canvas
+    double waveAmp = 0;       // swimmer: tail amplitude in pixels (0 = none)
+    double wavePhase = 0;
 };
 
 struct RenderedClip {
@@ -388,6 +421,7 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
         }
 
     const ActionPlan pl = plan(action, body, subj, cm);
+    const double headX = subj.headLeft ? bb.x : bb.x + bb.w;
     const double bottom = bb.y + bb.h;
     double px = bb.x + W / 2, py = bottom;
     if (pl.pivot == Pivot::Centre) py = bb.y + H / 2;
@@ -427,9 +461,11 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
                 minX = std::min(minX, qx); maxX = std::max(maxX, qx);
                 minY = std::min(minY, qy); maxY = std::max(maxY, qy);
             }
-            const IntRect dest{static_cast<int>(std::floor(minX)) - 1, static_cast<int>(std::floor(minY)) - 1,
-                               static_cast<int>(std::ceil(maxX - minX)) + 3, static_cast<int>(std::ceil(maxY - minY)) + 3};
-            parts[static_cast<std::size_t>(f)].push_back({static_cast<int>(i), m.inverse(), dest});
+            const double amp = body == Body::Swimmer && i == 0 ? p.wave * H : 0.0;
+            const int waveGrow = static_cast<int>(std::ceil(std::abs(amp))) + 1;
+            const IntRect dest{static_cast<int>(std::floor(minX)) - 1, static_cast<int>(std::floor(minY)) - 1 - waveGrow,
+                               static_cast<int>(std::ceil(maxX - minX)) + 3, static_cast<int>(std::ceil(maxY - minY)) + 3 + 2 * waveGrow};
+            parts[static_cast<std::size_t>(f)].push_back({static_cast<int>(i), m.inverse(), dest, amp, p.wavePhase});
             if (all.empty()) all = dest;
             else {
                 const int x1 = std::max(all.x + all.w, dest.x + dest.w), y1 = std::max(all.y + all.h, dest.y + dest.h);
@@ -457,7 +493,13 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
         for (const Part* p : order) {
             for (int y = p->destBox.y; y < p->destBox.y + p->destBox.h; ++y)
                 for (int x = p->destBox.x; x < p->destBox.x + p->destBox.w; ++x) {
-                    const auto [sxf, syf] = p->toSource.apply(x + 0.5, y + 0.5);
+                    auto [sxf, syf] = p->toSource.apply(x + 0.5, y + 0.5);
+                    if (p->waveAmp != 0) {
+                        // Displacement grows towards the tail (u = 0 at the head, 1 at the tail)
+                        // and travels backwards along the body.
+                        const double u = std::clamp(std::abs(sxf - headX) / std::max(1.0, W), 0.0, 1.0);
+                        syf -= p->waveAmp * u * u * std::sin(p->wavePhase - 2 * kPi * 0.85 * u);
+                    }
                     const int sx = static_cast<int>(std::floor(sxf)), sy = static_cast<int>(std::floor(syf));
                     if (!sprite.contains(sx, sy)) continue;
                     const Rgba8 c = sprite.pixel(sx, sy);
@@ -541,13 +583,14 @@ const char* toString(Body b) {
     case Body::Quadruped: return "quadruped";
     case Body::Blob: return "blob";
     case Body::Flyer: return "flyer";
+    case Body::Swimmer: return "swimmer";
     case Body::Object: return "object";
     }
     return "object";
 }
 
 std::optional<Body> bodyFromString(std::string_view s) {
-    for (Body b : {Body::Biped, Body::Quadruped, Body::Blob, Body::Flyer, Body::Object})
+    for (Body b : {Body::Biped, Body::Quadruped, Body::Blob, Body::Flyer, Body::Object, Body::Swimmer})
         if (s == toString(b)) return b;
     return std::nullopt;
 }
@@ -578,7 +621,15 @@ Subject analyzeSubject(const Image& sprite) {
             if (sprite.pixel(bb.x + x, y).a > 0) cols[static_cast<std::size_t>(x)] = 1;
     for (auto [x0, x1] : columnRuns(cols, std::max(2, bb.w / 12))) s.feet.push_back({bb.x + x0, bb.x + x1});
     if (s.feet.size() >= 2) {
-        // Legs go up as long as the rows stay split.
+        // Legs go up as long as the rows stay split. Fins (a fish's belly and
+        // tail fins on the test PC) split for only a row or two from the
+        // bottom; they are not legs.
+        const int x0 = s.feet.front().first, x1 = s.feet.back().second;
+        int top = s.footRow;
+        while (top - 1 >= bb.y && rowRuns(sprite, top - 1, x0, x1) >= 2) --top;
+        if (rowRuns(sprite, s.footRow, x0, x1) < 2 || s.footRow + 1 - top < std::max(2, bb.h / 6)) s.feet.clear();
+    }
+    if (s.feet.size() >= 2) {
         const int x0 = s.feet.front().first, x1 = s.feet.back().second;
         int top = s.footRow;
         while (top - 1 >= bb.y && rowRuns(sprite, top - 1, x0, x1) >= 2) --top;
@@ -591,8 +642,87 @@ Subject analyzeSubject(const Image& sprite) {
         const int bottomWidth = s.feet.empty() ? 0 : s.feet.front().second - s.feet.front().first + 1;
         const bool round = bb.w * 10 >= bb.h * 6 && bb.w * 10 <= bb.h * 16;
         s.body = (round && bottomWidth * 10 >= bb.w * 4) ? Body::Blob : Body::Object;
+        // Footless and wider than tall (but not a thin stick): a fish-like swimmer.
+        if (s.body == Body::Object && bb.w * 4 >= bb.h * 5 && bb.w <= bb.h * 7 / 2) s.body = Body::Swimmer;
     }
+    s.headLeft = spriteFacesLeft(sprite);
     return s;
+}
+
+bool spriteFacesLeft(const Image& sprite) {
+    const IntRect bb = sprite.opaqueBounds();
+    if (bb.w < 6) return false;
+    std::vector<int> cols(static_cast<std::size_t>(bb.w), 0);
+    long mass = 0;
+    double sum = 0;
+    for (int x = 0; x < bb.w; ++x)
+        for (int y = bb.y; y < bb.y + bb.h; ++y)
+            if (sprite.pixel(bb.x + x, y).a > 0) { ++cols[static_cast<std::size_t>(x)]; ++mass; sum += x; }
+    // The tail stalk: the thinnest column in the inner 15..85 %, when it is a
+    // real waist (clearly thinner than the body on its inner side).
+    const int lo = bb.w * 15 / 100, hi = bb.w * 85 / 100;
+    int waist = -1;
+    for (int x = lo; x < hi; ++x)
+        if (waist < 0 || cols[static_cast<std::size_t>(x)] < cols[static_cast<std::size_t>(waist)]) waist = x;
+    if (waist >= 0) {
+        const bool right = waist * 2 > bb.w;
+        int inner = 0;
+        if (right) for (int x = lo; x < waist; ++x) inner = std::max(inner, cols[static_cast<std::size_t>(x)]);
+        else for (int x = waist + 1; x < hi; ++x) inner = std::max(inner, cols[static_cast<std::size_t>(x)]);
+        const bool offCentre = std::abs(waist * 2 - bb.w) * 10 >= bb.w * 2;   // at least 10 % from the middle
+        if (offCentre && cols[static_cast<std::size_t>(waist)] * 2 <= inner) return right;   // tail on the right: faces left
+    }
+    // Otherwise the head end holds more of the body.
+    return mass > 0 && sum / static_cast<double>(mass) < (bb.w - 1) * 0.47;
+}
+
+namespace {
+// Scale2x (EPX): doubles an image, rounding diagonal edges without new colours.
+Image scale2x(const Image& in) {
+    const int W = in.width(), H = in.height();
+    Image out(W * 2, H * 2);
+    auto px = [&](int x, int y) { return in.pixel(std::clamp(x, 0, W - 1), std::clamp(y, 0, H - 1)); };
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) {
+            const Rgba8 B = px(x, y - 1), D = px(x - 1, y), E = px(x, y), F = px(x + 1, y), Hh = px(x, y + 1);
+            Rgba8 e0 = E, e1 = E, e2 = E, e3 = E;
+            if (!(B == Hh) && !(D == F)) {
+                if (D == B) e0 = D;
+                if (B == F) e1 = F;
+                if (D == Hh) e2 = D;
+                if (Hh == F) e3 = F;
+            }
+            out.setPixel(2 * x, 2 * y, e0);
+            out.setPixel(2 * x + 1, 2 * y, e1);
+            out.setPixel(2 * x, 2 * y + 1, e2);
+            out.setPixel(2 * x + 1, 2 * y + 1, e3);
+        }
+    return out;
+}
+} // namespace
+
+Image rotateSprite(const Image& sprite, double radians) {
+    if (sprite.isNull()) return sprite;
+    const bool small = std::max(sprite.width(), sprite.height()) <= 256;
+    const int up = small ? 8 : 1;
+    Image big = sprite;
+    if (small) for (int i = 0; i < 3; ++i) big = scale2x(big);
+    const double c = std::cos(radians), s = std::sin(radians);
+    const double w = sprite.width(), h = sprite.height();
+    // Sized exactly (a quarter turn is then a lossless transpose).
+    const int ow = std::max(1, static_cast<int>(std::ceil(std::abs(w * c) + std::abs(h * s) - 1e-6)));
+    const int oh = std::max(1, static_cast<int>(std::ceil(std::abs(w * s) + std::abs(h * c) - 1e-6)));
+    Image out(ow, oh);
+    const double cxIn = big.width() / 2.0, cyIn = big.height() / 2.0;
+    for (int y = 0; y < oh; ++y)
+        for (int x = 0; x < ow; ++x) {
+            // The centre of the output pixel, in the up-scaled source (inverse rotation).
+            const double dx = (x + 0.5 - ow / 2.0) * up, dy = (y + 0.5 - oh / 2.0) * up;
+            const double sx = c * dx + s * dy + cxIn, sy = -s * dx + c * dy + cyIn;
+            const int ix = static_cast<int>(std::floor(sx)), iy = static_cast<int>(std::floor(sy));
+            if (big.contains(ix, iy)) out.setPixel(x, y, big.pixel(ix, iy));
+        }
+    return out;
 }
 
 Result<Clip> animate(const Image& sprite, const Options& opt) {
@@ -611,7 +741,9 @@ Result<std::vector<Clip>> animatePack(const Image& sprite, const std::vector<Act
     std::vector<RenderedClip> rendered;
     for (Action a : list) {
         const ActionInfo& info = actionInfo(a);
-        const int frames = std::clamp(base.frames > 0 && list.size() == 1 ? base.frames : info.frames, 1, 64);
+        // Swimmers get longer, smoother cycles for the wave.
+        const bool smooth = body == Body::Swimmer && (a == Action::Idle || a == Action::Swim);
+        const int frames = std::clamp(base.frames > 0 && list.size() == 1 ? base.frames : smooth ? 12 : info.frames, 1, 64);
         rendered.push_back(render(sprite, subj, body, a, frames, info.loops, amount, base.custom, base.wingLine, base.wingFrom, base.wingTo, base.wingMask));
     }
     const IntRect box = usedBox(rendered);
@@ -625,7 +757,8 @@ Result<std::vector<Clip>> animatePack(const Image& sprite, const std::vector<Act
         for (const Image& f : rendered[i].frames) {
             Image placed = place(f, rendered[i].box, box);
             c.frames.push_back(base.faceLeft ? mirror(placed) : std::move(placed));
-            c.durations.push_back(info.frameMs);
+            const bool smooth = body == Body::Swimmer && (list[i] == Action::Idle || list[i] == Action::Swim);
+            c.durations.push_back(smooth ? (list[i] == Action::Swim ? 70 : 100) : info.frameMs);
         }
         out.push_back(std::move(c));
     }
