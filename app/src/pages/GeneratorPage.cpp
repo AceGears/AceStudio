@@ -882,7 +882,7 @@ void GeneratorPage::startCharacterPack(const Result& base) {
     form->addRow(tr("This image &faces:"), faces);
     auto* dirs = new QComboBox(&dlg);
     dirs->addItem(tr("2 directions (right, and left mirrored)"), 2);
-    dirs->addItem(tr("4 directions (adds front and back)"), 4);
+    dirs->addItem(tr("4 directions (adds front and back, or up and down)"), 4);
     dirs->addItem(tr("8 directions (adds the diagonals)"), 8);
     dirs->setCurrentIndex(1);
     form->addRow(tr("&Directions:"), dirs);
@@ -899,6 +899,15 @@ void GeneratorPage::startCharacterPack(const Result& base) {
     note->setWordWrap(true);
     note->setProperty("role", "muted");
     form->addRow(note);
+    auto updateNote = [note, turn] {
+        note->setText(turn->currentData().toInt() == 1
+                          ? tr("The side view is mirrored and rotated for each heading (no AI), and every heading is animated. "
+                               "Up and down point the nose up and down.")
+                          : tr("New views are generated with this result as the character reference (FLUX.2 klein, same seed); "
+                               "then every view is animated without AI. Check the views before using them in a game."));
+    };
+    connect(turn, &QComboBox::currentIndexChanged, &dlg, updateNote);
+    updateNote();
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
