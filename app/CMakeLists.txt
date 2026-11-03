@@ -48,6 +48,10 @@ add_executable(AceStudio WIN32
     src/ExportDialog.cpp
     src/ai/AiService.h
     src/ai/AiService.cpp
+    src/ai/SystemMonitor.h
+    src/ai/SystemMonitor.cpp
+    src/ai/Benchmark.h
+    src/ai/Benchmark.cpp
     src/ai/AiDialogs.h
     src/ai/AiDialogs.cpp
     src/ai/AiPanel.h

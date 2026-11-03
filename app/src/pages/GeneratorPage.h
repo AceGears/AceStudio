@@ -33,6 +33,8 @@ class AiService;
 class AppContext;
 class DocumentView;
 
+class BenchmarkRunner;
+
 class GeneratorPage : public QWidget {
     Q_OBJECT
 public:
@@ -85,8 +87,18 @@ private:
         std::optional<std::pair<int, int>> size;      // output size
         int sheetColumns = 0, sheetRows = 0;          // a sheet of different subjects
         int count = 0;                                // 0 = the form's variations
+        // Overrides of the form (the benchmark runs fixed cases through this path).
+        std::optional<gen::ArtStyle> style;
+        std::optional<gen::QualityPreset> preset;
+        std::optional<bool> transparent;
+        std::optional<int> colors;                    // palette size for pixel art
+        // Speed optimisations (generation size, LoRA switching, cutout cache).
+        // Unset = the setting "ai.optimizations"; the benchmark sets it to
+        // compare the original pipeline with the optimised one.
+        std::optional<bool> optimize;
     };
     std::string submitJob(const std::vector<Image>& extraRefs, const JobOptions& o);
+    friend class BenchmarkRunner;
     void addResult(Result r);
     // Batches: a bestiary sheet (one image cut into cells, or one image per
     // creature), an asset pack, a pet portrait.

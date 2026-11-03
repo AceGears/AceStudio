@@ -126,6 +126,18 @@ public:
     long long workerPid() const noexcept { return m_proc ? m_proc->pid() : -1; }
     int restarts() const noexcept { return m_restarts; }
 
+    // Pause All: no queued job starts, and the running job holds between
+    // diffusion steps (its GPU work stops; its memory stays) until resumed.
+    void setPaused(bool paused);
+    bool paused() const noexcept { return m_paused; }
+    // Holds only the queue (the running job continues), e.g. while the user draws.
+    void setHoldQueue(bool hold);
+    bool holdingQueue() const noexcept { return m_holdQueue; }
+    // Cancel policy, from the resource profile.
+    void setCancelPolicy(std::chrono::milliseconds grace, bool interruptLoad);
+    // When the last job finished (or the worker started): for idle release.
+    Clock::time_point lastActivity() const noexcept { return m_lastActivity; }
+
     const Job* job(const JobId& id) const;
     std::vector<const Job*> jobs() const;        // submission order
     // Forgets finished jobs; with removeFiles, deletes their directories.
@@ -133,7 +145,7 @@ public:
     bool idle() const;                            // nothing queued or running
 
 private:
-    enum class Pending { Hello, Submit, Cancel, Shutdown };
+    enum class Pending { Hello, Submit, Cancel, Shutdown, Control };
     struct Request { Pending kind; JobId job; };
 
     void setState(WorkerState s, std::vector<Event>& ev);
@@ -150,6 +162,9 @@ private:
     Job* runningJob();
 
     WorkerOptions m_opt;
+    bool m_paused = false;
+    bool m_holdQueue = false;
+    Clock::time_point m_lastActivity = Clock::now();
     WorkerState m_state = WorkerState::Stopped;
     std::unique_ptr<Subprocess> m_proc;
     nlohmann::json m_hello = nlohmann::json::object();

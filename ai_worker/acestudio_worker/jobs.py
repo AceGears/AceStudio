@@ -2,6 +2,8 @@ import os
 import threading
 import time
 
+from .metrics import Stages
+
 
 class Cancelled(Exception):
     """Raised inside a task when the host asked to cancel the job."""
@@ -29,6 +31,49 @@ class Context:
         self._server = server
         self._cancel = threading.Event()
         self._last_progress = 0.0
+        self.stages = Stages()
+        self._running = threading.Event()   # cleared while paused (Pause All)
+        self._running.set()
+        self.paused_seconds = 0.0
+
+    # Pause All: the job holds at its next safe point (between diffusion steps).
+    def pause(self):
+        self._running.clear()
+
+    def resume(self):
+        self._running.set()
+
+    def wait_if_paused(self):
+        if self._running.is_set():
+            return
+        t0 = time.monotonic()
+        self.progress(None, "Paused", force=True)
+        while not self._running.wait(0.2):
+            self.check_cancel()
+        self.paused_seconds += time.monotonic() - t0
+        self.check_cancel()
+
+    def rest_after_step(self, step_seconds):
+        """Resource profile: with gpuDutyPercent < 100 the worker rests after a
+        step so the GPU averages that share (lower heat, fan noise and power)
+        instead of running flat out."""
+        res = self.params.get("resources") or {}
+        duty = res.get("gpuDutyPercent", 100) if isinstance(res, dict) else 100
+        if not isinstance(duty, (int, float)) or duty >= 100 or duty <= 0 or step_seconds <= 0:
+            return
+        rest = step_seconds * (100.0 / max(20.0, float(duty)) - 1.0)
+        end = time.monotonic() + rest
+        while True:
+            left = end - time.monotonic()
+            if left <= 0:
+                break
+            if self._cancel.wait(min(0.2, left)):
+                break
+        self.stages.add("dutyRest", rest)
+
+    def stage(self, name):
+        """`with ctx.stage("diffusion"):` times a part of the job for info["metrics"]."""
+        return self.stages.stage(name)
 
     # Cancellation
     def request_cancel(self):

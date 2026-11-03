@@ -29,6 +29,8 @@ add_executable(acestudio_core_tests
     test_licence.cpp
     test_subprocess.cpp
     test_ai_worker.cpp
+    test_resource_profile.cpp
+    test_effects.cpp
     test_model_catalog.cpp
     test_regression.cpp
     test_asset_gen.cpp

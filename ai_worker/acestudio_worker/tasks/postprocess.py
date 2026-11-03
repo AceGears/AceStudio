@@ -39,22 +39,33 @@ def finish_images(ctx, images, pipe, torch, device, pixelate, save_png, crop):
     outputs = {}
     cutout = ctx.param("cutout")
     pixel = ctx.param("pixel")
+    # Resource profile: with room on the GPU the background-removal session is
+    # kept for the next job (creating it costs seconds each time).
+    res = ctx.param("resources") or {}
+    keep = bool(res.get("keepCutoutLoaded", False)) if isinstance(res, dict) else False
     if cutout and device == "cuda":
-        free = getattr(pipe, "maybe_free_model_hooks", None)
-        if free:
-            free()
-        torch.cuda.empty_cache()
+        with ctx.stage("freeForCutout"):
+            free = getattr(pipe, "maybe_free_model_hooks", None)
+            if free:
+                free()
+            torch.cuda.empty_cache()
     try:
         for i, img in enumerate(images):
             ctx.check_cancel()
+            ctx.wait_if_paused()
             if cutout:
-                img = apply_cutout(ctx, img, cutout)
+                with ctx.stage("cutout"):
+                    img = apply_cutout(ctx, img, cutout)
             if pixel:
-                outputs["raw%d" % i] = save_png(img, ctx.path("raw%d.png" % i))
-                img = pixelate(img, int(pixel["width"]), int(pixel["height"]), pixel.get("colors"), pixel.get("palette"),
-                               crop=crop, box=pixel.get("box"))
-            outputs["image%d" % i] = save_png(img, ctx.path("image%d.png" % i))
+                with ctx.stage("save"):
+                    outputs["raw%d" % i] = save_png(img, ctx.path("raw%d.png" % i))
+                with ctx.stage("pixel"):
+                    img = pixelate(img, int(pixel["width"]), int(pixel["height"]), pixel.get("colors"), pixel.get("palette"),
+                                   crop=crop, box=pixel.get("box"))
+            with ctx.stage("save"):
+                outputs["image%d" % i] = save_png(img, ctx.path("image%d.png" % i))
     finally:
-        if cutout and device == "cuda":
-            release_sessions()
+        if cutout and device == "cuda" and not keep:
+            with ctx.stage("releaseCutout"):
+                release_sessions()
     return outputs

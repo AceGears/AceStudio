@@ -114,6 +114,7 @@ void WorkerSupervisor::launch(std::vector<Event>& ev) {
     m_stderrTail.clear();
     m_hello = json::object();
     m_hardCancel = false;
+    m_lastActivity = Clock::now();
     auto p = Subprocess::start(m_opt.process);
     if (!p) {
         m_lastError = "Could not start the AI worker: " + p.error().message;
@@ -310,6 +311,7 @@ void WorkerSupervisor::handleResponse(const json& msg, std::vector<Event>& ev) {
         break;
     case Pending::Cancel:
     case Pending::Shutdown:
+    case Pending::Control:
         break;
     }
 }
@@ -373,6 +375,7 @@ void WorkerSupervisor::handleNotification(const std::string& method, const json&
 void WorkerSupervisor::finishJob(Job& job, JobState state, std::vector<Event>& ev) {
     job.state = state;
     job.finished = Clock::now();
+    m_lastActivity = job.finished;
     if (state == JobState::Cancelled) job.message = "Cancelled";
     if (job.id == m_running) {
         m_running.clear();
@@ -449,8 +452,27 @@ void WorkerSupervisor::onWorkerExit(int code, std::vector<Event>& ev) {
     m_restartAt = now + m_opt.restartDelay * static_cast<long>(m_crashes.size());
 }
 
+void WorkerSupervisor::setPaused(bool paused) {
+    if (paused == m_paused) return;
+    m_paused = paused;
+    if (!m_running.empty() && m_proc) (void)send(paused ? "job.pause" : "job.resume", {{"job", m_running}}, Pending::Control, m_running);
+    if (Job* j = m_running.empty() ? nullptr : findJob(m_running)) j->message = paused ? "Paused" : "Resuming…";
+    if (!paused) dispatch(m_deferred);
+}
+
+void WorkerSupervisor::setHoldQueue(bool hold) {
+    if (hold == m_holdQueue) return;
+    m_holdQueue = hold;
+    if (!hold) dispatch(m_deferred);
+}
+
+void WorkerSupervisor::setCancelPolicy(std::chrono::milliseconds grace, bool interruptLoad) {
+    m_opt.cancelGrace = grace;
+    m_opt.uninterruptibleGrace = interruptLoad ? grace : std::max(grace, std::chrono::milliseconds(std::chrono::seconds(180)));
+}
+
 void WorkerSupervisor::dispatch(std::vector<Event>& ev) {
-    if (!m_proc || m_state != WorkerState::Ready || !m_running.empty()) return;
+    if (!m_proc || m_state != WorkerState::Ready || !m_running.empty() || m_paused || m_holdQueue) return;
     for (const auto& id : m_order) {
         Job& j = m_jobs.at(id);
         if (j.state != JobState::Queued) continue;

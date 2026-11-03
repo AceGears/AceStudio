@@ -2,6 +2,7 @@
 
 #include "acestudio/core/AiWorker.h"
 #include "acestudio/core/ModelCatalog.h"
+#include "acestudio/core/ResourceProfile.h"
 
 #include <QObject>
 #include <QString>
@@ -53,6 +54,18 @@ public:
     void cancel(const ai::JobId& id);
     const ai::Job* job(const ai::JobId& id) const;
 
+    // Resource profile (Settings > AI): limits for the worker. A change of
+    // threads or priority applies when the worker next starts.
+    ai::ResourceLimits limits() const;
+    QString profileName() const;
+    // Pause All: holds the queue and pauses the running job between steps.
+    void setPaused(bool paused);
+    bool paused() const;
+    // Held while the user draws (profile: pause while drawing).
+    void setDrawing(bool drawing);
+    // Total VRAM of the GPU the worker found (0 = unknown or none).
+    int vramMb() const;
+
     // Model downloads (approval must already be recorded in the store).
     Result<ai::JobId> download(const ai::ModelEntry& m);
 
@@ -69,6 +82,7 @@ Q_SIGNALS:
 private:
     void poll();
     void rebuildSupervisor();
+    void releaseWhenIdle();
     void runNextSetupStep();
 
     AppContext& m_ctx;
@@ -84,6 +98,7 @@ private:
     ai::JobId m_setupJob;
     std::thread m_venvThread;
     std::map<ai::JobId, std::string> m_downloads;   // job -> model id
+    bool m_paused = false;
 };
 
 } // namespace acestudio::ui

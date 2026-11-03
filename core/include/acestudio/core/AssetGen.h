@@ -76,6 +76,11 @@ std::optional<QualityPreset> presetFromKey(std::string_view key);
 // Generation size for an output of `outW` x `outH`: the target's aspect at
 // the preset's long side, rounded to multiples of 16 (SDXL needs 8, klein 16).
 std::pair<int, int> generationSize(int outW, int outH, QualityPreset p);
+// Generation size for a small pixel sprite (longer side up to 128 px) with
+// FLUX.2 klein's pixel-art LoRA, which was trained at 512 x 512: 512 on the
+// longer side (Fast Draft 384), instead of the preset's 1024. Larger
+// sprites get generationSize().
+std::pair<int, int> pixelGenerationSize(int outW, int outH, QualityPreset preset);
 
 // ------------------------------------------------------------------ checks
 

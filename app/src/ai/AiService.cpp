@@ -11,6 +11,7 @@
 #include <QTimer>
 
 #include <set>
+#include <thread>
 
 namespace acestudio::ui {
 
@@ -54,7 +55,64 @@ void AiService::rebuildSupervisor() {
     if (!m_env) return;
     const std::string py = m_ctx.settings().get<std::string>("ai.pythonPath");
     auto opt = workerOptionsFor(*m_env, py.empty() ? fs::path() : toPath(qs(py)));
-    if (opt) m_sup = std::make_unique<WorkerSupervisor>(std::move(opt).value());
+    if (!opt) return;
+    // Resource profile: CPU threads and priority are set at launch.
+    const ResourceLimits l = limits();
+    opt.value().process.env.push_back({"ACESTUDIO_CPU_THREADS", std::to_string(l.cpuThreads)});
+    opt.value().process.env.push_back({"ACESTUDIO_LOW_PRIORITY", l.lowPriority ? "1" : "0"});
+    m_sup = std::make_unique<WorkerSupervisor>(std::move(opt).value());
+    m_sup->setCancelPolicy(std::chrono::seconds(l.cancelGraceSeconds), l.cancelDuringLoad);
+    m_sup->setPaused(m_paused);
+}
+
+int AiService::vramMb() const {
+    for (const auto& d : capabilities().value("devices", nlohmann::json::array())) return d.value("vramMb", 0);
+    return 0;
+}
+
+QString AiService::profileName() const { return qs(m_ctx.settings().get<std::string>("ai.profile")); }
+
+ResourceLimits AiService::limits() const {
+    const auto& st = m_ctx.settings();
+    const Profile p = profileFromString(st.get<std::string>("ai.profile")).value_or(Profile::Balanced);
+    LimitOverrides o;
+    o.idleUnloadMinutes = st.get<int>("ai.limit.idleUnloadMinutes");
+    o.cpuThreads = st.get<int>("ai.limit.cpuThreads");
+    o.lowPriority = st.get<int>("ai.limit.lowPriority");
+    o.keepCutoutLoaded = st.get<int>("ai.limit.keepCutoutLoaded");
+    o.gpuDutyPercent = st.get<int>("ai.limit.gpuDutyPercent");
+    o.pauseWhileDrawing = st.get<int>("ai.limit.pauseWhileDrawing");
+    return resolveLimits(p, o, static_cast<int>(std::max(1u, std::thread::hardware_concurrency())), vramMb());
+}
+
+void AiService::setPaused(bool paused) {
+    m_paused = paused;
+    if (m_sup) m_sup->setPaused(paused);
+    Q_EMIT stateChanged();
+}
+
+bool AiService::paused() const { return m_paused; }
+
+void AiService::setDrawing(bool drawing) {
+    if (!m_sup) return;
+    m_sup->setHoldQueue(drawing && limits().pauseWhileDrawing);
+}
+
+void AiService::releaseWhenIdle() {
+    // Idle release: an idle worker still holds the models in RAM (and part in
+    // VRAM). After the profile's idle time it is stopped; the next job starts
+    // it again (and pays the model load once).
+    if (!m_sup || m_sup->state() != WorkerState::Ready || !m_sup->idle() || m_paused || m_settingUp) return;
+    static Clock::time_point lastCheck{};
+    if (Clock::now() - lastCheck < std::chrono::seconds(5)) return;   // poll runs every 50 ms
+    lastCheck = Clock::now();
+    const int minutes = limits().idleUnloadMinutes;
+    if (minutes <= 0) return;
+    if (Clock::now() - m_sup->lastActivity() < std::chrono::minutes(minutes)) return;
+    ACE_LOG_INFO("ai", "AI worker idle for " + std::to_string(minutes) + " min: stopping it to release its memory");
+    m_sup->stop();
+    Q_EMIT message(tr("AI models released after %n minute(s) idle.", nullptr, minutes));
+    Q_EMIT stateChanged();
 }
 
 bool AiService::runtimeInstalled() const {
@@ -191,6 +249,11 @@ Result<JobId> AiService::submit(const std::string& task, nlohmann::json params, 
                                 const std::vector<std::pair<std::string, const Image*>>& images) {
     QString why;
     if (!ensureStarted(&why)) return Error{ErrorCode::NotFound, why.toStdString()};
+    // Per-job limits from the resource profile (a caller may set its own).
+    if (params.is_object() && !params.contains("resources")) {
+        const ResourceLimits l = limits();
+        params["resources"] = {{"gpuDutyPercent", l.gpuDutyPercent}, {"keepCutoutLoaded", l.keepCutoutLoaded}};
+    }
     auto id = m_sup->submit(task, std::move(params), label.toStdString(), images);
     if (id) Q_EMIT jobChanged(qs(id.value()));
     return id;
@@ -215,6 +278,7 @@ Result<JobId> AiService::download(const ModelEntry& m) {
 
 void AiService::poll() {
     if (!m_sup) return;
+    releaseWhenIdle();
     const WorkerState before = m_sup->state();
     std::vector<Event> events;
     try {

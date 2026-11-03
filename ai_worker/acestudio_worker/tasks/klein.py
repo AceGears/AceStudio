@@ -79,16 +79,41 @@ def _memory_plan(torch, device, weights, offload):
     return weights, offload, vram
 
 
-def _pipelines(ctx, model_dir, lora, device, weights, offload):
+def _switch_lora(pipe, lora):
+    """Optimised path: the pipeline was built with the style LoRA as an
+    adapter; turn it on (at this job's strength) or off without reloading.
+    Measured on the test PC, switching between a pixel and an HD style
+    otherwise reloaded klein (about 25 s each time)."""
+    if lora:
+        scale = float(lora.get("scale", 1.0))
+        if not 0.0 <= scale <= 2.0:
+            raise JobError("LoRA scale must be between 0 and 2", kind="invalid_input")
+        pipe.enable_lora()
+        pipe.set_adapters(["style"], adapter_weights=[scale])
+    else:
+        pipe.disable_lora()
+
+
+def _pipelines(ctx, model_dir, lora, device, weights, offload, preload=None):
+    """`preload` (optimised path): {"path": the style LoRA} loaded into every
+    build as a switchable adapter; `lora` then only says whether this job
+    uses it, and at what strength."""
     import torch
     from diffusers import Flux2KleinPipeline
     from diffusers.hooks import apply_layerwise_casting
     if not model_dir or not os.path.exists(os.path.join(model_dir, "model_index.json")):
         raise JobError("FLUX.2 klein not found in %s. Download it in AI Studio > Models." % model_dir, kind="missing_model")
-    key = (model_dir, lora.get("path") if lora else None, round(float(lora.get("scale", 1.0)), 3) if lora else None,
-           device, weights, offload)
+    if preload and lora and lora.get("path") != preload.get("path"):
+        preload = None   # a different LoRA than the preloaded one: the original path
+    if preload:
+        key = (model_dir, "preload", preload.get("path"), device, weights, offload)
+    else:
+        key = (model_dir, lora.get("path") if lora else None, round(float(lora.get("scale", 1.0)), 3) if lora else None,
+               device, weights, offload)
     with _cache_lock:
         if _cache["key"] == key:
+            if preload:
+                _switch_lora(_cache["pipe"], lora)
             return _cache["pipe"]
         _cache.update(key=None, pipe=None, inpaint=None)
         if device == "cuda":
@@ -97,7 +122,10 @@ def _pipelines(ctx, model_dir, lora, device, weights, offload):
     ctx.progress(0.02, "Loading FLUX.2 klein (the first run takes a few minutes)", force=True, uninterruptible=True)
     pipe = Flux2KleinPipeline.from_pretrained(model_dir, torch_dtype=dtype, use_safetensors=True)
     pipe.set_progress_bar_config(disable=True)
-    if lora:
+    build_lora = dict(preload, scale=(lora or {}).get("scale", 1.0)) if preload else lora
+    if build_lora:
+        lora_in = lora
+        lora = build_lora
         path = lora.get("path", "")
         if not os.path.exists(path):
             raise JobError("LoRA file not found: %s" % path, kind="missing_model")
@@ -124,6 +152,8 @@ def _pipelines(ctx, model_dir, lora, device, weights, offload):
             pipe.enable_model_cpu_offload()
         else:
             pipe.to("cuda")
+    if preload:
+        _switch_lora(pipe, lora_in)
     with _cache_lock:
         _cache.update(key=key, pipe=pipe, inpaint=None)
     return pipe
@@ -142,6 +172,8 @@ def run(ctx):
     ctx.progress(0.01, "Starting PyTorch", force=True, uninterruptible=True)
     require("torch", "diffusers", "transformers", "numpy", "PIL")
     import torch
+    from ..resources import limit_torch
+    limit_torch(torch)
     prompt = ctx.param("prompt", required=True, kind=str).strip()
     if not prompt:
         raise JobError("Enter a prompt", kind="invalid_input")
@@ -181,7 +213,12 @@ def run(ctx):
     lora = ctx.param("lora")
 
     t0 = time.monotonic()
-    pipe = _pipelines(ctx, ctx.param("model_dir", required=True, kind=str), lora, device, weights, offload)
+    preload = ctx.param("lora_preload") if ctx.param("optimize", False) else None
+    if preload is not None and not (isinstance(preload, dict) and isinstance(preload.get("path"), str)
+                                    and os.path.exists(preload["path"])):
+        preload = None
+    with ctx.stage("load"):
+        pipe = _pipelines(ctx, ctx.param("model_dir", required=True, kind=str), lora, device, weights, offload, preload)
     load_s = time.monotonic() - t0
     ctx.progress(0.05, "Generating", force=True)
     ctx.check_cancel()
@@ -190,11 +227,17 @@ def run(ctx):
     total = steps * count
     done = [0]
 
+    last = [time.monotonic()]
+
     def on_step(p, step, timestep, kwargs):
         done[0] += 1
         if ctx.cancelled():
             p._interrupt = True
             ctx.check_cancel()
+        now = time.monotonic()
+        ctx.rest_after_step(now - last[0])   # resource profile: GPU duty cycle
+        ctx.wait_if_paused()                 # Pause All
+        last[0] = time.monotonic()
         ctx.progress(0.05 + 0.9 * done[0] / total, "Step %d of %d" % (done[0], total), step=done[0], steps=total, force=True)
         return kwargs
 
@@ -216,11 +259,13 @@ def run(ctx):
                 mask = load_rgba(mask_path).convert("L").resize((width, height))
                 if ref_images:
                     common["image_reference"] = ref_images
-                result = runner(image=init, mask_image=mask, strength=strength, **common)
+                with ctx.stage("diffusion"):
+                    result = runner(image=init, mask_image=mask, strength=strength, **common)
             else:
                 if ref_images:
                     common["image"] = ref_images
-                result = runner(**common)
+                with ctx.stage("diffusion"):
+                    result = runner(**common)
             step_times.append((time.monotonic() - t1) / steps)
             ctx.check_cancel()
             generated.append(result.images[0])

@@ -40,7 +40,10 @@ class Sleep:
             ctx.progress(0.0, "loaded", force=True)
         for i in range(steps):
             ctx.check_cancel()
+            t0 = time.monotonic()
             time.sleep(seconds / steps)
+            ctx.rest_after_step(time.monotonic() - t0)
+            ctx.wait_if_paused()
             ctx.progress((i + 1) / steps, "step %d of %d" % (i + 1, steps), step=i + 1, steps=steps, force=True)
         with open(out, "w", encoding="utf-8") as f:
             f.write("slept %.2f\n" % seconds)

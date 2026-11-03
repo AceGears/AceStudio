@@ -62,6 +62,9 @@ def onnx_session(model_path, device="auto", provider=None, optimization="all"):
         providers.append("CPUExecutionProvider")   # for operators the GPU provider lacks
     opts = ort.SessionOptions()
     opts.log_severity_level = 3
+    from .resources import cpu_threads
+    if cpu_threads() > 0:
+        opts.intra_op_num_threads = cpu_threads()   # resource profile
     opts.graph_optimization_level = {
         "all": ort.GraphOptimizationLevel.ORT_ENABLE_ALL,
         "basic": ort.GraphOptimizationLevel.ORT_ENABLE_BASIC,
@@ -183,6 +186,11 @@ def run_onnx(ctx, model_path, device, fn, cpu_memory_mb=None):
                     level="warning")
             continue
         _working[model_path] = (used, opt)
+        stages = getattr(ctx, "stages", None)
+        if stages is not None:
+            stages.add("onnxSession", t_session)
+            stages.add("onnxRun", t_run)
+            ctx.onnx_provider = used
         ctx.log("%s on %s: session %.1f s, run %.1f s" % (os.path.basename(model_path),
                                                           used.replace("ExecutionProvider", ""), t_session, t_run))
         if last_error is not None:

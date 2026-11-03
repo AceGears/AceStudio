@@ -364,6 +364,8 @@ def run(ctx):
     ctx.progress(0.01, "Starting PyTorch", force=True, uninterruptible=True)
     require("torch", "diffusers", "transformers", "numpy", "PIL")
     import torch
+    from ..resources import limit_torch
+    limit_torch(torch)
     prompt = ctx.param("prompt", required=True, kind=str).strip()
     if not prompt:
         raise JobError("Enter a prompt", kind="invalid_input")
@@ -415,8 +417,9 @@ def run(ctx):
         if not 0.0 <= ip_scale <= 1.0:
             raise JobError("ip_adapter scale must be between 0 and 1", kind="invalid_input")
         ip_images = [load_rgba(pth).convert("RGB") for pth in ip["images"][:4]]
-    pipe, img2img = _pipelines(ctx, ctx.param("model_dir", required=True, kind=str), ctx.param("vae_dir"),
-                               lora, device, offload, controlnet, ip, weights)
+    with ctx.stage("load"):
+        pipe, img2img = _pipelines(ctx, ctx.param("model_dir", required=True, kind=str), ctx.param("vae_dir"),
+                                   lora, device, offload, controlnet, ip, weights)
     # Loading is over: a cancel that arrived meanwhile is honoured now, with
     # the pipeline cached for the next job.
     # Full-precision ControlNet with model offload spills past VRAM (slow
@@ -443,6 +446,8 @@ def run(ctx):
             ctx.log("Live preview off: %s" % e, "warning")
             decoder = None
 
+    last_step = [time.monotonic()]
+
     def on_step(p, step, timestep, kwargs):
         done_steps[0] += 1
         if ctx.cancelled():
@@ -450,6 +455,9 @@ def run(ctx):
             # pipeline still decodes the latents (5-8 s on 8 GB with offload).
             p._interrupt = True
             ctx.check_cancel()
+        ctx.rest_after_step(time.monotonic() - last_step[0])   # resource profile: GPU duty cycle
+        ctx.wait_if_paused()                                    # Pause All
+        last_step[0] = time.monotonic()
         path = None
         if decoder is not None and "latents" in kwargs and (step + 1) % every == 0:
             try:
@@ -486,9 +494,11 @@ def run(ctx):
                 strength = float(ctx.param("strength", 0.6))
                 if not 0.0 < strength <= 1.0:
                     raise JobError("strength must be in (0, 1]", kind="invalid_input")
-                result = img2img(image=init, strength=strength, **common)
+                with ctx.stage("diffusion"):
+                    result = img2img(image=init, strength=strength, **common)
             else:
-                result = pipe(width=width, height=height, **common)
+                with ctx.stage("diffusion"):
+                    result = pipe(width=width, height=height, **common)
             ctx.check_cancel()
             generated.append(result.images[0])
         from .postprocess import finish_images

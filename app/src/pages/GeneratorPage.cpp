@@ -4,6 +4,7 @@
 #include "../DocumentView.h"
 #include "../QtBridge.h"
 #include "../ai/AiService.h"
+#include "../ai/Benchmark.h"
 #include "../ui/Icons.h"
 
 #include "acestudio/core/FileUtil.h"
@@ -340,9 +341,20 @@ QWidget* GeneratorPage::buildForm() {
     connect(bestiary, &QPushButton::clicked, this, &GeneratorPage::startBestiary);
     connect(pack, &QPushButton::clicked, this, &GeneratorPage::startAssetPack);
     connect(pet, &QPushButton::clicked, this, &GeneratorPage::startPetToPixel);
+    auto* tools = new QHBoxLayout;
     auto* models = new QPushButton(tr("Models…"), w);
     connect(models, &QPushButton::clicked, this, &GeneratorPage::showModelsRequested);
-    col->addWidget(models, 0, Qt::AlignLeft);
+    auto* bench = new QPushButton(tr("Benchmark…"), w);
+    bench->setToolTip(tr("Measure generation and animation speed with fixed cases and seeds"));
+    connect(bench, &QPushButton::clicked, this, [this] {
+        auto* d = new BenchmarkRunner(*this, this);
+        d->setAttribute(Qt::WA_DeleteOnClose);
+        d->show();
+    });
+    tools->addWidget(models);
+    tools->addWidget(bench);
+    tools->addStretch();
+    col->addLayout(tools);
     col->addStretch();
     connect(m_generate, &QPushButton::clicked, this, [this] { generate(); });
     connect(m_cancel, &QPushButton::clicked, this, [this] {
@@ -652,10 +664,13 @@ void GeneratorPage::generate(const std::vector<Image>& extraRefs) {
 std::string GeneratorPage::submitJob(const std::vector<Image>& extraRefs, const JobOptions& o) {
     gen::Spec s = spec();
     if (o.description) s.description = *o.description;
+    if (o.style) s.style = *o.style;
     if (o.type) {
         s.type = *o.type;
         s.transparent = m_transparent->isChecked() && gen::isSingleSubject(s.type);
     }
+    if (o.transparent) s.transparent = *o.transparent && gen::isSingleSubject(s.type);
+    const bool optimize = o.optimize.value_or(m_ctx.settings().get<bool>("ai.optimizations"));
     s.sheetColumns = o.sheetColumns;
     s.sheetRows = o.sheetRows;
     const bool sheet = o.sheetColumns > 0 && o.sheetRows > 0;
@@ -715,9 +730,15 @@ std::string GeneratorPage::submitJob(const std::vector<Image>& extraRefs, const 
     const ModelEntry* lora = pixel ? installed(m_ai, backend == gen::Backend::Klein ? "pixel-art-klein-lora" : "pixel-art-xl") : nullptr;
     if (backend == gen::Backend::Sdxl) sp.referenceRoles.clear();
     const gen::Prompt prompt = gen::composePrompt(sp, backend, lora != nullptr);
-    const auto preset = gen::presetFromKey(m_preset->currentData().toString().toStdString()).value_or(gen::QualityPreset::Balanced);
+    const auto preset = o.preset.value_or(
+        gen::presetFromKey(m_preset->currentData().toString().toStdString()).value_or(gen::QualityPreset::Balanced));
     const auto [outW, outH] = size.value_or(outputSize());
     auto [gw, gh] = pixel ? gen::generationSize(outW, outH, preset) : std::pair{outW / 16 * 16, outH / 16 * 16};
+    // Optimised: a small pixel sprite with klein's pixel-art LoRA is made at
+    // the LoRA's training size (512) instead of 1024. The sprite is reduced
+    // 4-8x anyway; see the benchmark for the measured time and quality.
+    if (optimize && pixel && lora && backend == gen::Backend::Klein && sheet == false)
+        std::tie(gw, gh) = gen::pixelGenerationSize(outW, outH, preset);
     const auto& info = gen::presetInfo(preset);
     const ModelEntry* model = backend == gen::Backend::Klein ? klein : sdxl;
 
@@ -735,6 +756,12 @@ std::string GeneratorPage::submitJob(const std::vector<Image>& extraRefs, const 
         if (gen::wantsTileable(s.type)) p["tileable"] = "xy";
     }
     if (lora) p["lora"] = {{"path", utf8(m_ai.store()->entryPath(*lora))}, {"scale", lora->loraScale}};
+    p["optimize"] = optimize;
+    // Optimised: the pixel-art LoRA is built into klein once and switched per
+    // job, so changing between pixel and HD styles does not reload the model.
+    if (optimize && backend == gen::Backend::Klein)
+        if (const ModelEntry* kl = installed(m_ai, "pixel-art-klein-lora"))
+            p["lora_preload"] = {{"path", utf8(m_ai.store()->entryPath(*kl))}};
     if (s.transparent) {
         const ModelEntry* bg = installed(m_ai, "birefnet-general");
         if (!bg) bg = installed(m_ai, "birefnet-lite");
@@ -766,7 +793,7 @@ std::string GeneratorPage::submitJob(const std::vector<Image>& extraRefs, const 
             for (std::size_t i = 0; i < m_view->document().palette().size(); ++i) colours.push_back(m_view->document().palette().at(i).toHex(false));
             p["pixel"]["palette"] = colours;
         } else {
-            p["pixel"]["colors"] = pal > 0 ? pal : 32;
+            p["pixel"]["colors"] = o.colors ? *o.colors : pal > 0 ? pal : 32;
         }
     }
     std::vector<std::pair<std::string, const Image*>> images;

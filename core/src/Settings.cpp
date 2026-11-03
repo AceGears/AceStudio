@@ -66,6 +66,16 @@ Settings::Settings() {
     registerDefault("ai.generate.loraStrength", 100);         // percent, 0..200
     registerDefault("ai.generate.cropSubject", true);         // frame the subject before pixelizing
     registerDefault("ai.generateOptionsOpen", false);          // Generate tab: Options section expanded
+    registerDefault("ai.optimizations", true);                // speed optimisations (the benchmark compares both)
+    // Resource profile: eco | balanced | performance. The fields below
+    // override single limits of the profile (-1 = the profile's value).
+    registerDefault("ai.profile", "balanced");
+    registerDefault("ai.limit.idleUnloadMinutes", -1);       // stop the AI worker after this long idle (0 = never)
+    registerDefault("ai.limit.cpuThreads", -1);              // CPU threads for the worker (0 = all)
+    registerDefault("ai.limit.lowPriority", -1);             // 1 = below-normal process priority
+    registerDefault("ai.limit.keepCutoutLoaded", -1);        // 1 = keep the background-removal model on the GPU
+    registerDefault("ai.limit.gpuDutyPercent", -1);          // 100 = full speed; lower adds rest between steps
+    registerDefault("ai.limit.pauseWhileDrawing", -1);       // 1 = hold the next AI job while a stroke is being drawn
     // Export
     registerDefault("export.defaultEngine", "godot");
     // MCP

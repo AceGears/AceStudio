@@ -11,6 +11,7 @@ import os
 import platform
 import sys
 import threading
+import time
 import traceback
 
 from . import PROTOCOL_VERSION, __version__
@@ -77,6 +78,8 @@ class Server:
             "hello": self.on_hello,
             "job.submit": self.on_submit,
             "job.cancel": self.on_cancel,
+            "job.pause": self.on_pause,
+            "job.resume": self.on_resume,
             "shutdown": self.on_shutdown,
         }.get(method)
         if handler is None:
@@ -143,12 +146,28 @@ class Server:
             if self._job is None or self._job[0] != params.get("job"):
                 return {"cancelling": False}
             self._job[1].request_cancel()
+            self._job[1].resume()   # a paused job wakes up to see the cancel
         return {"cancelling": True}
+
+    def on_pause(self, params):
+        with self._job_lock:
+            if self._job is None or self._job[0] != params.get("job"):
+                return {"paused": False}
+            self._job[1].pause()
+        return {"paused": True}
+
+    def on_resume(self, params):
+        with self._job_lock:
+            if self._job is None or self._job[0] != params.get("job"):
+                return {"resumed": False}
+            self._job[1].resume()
+        return {"resumed": True}
 
     def on_shutdown(self, params):
         self.shutting_down = True
         with self._job_lock:
             if self._job is not None:
+                self._job[1].resume()   # a paused job must wake up to see the cancel
                 self._job[1].request_cancel()
         return {}
 
@@ -156,12 +175,17 @@ class Server:
     def _run(self, task, ctx):
         # Decide the outcome first, free the worker, and only then announce
         # it: the host may submit the next job the moment it hears "done".
+        from . import metrics
+        sampler = metrics.Sampler().start()
+        wall0, cpu0 = time.perf_counter(), time.process_time()
         try:
             os.makedirs(ctx.dir, exist_ok=True)
             result = task.run(ctx) or {}
             ctx.check_cancel()
-            outcome = ("job.done", {"job": ctx.job_id, "outputs": result.get("outputs", {}),
-                                    "info": result.get("info", {})})
+            sampler.stop()
+            info = dict(result.get("info", {}))
+            info["metrics"] = metrics.summary(time.perf_counter() - wall0, time.process_time() - cpu0, sampler, ctx.stages)
+            outcome = ("job.done", {"job": ctx.job_id, "outputs": result.get("outputs", {}), "info": info})
         except Cancelled:
             outcome = ("job.cancelled", {"job": ctx.job_id})
         except JobError as e:
@@ -172,6 +196,7 @@ class Server:
             kind = "oom" if "out of memory" in str(e).lower() else "error"
             sys.stderr.write(traceback.format_exc())
             outcome = ("job.failed", {"job": ctx.job_id, "error": "%s: %s" % (type(e).__name__, e), "kind": kind})
+        sampler.stop()
         with self._job_lock:
             self._job = None
         self.notify(*outcome)
@@ -196,7 +221,11 @@ def main():
     sys.stdin = open(os.devnull, "r")
     stdin = os.fdopen(proto_in, "r", encoding="utf-8", newline="\n")
 
+    from .resources import apply_process_limits
+    limits = apply_process_limits()
     server = Server(out)
+    if limits:
+        server.log("info", "Resource limits: " + ", ".join("%s=%s" % kv for kv in sorted(limits.items())))
     server.log("info", "AceStudio worker %s (Python %s) ready" % (__version__, platform.python_version()))
     for line in stdin:   # EOF (host closed the pipe or died) ends the worker
         server.handle_line(line)

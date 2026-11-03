@@ -109,6 +109,42 @@ class ProtocolTests(unittest.TestCase):
         with open(out, encoding="utf-8") as f:
             self.assertIn("slept", f.read())
 
+    def test_every_job_reports_its_metrics(self):
+        self.assertTrue(self.submit("jm", "diag.sleep", {"seconds": 0.3, "steps": 3})["result"]["accepted"])
+        done = self.w.wait_for(lambda m: m.get("method") == "job.done")
+        m = done["params"]["info"]["metrics"]
+        self.assertGreaterEqual(m["wallSeconds"], 0.25)
+        self.assertGreaterEqual(m["cpuSeconds"], 0.0)
+        self.assertGreater(m["peakRssGb"], 0.0)   # this process's own resident memory
+        self.assertIsInstance(m["stages"], dict)
+
+    def test_pause_holds_the_job_and_resume_continues(self):
+        self.assertTrue(self.submit("jp", "diag.sleep", {"seconds": 0.6, "steps": 6})["result"]["accepted"])
+        self.w.wait_for(lambda m: m.get("method") == "job.progress" and m["params"].get("step") == 1)
+        self.assertTrue(self.w.response(self.w.send("job.pause", {"job": "jp"}))["result"]["paused"])
+        time.sleep(1.0)   # longer than the whole job would take
+        steps = [m["params"].get("step") for m in self.w.lines if m.get("method") == "job.progress" and m["params"].get("step")]
+        self.assertLess(max(steps), 6)
+        self.assertFalse(any(m.get("method") == "job.done" for m in self.w.lines))
+        self.assertTrue(self.w.response(self.w.send("job.resume", {"job": "jp"}))["result"]["resumed"])
+        done = self.w.wait_for(lambda m: m.get("method") == "job.done")
+        self.assertGreater(done["params"]["info"]["metrics"]["wallSeconds"], 1.4)
+
+    def test_cancel_reaches_a_paused_job(self):
+        self.assertTrue(self.submit("jc", "diag.sleep", {"seconds": 0.6, "steps": 6})["result"]["accepted"])
+        self.w.wait_for(lambda m: m.get("method") == "job.progress" and m["params"].get("step") == 1)
+        self.w.response(self.w.send("job.pause", {"job": "jc"}))
+        self.w.response(self.w.send("job.cancel", {"job": "jc"}))
+        self.w.wait_for(lambda m: m.get("method") == "job.cancelled", 5)
+
+    def test_gpu_duty_cycle_rests_between_steps(self):
+        self.assertTrue(self.submit("jd", "diag.sleep", {"seconds": 0.4, "steps": 4,
+                                                          "resources": {"gpuDutyPercent": 50}})["result"]["accepted"])
+        done = self.w.wait_for(lambda m: m.get("method") == "job.done")
+        m = done["params"]["info"]["metrics"]
+        self.assertGreater(m["wallSeconds"], 0.75)          # about twice the work time
+        self.assertGreater(m["stages"]["dutyRest"], 0.3)
+
     def test_next_job_is_accepted_right_after_done(self):
         for i in range(20):   # regression: "done" used to arrive before the worker was free
             self.submit("q%d" % i, "diag.echo", {"i": i})

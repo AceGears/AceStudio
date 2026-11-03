@@ -5,6 +5,9 @@
 
 #include "acestudio/core/AssetGen.h"
 #include "acestudio/core/SpriteMotion.h"
+#include "acestudio/core/FileUtil.h"
+#include "acestudio/core/Effects.h"
+#include "acestudio/core/AnimCodec.h"
 #include "acestudio/core/WorldMap.h"
 #include "acestudio/core/AssetFiles.h"
 #include "acestudio/core/AssetTools.h"
@@ -335,6 +338,49 @@ int cmdSlice(const Args& a, Output& out) {
 }
 
 // animate sprite.png --out dir [--action a,b|all] [--frames N] [--amount X] [--body B] [--face left]
+int cmdEffect(const Args& a, Output& out) {
+    if (a.positional.size() != 2) return out.fail(kUsage, "effect: expected one sprite PNG");
+    const auto outDir = a.opt("out");
+    if (!outDir) return out.fail(kUsage, "effect: --out (a folder) is required");
+    auto img = readPng(a.positional[1]);
+    if (!img) return out.fail(img.error());
+    fx::EffectOptions o;
+    const std::string name = a.opt("effect").value_or("fire");
+    const auto e = fx::effectFromString(name);
+    if (!e) return out.fail(kUsage, "effect: --effect expects fire, water, sway, flag, smoke or pulse");
+    o.effect = *e;
+    o.frames = optInt(a, "frames").value_or(8);
+    o.frameMs = optInt(a, "ms").value_or(90);
+    o.seed = static_cast<unsigned>(optInt(a, "seed").value_or(1));
+    if (auto am = a.opt("amount")) {
+        try { o.amount = std::stod(*am); } catch (...) { return out.fail(kUsage, "effect: --amount expects a number"); }
+    }
+    const fx::EffectClip c = fx::animateEffect(img.value(), o);
+    const fs::path dir = *outDir;
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    const std::string stem = fs::path(a.positional[1]).stem().string() + "_" + name;
+    const fs::path png = dir / (stem + ".png"), gif = dir / (stem + ".gif");
+    if (!a.force && (fs::exists(png, ec) || fs::exists(gif, ec))) return out.fail(kIo, png.string() + " already exists (use --force)");
+    const int fw = c.frames[0].width(), fh = c.frames[0].height();
+    Image strip(fw * static_cast<int>(c.frames.size()), fh);
+    std::vector<AnimFrame> anim;
+    for (std::size_t i = 0; i < c.frames.size(); ++i) {
+        strip.blit(c.frames[i], static_cast<int>(i) * fw, 0);
+        anim.push_back({c.frames[i], c.durations[i]});
+    }
+    if (auto st = writePng(strip, png); !st) return out.fail(st.error());
+    auto bytes = encodeGif(anim, 0);
+    if (!bytes) return out.fail(bytes.error());
+    if (auto st = writeFileAtomic(gif, bytes.value()); !st) return out.fail(st.error());
+    int moving = 0;
+    for (int y = 0; y < c.region.height(); ++y)
+        for (int x = 0; x < c.region.width(); ++x) moving += c.region.get(x, y);
+    return out.success({{"files", {png.string(), gif.string()}}, {"effect", name}, {"frames", c.frames.size()},
+                        {"frameWidth", fw}, {"frameHeight", fh}, {"animatedPixels", moving}},
+                       "Wrote " + png.string() + " and " + gif.string() + "\n");
+}
+
 int cmdAnimate(const Args& a, Output& out) {
     if (a.positional.size() != 2) return out.fail(kUsage, "animate: expected one sprite PNG");
     const auto outDir = a.opt("out");

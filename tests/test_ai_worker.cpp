@@ -325,3 +325,34 @@ TEST_CASE("Cancel during an uninterruptible stage waits for it, keeping the work
     REQUIRE(g.ready());
     CHECK(g.sup->workerPid() != pid2);
 }
+
+TEST_CASE("Pause All holds the running job and the queue; holding the queue lets the job finish", "[ai]") {
+    REQUIRE_PYTHON();
+    Fixture f;
+    REQUIRE(f.ready());
+    auto a = f.sup->submit("diag.sleep", {{"seconds", 0.6}, {"steps", 6}}).value();
+    auto b = f.sup->submit("diag.echo", {{"n", 1}}).value();
+    REQUIRE(f.sup->runUntil([&] { return f.sup->job(a)->step >= 1; }, 20s));
+    f.sup->setPaused(true);
+    // Paused: the running job stops advancing (well past its natural end) and b does not start.
+    f.sup->runUntil([] { return false; }, 1500ms);
+    CHECK(f.sup->job(a)->state == JobState::Running);
+    CHECK(f.sup->job(a)->step < 6);
+    CHECK(f.sup->job(b)->state == JobState::Queued);
+    f.sup->setPaused(false);
+    REQUIRE(f.finished(b));
+    CHECK(f.sup->job(a)->state == JobState::Succeeded);
+    CHECK(f.sup->job(b)->state == JobState::Succeeded);
+
+    // Holding the queue (drawing) lets a running job finish but starts nothing new.
+    auto c = f.sup->submit("diag.sleep", {{"seconds", 0.2}, {"steps", 2}}).value();
+    REQUIRE(f.sup->runUntil([&] { return f.sup->job(c)->state == JobState::Running; }, 20s));
+    f.sup->setHoldQueue(true);
+    auto d = f.sup->submit("diag.echo", {{"n", 2}}).value();
+    REQUIRE(f.finished(c));
+    f.sup->runUntil([] { return false; }, 400ms);
+    CHECK(f.sup->job(d)->state == JobState::Queued);
+    f.sup->setHoldQueue(false);
+    REQUIRE(f.finished(d));
+    CHECK(f.sup->job(d)->state == JobState::Succeeded);
+}

@@ -240,6 +240,17 @@ std::pair<int, int> generationSize(int outW, int outH, QualityPreset preset) {
     return {r16(w), r16(h)};
 }
 
+std::pair<int, int> pixelGenerationSize(int outW, int outH, QualityPreset preset) {
+    if (std::max(outW, outH) > 128) return generationSize(outW, outH, preset);
+    const int longSide = preset == QualityPreset::FastDraft ? 384 : 512;
+    const double aspect = std::clamp(static_cast<double>(std::max(1, outW)) / std::max(1, outH), 0.25, 4.0);
+    int w = longSide, h = longSide;
+    if (aspect >= 1) h = static_cast<int>(std::lround(longSide / aspect));
+    else w = static_cast<int>(std::lround(longSide * aspect));
+    auto r16 = [](int v) { return std::max(256, (v + 8) / 16 * 16); };
+    return {r16(w), r16(h)};
+}
+
 // ------------------------------------------------------------------ checks
 
 int QualityReport::score() const {

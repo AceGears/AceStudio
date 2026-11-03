@@ -73,6 +73,9 @@ const char* kUsageText =
     "  animate <sprite.png> --out <folder> [--action idle,walk,...|all] [--frames N] [--amount X]\n"
     "          [--body biped|quadruped|blob|flyer|object|swimmer] [--face left] [--wing-line 0.45] [--wing-span 0-1]\n"
     "                                  Animate a sprite without AI: one strip PNG + JSON per action\n"
+    "  effect <sprite.png> --out <folder> [--effect fire|water|sway|flag|smoke|pulse] [--frames 8]\n"
+    "         [--ms 90] [--amount 1] [--seed 1]\n"
+    "                                  Procedural looping effect (palette kept): strip PNG + GIF\n"
     "  slice <sheet.png> --out <folder> [--grid WxH|auto [--offset X,Y] [--spacing X,Y] [--keep-empty]]\n"
     "        [--background #rrggbb] [--tolerance 8] [--merge 2] [--min-pixels 4]\n"
     "                                  Cut a sheet into sprites (PNGs + .slices.json)\n"
@@ -392,6 +395,7 @@ int main(int argc, char** argv) {
         if (cmd == "slice") return acestudio::cli::cmdSlice(*args, out);
         if (cmd == "uikit") return acestudio::cli::cmdUiKit(*args, out);
         if (cmd == "animate") return acestudio::cli::cmdAnimate(*args, out);
+        if (cmd == "effect") return acestudio::cli::cmdEffect(*args, out);
         if (cmd == "connect") return acestudio::cli::cmdConnect(*args, out);
         if (cmd == "map") return acestudio::cli::cmdMap(*args, out);
         if (cmd == "run") return acestudio::cli::cmdRun(*args, out);
