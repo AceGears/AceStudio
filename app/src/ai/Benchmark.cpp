@@ -333,7 +333,7 @@ void BenchmarkRunner::runAnimation(const Step& s) {
             durations = clip.value().durations;
             const motion::ClipCheck chk = motion::checkClip(clip.value());
             c["body"] = motion::toString(clip.value().body);
-            c["check"] = {{"maxAreaChange", chk.maxAreaChange}, {"minNeighbourIoU", chk.minNeighbourIoU}, {"loopIoU", chk.loopIoU},
+            c["check"] = {{"maxAreaChange", chk.maxAreaChange}, {"minNeighbourIoU", chk.minNeighbourIoU}, {"loopIoU", chk.loopIoU}, {"flicker", chk.flicker}, {"floatingFrames", chk.floatingFrames},
                           {"issues", chk.issues}};
         } else {
             c["error"] = clip.error().message;
@@ -402,7 +402,7 @@ void BenchmarkRunner::finish() {
                   num(&sys, "gpuAvgPercent", 0) + " | " + num(&sys, "uiLagPeakMs", 0) + " | " +
                   (c->contains("qualityScore") ? std::to_string((*c)["qualityScore"].get<int>()) : "–") + " |\n";
         }
-    md += "\n## Animation\n\n| Case | Pipeline | Method | Frames | Time ms | Issues | Min neighbour IoU | Loop IoU |\n|---|---|---|---|---|---|---|---|\n";
+    md += "\n## Animation\n\n| Case | Pipeline | Method | Frames | Time ms | Issues | Min neighbour IoU | Loop IoU | Flicker | Floating frames |\n|---|---|---|---|---|---|---|---|---|---|\n";
     for (const char* name : {"idle", "walk", "flap", "fire"})
         for (const char* mode : {"original", "optimised"}) {
             const json* c = find(mode, name);
@@ -411,7 +411,7 @@ void BenchmarkRunner::finish() {
             md += std::string("| ") + name + " | " + mode + " | " + c->value("method", std::string()) + " | " +
                   std::to_string(c->value("frames", 0)) + " | " + QString::number(c->value("animateSeconds", 0.0) * 1000, 'f', 1).toStdString() +
                   " | " + (chk.contains("issues") ? std::to_string(chk["issues"].size()) : "–") + " | " + num(&chk, "minNeighbourIoU", 2) +
-                  " | " + num(&chk, "loopIoU", 2) + " |\n";
+                  " | " + num(&chk, "loopIoU", 2) + " | " + num(&chk, "flicker", 3) + " | " + num(&chk, "floatingFrames", 0) + " |\n";
         }
     writeText(outPath("report.md"), md);
     m_start->setEnabled(true);

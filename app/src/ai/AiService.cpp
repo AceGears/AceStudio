@@ -28,6 +28,18 @@ AiService::AiService(AppContext& ctx, QObject* parent) : QObject(parent), m_ctx(
         if (!env) m_envError = qs(env.error().message);
         else m_env = env.value();
     }
+    // Resource limits apply at once: the cancel policy directly, CPU threads
+    // and priority by restarting the worker when it is idle (a running job
+    // keeps the old limits until it finishes).
+    connect(&ctx, &AppContext::settingChanged, this, [this](const QString& key) {
+        if (key != QLatin1String("ai.profile") && !key.startsWith(QLatin1String("ai.limit."))) return;
+        if (!m_sup) return;
+        const ResourceLimits l = limits();
+        m_sup->setCancelPolicy(std::chrono::seconds(l.cancelGraceSeconds), l.cancelDuringLoad);
+        if (key == QLatin1String("ai.profile") || key == QLatin1String("ai.limit.cpuThreads") || key == QLatin1String("ai.limit.lowPriority"))
+            m_limitsStale = true;
+        applyStaleLimits();
+    });
     if (m_env) {
         auto cat = ModelCatalog::load(m_env->catalogFile);
         if (cat) m_catalog = std::move(cat).value();
@@ -98,7 +110,22 @@ void AiService::setDrawing(bool drawing) {
     m_sup->setHoldQueue(drawing && limits().pauseWhileDrawing);
 }
 
+void AiService::applyStaleLimits() {
+    if (!m_limitsStale || !m_sup || !m_sup->idle() || m_settingUp) return;
+    if (m_sup->state() != WorkerState::Ready && m_sup->state() != WorkerState::Stopped) return;
+    m_limitsStale = false;
+    const ResourceLimits l = limits();
+    m_sup->setEnv("ACESTUDIO_CPU_THREADS", std::to_string(l.cpuThreads));
+    m_sup->setEnv("ACESTUDIO_LOW_PRIORITY", l.lowPriority ? "1" : "0");
+    if (m_sup->state() == WorkerState::Ready) {
+        ACE_LOG_INFO("ai", "Resource limits changed: restarting the idle AI worker with the new CPU limits");
+        m_sup->restart();
+        Q_EMIT stateChanged();
+    }
+}
+
 void AiService::releaseWhenIdle() {
+    applyStaleLimits();
     // Idle release: an idle worker still holds the models in RAM (and part in
     // VRAM). After the profile's idle time it is stopped; the next job starts
     // it again (and pays the model load once).

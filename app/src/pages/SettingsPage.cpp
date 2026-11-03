@@ -22,7 +22,10 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QToolButton>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace acestudio::ui {
 
@@ -253,6 +256,89 @@ QWidget* SettingsPage::generation() {
     crop->setChecked(s.get<bool>("ai.generate.cropSubject"));
     connect(crop, &QCheckBox::toggled, this, [this](bool on) { m_ctx.setSetting("ai.generate.cropSubject", on); });
     form->addRow(tr("Framing:"), crop);
+
+    // Resource profile: how much of the PC the AI may use.
+    auto* profile = new QComboBox(page);
+    profile->setAccessibleName(tr("Resource profile"));
+    profile->addItem(tr("Eco: quiet and cool, slower"), QStringLiteral("eco"));
+    profile->addItem(tr("Balanced (recommended)"), QStringLiteral("balanced"));
+    profile->addItem(tr("Performance: fastest, uses the whole PC"), QStringLiteral("performance"));
+    profile->setCurrentIndex(std::max(0, profile->findData(QString::fromStdString(s.get<std::string>("ai.profile")))));
+    auto* profileHint = hint(QString(), page);
+    auto describe = [profileHint](const QString& id) {
+        if (id == QLatin1String("eco"))
+            profileHint->setText(tr("A quarter of the CPU threads at low priority, the GPU rests between steps (about 60% busy), "
+                                    "models are released after 2 minutes idle, and Cancel stops even a model load at once."));
+        else if (id == QLatin1String("performance"))
+            profileHint->setText(tr("All CPU threads at normal priority, models stay loaded, and the background-removal model "
+                                    "stays on the GPU when it has 10 GB or more."));
+        else
+            profileHint->setText(tr("Half the CPU threads at low priority so drawing stays smooth, models are released after "
+                                    "10 minutes idle, and queued AI jobs wait while you draw."));
+    };
+    describe(profile->currentData().toString());
+    connect(profile, &QComboBox::currentIndexChanged, this, [this, profile, describe] {
+        const QString id = profile->currentData().toString();
+        describe(id);
+        m_ctx.setSetting("ai.profile", id.toStdString());
+    });
+    form->addRow(tr("Resource &profile:"), profile);
+    form->addRow(QString(), profileHint);
+
+    auto* optimise = new QCheckBox(tr("Use speed optimisations (smaller generation size for small pixel sprites, no model reload "
+                                      "when switching styles)"),
+                                   page);
+    optimise->setChecked(s.get<bool>("ai.optimizations"));
+    connect(optimise, &QCheckBox::toggled, this, [this](bool on) { m_ctx.setSetting("ai.optimizations", on); });
+    form->addRow(tr("Speed:"), optimise);
+
+    // Advanced limits, folded away: each one overrides the profile.
+    auto* advToggle = new QToolButton(page);
+    advToggle->setText(tr("Advanced limits"));
+    advToggle->setCheckable(true);
+    advToggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    advToggle->setArrowType(Qt::RightArrow);
+    advToggle->setAutoRaise(true);
+    auto* adv = new QWidget(page);
+    auto* advForm = new QFormLayout(adv);
+    advForm->setContentsMargins(0, 0, 0, 0);
+    adv->setVisible(false);
+    connect(advToggle, &QToolButton::toggled, adv, [adv, advToggle](bool on) {
+        adv->setVisible(on);
+        advToggle->setArrowType(on ? Qt::DownArrow : Qt::RightArrow);
+    });
+    auto intLimit = [&](const char* key, int min, int max, const QString& suffix, const QString& label, const QString& zeroText) {
+        auto* sb = new QSpinBox(adv);
+        sb->setRange(min - 1, max);   // the lowest value means "profile default"
+        sb->setSpecialValueText(tr("Profile default"));
+        sb->setSuffix(suffix);
+        const int v = s.get<int>(key);
+        sb->setValue(v < min ? min - 1 : v);
+        if (!zeroText.isEmpty()) sb->setToolTip(zeroText);
+        const std::string k = key;
+        connect(sb, &QSpinBox::valueChanged, this, [this, k, min](int x) { m_ctx.setSetting(k, x < min ? -1 : x); });
+        advForm->addRow(label, sb);
+    };
+    auto boolLimit = [&](const char* key, const QString& label) {
+        auto* cb = new QComboBox(adv);
+        cb->addItem(tr("Profile default"), -1);
+        cb->addItem(tr("On"), 1);
+        cb->addItem(tr("Off"), 0);
+        cb->setAccessibleName(label);
+        cb->setCurrentIndex(std::max(0, cb->findData(s.get<int>(key))));
+        const std::string k = key;
+        connect(cb, &QComboBox::currentIndexChanged, this, [this, k, cb] { m_ctx.setSetting(k, cb->currentData().toInt()); });
+        advForm->addRow(label, cb);
+    };
+    intLimit("ai.limit.cpuThreads", 0, 256, QString(), tr("CPU threads:"), tr("0 = all"));
+    boolLimit("ai.limit.lowPriority", tr("Low priority:"));
+    intLimit("ai.limit.gpuDutyPercent", 20, 100, QStringLiteral("%"), tr("GPU busy at most:"), QString());
+    intLimit("ai.limit.idleUnloadMinutes", 0, 240, tr(" min"), tr("Release models after idle:"), tr("0 = never"));
+    boolLimit("ai.limit.keepCutoutLoaded", tr("Keep background removal on GPU:"));
+    boolLimit("ai.limit.pauseWhileDrawing", tr("Hold AI jobs while drawing:"));
+    advForm->addRow(QString(), hint(tr("CPU threads and priority apply when the AI worker next starts."), adv));
+    form->addRow(QString(), advToggle);
+    form->addRow(QString(), adv);
 
     auto* modelDir = new QLineEdit(QString::fromStdString(s.get<std::string>("ai.modelDirectory")), page);
     modelDir->setPlaceholderText(tr("Default (AceStudio's AI folder)"));

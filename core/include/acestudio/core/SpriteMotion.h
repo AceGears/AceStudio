@@ -57,6 +57,12 @@ struct Subject {
     int footRow = -1;            // lowest row of the feet (above any ground shadow)
     int groundTop = -1;          // first row of a ground shadow / base line, -1 = none
     bool headLeft = false;       // swimmers: the head is on the left (the sprite faces left)
+    // Bipeds seen from the front: the legs touch, so they were split at the
+    // middle; a walk lifts them in turn instead of swinging them.
+    bool frontView = false;
+    // Arms: the parts of the upper body beside the legs (shoulder to hand).
+    // A walk swings them against the legs.
+    std::vector<IntRect> arms;
 };
 Subject analyzeSubject(const Image& sprite);
 
@@ -116,11 +122,18 @@ bool spriteFacesLeft(const Image& sprite);
 Image rotateSprite(const Image& sprite, double radians);
 
 // Automatic checks of a clip: pixel-count drift (parts lost or doubled),
-// frame-to-frame jumps, and the loop seam.
+// frame-to-frame jumps, the loop seam, one-frame flicker, and feet that
+// leave the ground during a walk.
 struct ClipCheck {
     double maxAreaChange = 0;   // largest relative change of opaque area vs frame 0
     double minNeighbourIoU = 1; // lowest silhouette overlap of consecutive frames
     double loopIoU = 1;         // last frame vs first (looping clips)
+    // Pixels that change for a single frame and change back (flicker), as a
+    // share of the sprite's area, worst frame.
+    double flicker = 0;
+    // Walk, run and idle cycles of bodies with feet: frames in which no foot
+    // touches the ground line.
+    int floatingFrames = 0;
     std::vector<std::string> issues;
 };
 ClipCheck checkClip(const Clip& clip);

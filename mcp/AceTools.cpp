@@ -536,6 +536,32 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                      b.overwrite();
                      return fromCli(runCliConfirm(*envPtr, b.args, call));
                  }});
+    t.push_back({"sprite_effect", "Animate an environmental sprite (no AI)",
+                 std::string("Loops an environmental sprite procedurally, in its own colours: fire flickers and rises above the "
+                             "logs, water ripples, plants sway above the trunk, flags wave from the pole, smoke rises, magic "
+                             "pulses. \"auto\" picks the effect from the file name and the pixels. Writes a strip PNG and a GIF.") +
+                     kPathNote,
+                 obj({{"image", str("The sprite PNG (transparent background)")},
+                      {"out", str("Output folder")},
+                      {"effect", oneOf("The effect (default auto)", {"auto", "fire", "water", "sway", "flag", "smoke", "pulse"})},
+                      {"frames", integer("Loop length in frames (default 8)", 2, 32)},
+                      {"frame_ms", integer("Frame duration in ms (default 90)", 20, 1000)},
+                      {"amount", number("Strength of the motion, 0.25-2 (default 1)")},
+                      {"seed", integer("Noise pattern (same seed, same animation)", 0, 1000000)},
+                      {"overwrite", kOverwrite}},
+                     {"image", "out"}),
+                 writes(),
+                 [envPtr](const json& a, const ToolCall& call) {
+                     ArgBuilder b{*envPtr, a, {"effect"}, {}};
+                     if (!b.path("image") || !b.path("out", "--out")) return badArgs(b.error);
+                     b.opt("effect", "--effect");
+                     b.opt("frames", "--frames");
+                     b.opt("frame_ms", "--ms");
+                     b.opt("amount", "--amount");
+                     b.opt("seed", "--seed");
+                     b.overwrite();
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
+                 }});
     t.push_back({"sheet_cut", "Cut a generated sheet into subjects",
                  std::string("Cuts an AI-generated sheet of COLS x ROWS subjects (a bestiary, an item grid) into separate PNGs. "
                              "Cut lines go through the emptiest gaps near the expected lines, an opaque background is removed "

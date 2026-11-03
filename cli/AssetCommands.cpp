@@ -6,6 +6,7 @@
 #include "acestudio/core/AssetGen.h"
 #include "acestudio/core/SpriteMotion.h"
 #include "acestudio/core/FileUtil.h"
+#include "acestudio/core/AnimRouter.h"
 #include "acestudio/core/Effects.h"
 #include "acestudio/core/AnimCodec.h"
 #include "acestudio/core/WorldMap.h"
@@ -345,9 +346,19 @@ int cmdEffect(const Args& a, Output& out) {
     auto img = readPng(a.positional[1]);
     if (!img) return out.fail(img.error());
     fx::EffectOptions o;
-    const std::string name = a.opt("effect").value_or("fire");
+    std::string name = a.opt("effect").value_or("auto");
+    std::string reason;
+    if (name == "auto") {
+        // The router: the file name is the hint ("campfire.png"), then the pixels.
+        const anim::Route r = anim::routeAnimation(img.value(), fs::path(a.positional[1]).stem().string());
+        if (r.method != anim::Method::Effect)
+            return out.fail(kUsage, "effect: this sprite looks like it needs body motion, not an effect (" + r.reason +
+                                        ") Use 'animate', or name an effect with --effect.");
+        name = fx::toString(r.effect);
+        reason = r.reason;
+    }
     const auto e = fx::effectFromString(name);
-    if (!e) return out.fail(kUsage, "effect: --effect expects fire, water, sway, flag, smoke or pulse");
+    if (!e) return out.fail(kUsage, "effect: --effect expects auto, fire, water, sway, flag, smoke or pulse");
     o.effect = *e;
     o.frames = optInt(a, "frames").value_or(8);
     o.frameMs = optInt(a, "ms").value_or(90);
@@ -377,7 +388,7 @@ int cmdEffect(const Args& a, Output& out) {
     for (int y = 0; y < c.region.height(); ++y)
         for (int x = 0; x < c.region.width(); ++x) moving += c.region.get(x, y);
     return out.success({{"files", {png.string(), gif.string()}}, {"effect", name}, {"frames", c.frames.size()},
-                        {"frameWidth", fw}, {"frameHeight", fh}, {"animatedPixels", moving}},
+                        {"frameWidth", fw}, {"frameHeight", fh}, {"animatedPixels", moving}, {"reason", reason}},
                        "Wrote " + png.string() + " and " + gif.string() + "\n");
 }
 
@@ -443,7 +454,7 @@ int cmdAnimate(const Args& a, Output& out) {
         const motion::ClipCheck chk = motion::checkClip(c);
         json j{{"action", c.name}, {"body", motion::toString(c.body)}, {"frameWidth", fw}, {"frameHeight", fh},
                {"frames", c.frames.size()}, {"durations", c.durations}, {"loop", c.loops}, {"image", png.filename().string()},
-               {"check", {{"maxAreaChange", chk.maxAreaChange}, {"minNeighbourIoU", chk.minNeighbourIoU}, {"loopIoU", chk.loopIoU},
+               {"check", {{"maxAreaChange", chk.maxAreaChange}, {"minNeighbourIoU", chk.minNeighbourIoU}, {"loopIoU", chk.loopIoU}, {"flicker", chk.flicker}, {"floatingFrames", chk.floatingFrames},
                           {"issues", chk.issues}}}};
         if (auto st = writeTextFile(js, j.dump(2)); !st) return out.fail(st.error());
         files.push_back(png.string());

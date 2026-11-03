@@ -31,14 +31,26 @@ def apply_process_limits():
         try:
             if os.name == "nt":
                 import ctypes
+                from ctypes import wintypes
                 BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
-                ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(),
-                                                        BELOW_NORMAL_PRIORITY_CLASS)
+                k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                # Explicit types: with the default int the process pseudo-handle
+                # is truncated on 64-bit Windows and the call does nothing.
+                k32.GetCurrentProcess.restype = wintypes.HANDLE
+                k32.GetCurrentProcess.argtypes = []
+                k32.SetPriorityClass.restype = wintypes.BOOL
+                k32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+                k32.GetPriorityClass.restype = wintypes.DWORD
+                k32.GetPriorityClass.argtypes = [wintypes.HANDLE]
+                if not k32.SetPriorityClass(k32.GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS):
+                    raise OSError(ctypes.get_last_error(), "SetPriorityClass failed")
+                if k32.GetPriorityClass(k32.GetCurrentProcess()) != BELOW_NORMAL_PRIORITY_CLASS:
+                    raise OSError("the priority did not change")
             else:
                 os.nice(5)
             applied["priority"] = "below-normal"
-        except Exception:   # noqa: BLE001 - a limit that cannot be set is not fatal
-            pass
+        except Exception as e:   # noqa: BLE001 - a limit that cannot be set is not fatal
+            applied["priority"] = "normal (could not lower: %s)" % e
     return applied
 
 

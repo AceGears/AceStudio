@@ -5,11 +5,13 @@
 // document with a tag per action or written as strips.
 
 #include "acestudio/core/Document.h"
+#include "acestudio/core/Effects.h"
 #include "acestudio/core/SpriteMotion.h"
 
 #include <QDialog>
 
 #include <functional>
+#include <optional>
 #include <vector>
 
 class QCheckBox;
@@ -41,6 +43,9 @@ private:
     void showFrame();
     void openDocument();
     void exportStrips();
+    // The chosen effect, or nothing for body motion.
+    std::optional<::acestudio::fx::Effect> effect() const;
+    std::vector<::acestudio::motion::Clip> effectClips(const Image& sprite) const;
 
     Image m_sprite;
     Mask m_wingMask;
@@ -56,6 +61,9 @@ private:
     int m_previewClip = 0;
     int m_previewFrame = 0;
 
+    QComboBox* m_method = nullptr;
+    QLabel* m_route = nullptr;
+    QSpinBox* m_speed = nullptr;
     QListWidget* m_actions = nullptr;
     QComboBox* m_body = nullptr;
     QComboBox* m_face = nullptr;

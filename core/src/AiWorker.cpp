@@ -471,6 +471,15 @@ void WorkerSupervisor::setCancelPolicy(std::chrono::milliseconds grace, bool int
     m_opt.uninterruptibleGrace = interruptLoad ? grace : std::max(grace, std::chrono::milliseconds(std::chrono::seconds(180)));
 }
 
+void WorkerSupervisor::setEnv(const std::string& name, const std::string& value) {
+    for (auto& [k, v] : m_opt.process.env)
+        if (k == name) {
+            v = value;
+            return;
+        }
+    m_opt.process.env.emplace_back(name, value);
+}
+
 void WorkerSupervisor::dispatch(std::vector<Event>& ev) {
     if (!m_proc || m_state != WorkerState::Ready || !m_running.empty() || m_paused || m_holdQueue) return;
     for (const auto& id : m_order) {

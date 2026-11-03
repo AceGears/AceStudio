@@ -7,6 +7,7 @@ add_library(acestudio_core STATIC
     src/AiWorker.cpp
     src/ResourceProfile.cpp
     src/Effects.cpp
+    src/AnimRouter.cpp
     src/AnimCodec.cpp
     src/Animation.cpp
     src/AnimationQA.cpp

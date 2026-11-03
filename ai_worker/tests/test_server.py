@@ -618,5 +618,22 @@ class CpuMemoryCheckTests(unittest.TestCase):
         v = gpu.available_memory()
         self.assertTrue(v is None or v > 0)
 
+
+
+class ProcessLimitTests(unittest.TestCase):
+    def test_low_priority_really_lowers_the_priority(self):
+        # In a child process, so the test runner keeps its own priority.
+        code = ("import json, os; from acestudio_worker import resources, metrics; "
+                "print(json.dumps({'applied': resources.apply_process_limits(), 'rss': metrics.process_rss_bytes()}))")
+        env = dict(os.environ, ACESTUDIO_LOW_PRIORITY="1", ACESTUDIO_CPU_THREADS="2")
+        out = subprocess.run([sys.executable, "-c", code], env=env, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        r = json.loads(out.stdout.strip().splitlines()[-1])
+        self.assertEqual(r["applied"].get("priority"), "below-normal")
+        self.assertEqual(r["applied"].get("threads"), 2)
+        self.assertGreater(r["rss"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

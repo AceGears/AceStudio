@@ -31,6 +31,7 @@
 #include "ai/CharacterDialog.h"
 #include "ai/AiPanel.h"
 #include "ai/AiService.h"
+#include "ai/PerformanceStrip.h"
 #include "panels/PropertiesPanel.h"
 #include "panels/TimelinePanel.h"
 #include "panels/ToolsPanel.h"
@@ -263,6 +264,7 @@ void MainWindow::buildDocks() {
     m_timeline = new TimelinePanel(this);
     m_log = new LogPanel(this);
     m_ai = new AiService(m_ctx, this);
+    statusBar()->insertPermanentWidget(0, new PerformanceStrip(*m_ai, this));
     m_aiPanel = new AiPanel(*m_ai, m_ctx, this);
     connect(m_aiPanel, &AiPanel::statusMessage, this, [this](const QString& t) { statusBar()->showMessage(t, 6000); });
     connect(m_aiPanel, &AiPanel::resultAsDocument, this, [this](const Image& img, const QString& name) { openImageAsDocument(img, name); });
@@ -1237,6 +1239,10 @@ void MainWindow::addView(DocumentView* view) {
     connect(view, &DocumentView::editingMaskChanged, this, [this, view] { if (view == currentView()) updateActions(); });
     connect(view, &DocumentView::currentLayerChanged, this, [this, view] { if (view == currentView()) updateActions(); });
     connect(view, &DocumentView::statusMessage, this, [this](const QString& m) { statusBar()->showMessage(m, 4000); });
+    // Hold the next queued AI job while a stroke is in progress (profile setting).
+    connect(view->canvas(), &CanvasWidget::toolPressed, this, [this] { if (m_ai) m_ai->setDrawing(true); });
+    connect(view->canvas(), &CanvasWidget::toolReleased, this, [this] { if (m_ai) m_ai->setDrawing(false); });
+    connect(view, &QObject::destroyed, this, [this] { if (m_ai) m_ai->setDrawing(false); });
     connect(view, &DocumentView::cursorMoved, this, [this](int x, int y, bool inside) {
         m_statusCursor->setText(inside ? QStringLiteral("X %1  Y %2").arg(x).arg(y) : QString());
     });

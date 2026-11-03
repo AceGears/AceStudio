@@ -30,8 +30,15 @@ def process_rss_bytes():
                             ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
             pmc = PMC()
             pmc.cb = ctypes.sizeof(PMC)
-            proc = ctypes.windll.kernel32.GetCurrentProcess()
-            if ctypes.windll.psapi.GetProcessMemoryInfo(proc, ctypes.byref(pmc), pmc.cb):
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            # Explicit types: the default int return truncates the process
+            # pseudo-handle on 64-bit Windows and the call reads nothing.
+            k32.GetCurrentProcess.restype = wintypes.HANDLE
+            k32.GetCurrentProcess.argtypes = []
+            fn = getattr(k32, "K32GetProcessMemoryInfo", None) or ctypes.WinDLL("psapi").GetProcessMemoryInfo
+            fn.restype = wintypes.BOOL
+            fn.argtypes = [wintypes.HANDLE, ctypes.POINTER(PMC), wintypes.DWORD]
+            if fn(k32.GetCurrentProcess(), ctypes.byref(pmc), pmc.cb):
                 return int(pmc.WorkingSetSize)
             return 0
         with open("/proc/self/statm") as f:

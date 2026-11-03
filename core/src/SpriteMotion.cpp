@@ -392,7 +392,11 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
     const int wingRow = bb.y + static_cast<int>(std::lround(std::clamp(wingLine, 0.05, 0.95) * bb.h));
     const int wingX0 = bb.x + static_cast<int>(std::floor(std::clamp(std::min(wingFrom, wingTo), 0.0, 1.0) * bb.w));
     const int wingX1 = bb.x + static_cast<int>(std::ceil(std::clamp(std::max(wingFrom, wingTo), 0.0, 1.0) * bb.w));
-    std::vector<IntRect> partBounds(wingPart + 1, IntRect{});
+    // Arms, n + 3 onwards: they swing against the legs in walk cycles.
+    const bool locomotion = action == Action::Walk || action == Action::Run || action == Action::Sprint;
+    const std::size_t armPart0 = wingPart + 1;
+    const std::vector<IntRect> arms = legs && locomotion ? subj.arms : std::vector<IntRect>{};
+    std::vector<IntRect> partBounds(armPart0 + arms.size(), IntRect{});
     auto grow = [](IntRect& r, int x, int y) {
         if (r.empty()) { r = {x, y, 1, 1}; return; }
         const int x1 = std::max(r.x + r.w, x + 1), y1 = std::max(r.y + r.h, y + 1);
@@ -407,6 +411,9 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
                 part = groundPart;
             } else if (flap && (wingMask.isNull() ? (y < wingRow && x >= wingX0 && x < wingX1) : wingMask.get(x, y))) {
                 part = wingPart;
+            } else if (auto arm = std::find_if(arms.begin(), arms.end(), [x, y](const IntRect& r) { return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h; });
+                       arm != arms.end()) {
+                part = armPart0 + static_cast<std::size_t>(arm - arms.begin());
             } else if (legs && y >= subj.legTop) {
                 int best = 0, bestDist = std::numeric_limits<int>::max();
                 for (std::size_t i = 0; i < subj.feet.size(); ++i) {
@@ -432,7 +439,8 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
     IntRect all;
     for (int f = 0; f < frames; ++f) {
         const double t = loops ? double(f) / frames : (frames > 1 ? double(f) / (frames - 1) : 0.0);
-        const FramePose p = scaled(pl.pose(t), amount);
+        FramePose p = scaled(pl.pose(t), amount);
+        if (subj.frontView && legs) p.lean = 0;   // seen from the front there is no forward to lean into
         flash[static_cast<std::size_t>(f)] = p.flash > 0.5;
         // Offsets snap to whole pixels so parts move together.
         const double dx = std::round(p.dx * W), dy = std::round(p.dy * H);
@@ -446,12 +454,33 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
                 m = Affine::translate(dx, 0);
             } else if (i == wingPart) {
                 local = about(px, wingRow, Affine::scale(1, p.wing));
+            } else if (i >= armPart0) {
+                // Arms swing against the leg on the same side: forward as it
+                // goes back. Seen from the front, the arm rises a pixel instead.
+                const IntRect& r = arms[i - armPart0];
+                const bool leftArm = r.x + r.w / 2 < bb.x + bb.w / 2;
+                const double legSwing = leftArm ? p.swingA : p.swingB;
+                const double legLift = leftArm ? p.liftB : p.liftA;
+                if (subj.frontView) local = Affine::translate(0, -std::round(0.5 * legLift * H));
+                else local = about(r.x + r.w / 2.0, r.y, Affine::rotate(-0.6 * legSwing));
             } else if (i > 0) {
                 const auto [x0, x1] = subj.feet[i - 1];
                 const bool groupA = (i - 1) % 2 == 0;
-                const double swing = groupA ? p.swingA : p.swingB;
+                // Seen from the front, legs step up in turn instead of swinging.
+                const double swing = subj.frontView ? 0.0 : groupA ? p.swingA : p.swingB;
                 const double lift = std::round((groupA ? p.liftA : p.liftB) * H);
-                local = Affine::translate(0, -lift) * about((x0 + x1 + 1) / 2.0, subj.legTop, Affine::rotate(swing));
+                const double hipX = (x0 + x1 + 1) / 2.0;
+                double stretch = 1;
+                if (locomotion && lift == 0) {
+                    // The standing leg keeps its foot on the ground: a rigid
+                    // leg would rise with the body bob and the swing; it is
+                    // stretched along its length instead (a pixel or two).
+                    const double len = subj.footRow + 1 - subj.legTop;
+                    const double halfFoot = (x1 - x0 + 1) / 2.0;
+                    if (len >= 3)
+                        stretch = std::clamp((len - dy - halfFoot * std::abs(std::sin(swing))) / (len * std::cos(swing)), 0.85, 1.35);
+                }
+                local = Affine::translate(0, -lift) * about(hipX, subj.legTop, Affine::rotate(swing) * Affine::scale(1, stretch));
             }
             if (i != groundPart) m = global * local;
             const IntRect& r = partBounds[i];
@@ -484,12 +513,13 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
         std::vector<const Part*> order;
         for (const Part& p : ps) if (p.index == static_cast<int>(groundPart)) order.push_back(&p);
         auto isLeg = [&](const Part& p) {
-            return p.index > 0 && p.index != static_cast<int>(groundPart) && p.index != static_cast<int>(wingPart);
+            return p.index > 0 && p.index != static_cast<int>(groundPart) && p.index < static_cast<int>(wingPart);
         };
         for (const Part& p : ps) if (isLeg(p) && (p.index - 1) % 2 == 1) order.push_back(&p);
         for (const Part& p : ps) if (isLeg(p) && (p.index - 1) % 2 == 0) order.push_back(&p);
         for (const Part& p : ps) if (p.index == 0) order.push_back(&p);
         for (const Part& p : ps) if (p.index == static_cast<int>(wingPart)) order.push_back(&p);
+        for (const Part& p : ps) if (p.index >= static_cast<int>(armPart0)) order.push_back(&p);
         for (const Part* p : order) {
             for (int y = p->destBox.y; y < p->destBox.y + p->destBox.h; ++y)
                 for (int x = p->destBox.x; x < p->destBox.x + p->destBox.w; ++x) {
@@ -638,7 +668,87 @@ Subject analyzeSubject(const Image& sprite) {
         top = std::max(top, bb.y + (bb.h * 2) / 5);
         s.legTop = top;
         s.body = (s.feet.size() >= 3 || bb.w > bb.h * 5 / 4) ? Body::Quadruped : Body::Biped;
-    } else {
+    } else if (s.feet.size() == 1) {
+        // Front view: the legs touch, so the feet are one run. A tall figure
+        // whose lower part is a narrow column (at most 70% of the width)
+        // under a wider upper body stands on two legs; split them at the
+        // middle. A tree trunk under a canopy is much narrower than the
+        // canopy, so it is not taken for legs.
+        const auto [fx0, fx1] = s.feet.front();
+        const int fw = fx1 - fx0 + 1;
+        if (bb.h * 10 >= bb.w * 14 && fw >= 4 && fw * 10 <= bb.w * 7) {
+            int top = s.footRow;
+            while (top - 1 > bb.y && span(top - 1) <= fw + 2) --top;
+            int upper = 0;
+            for (int y = bb.y; y < top; ++y) upper = std::max(upper, span(y));
+            const int legLen = s.footRow + 1 - top;
+            if (legLen >= std::max(3, bb.h / 6) && top >= bb.y + (bb.h * 2) / 5 && upper > fw + 2 && upper * 10 <= fw * 26) {
+                const int mid = (fx0 + fx1 + 1) / 2;
+                s.feet = {{fx0, mid - 1}, {mid, fx1}};
+                s.legTop = top;
+                s.frontView = true;
+                s.body = Body::Biped;
+            }
+        }
+    }
+    if (s.body == Body::Biped && s.feet.size() >= 2) {
+        // Arms: pixels of the upper body to the left of the left leg and to
+        // the right of the right leg. Not when the head is wider than the
+        // body below it (a big-headed chibi: its sides are head, not arms).
+        // The legs' outer edges at mid-leg (boots are often wider).
+        int lx0 = s.feet.front().first, lx1 = s.feet.back().second;
+        {
+            const int midRow = (s.legTop + s.footRow) / 2;
+            int m0 = -1, m1 = -1;
+            for (int x = lx0; x <= lx1; ++x)
+                if (sprite.pixel(x, midRow).a > 0) { if (m0 < 0) m0 = x; m1 = x; }
+            if (m0 >= 0) { lx0 = m0; lx1 = m1; }
+        }
+        const int bandTop = bb.y + bb.h / 5, bandBottom = s.footRow - std::max(1, bb.h / 10);
+        int headSpan = 0, bodySpan = 0;
+        for (int y = bb.y; y < bb.y + (bb.h * 45) / 100; ++y) headSpan = std::max(headSpan, span(y));
+        for (int y = bb.y + (bb.h * 45) / 100; y < s.legTop; ++y) bodySpan = std::max(bodySpan, span(y));
+        if (bodySpan >= headSpan) {
+            for (int side = 0; side < 2; ++side) {
+                IntRect r;
+                int rows = 0;
+                for (int y = bandTop; y <= bandBottom; ++y) {
+                    bool any = false;
+                    for (int x = side == 0 ? bb.x : lx1 + 2; x < (side == 0 ? lx0 - 1 : bb.x + bb.w); ++x)
+                        if (sprite.pixel(x, y).a > 0) {
+                            any = true;
+                            if (r.empty()) r = {x, y, 1, 1};
+                            const int x1 = std::max(r.x + r.w, x + 1), y1 = std::max(r.y + r.h, y + 1);
+                            r.x = std::min(r.x, x);
+                            r.y = std::min(r.y, y);
+                            r.w = x1 - r.x;
+                            r.h = y1 - r.y;
+                        }
+                    rows += any ? 1 : 0;
+                }
+                // The arm's inner columns lie over the legs' edge: take a
+                // column while nothing sits right above the shoulder (the
+                // torso goes on up; an arm starts at the shoulder).
+                if (!r.empty()) {
+                    auto armColumn = [&](int x) {
+                        if (x < bb.x || x >= bb.x + bb.w) return false;
+                        for (int y = std::max(bb.y, r.y - 2); y < r.y; ++y)
+                            if (sprite.pixel(x, y).a > 0) return false;
+                        for (int y = r.y; y < r.y + r.h; ++y)
+                            if (sprite.pixel(x, y).a > 0) return true;
+                        return false;
+                    };
+                    if (side == 0) while (r.x + r.w < lx0 + 1 && armColumn(r.x + r.w)) ++r.w;
+                    else while (r.x - 1 > lx1 - 1 && armColumn(r.x - 1)) { --r.x; ++r.w; }
+                }
+                // Long and thin, mostly continuous, not most of the figure.
+                if (!r.empty() && r.w >= 2 && r.h >= 2 * r.w && r.h >= bb.h / 5 && r.w * 10 <= bb.w * 3 && rows * 4 >= r.h * 3)
+                    s.arms.push_back(r);
+            }
+        }
+    }
+    if (s.feet.size() < 2 || s.legTop < 0) {
+        if (s.feet.size() >= 2) s.feet.clear();
         const int bottomWidth = s.feet.empty() ? 0 : s.feet.front().second - s.feet.front().first + 1;
         const bool round = bb.w * 10 >= bb.h * 6 && bb.w * 10 <= bb.h * 16;
         s.body = (round && bottomWidth * 10 >= bb.w * 4) ? Body::Blob : Body::Object;
@@ -783,6 +893,70 @@ ClipCheck checkClip(const Clip& clip) {
     if (r.maxAreaChange > allowed)
         r.issues.push_back("The sprite's size changes by " + std::to_string(static_cast<int>(r.maxAreaChange * 100)) +
                            "% between frames; parts may be stretched or hidden.");
+    // Flicker: pixels that change in one frame and change straight back.
+    // A smooth cycle moves edges steadily; single-frame blips read as noise.
+    if (clip.frames.size() >= 3) {
+        for (std::size_t i = 0; i < clip.frames.size(); ++i) {
+            if (!clip.loops && (i == 0 || i + 1 == clip.frames.size())) continue;
+            const Image& a = clip.frames[(i + clip.frames.size() - 1) % clip.frames.size()];
+            const Image& b = clip.frames[i];
+            const Image& c = clip.frames[(i + 1) % clip.frames.size()];
+            if (a.width() != b.width() || a.height() != b.height() || c.width() != b.width() || c.height() != b.height()) continue;
+            // Only isolated blips count: a part that moves for one frame and
+            // back (a bob, a lifted foot) changes a whole connected edge.
+            auto same = [](Rgba8 p, Rgba8 q) { return (p.a == 0 && q.a == 0) || (p.r == q.r && p.g == q.g && p.b == q.b && p.a == q.a); };
+            const int w = b.width(), h = b.height();
+            std::vector<char> blip(static_cast<std::size_t>(w) * static_cast<std::size_t>(h), 0);
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < w; ++x)
+                    blip[static_cast<std::size_t>(y) * static_cast<std::size_t>(w) + static_cast<std::size_t>(x)] =
+                        same(a.pixel(x, y), c.pixel(x, y)) && !same(a.pixel(x, y), b.pixel(x, y));
+            std::size_t blips = 0;
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < w; ++x) {
+                    if (!blip[static_cast<std::size_t>(y) * static_cast<std::size_t>(w) + static_cast<std::size_t>(x)]) continue;
+                    // Motion moves colours by a pixel; noise makes them up. A
+                    // blip whose colour sits next to it in the frame before
+                    // is an edge that moved, not flicker.
+                    bool moved = false;
+                    for (int dy = -1; dy <= 1 && !moved; ++dy)
+                        for (int dx = -1; dx <= 1 && !moved; ++dx)
+                            if ((dx || dy) && x + dx >= 0 && y + dy >= 0 && x + dx < w && y + dy < h && same(a.pixel(x + dx, y + dy), b.pixel(x, y)))
+                                moved = true;
+                    // ... and a part that moves fast changes a whole patch: only
+                    // lone blips are speckle noise.
+                    int near = 0;
+                    for (int dy = -1; dy <= 1; ++dy)
+                        for (int dx = -1; dx <= 1; ++dx)
+                            if ((dx || dy) && x + dx >= 0 && y + dy >= 0 && x + dx < w && y + dy < h &&
+                                blip[static_cast<std::size_t>(y + dy) * static_cast<std::size_t>(w) + static_cast<std::size_t>(x + dx)])
+                                ++near;
+                    if (!moved && near == 0) ++blips;
+                }
+            const double ar = std::max<double>(1.0, static_cast<double>(area(b)));
+            r.flicker = std::max(r.flicker, static_cast<double>(blips) / ar);
+        }
+    }
+    if (r.flicker > 0.03)
+        r.issues.push_back("About " + std::to_string(static_cast<int>(r.flicker * 100)) +
+                           "% of the pixels flicker for a single frame; the motion will look noisy.");
+    // Ground contact: in a walk, run or idle of a body with feet, some foot
+    // stays on the ground line in every frame.
+    const bool footed = clip.body == Body::Biped || clip.body == Body::Quadruped;
+    if (footed && (clip.name == "walk" || clip.name == "run" || clip.name == "sprint" || clip.name == "idle")) {
+        auto lowest = [](const Image& img) {
+            for (int y = img.height() - 1; y >= 0; --y)
+                for (int x = 0; x < img.width(); ++x)
+                    if (img.pixel(x, y).a > 0) return y;
+            return -1;
+        };
+        int ground = -1;
+        std::vector<int> rows;
+        for (const Image& f : clip.frames) rows.push_back(lowest(f)), ground = std::max(ground, rows.back());
+        for (int row : rows) r.floatingFrames += row < ground ? 1 : 0;
+        if (r.floatingFrames > 0)
+            r.issues.push_back("The feet leave the ground in " + std::to_string(r.floatingFrames) + " frame(s); the character will float.");
+    }
     // A loop seam is a problem when it jumps more than any step inside the clip.
     if (clip.loops && clip.frames.size() > 2 && r.loopIoU < std::min(0.5, r.minNeighbourIoU - 0.1))
         r.issues.push_back("The last frame does not lead back into the first; the loop will jump.");

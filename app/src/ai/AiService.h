@@ -82,6 +82,7 @@ Q_SIGNALS:
 private:
     void poll();
     void rebuildSupervisor();
+    void applyStaleLimits();
     void releaseWhenIdle();
     void runNextSetupStep();
 
@@ -99,6 +100,7 @@ private:
     std::thread m_venvThread;
     std::map<ai::JobId, std::string> m_downloads;   // job -> model id
     bool m_paused = false;
+    bool m_limitsStale = false;   // CPU limits changed while a job ran
 };
 
 } // namespace acestudio::ui

@@ -2,6 +2,7 @@
 
 #include "QtBridge.h"
 
+#include "acestudio/core/AnimRouter.h"
 #include "acestudio/core/PngCodec.h"
 
 #include <QCheckBox>
@@ -26,6 +27,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <initializer_list>
 
 namespace acestudio::ui {
 
@@ -115,6 +117,27 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     auto* right = new QVBoxLayout;
     root->addLayout(right, 1);
     auto* form = new QFormLayout;
+    // Method: body motion or an environmental effect. The router suggests
+    // one from the sprite's name and pixels; the user can pick another.
+    const ::acestudio::anim::Route route = ::acestudio::anim::routeAnimation(m_sprite, m_name.toStdString());
+    m_method = new QComboBox(this);
+    m_method->setAccessibleName(tr("Animation method"));
+    m_method->addItem(tr("Body motion (actions)"), -1);
+    m_method->addItem(tr("Fire (flicker and rise)"), static_cast<int>(::acestudio::fx::Effect::Fire));
+    m_method->addItem(tr("Water (ripple)"), static_cast<int>(::acestudio::fx::Effect::Water));
+    m_method->addItem(tr("Plant (sway)"), static_cast<int>(::acestudio::fx::Effect::Sway));
+    m_method->addItem(tr("Flag or cloth (wave)"), static_cast<int>(::acestudio::fx::Effect::Flag));
+    m_method->addItem(tr("Smoke (rise)"), static_cast<int>(::acestudio::fx::Effect::Smoke));
+    m_method->addItem(tr("Magic (pulse and glow)"), static_cast<int>(::acestudio::fx::Effect::Pulse));
+    if (route.method == ::acestudio::anim::Method::Effect)
+        m_method->setCurrentIndex(std::max(0, m_method->findData(static_cast<int>(route.effect))));
+    m_method->setToolTip(tr("Effects animate only the part that should move (the flames, the canopy, the cloth) "
+                            "in the sprite's own colours, as a seamless loop. No AI is used."));
+    form->addRow(tr("Me&thod:"), m_method);
+    m_route = new QLabel(tr("Suggested: %1").arg(qs(route.reason)), this);
+    m_route->setWordWrap(true);
+    m_route->setProperty("role", "muted");
+    form->addRow(QString(), m_route);
     m_body = new QComboBox(this);
     m_body->addItem(tr("Automatic (%1)").arg(tr(bodyLabel(m_subject.body))), QString());
     for (::acestudio::motion::Body b : {::acestudio::motion::Body::Biped, ::acestudio::motion::Body::Quadruped, ::acestudio::motion::Body::Blob, ::acestudio::motion::Body::Flyer, ::acestudio::motion::Body::Object, ::acestudio::motion::Body::Swimmer})
@@ -136,6 +159,13 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     m_frames->setSpecialValueText(tr("Default"));
     m_frames->setToolTip(tr("Frames per action when one action is chosen; Default uses each action's own count."));
     form->addRow(tr("F&rames:"), m_frames);
+    m_speed = new QSpinBox(this);
+    m_speed->setRange(25, 400);
+    m_speed->setSingleStep(25);
+    m_speed->setValue(100);
+    m_speed->setSuffix(QStringLiteral(" %"));
+    m_speed->setToolTip(tr("Preview playback speed (the frame durations you open or export do not change)"));
+    form->addRow(tr("Preview &speed:"), m_speed);
     m_wingLine = new QSlider(Qt::Horizontal, this);
     m_wingLine->setRange(10, 90);
     m_wingLine->setValue(45);
@@ -232,6 +262,7 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     connect(m_face, &QComboBox::currentIndexChanged, this, &SpriteAnimateDialog::rebuild);
     connect(m_amount, &QSlider::valueChanged, this, &SpriteAnimateDialog::rebuild);
     connect(m_frames, &QSpinBox::valueChanged, this, &SpriteAnimateDialog::rebuild);
+    connect(m_method, &QComboBox::currentIndexChanged, this, &SpriteAnimateDialog::rebuild);
     rebuild();
 }
 
@@ -260,8 +291,41 @@ std::vector<::acestudio::motion::Action> SpriteAnimateDialog::checkedActions() c
     return o;
 }
 
+std::optional<::acestudio::fx::Effect> SpriteAnimateDialog::effect() const {
+    const int e = m_method ? m_method->currentData().toInt() : -1;
+    if (e < 0) return std::nullopt;
+    return static_cast<::acestudio::fx::Effect>(e);
+}
+
+std::vector<::acestudio::motion::Clip> SpriteAnimateDialog::effectClips(const Image& sprite) const {
+    ::acestudio::fx::EffectOptions o;
+    o.effect = *effect();
+    o.frames = m_frames->value() > 0 ? m_frames->value() : 8;
+    o.amount = m_amount->value() / 100.0;
+    const ::acestudio::fx::EffectClip fxc = ::acestudio::fx::animateEffect(sprite, o);
+    ::acestudio::motion::Clip c;
+    c.name = ::acestudio::fx::toString(o.effect);
+    c.frames = fxc.frames;
+    c.durations = fxc.durations;
+    c.loops = true;
+    if (m_face->currentIndex() == 1)
+        for (Image& f : c.frames) {
+            Image m(f.width(), f.height());
+            for (int y = 0; y < f.height(); ++y)
+                for (int x = 0; x < f.width(); ++x) m.setPixel(f.width() - 1 - x, y, f.pixel(x, y));
+            f = std::move(m);
+        }
+    return {std::move(c)};
+}
+
 std::vector<::acestudio::motion::Clip> SpriteAnimateDialog::fullClips() {
     if (m_previewScale >= 1.0 || m_clips.empty()) return m_clips;
+    if (effect()) {
+        QApplication::setOverrideCursor(Qt::WaitCursor);
+        auto clips = effectClips(m_sprite);
+        QApplication::restoreOverrideCursor();
+        return clips;
+    }
     QApplication::setOverrideCursor(Qt::WaitCursor);
     auto pack = ::acestudio::motion::animatePack(m_sprite, checkedActions(), options(true));
     QApplication::restoreOverrideCursor();
@@ -273,7 +337,27 @@ std::vector<::acestudio::motion::Clip> SpriteAnimateDialog::fullClips() {
 }
 
 void SpriteAnimateDialog::rebuild() {
-    if (!m_info || !m_preview || !m_customBox) return;   // still being built
+    if (!m_info || !m_preview || !m_customBox || !m_speed) return;   // still being built
+    const bool fxMode = effect().has_value();
+    m_actions->setEnabled(!fxMode);
+    m_body->setEnabled(!fxMode);
+    if (fxMode) {
+        m_customBox->setVisible(false);
+        for (QWidget* w : std::initializer_list<QWidget*>{m_wingLine, m_wingLabel, m_wingFrom, m_wingTo, m_spanLabel}) w->setVisible(false);
+        m_clips = effectClips(m_previewScale < 1.0 ? m_small : m_sprite);
+        m_previewClip = 0;
+        m_previewFrame = 0;
+        const ::acestudio::motion::ClipCheck chk = ::acestudio::motion::checkClip(m_clips.front());
+        QString text = tr("%1 frames of %2 × %3 px, seamless loop, the sprite's own colours.")
+                           .arg(m_clips.front().frames.size())
+                           .arg(std::lround(m_clips.front().frames.front().width() / m_previewScale))
+                           .arg(std::lround(m_clips.front().frames.front().height() / m_previewScale));
+        if (m_previewScale < 1.0) text += tr(" (previewed at reduced size)");
+        for (const std::string& issue : chk.issues) text += QStringLiteral("<br>") + qs(issue);
+        m_info->setText(text);
+        showFrame();
+        return;
+    }
     const auto list = checkedActions();
     m_customBox->setVisible(std::find(list.begin(), list.end(), ::acestudio::motion::Action::Custom) != list.end());
     const bool flap = std::find(list.begin(), list.end(), ::acestudio::motion::Action::Flap) != list.end();
@@ -326,7 +410,7 @@ void SpriteAnimateDialog::showFrame() {
     const QImage q = toQImage(f);
     m_preview->setPixmap(QPixmap::fromImage(scale >= 1 ? q.scaled(f.width() * scale, f.height() * scale, Qt::KeepAspectRatio, Qt::FastTransformation)
                                                        : q.scaled(m_preview->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)));
-    const int ms = c.durations[static_cast<std::size_t>(m_previewFrame)];
+    const int ms = std::max(10, c.durations[static_cast<std::size_t>(m_previewFrame)] * 100 / std::max(1, m_speed->value()));
     // A non-looping action holds its last frame for a moment before replaying.
     const bool last = m_previewFrame + 1 == static_cast<int>(c.frames.size());
     m_timer->start(last && !c.loops ? std::max(ms, 600) : ms);

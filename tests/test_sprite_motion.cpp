@@ -298,3 +298,70 @@ TEST_CASE("rotating a sprite keeps its pixels and colours", "[motion]") {
     // Same size in, same size out: rotated animation frames stay aligned.
     CHECK(rotateSprite(f, 0.7).width() == rotateSprite(fish(), 0.7).width());
 }
+
+namespace {
+// Front view: the legs touch (one run at the feet), arms hang beside the body.
+Image frontKnight() {
+    Image img(32, 48);
+    img.fillRect({12, 4, 8, 9}, kSkin);      // head
+    img.fillRect({11, 13, 10, 15}, kShirt);  // torso
+    img.fillRect({8, 14, 3, 15}, kSkin);     // arms
+    img.fillRect({21, 14, 3, 15}, kSkin);
+    img.fillRect({12, 28, 8, 14}, kPants);   // legs, touching
+    img.fillRect({11, 42, 10, 3}, kInk);     // boots
+    return img;
+}
+int lowestRow(const Image& img) {
+    for (int y = img.height() - 1; y >= 0; --y)
+        for (int x = 0; x < img.width(); ++x)
+            if (img.pixel(x, y).a > 0) return y;
+    return -1;
+}
+} // namespace
+
+TEST_CASE("Touching legs seen from the front are still a biped with arms", "[motion]") {
+    const Subject s = analyzeSubject(frontKnight());
+    CHECK(s.body == Body::Biped);
+    CHECK(s.frontView);
+    CHECK(s.feet.size() == 2);
+    CHECK(s.arms.size() == 2);
+    // A tree (narrow trunk under a wide canopy) is not taken for legs.
+    Image tree(32, 48);
+    tree.fillRect({2, 2, 28, 26}, kShirt);
+    tree.fillRect({13, 28, 6, 18}, kPants);
+    CHECK(analyzeSubject(tree).body != Body::Biped);
+}
+
+TEST_CASE("Walk and run keep a foot on the ground in every frame", "[motion]") {
+    for (const Image& sprite : {biped(), frontKnight()})
+        for (Action a : {Action::Walk, Action::Run}) {
+            Options o;
+            o.action = a;
+            o.frames = 8;
+            auto clip = animate(sprite, o);
+            REQUIRE(clip);
+            const int ground = lowestRow(clip.value().frames.front());
+            for (const Image& f : clip.value().frames) CHECK(lowestRow(f) == ground);
+            const ClipCheck chk = checkClip(clip.value());
+            CHECK(chk.floatingFrames == 0);
+            for (const auto& issue : chk.issues) UNSCOPED_INFO(issue);
+            CHECK(chk.issues.empty());
+        }
+}
+
+TEST_CASE("The clip check reports floating feet and single-frame flicker", "[motion]") {
+    Clip c;
+    c.name = "walk";
+    c.body = Body::Biped;
+    const Image a = biped();
+    Image lifted(a.width(), a.height());
+    lifted.blit(a, 0, -2);
+    Image speckled = a;
+    for (int i = 0; i < 40; ++i) speckled.setPixel((i * 7) % a.width(), (i * 5) % 20, kInk);
+    c.frames = {a, lifted, a, speckled};
+    c.durations = {100, 100, 100, 100};
+    const ClipCheck chk = checkClip(c);
+    CHECK(chk.floatingFrames == 1);
+    CHECK(chk.flicker > 0.08);
+    CHECK(chk.issues.size() >= 2);
+}

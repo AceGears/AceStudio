@@ -135,6 +135,9 @@ public:
     bool holdingQueue() const noexcept { return m_holdQueue; }
     // Cancel policy, from the resource profile.
     void setCancelPolicy(std::chrono::milliseconds grace, bool interruptLoad);
+    // Sets (or replaces) a variable of the worker's environment; takes effect
+    // at the next (re)start.
+    void setEnv(const std::string& name, const std::string& value);
     // When the last job finished (or the worker started): for idle release.
     Clock::time_point lastActivity() const noexcept { return m_lastActivity; }
 

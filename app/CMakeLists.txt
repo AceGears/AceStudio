@@ -50,6 +50,8 @@ add_executable(AceStudio WIN32
     src/ai/AiService.cpp
     src/ai/SystemMonitor.h
     src/ai/SystemMonitor.cpp
+    src/ai/PerformanceStrip.h
+    src/ai/PerformanceStrip.cpp
     src/ai/Benchmark.h
     src/ai/Benchmark.cpp
     src/ai/AiDialogs.h

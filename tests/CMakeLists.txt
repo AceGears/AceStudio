@@ -31,6 +31,7 @@ add_executable(acestudio_core_tests
     test_ai_worker.cpp
     test_resource_profile.cpp
     test_effects.cpp
+    test_anim_router.cpp
     test_model_catalog.cpp
     test_regression.cpp
     test_asset_gen.cpp
