@@ -224,10 +224,16 @@ or is a case that has not been run yet.
     - Pet to Pixel.
   - At Medium, a style's reference image leaks its subject: a goblin took the knight's
     armour and red cape.
-- **Animate Sprite moves parts rigidly.** It cannot draw new poses (an arm swing, a turn).
-  - A side-view character whose legs are drawn together is classified as an object, so it
-    rocks rather than walks. This was the case for a 29×57 armoured knight. Set Body to Two
-    legs to swing the lower half.
+- **Animate Sprite moves parts rigidly.** It cannot draw new poses (a turn, a weapon drawn in
+  another position). The router points those actions (cast, attack 2, climb) to the AI pipeline.
+  - Walk and run now keep the standing foot on the ground (the leg stretches a pixel or two) and
+    swing the arms found beside the body. Measured on a 32×48 test knight: before, the sprite
+    was read as an object and rocked, with the feet 1 px off the ground in 6 of 8 frames; after,
+    a biped with both feet planted in every frame. Not yet seen on generated sprites on the PC.
+  - Arms are found only beside the legs (left of the left leg, right of the right one). An arm
+    drawn in front of the body moves with the body. A wide coat or bulky armour wider than the
+    legs can be taken for arms; the swing is small (0.6 × the leg swing).
+  - Front views whose legs touch are split at the middle and step in turn instead of swinging.
   - **Wing flap** folds everything above a line. On a generated HD dragon (test PC), the
     default span folded the head and neck with the wings. A span of 38–100 % kept the head
     still and flapped the near wing; the far wing, behind the head, stays still.
@@ -235,9 +241,14 @@ or is a case that has not been run yet.
   - Sprites larger than 320 px are previewed from a reduced copy; the checks shown are the
     preview's. Opening or exporting renders at full size, which takes a few seconds for an
     HD sprite with many actions.
-  - Generating flap keyframes with AI is not built.
-- **Front/back views for animation** come from AI (Character Pack). Animate Sprite on a front
-  view walks with the legs side by side, which reads as a march rather than a walk cycle.
+  - Generating flap keyframes with AI is not built. There is no 2D bone editor or IK for
+    user-placed bones; the rig is measured from the silhouette.
+- **Procedural effects** (fire, water, sway, flag, smoke, pulse) were reviewed visually on
+  synthetic sprites only (a campfire, a tree, a pond). Not yet on generated sprites on the PC.
+- **Performance work (0.10.0):** the speed optimisations (512 px generation for small pixel
+  sprites, LoRA switching without reloading klein) and the resource profiles are built and
+  unit-tested, but have not been measured on the PC yet. AI Studio › Benchmark… runs the
+  measurement; until its report exists there are no before/after numbers.
 - **GameMaker export** follows GameMaker's `_stripN` import convention. It has not been
   imported into GameMaker, which is not available here.
 - **Phaser export** was checked in Phaser 3.90.0 and 4.2.1 (headless Chromium) for loading,

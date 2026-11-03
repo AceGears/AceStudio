@@ -14,6 +14,7 @@ protocol stream.
 | `hello` | `{"protocol": 1}` | `{protocol, version, python, platform, executable, pid, capabilities, tasks}` — answered immediately. `capabilities.probed` is `false`; see the `capabilities` notification. |
 | `job.submit` | `{job, task, params, dir}` | `{"accepted": true}`. Errors: `-32001` busy (one job at a time), `-32002` unknown task, `-32003` task unavailable (missing packages; message says what to install), `-32602` bad params. |
 | `job.cancel` | `{job}` | `{"cancelling": bool}` — cooperative; the task stops at its next check. |
+| `job.pause` / `job.resume` | `{job}` | `{"paused": bool}` — Pause All: the running job waits at its next step (a cancel still reaches it). |
 | `shutdown` | `{}` | `{}`, then the worker exits. |
 
 `dir` is a job folder owned by the host: input images are PNG files there, and the worker
@@ -25,7 +26,7 @@ writes its outputs there too. Paths are UTF-8 strings.
 |---|---|
 | `capabilities` | Full capabilities after probing PyTorch/ONNX devices: `{numpy, pillow, torch, diffusers, onnxruntime, cuda, devices: [{index, name, vramMb}], onnxProviders: [...], probed: true}` |
 | `job.progress` | `{job, progress?: 0..1, message, step?, steps?}` — rate-limited to ~20/s except for meaningful steps |
-| `job.done` | `{job, outputs: {name: path}, info: {...}}` |
+| `job.done` | `{job, outputs: {name: path}, info: {...}}` — `info.metrics`: `{wallSeconds, cpuSeconds, cpuCoresAverage, peakRssGb, peakDeviceVramGb?, stages: {load, diffusion, cutout, pixel, save, dutyRest, ...}}` |
 | `job.failed` | `{job, error, kind}` — `kind`: `error`, `oom`, `missing_dependency`, `missing_model`, `invalid_input` |
 | `job.cancelled` | `{job}` |
 | `log` | `{level: info|warning|error, message}` |
@@ -43,6 +44,11 @@ submit the next job immediately.
 - **Cancel:** queued jobs are cancelled immediately. A running job gets `job.cancel`; if it is
   not cancelled within 10 s (stuck in native code), the worker is killed and restarted, and the
   job ends Cancelled (not retried).
+- **Resource limits** (Settings › Generation › Resource profile): the worker is started with
+  `ACESTUDIO_CPU_THREADS` and `ACESTUDIO_LOW_PRIORITY`; each job's `params.resources` carries
+  `gpuDutyPercent` (the worker rests between steps) and `keepCutoutLoaded`. Eco also lets a
+  cancel interrupt a model load (the worker is restarted after 5 s). An idle worker is stopped
+  after the profile's idle time to release its memory.
 - **Restart storms:** after 3 crashes within 2 minutes the worker is left in the Failed state,
   queued jobs are failed with an explanation, and only an explicit start/restart tries again.
 - **Lifetime:** the worker exits when its stdin closes, so it never outlives AceStudio. On

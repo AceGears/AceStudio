@@ -5,6 +5,26 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 ## [0.10.0] — 2026-11-01 — Premium AI game asset studio (unreleased)
 
 ### Added
+- **Performance and resources.**
+  - Resource profiles (Eco, Balanced, Performance) in Settings › Generation, with collapsible
+    advanced limits: CPU threads, priority, GPU busy share, idle release, background-removal
+    model kept on the GPU, holding AI jobs while you draw.
+  - Pause All AI Jobs and a compact monitor in the status bar: active model, job and its
+    running time, CPU, GPU, VRAM and RAM.
+  - Speed optimisations (on by default, can be turned off): small pixel sprites are generated at
+    512 px where the pixel-art LoRA was trained, and switching styles no longer reloads klein.
+  - Every AI job reports its time, CPU time, peak memory and VRAM, and per-stage timings.
+  - AI Studio › Benchmark…: fixed cases and seeds, original versus optimised pipeline,
+    with a JSON and Markdown report and every image and animation.
+- **Animation.**
+  - Procedural effects without AI: fire, water, plant sway, flags, smoke and magic pulse, in
+    the sprite's own colours, looping seamlessly. In Animate Sprite (Method), the CLI
+    (`effect`) and MCP (`sprite_effect`).
+  - Animate Sprite suggests a method from the sprite's name and pixels; you can pick another.
+    Preview speed control.
+  - Walk and run keep the standing foot planted and swing the arms. Front views with touching
+    legs walk instead of rocking.
+  - Automatic checks for single-frame flicker and floating feet.
 - **Swimmers.** Animate Sprite detects footless, wider-than-tall subjects (fish) and which way
   they face. Their idle, swim and dash bend the body with a wave from head to tail; idle and
   swim have 12 frames.
