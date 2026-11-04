@@ -365,3 +365,26 @@ TEST_CASE("The clip check reports floating feet and single-frame flicker", "[mot
     CHECK(chk.flicker > 0.08);
     CHECK(chk.issues.size() >= 2);
 }
+
+TEST_CASE("A three-quarter stance (far foot higher) walks with every foot grounded", "[motion]") {
+    // Legs apart, the far foot ending two rows above the near one (as a
+    // generated 64 px rogue on the test PC).
+    Image img(24, 44);
+    img.fillRect({7, 2, 8, 10}, kSkin);
+    img.fillRect({6, 12, 11, 14}, kShirt);
+    img.fillRect({6, 26, 3, 14}, kPants);   // far leg, ends at row 39
+    img.fillRect({13, 26, 3, 16}, kPants);  // near leg, ends at row 41
+    const Subject s = analyzeSubject(img);
+    REQUIRE(s.body == Body::Biped);
+    REQUIRE(s.footBottoms.size() == 2);
+    CHECK(s.footBottoms[1] - s.footBottoms[0] == 2);
+    Options o;
+    o.action = Action::Walk;
+    o.frames = 8;
+    auto clip = animate(img, o);
+    REQUIRE(clip);
+    CHECK(clip.value().footStagger == 2);
+    const ClipCheck chk = checkClip(clip.value());
+    for (const auto& issue : chk.issues) UNSCOPED_INFO(issue);
+    CHECK(chk.floatingFrames == 0);
+}

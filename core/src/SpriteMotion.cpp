@@ -475,7 +475,8 @@ RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action 
                     // The standing leg keeps its foot on the ground: a rigid
                     // leg would rise with the body bob and the swing; it is
                     // stretched along its length instead (a pixel or two).
-                    const double len = subj.footRow + 1 - subj.legTop;
+                    const int footBottom = i - 1 < subj.footBottoms.size() ? subj.footBottoms[i - 1] : subj.footRow;
+                    const double len = footBottom + 1 - subj.legTop;
                     const double halfFoot = (x1 - x0 + 1) / 2.0;
                     if (len >= 3)
                         stretch = std::clamp((len - dy - halfFoot * std::abs(std::sin(swing))) / (len * std::cos(swing)), 0.85, 1.35);
@@ -657,11 +658,22 @@ Subject analyzeSubject(const Image& sprite) {
         const int x0 = s.feet.front().first, x1 = s.feet.back().second;
         int top = s.footRow;
         while (top - 1 >= bb.y && rowRuns(sprite, top - 1, x0, x1) >= 2) --top;
-        if (rowRuns(sprite, s.footRow, x0, x1) < 2 || s.footRow + 1 - top < std::max(2, bb.h / 6)) s.feet.clear();
+        // The legs must be apart in some row of the foot band, not only in
+        // the lowest one: in a three-quarter stance the back foot ends a row or
+        // two higher (a generated 64 px rogue on the test PC).
+        int split = -1;
+        for (int y = s.footRow; y > s.footRow - band && y >= bb.y; --y)
+            if (rowRuns(sprite, y, x0, x1) >= 2) { split = y; break; }
+        if (split >= 0) {
+            top = split;
+            while (top - 1 >= bb.y && rowRuns(sprite, top - 1, x0, x1) >= 2) --top;
+        }
+        if (split < 0 || split + 1 - top < std::max(2, bb.h / 6)) s.feet.clear();
     }
     if (s.feet.size() >= 2) {
         const int x0 = s.feet.front().first, x1 = s.feet.back().second;
         int top = s.footRow;
+        while (top > s.footRow - band && top > bb.y && rowRuns(sprite, top, x0, x1) < 2) --top;   // staggered feet
         while (top - 1 >= bb.y && rowRuns(sprite, top - 1, x0, x1) >= 2) --top;
         const int minLeg = std::max(2, bb.h / 5);
         top = std::min(top, s.footRow + 1 - minLeg);
@@ -755,6 +767,14 @@ Subject analyzeSubject(const Image& sprite) {
         // Footless and wider than tall (but not a thin stick): a fish-like swimmer.
         if (s.body == Body::Object && bb.w * 4 >= bb.h * 5 && bb.w <= bb.h * 7 / 2) s.body = Body::Swimmer;
     }
+    if (!s.feet.empty() && s.legTop >= 0)
+        for (const auto& [x0, x1] : s.feet) {
+            int lowest = s.legTop;
+            for (int y = s.legTop; y <= s.footRow; ++y)
+                for (int x = x0; x <= x1; ++x)
+                    if (sprite.pixel(x, y).a > 0) lowest = std::max(lowest, y);
+            s.footBottoms.push_back(lowest);
+        }
     s.headLeft = spriteFacesLeft(sprite);
     return s;
 }
@@ -864,6 +884,9 @@ Result<std::vector<Clip>> animatePack(const Image& sprite, const std::vector<Act
         c.name = info.key;
         c.loops = info.loops;
         c.body = body;
+        if (!subj.footBottoms.empty())
+            c.footStagger = *std::max_element(subj.footBottoms.begin(), subj.footBottoms.end()) -
+                            *std::min_element(subj.footBottoms.begin(), subj.footBottoms.end());
         for (const Image& f : rendered[i].frames) {
             Image placed = place(f, rendered[i].box, box);
             c.frames.push_back(base.faceLeft ? mirror(placed) : std::move(placed));
@@ -953,7 +976,7 @@ ClipCheck checkClip(const Clip& clip) {
         int ground = -1;
         std::vector<int> rows;
         for (const Image& f : clip.frames) rows.push_back(lowest(f)), ground = std::max(ground, rows.back());
-        for (int row : rows) r.floatingFrames += row < ground ? 1 : 0;
+        for (int row : rows) r.floatingFrames += row < ground - clip.footStagger ? 1 : 0;
         if (r.floatingFrames > 0)
             r.issues.push_back("The feet leave the ground in " + std::to_string(r.floatingFrames) + " frame(s); the character will float.");
     }

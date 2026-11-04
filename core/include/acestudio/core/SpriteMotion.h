@@ -63,6 +63,9 @@ struct Subject {
     // Arms: the parts of the upper body beside the legs (shoulder to hand).
     // A walk swings them against the legs.
     std::vector<IntRect> arms;
+    // Lowest row of each foot (same order as `feet`). In a three-quarter view
+    // the far foot stands a row or two higher: each foot keeps its own ground.
+    std::vector<int> footBottoms;
 };
 Subject analyzeSubject(const Image& sprite);
 
@@ -99,6 +102,9 @@ struct Clip {
     std::vector<int> durations;  // ms
     bool loops = true;
     Body body = Body::Object;
+    // Rows between the lowest and the highest standing foot (three-quarter
+    // views): the ground check allows the lowest row to rise by this much.
+    int footStagger = 0;
 };
 
 // Animates a sprite (transparent background expected). Errors when the

@@ -234,6 +234,9 @@ or is a case that has not been run yet.
     drawn in front of the body moves with the body. A wide coat or bulky armour wider than the
     legs can be taken for arms; the swing is small (0.6 × the leg swing).
   - Front views whose legs touch are split at the middle and step in turn instead of swinging.
+  - A three-quarter stance (the far foot a row or two higher) is a biped; each foot keeps its
+    own ground line. First seen on a generated 64 px rogue (benchmark run 1), which had
+    rocked as an object. Under a long cloak a few hem pixels move with the legs.
   - **Wing flap** folds everything above a line. On a generated HD dragon (test PC), the
     default span folded the head and neck with the wings. A span of 38–100 % kept the head
     still and flapped the near wing; the far wing, behind the head, stays still.
