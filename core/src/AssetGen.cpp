@@ -312,8 +312,28 @@ QualityReport checkAsset(const Image& img, const CheckOptions& opt) {
             const double vx = sxx / nn - (sx / nn) * (sx / nn), vy = syy / nn - (sy / nn) * (sy / nn);
             if (vx > 4 && vy > 4) {
                 r.neighbourCorrelation = (sxy / nn - (sx / nn) * (sy / nn)) / std::sqrt(vx * vy);
-                if (*r.neighbourCorrelation < 0.3)
-                    add(Severity::Problem, "noise", "Looks like noise, not a picture: the generation probably failed.");
+                bool noise = *r.neighbourCorrelation < 0.3;
+                // At sprite size (64 px and below) outlines and highlights make
+                // neighbours differ a lot: real 32 px sprites from the test PC
+                // measured 0.06-0.7 (a key 0.06, noise 0.0). Pixel art is
+                // still made of runs of one colour, which noise is not: a
+                // pixel matches a 4-neighbour for 29-81 % of a real sprite's
+                // pixels and 11-22 % of palette noise.
+                if (noise && std::max(W, H) <= 64) {
+                    long same = 0, all = 0;
+                    for (int y = 0; y < H; ++y)
+                        for (int x = 0; x < W; ++x) {
+                            if (!opaque[idx(x, y)]) continue;
+                            ++all;
+                            const Rgba8 c = img.pixel(x, y);
+                            auto match = [&](int u, int v) {
+                                return u >= 0 && v >= 0 && u < W && v < H && opaque[idx(u, v)] && img.pixel(u, v) == c;
+                            };
+                            if (match(x + 1, y) || match(x - 1, y) || match(x, y + 1) || match(x, y - 1)) ++same;
+                        }
+                    noise = all > 0 && static_cast<double>(same) < 0.25 * static_cast<double>(all);
+                }
+                if (noise) add(Severity::Problem, "noise", "Looks like noise, not a picture: the generation probably failed.");
             }
         }
     }

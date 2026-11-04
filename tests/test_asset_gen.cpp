@@ -161,6 +161,42 @@ TEST_CASE("a failed generation that is only noise is flagged", "[gen]") {
     for (const auto& i : gen::checkAsset(blocks, o).issues) CHECK(i.code != "noise");
 }
 
+TEST_CASE("a thin outlined 32 px sprite is not taken for noise", "[gen]") {
+    // A key-like sprite: one-pixel shafts with a dark outline on each side, so
+    // horizontal neighbours alternate dark and light (low correlation, as the
+    // silver key generated on the test PC: 0.06), but the colours run
+    // vertically. Palette noise at the same size is still flagged.
+    gen::CheckOptions o;
+    o.expectTransparent = true;
+    o.pixelArt = true;
+    Image key(32, 32);
+    const Rgba8 ink{20, 22, 30, 255}, steel{200, 205, 215, 255}, shine{250, 250, 255, 255};
+    for (int col = 0; col < 5; ++col) {
+        const int x = 4 + col * 5;
+        for (int y = 3; y < 29; ++y) {
+            key.setPixel(x, y, ink);
+            key.setPixel(x + 1, y, (y / 3) % 2 ? steel : shine);
+            key.setPixel(x + 2, y, ink);
+        }
+    }
+    for (const auto& i : gen::checkAsset(key, o).issues) CHECK(i.code != "noise");
+    Image noise(32, 32);
+    std::uint32_t state = 99;
+    const Rgba8 pal[16] = {{20, 20, 30, 255},   {200, 60, 60, 255},  {60, 200, 60, 255},  {60, 60, 200, 255},
+                           {220, 220, 60, 255}, {60, 220, 220, 255}, {220, 60, 220, 255}, {240, 240, 240, 255},
+                           {120, 80, 40, 255},  {40, 120, 80, 255},  {80, 40, 120, 255},  {160, 160, 160, 255},
+                           {250, 150, 30, 255}, {30, 150, 250, 255}, {150, 250, 30, 255}, {90, 90, 90, 255}};
+    for (int y = 0; y < 32; ++y)
+        for (int x = 0; x < 32; ++x) {
+            state = state * 1664525u + 1013904223u;
+            noise.setPixel(x, y, pal[state >> 28]);
+        }
+    o.expectTransparent = false;
+    bool flagged = false;
+    for (const auto& i : gen::checkAsset(noise, o).issues) flagged = flagged || i.code == "noise";
+    CHECK(flagged);
+}
+
 TEST_CASE("a cell holding two subjects gives two sprites", "[gen]") {
     Image sheet(200, 100, Rgba8{250, 250, 250, 255});
     const Rgba8 body{40, 120, 60, 255};

@@ -620,6 +620,52 @@ class CpuMemoryCheckTests(unittest.TestCase):
 
 
 
+class CutoutKeepTests(unittest.TestCase):
+    """The optimised pipeline keeps the background-removal session when enough
+    VRAM stays free; otherwise (and in the original pipeline) it is released."""
+
+    def run_finish(self, params, free_bytes):
+        from unittest import mock
+        from acestudio_worker.jobs import Context
+        from acestudio_worker.tasks import postprocess
+        released = []
+
+        class Cuda:
+            @staticmethod
+            def mem_get_info():
+                return (free_bytes, 8 * 2**30)
+
+            @staticmethod
+            def empty_cache():
+                pass
+
+        class Torch:
+            cuda = Cuda
+
+        class Srv:
+            def notify(self, *a, **k):
+                pass
+
+            def send(self, *a, **k):
+                pass
+
+        ctx = Context("j", tempfile.mkdtemp(), dict(params, cutout={"model": "m.onnx"}), Srv())
+        ctx.log = lambda *a, **k: None
+        with mock.patch.object(postprocess, "apply_cutout", lambda c, img, cut: img), \
+                mock.patch.object(postprocess, "release_sessions", lambda: released.append(True)):
+            postprocess.finish_images(ctx, ["img"], object(), Torch, "cuda", None, lambda img, p: p, False)
+        return bool(released)
+
+    def test_original_pipeline_releases(self):
+        self.assertTrue(self.run_finish({}, 6 * 2**30))
+
+    def test_optimised_pipeline_keeps_with_room(self):
+        self.assertFalse(self.run_finish({"optimize": True}, 6 * 2**30))
+
+    def test_optimised_pipeline_releases_when_vram_is_short(self):
+        self.assertTrue(self.run_finish({"optimize": True}, 1 * 2**30))
+
+
 class ProcessLimitTests(unittest.TestCase):
     def test_low_priority_really_lowers_the_priority(self):
         # In a child process, so the test runner keeps its own priority.

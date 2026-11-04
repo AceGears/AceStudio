@@ -28,7 +28,7 @@ def available():
     return True, ""
 
 
-def matte(sess, rgb_img):
+def matte(sess, rgb_img, provider=None):
     """Runs the network; returns a float32 HxW matte in [0, 1] at the input size."""
     import numpy as np
     from PIL import Image
@@ -40,7 +40,16 @@ def matte(sess, rgb_img):
     x = x.transpose(2, 0, 1)[None]
     if inp.type == "tensor(float16)":
         x = x.astype(np.float16)
-    out = sess.run(None, {inp.name: x})[0]
+    from ..imaging import run_options
+    ro = run_options(provider)
+    try:
+        out = sess.run(None, {inp.name: x}, ro)[0]
+    except Exception as e:   # noqa: BLE001
+        # A runtime without that GPU arena rejects the shrink option; the
+        # run itself is fine without it.
+        if ro is None or "arena" not in str(e).lower():
+            raise
+        out = sess.run(None, {inp.name: x})[0]
     logits = np.asarray(out, dtype=np.float32).reshape(out.shape[-2], out.shape[-1])
     m = 1.0 / (1.0 + np.exp(-logits))
     mask = Image.fromarray(np.clip(m * 255.0 + 0.5, 0, 255).astype(np.uint8), mode="L").resize((w, h), Image.BILINEAR)
@@ -57,7 +66,7 @@ def run(ctx):
     def segment(sess, provider):
         ctx.check_cancel()
         ctx.progress(0.3, "Segmenting on %s" % provider.replace("ExecutionProvider", ""), force=True)
-        return matte(sess, img)
+        return matte(sess, img, provider)
 
     cpu_mb = ctx.param("cpu_memory_mb")
     m, provider = run_onnx(ctx, ctx.param("model", required=True, kind=str), ctx.param("device", "auto"), segment,

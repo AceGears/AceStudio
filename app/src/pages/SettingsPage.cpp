@@ -20,6 +20,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSlider>
+#include <QSize>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QToolButton>
@@ -82,6 +83,7 @@ SettingsPage::SettingsPage(AppContext& ctx, QWidget* parent) : QWidget(parent), 
     m_categories->setAccessibleName(tr("Settings categories"));
     m_categories->setFixedWidth(200);
     m_categories->setFrameShape(QFrame::NoFrame);
+    m_categories->setSpacing(1);
     m_categories->setStyleSheet(QStringLiteral("QListWidget { border: none; border-right: 1px solid palette(mid); border-radius: 0; padding: 12px 8px; }"
                                                "QListWidget::item { padding: 8px 12px; border-radius: 7px; }"));
     m_pages = new QStackedWidget(this);
@@ -99,7 +101,10 @@ SettingsPage::SettingsPage(AppContext& ctx, QWidget* parent) : QWidget(parent), 
 }
 
 void SettingsPage::addCategory(const QString& name, QWidget* page) {
-    m_categories->addItem(name);
+    // An explicit row height: the stylesheet padding alone left the rows
+    // 15 px apart on the test PC, so the selection covered its neighbours.
+    auto* item = new QListWidgetItem(name, m_categories);
+    item->setSizeHint(QSize(0, m_categories->fontMetrics().height() + 18));
     m_pages->addWidget(page);
 }
 

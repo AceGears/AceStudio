@@ -19,8 +19,9 @@ namespace {
 
 QString modelOf(const ai::Job& j) {
     const std::string& t = j.task;
-    if (t.rfind("klein", 0) == 0) return QStringLiteral("FLUX.2 klein");
-    if (t.rfind("generate", 0) == 0 || t.rfind("sdxl", 0) == 0) return QStringLiteral("SDXL");
+    // Task names are "<kind>.<backend>" (image.klein, image.generate, ...).
+    if (t.find("klein") != std::string::npos) return QStringLiteral("FLUX.2 klein");
+    if (t.find("sdxl") != std::string::npos || t == "image.generate" || t.rfind("generate", 0) == 0) return QStringLiteral("SDXL");
     if (t.find("cutout") != std::string::npos || t.find("background") != std::string::npos) return QStringLiteral("BiRefNet");
     if (t.find("upscale") != std::string::npos) return QStringLiteral("Real-ESRGAN");
     return qs(t);

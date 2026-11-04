@@ -83,8 +83,26 @@ def onnx_session(model_path, device="auto", provider=None, optimization="all"):
             ort.preload_dlls()
         except Exception:   # noqa: BLE001 - the session creation below reports it
             pass
+    # CUDA: grow the memory arena only by what is asked for (the default
+    # doubles it), so with arena shrinkage after each run a cached session
+    # holds little more than its weights between jobs.
+    providers = [(p, {"arena_extend_strategy": "kSameAsRequested"}) if p == "CUDAExecutionProvider" else p for p in providers]
     sess = ort.InferenceSession(model_path, sess_options=opts, providers=providers)
     return sess, sess.get_providers()[0]
+
+
+def run_options(provider):
+    """Run options that give a CUDA session's working memory back after each
+    run (the weights stay), or None."""
+    if provider != "CUDAExecutionProvider":
+        return None
+    import onnxruntime as ort
+    ro = ort.RunOptions()
+    try:
+        ro.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:0")
+    except Exception:   # noqa: BLE001 - older runtimes: the arena simply is not shrunk
+        return None
+    return ro
 
 
 def release_sessions():

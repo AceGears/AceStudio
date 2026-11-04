@@ -19,11 +19,16 @@ def apply_cutout(ctx, img, cutout):
     threshold = float(cutout.get("threshold", 0.5))
     if not 0.0 <= threshold <= 1.0:
         raise JobError("cutout threshold must be between 0 and 1", kind="invalid_input")
-    m, _ = run_onnx(ctx, cutout["model"], cutout.get("device", "auto"), lambda sess, prov: matte(sess, img.convert("RGB")))
+    m, _ = run_onnx(ctx, cutout["model"], cutout.get("device", "auto"), lambda sess, prov: matte(sess, img.convert("RGB"), prov))
     m = (m >= threshold).astype(np.float32)
     rgba = np.array(img.convert("RGBA"), dtype=np.float32)
     rgba[..., 3] = rgba[..., 3] * m
     return Image.fromarray(np.clip(rgba + 0.5, 0, 255).astype(np.uint8), mode="RGBA")
+
+
+# The cached cutout session stays only while this much VRAM is free after
+# the run: klein (FP8, offloaded) peaked at 4.4-4.6 GB on the 8 GB test PC.
+_KEEP_FREE_BYTES = int(2.0 * 2**30)
 
 
 def finish_images(ctx, images, pipe, torch, device, pixelate, save_png, crop):
@@ -43,6 +48,12 @@ def finish_images(ctx, images, pipe, torch, device, pixelate, save_png, crop):
     # kept for the next job (creating it costs seconds each time).
     res = ctx.param("resources") or {}
     keep = bool(res.get("keepCutoutLoaded", False)) if isinstance(res, dict) else False
+    # Optimised pipeline: the session's working memory is given back after
+    # every run (arena shrinkage), so it is kept on smaller GPUs too, as long
+    # as enough VRAM stays free for the diffusion model (checked below).
+    # Measured on the 8 GB test PC: creating the session took 7-9 s per job
+    # against 0.9 s for the cutout itself.
+    keep_if_room = bool(ctx.param("optimize")) and not keep
     if cutout and device == "cuda":
         with ctx.stage("freeForCutout"):
             free = getattr(pipe, "maybe_free_model_hooks", None)
@@ -66,6 +77,16 @@ def finish_images(ctx, images, pipe, torch, device, pixelate, save_png, crop):
                 outputs["image%d" % i] = save_png(img, ctx.path("image%d.png" % i))
     finally:
         if cutout and device == "cuda" and not keep:
-            with ctx.stage("releaseCutout"):
-                release_sessions()
+            free = None
+            if keep_if_room:
+                try:
+                    free = torch.cuda.mem_get_info()[0]
+                except Exception:   # noqa: BLE001
+                    free = None
+            if free is not None and free >= _KEEP_FREE_BYTES:
+                ctx.cutout_kept = True
+                ctx.log("Background removal kept on the GPU (%.1f GB free)" % (free / 2**30))
+            else:
+                with ctx.stage("releaseCutout"):
+                    release_sessions()
     return outputs

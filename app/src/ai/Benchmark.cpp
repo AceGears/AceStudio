@@ -92,7 +92,9 @@ BenchmarkRunner::BenchmarkRunner(GeneratorPage& page, QWidget* parent) : QDialog
     });
     folderRow->addWidget(m_folder, 1);
     folderRow->addWidget(browse);
-    form->addRow(tr("Report &folder:"), folderRow);
+    auto* folderLabel = new QLabel(tr("Report &folder:"), this);
+    folderLabel->setBuddy(m_folder);
+    form->addRow(folderLabel, folderRow);
     m_original = new QCheckBox(tr("Original pipeline (optimisations off)"), this);
     m_optimised = new QCheckBox(tr("Optimised pipeline"), this);
     m_original->setChecked(true);
@@ -366,6 +368,9 @@ void BenchmarkRunner::finish() {
     m_running = false;
     disconnect(m_finishedConn);
     m_report["finished"] = QDateTime::currentDateTime().toString(Qt::ISODate).toStdString();
+    // The GPU is known only after the worker has probed it (not at the start).
+    m_report["machine"]["devices"] = m_page.m_ai.capabilities().value("devices", json::array());
+    m_report["machine"]["onnxProviders"] = m_page.m_ai.capabilities().value("onnxProviders", json::array());
     writeText(outPath("report.json"), m_report.dump(2));
     // A readable summary: one row per case, original next to optimised.
     auto find = [&](const std::string& mode, const std::string& name) -> const json* {
