@@ -9,6 +9,9 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QDesktopServices>
+#include <QDir>
+#include <QUrl>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -96,6 +99,7 @@ SettingsPage::SettingsPage(AppContext& ctx, QWidget* parent) : QWidget(parent), 
     addCategory(tr("Generation"), generation());
     addCategory(tr("Animation"), animation());
     addCategory(tr("Integrations"), integrations());
+    addCategory(tr("Privacy"), privacy());
     addCategory(tr("Advanced"), advanced());
     m_categories->setCurrentRow(0);
 }
@@ -409,6 +413,73 @@ QWidget* SettingsPage::integrations() {
     connect(bridge, &QCheckBox::toggled, this, [this](bool on) { m_ctx.setSetting("mcp.bridgeEnabled", on); });
     form->addRow(tr("Open document:"), bridge);
     form->addRow(QString(), hint(tr("Each change an assistant makes is one Edit › Undo step. Connect assistants in the Integrations workspace."), page));
+    return page;
+}
+
+QWidget* SettingsPage::privacy() {
+    auto [page, form] = makePage(tr("Privacy"),
+                                 tr("AceStudio is for personal use: no account, no licence check, no telemetry. Your art, prompts and "
+                                    "models stay on this PC."),
+                                 this);
+    Settings& s = m_ctx.settings();
+    auto* off = new QCheckBox(tr("Disable all network access"), page);
+    off->setChecked(s.get<bool>("privacy.offline"));
+    connect(off, &QCheckBox::toggled, this, [this](bool on) { m_ctx.setSetting("privacy.offline", on); });
+    form->addRow(tr("&Network:"), off);
+    form->addRow(QString(), hint(tr("Model downloads and AI runtime setup are refused, and the AI worker is blocked from "
+                                    "connecting anywhere but this computer (proxies included). Everything else keeps working."),
+                                 page));
+
+    auto* uses = new QLabel(tr("<b>Only when you ask:</b><br>"
+                               "• Model downloads (AI › Models › Download), from the source listed for each model; every file is "
+                               "checked against its SHA-256.<br>"
+                               "• AI runtime setup: Python packages from PyPI and the PyTorch package index.<br>"
+                               "<b>Never:</b> telemetry, crash reports, update checks, accounts, licence checks or uploads. "
+                               "The AI libraries' own telemetry is switched off.<br>"
+                               "<b>On this computer only:</b> the AI worker (a local process), the assistant bridge for "
+                               "acestudio-mcp (a local socket with a private token; Settings › Integrations) and the "
+                               "single-window check."),
+                            page);
+    uses->setTextFormat(Qt::RichText);
+    uses->setWordWrap(true);
+    // A fixed width lets the form give the label its full wrapped height.
+    uses->setFixedWidth(500);
+    uses->setMinimumHeight(uses->heightForWidth(500));
+    form->addRow(tr("Connections:"), uses);
+
+    // Where things are kept, each with a button to look.
+    const std::filesystem::path dataDir = m_ctx.dataDir();
+    const std::string modelSetting = s.get<std::string>("ai.modelDirectory");
+    const std::filesystem::path models = modelSetting.empty() ? dataDir / "ai" / "models" : std::filesystem::path(modelSetting);
+    auto place = [&](const QString& label, const std::filesystem::path& p, const QString& what) {
+        const QString path = QDir::toNativeSeparators(QString::fromStdWString(p.wstring()));
+        auto* row = new QHBoxLayout;
+        auto* l = new QLabel(QStringLiteral("%1<br><span style='opacity:0.7'>%2</span>").arg(path.toHtmlEscaped(), what.toHtmlEscaped()), page);
+        l->setTextFormat(Qt::RichText);
+        l->setWordWrap(true);
+        l->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        l->setFixedWidth(400);
+        l->setMinimumHeight(l->heightForWidth(400));
+        auto* open = new QPushButton(tr("Open"), page);
+        open->setAccessibleName(tr("Open %1").arg(label));
+        connect(open, &QPushButton::clicked, this, [p] {
+            std::error_code ec;
+            std::filesystem::path q = p;
+            while (!q.empty() && !std::filesystem::exists(q, ec) && q.has_parent_path() && q.parent_path() != q) q = q.parent_path();
+            QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdWString(q.wstring())));
+        });
+        row->addWidget(l);
+        row->addWidget(open, 0, Qt::AlignTop);
+        row->addStretch();
+        form->addRow(label + QLatin1Char(':'), row);
+    };
+    place(tr("Settings and library"), dataDir, tr("Preferences, recent files, characters, the asset library."));
+    place(tr("AI models"), models, tr("Downloaded model files."));
+    place(tr("AI job files"), dataDir / "ai" / "jobs", tr("Inputs and outputs of AI jobs; removed after 7 days."));
+    place(tr("Logs"), m_ctx.logDir(), tr("Diagnostics for you; never sent anywhere."));
+    form->addRow(QString(), hint(tr("Projects are saved wherever you save them. Files left by older versions (licence.key, "
+                                    "trial.json) in the settings folder are no longer used and can be deleted."),
+                                 page));
     return page;
 }
 

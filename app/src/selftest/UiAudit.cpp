@@ -13,6 +13,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDir>
+#include <QListWidget>
 #include <QDockWidget>
 #include <QElapsedTimer>
 #include <QFile>
@@ -194,8 +195,26 @@ int runUiAudit(MainWindow& window, const QString& reportPath, const QString& pro
         window.showWorkspace(w.id);
         QApplication::processEvents();
         while (closeModal(a, current)) QApplication::processEvents();
-        if (QWidget* page = window.m_pageFor[static_cast<std::size_t>(w.id)])
+        if (QWidget* page = window.m_pageFor[static_cast<std::size_t>(w.id)]) {
             auditWindow(page, a, current, QStringLiteral("Workspace: ") + QString::fromLatin1(w.key));
+            // Pages with categories (Settings): audit every category, and
+            // with ACESTUDIO_UI_SHOTS=<folder> keep a picture of each.
+            const QString shots = qEnvironmentVariable("ACESTUDIO_UI_SHOTS");
+            for (QListWidget* cats : page->findChildren<QListWidget*>())
+                if (cats->accessibleName() == QLatin1String("Settings categories")) {
+                    const int was = cats->currentRow();
+                    for (int r = 0; r < cats->count(); ++r) {
+                        cats->setCurrentRow(r);
+                        QApplication::processEvents();
+                        auditWindow(page, a, current + QStringLiteral(" / ") + cats->item(r)->text());
+                        if (!shots.isEmpty())
+                            window.grab().save(QDir(shots).filePath(QStringLiteral("%1-%2.png").arg(QString::fromLatin1(w.key)).arg(r)));
+                    }
+                    cats->setCurrentRow(was);
+                }
+            if (!qEnvironmentVariable("ACESTUDIO_UI_SHOTS").isEmpty())
+                window.grab().save(QDir(qEnvironmentVariable("ACESTUDIO_UI_SHOTS")).filePath(QString::fromLatin1(w.key) + QStringLiteral(".png")));
+        }
         const int mw = window.minimumSizeHint().width();
         if (mw > widestWorkspace.second) widestWorkspace = {QString::fromLatin1(w.key), mw};
     }

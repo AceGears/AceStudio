@@ -29,6 +29,7 @@ std::string utf8(const fs::path& p) {
 struct AiContext {
     AiEnvironment env;
     std::string pythonPath;   // setting ai.pythonPath
+    bool offline = false;     // setting privacy.offline (Settings › Privacy)
 };
 
 Result<AiContext> context() {
@@ -38,6 +39,7 @@ Result<AiContext> context() {
     Settings settings;
     (void)settings.load(data.value() / "settings.json");
     c.pythonPath = settings.get<std::string>("ai.pythonPath");
+    c.offline = settings.get<bool>("privacy.offline");
     auto local = userLocalDataDir();
     if (!local) return local.error();
     auto env = resolveAiEnvironment(local.value(), settings.get<std::string>("ai.modelDirectory"), executableDir());
@@ -114,6 +116,7 @@ Result<std::unique_ptr<WorkerSupervisor>> supervisor(const AiContext& c) {
     if (!configured.empty()) python = fs::path(std::u8string(configured.begin(), configured.end()));
     auto opt = workerOptionsFor(c.env, python);
     if (!opt) return Error{opt.error().code, opt.error().message + " Run: acestudio-cli ai setup --profile <profile> --yes"};
+    opt.value().process.env.push_back({"ACESTUDIO_OFFLINE", c.offline ? "1" : "0"});
     return std::make_unique<WorkerSupervisor>(std::move(opt).value());
 }
 
@@ -182,6 +185,7 @@ int cmdStatus(const Args&, Output& out, const AiContext& c) {
 int cmdSetup(const Args& a, Output& out, const AiContext& c) {
     const auto profile = a.opt("profile");
     if (!profile) return out.fail(kUsage, "ai setup: --profile onnx-windows|onnx-cpu|diffusion-cuda|diffusion-cpu is required");
+    if (c.offline) return out.fail(kUsage, "Network access is disabled in AceStudio (Settings > Privacy); ai setup downloads packages.");
     if (!a.flags.count("yes"))
         return out.fail(kUsage, "ai setup downloads Python packages (diffusion profiles: several GB). Re-run with --yes to agree.");
     auto py = findPython(c.pythonPath);
@@ -226,6 +230,7 @@ int cmdDownload(const Args& a, Output& out, const AiContext& c, const ModelCatal
                                         "\nTo accept, re-run with --accept-license " + m->license.id);
         if (auto st = store.approve(*m); !st) return out.fail(st.error());
     }
+    if (c.offline) return out.fail(kUsage, "Network access is disabled in AceStudio (Settings > Privacy).");
     auto params = store.downloadParams(*m);
     if (!params) return out.fail(params.error());
     auto sup = supervisor(c);

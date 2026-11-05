@@ -36,6 +36,8 @@ public:
 
     bool runtimeInstalled() const;   // the AI Python environment exists
     bool settingUp() const { return m_settingUp; }
+    // Settings › Privacy › Disable all network access.
+    bool offline() const;
     ai::WorkerSupervisor* supervisor() { return m_sup.get(); }
     ai::WorkerState state() const;
     QString statusText() const;      // one line for the panel

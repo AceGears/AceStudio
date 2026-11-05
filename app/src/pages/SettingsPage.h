@@ -31,6 +31,7 @@ private:
     QWidget* animation();
     QWidget* exporting();
     QWidget* integrations();
+    QWidget* privacy();
     QWidget* advanced();
     void addCategory(const QString& name, QWidget* page);
 

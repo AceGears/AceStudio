@@ -129,6 +129,9 @@ class Server:
         task = _tasks.registry.get(task_name)
         if task is None:
             raise JobError(ERR_UNKNOWN_TASK, "Unknown task: " + task_name)
+        from . import netguard
+        if netguard.offline() and task_name in netguard.NETWORK_TASKS:
+            raise JobError(ERR_UNAVAILABLE, "Network access is disabled in AceStudio (Settings > Privacy)")
         ok, reason = _tasks.registry.availability(task_name)
         if not ok:
             raise JobError(ERR_UNAVAILABLE, reason)
@@ -221,11 +224,16 @@ def main():
     sys.stdin = open(os.devnull, "r")
     stdin = os.fdopen(proto_in, "r", encoding="utf-8", newline="\n")
 
+    # Offline mode first, before any library can open a connection.
+    from . import netguard
+    offline = netguard.install_if_requested()
     from .resources import apply_process_limits
     limits = apply_process_limits()
     server = Server(out)
     if limits:
         server.log("info", "Resource limits: " + ", ".join("%s=%s" % kv for kv in sorted(limits.items())))
+    if offline:
+        server.log("info", "Network access disabled: only connections to this computer are allowed")
     server.log("info", "AceStudio worker %s (Python %s) ready" % (__version__, platform.python_version()))
     for line in stdin:   # EOF (host closed the pipe or died) ends the worker
         server.handle_line(line)

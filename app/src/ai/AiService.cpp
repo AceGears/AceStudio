@@ -32,6 +32,16 @@ AiService::AiService(AppContext& ctx, QObject* parent) : QObject(parent), m_ctx(
     // and priority by restarting the worker when it is idle (a running job
     // keeps the old limits until it finishes).
     connect(&ctx, &AppContext::settingChanged, this, [this](const QString& key) {
+        if (key == QLatin1String("privacy.offline")) {
+            // The worker's socket guard is set at launch: restart it now if
+            // idle, otherwise as soon as the running job ends. Network jobs
+            // are refused here meanwhile.
+            ACE_LOG_INFO("ai", offline() ? "Network access disabled" : "Network access enabled");
+            m_limitsStale = true;
+            applyStaleLimits();
+            Q_EMIT stateChanged();
+            return;
+        }
         if (key != QLatin1String("ai.profile") && !key.startsWith(QLatin1String("ai.limit."))) return;
         if (!m_sup) return;
         const ResourceLimits l = limits();
@@ -72,6 +82,7 @@ void AiService::rebuildSupervisor() {
     const ResourceLimits l = limits();
     opt.value().process.env.push_back({"ACESTUDIO_CPU_THREADS", std::to_string(l.cpuThreads)});
     opt.value().process.env.push_back({"ACESTUDIO_LOW_PRIORITY", l.lowPriority ? "1" : "0"});
+    opt.value().process.env.push_back({"ACESTUDIO_OFFLINE", offline() ? "1" : "0"});
     m_sup = std::make_unique<WorkerSupervisor>(std::move(opt).value());
     m_sup->setCancelPolicy(std::chrono::seconds(l.cancelGraceSeconds), l.cancelDuringLoad);
     m_sup->setPaused(m_paused);
@@ -117,6 +128,7 @@ void AiService::applyStaleLimits() {
     const ResourceLimits l = limits();
     m_sup->setEnv("ACESTUDIO_CPU_THREADS", std::to_string(l.cpuThreads));
     m_sup->setEnv("ACESTUDIO_LOW_PRIORITY", l.lowPriority ? "1" : "0");
+    m_sup->setEnv("ACESTUDIO_OFFLINE", offline() ? "1" : "0");
     if (m_sup->state() == WorkerState::Ready) {
         ACE_LOG_INFO("ai", "Resource limits changed: restarting the idle AI worker with the new CPU limits");
         m_sup->restart();
@@ -215,8 +227,14 @@ QStringList AiService::defaultProfiles(bool withDiffusion, bool nvidia) {
     return p;
 }
 
+bool AiService::offline() const { return m_ctx.settings().get<bool>("privacy.offline"); }
+
 void AiService::setUpRuntime(const QStringList& profiles) {
     if (m_settingUp || !m_env) return;
+    if (offline()) {
+        Q_EMIT message(tr("Setting up the AI runtime downloads packages, but network access is disabled (Settings › Privacy)."));
+        return;
+    }
     m_settingUp = true;
     m_pendingProfiles = profiles;
     Q_EMIT stateChanged();
@@ -274,6 +292,8 @@ void AiService::runNextSetupStep() {
 
 Result<JobId> AiService::submit(const std::string& task, nlohmann::json params, const QString& label,
                                 const std::vector<std::pair<std::string, const Image*>>& images) {
+    if (offline() && (task == "model.download" || task == "runtime.install"))
+        return Error{ErrorCode::PermissionDenied, tr("Network access is disabled (Settings › Privacy).").toStdString()};
     QString why;
     if (!ensureStarted(&why)) return Error{ErrorCode::NotFound, why.toStdString()};
     // Per-job limits from the resource profile (a caller may set its own).

@@ -48,6 +48,12 @@ prompts. Image generation, background removal, upscaling and all other AI featur
 while they run, AceStudio switches the Hugging Face and ONNX Runtime libraries to offline mode
 and turns off their telemetry.
 
+**Disable all network access** (Settings › Privacy) turns even these off: AceStudio and
+`acestudio-cli` refuse model downloads and runtime setup, and the AI worker is started with a guard
+that refuses every connection (and name lookup) to anything but this computer, with proxies switched
+off so a proxy running locally cannot relay a connection out. Generating, editing, animating and
+exporting keep working.
+
 Other ways AceStudio may touch the network, all started by you:
 
 - **AI assistants (MCP).** `acestudio-mcp` talks to the AI client you connect it to (for example

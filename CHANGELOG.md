@@ -10,6 +10,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ### Added
 
+- Settings › Privacy: **Disable all network access** (model downloads and runtime setup refused in
+  the app and the CLI; the AI worker refuses every non-local connection and name lookup, proxies
+  off), a plain list of every connection AceStudio can make, and where settings, models, AI job
+  files and logs are kept, each with an Open button.
 - Fish swim like fish: the body bends sideways as a wave travels to the tail,
   seen from the side as foreshortening (whole columns crowd together, nothing
   is resampled) with a small up-and-down wave for the slightly-from-above game
