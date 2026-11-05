@@ -1,5 +1,4 @@
 #include "PalettePanel.h"
-#include "../licensing/Licensing.h"
 #include "DocumentView.h"
 #include "QtBridge.h"
 #include "ToolState.h"
@@ -132,7 +131,6 @@ PalettePanel::PalettePanel(ToolState* tools, QWidget* parent) : QWidget(parent),
     });
     connect(saveBtn, &QPushButton::clicked, this, [this, filter] {
         if (!m_view) return;
-        if (!licenceAllows(this, tr("Saving a palette"))) return;
         QString path = QFileDialog::getSaveFileName(this, tr("Save Palette"), qs(m_view->document().palette().name()) + QStringLiteral(".gpl"), filter);
         if (path.isEmpty()) return;
         if (QFileInfo(path).suffix().isEmpty()) path += QStringLiteral(".gpl");

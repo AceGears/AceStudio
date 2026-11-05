@@ -20,8 +20,6 @@ All of it is on your computer. Nothing below is sent anywhere.
 | Settings, recent files, shortcuts, window layout | `%APPDATA%\AceStudio\settings.json` | Remember your preferences |
 | Logs | `%APPDATA%\AceStudio\logs` | Help you (and support, if you choose to send them) diagnose problems |
 | Recovery files (autosaves of open documents) | `%APPDATA%\AceStudio\recovery` | Restore work after a crash; removed when the document is saved or closed |
-| Licence key (name, e-mail, edition, expiry as written in the key) | `%APPDATA%\AceStudio\licence.key` | Check the licence offline |
-| Trial start date | `%APPDATA%\AceStudio\trial.json` and the registry value `HKCU\Software\AceGears\AceStudio\TrialStartMs` | Count the 14-day trial |
 | Characters (names, prompts, notes, reference images you add) | `%APPDATA%\AceStudio\characters` | Reuse a character across AI generations |
 | AI runtime, models, job files, MCP task results | `%LOCALAPPDATA%\AceStudio\ai`, `%APPDATA%\AceStudio\mcp-tasks` | Run local AI and keep results of AI-assistant tasks |
 | Your projects and exports | Wherever you save them | — |
@@ -30,8 +28,10 @@ In portable mode (a file named `portable` next to `AceStudio.exe`) all of this i
 `data` folder beside the program instead. Uninstalling AceStudio removes the program but keeps
 this data so that reinstalling does not lose your work; delete the folders above to remove it.
 
-The licence key is checked with a public key built into AceStudio. Checking it never contacts
-a server.
+AceStudio has no account, licence key, trial or activation. Versions before 0.10.0 kept a
+licence key (`licence.key`) and a trial start date (`trial.json` and the registry value
+`HKCU\Software\AceGears\AceStudio\TrialStartMs`); newer versions ignore them and leave them in
+place, so delete them if you want them gone.
 
 ## When AceStudio uses the network
 

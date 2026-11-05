@@ -83,6 +83,14 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   4.2.1 (headless Chromium).
 - **`acestudio-cli slice --cells CxR`** cuts AI-generated sheets whose spacing is uneven.
 
+### Changed
+- **Personal use — no licence key, trial or activation.** Saving, exporting and every write
+  command work from the first start, with no time limit. Removed: Help › Licence…, the
+  status-bar licence button, `acestudio-cli licence`, the `acestudio-licence` key tool, the
+  Monocypher dependency and the installer's EULA page. Exit code 7 is no longer used and stays
+  unassigned. A `licence.key` or `trial.json` left by 0.9.0 is ignored, not deleted. Model
+  licences are unchanged: each model is still downloaded only after its licence is accepted.
+
 ### Fixed
 - Sprite sheets exported for Phaser named their frames "name 0", which Phaser's
   `createFromAseprite` cannot find, so no animation got frames. They are now named "0",

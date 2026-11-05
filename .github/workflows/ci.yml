@@ -93,15 +93,9 @@ jobs:
           echo "::notice::Built against Qt $(qmake -query QT_VERSION)"
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Configure
-        # The release licence public key comes from the repository variable
-        # ACESTUDIO_LICENCE_PUBLIC_KEY (tools/licence/README.md); without it the
-        # build uses the development key and says so in Help › Licence.
-        env:
-          LICENCE_PUBLIC_KEY: ${{ vars.ACESTUDIO_LICENCE_PUBLIC_KEY }}
         shell: pwsh
         run: |
-          if (-not $env:LICENCE_PUBLIC_KEY) { Write-Host "::warning::No ACESTUDIO_LICENCE_PUBLIC_KEY repository variable: this build accepts licence keys signed with the public development key. Set it before any release." }
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DACESTUDIO_WARNINGS_AS_ERRORS=ON "-DACESTUDIO_LICENCE_PUBLIC_KEY=${{ env.LICENCE_PUBLIC_KEY }}"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DACESTUDIO_WARNINGS_AS_ERRORS=ON
       - name: Build
         shell: pwsh
         run: |
@@ -248,14 +242,13 @@ jobs:
           $dir = "$env:RUNNER_TEMP\AceStudio Test Install"
           $p = Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=`"$dir`"", "/LOG=`"$env:RUNNER_TEMP\setup.log`"" -Wait -PassThru
           if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\setup.log" -Tail 30; Write-Error "setup exit $($p.ExitCode)"; exit 1 }
-          foreach ($f in "AceStudio.exe", "acestudio-cli.exe", "acestudio-mcp.exe", "python\python.exe", "licences\README.txt", "EULA.txt", "unins000.exe") {
+          foreach ($f in "AceStudio.exe", "acestudio-cli.exe", "acestudio-mcp.exe", "python\python.exe", "licences\README.txt", "unins000.exe") {
             if (-not (Test-Path "$dir\$f")) { Write-Error "installed files miss $f"; exit 1 }
           }
           if (Test-Path "$dir\portable") { Write-Error "the development 'portable' marker was installed"; exit 1 }
           $assoc = Get-ItemProperty "HKCU:\Software\Classes\AceStudio.Project\shell\open\command" -ErrorAction SilentlyContinue
           if (-not $assoc) { Write-Error ".acestudio association missing"; exit 1 }
           $env:ACESTUDIO_DATA_DIR = "$env:RUNNER_TEMP\installed-data"
-          & "$dir\acestudio-cli.exe" --json licence
           & "$dir\acestudio-cli.exe" new "$env:RUNNER_TEMP\inst.acestudio" --width 16 --height 16 --force
           if ($LASTEXITCODE -ne 0) { Write-Error "installed CLI cannot create a project"; exit 1 }
           # The AI runtime from the bundled Python alone (the small ONNX CPU profile).

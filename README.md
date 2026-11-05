@@ -6,7 +6,7 @@ AI-assisted game asset creation and 2D animation studio for Windows.
 > layers, frames, tags and onion skin; export sprite sheets, GIF, APNG, WebP and engine files
 > for Godot, Unity and Tiled; run SDXL, BiRefNet and Real-ESRGAN locally; script with Lua;
 > let AI assistants work through MCP. 0.9.0 adds a Windows installer with a bundled Python,
-> offline licence keys with a 14-day trial, accessibility (screen-reader names, keyboard
+> accessibility (screen-reader names, keyboard
 > access, high contrast, text size), a security review with fuzzing, and a regression suite.
 > Release-candidate testing is Phase 9 — see [ROADMAP.md](ROADMAP.md). Nothing in the app
 > pretends to work when it doesn't.
@@ -17,8 +17,8 @@ Run `AceStudio-<version>-setup-x64.exe`. It installs for your user only (no admi
 prompt) and includes everything, Python for the AI features too. Uninstalling keeps your
 projects, settings and models. The [user guide](docs/user-guide.md) covers everyday use.
 
-**Trial and licence.** Everything works for 14 days. After that, files open and render but
-saving and exporting need a key: **Help › Licence…**. Keys are checked offline.
+**Personal use.** No account, licence key, trial or activation: everything works from the
+first start.
 
 ## What works today
 
@@ -153,8 +153,7 @@ acestudio-cli run make_walk.lua --allow assets     # sandboxed Lua (docs/lua-api
 ```
 
 Exit codes: 0 ok · 1 usage · 2 I/O or not found · 3 corrupt (or seams found) · 4 newer version ·
-5 internal · 6 the Lua script failed · 7 needs a licence (the trial has ended).
-`acestudio-cli licence` shows the licence state; `licence install @key-file` (or the key itself) installs a key.
+5 internal · 6 the Lua script failed. (7 is unused; it meant "needs a licence" before 0.10.0.)
 Existing files are never overwritten without `--force`.
 
 ## AI assistants (MCP)
@@ -214,6 +213,6 @@ Settings and logs live in `%APPDATA%\AceStudio` (Linux: `~/.config/AceStudio`). 
 
 ## License
 
-Proprietary — see [LICENSE](LICENSE) and the EULA draft in `packaging/windows/EULA.txt`.
+Proprietary — see [LICENSE](LICENSE).
 Third-party components: [LICENSE_AUDIT.md](LICENSE_AUDIT.md); their licence texts ship in the
 installer's `licences` folder.

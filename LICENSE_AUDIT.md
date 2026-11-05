@@ -15,7 +15,6 @@ first paid release.
 | Lua | 5.4.9 (github.com/lua/lua tag v5.4.9) | MIT | Static, compiled as C++ | Include copyright + licence text (Lua.org, PUC-Rio) | ✅ |
 | sol2 | 3.3.0 (github.com/ThePhD/sol2 tag v3.3.0) | MIT | Header-only | Include copyright + licence text | ✅ |
 | libwebp (libwebp, libwebpdemux, libwebpmux) | 1.6.0 | BSD-3-Clause | Static | Include copyright notice, licence text and the PATENTS grant file in the notices; do not use WebM project names to endorse the product | ✅ |
-| Monocypher | 4.0.3 | BSD-2-Clause or CC0-1.0 (dual; we use BSD-2-Clause) | Static (licence-key signature check) | Include copyright + licence text | ✅ |
 | Python (embeddable package) | 3.12.10, SHA-256 checked against python.org's release manifest in CI | PSF License Agreement (+ the licences of its bundled parts, all in its LICENSE.txt) | Separate program in `python\`, unmodified | Keep `python\LICENSE.txt`; state that it is included (Third-Party Notices) | ✅ |
 | pip (wheel) | 26.2.2, SHA-256 pinned | MIT | Separate program, unpacked into the user's private AI environment on first AI setup | Keep licence text (`python\pip-LICENSE.txt`) | ✅ |
 | Microsoft Visual C++ runtime (msvcp140, vcruntime140, concrt140) | from the VS 2022 redist folder | Visual Studio distributable code terms | App-local DLLs | Redistribute only the listed files, unmodified, with our application | ✅ |
@@ -122,11 +121,11 @@ from the already-audited SDXL models.
 Engine export writes three C# scripts into Unity projects (`AceStudioAutoTile.cs`,
 `AceStudioWangSet.cs`, `AceStudioDualGrid.cs`, from `core/unity/`). They are AceStudio's own
 code, contain no third-party code and use only Unity's built-in Tilemap module. Each file's
-header lets users change and ship it with their games; the EULA must say the same.
+header lets users change and ship it with their games.
 
 AceStudio will not claim generated assets are copyrightable, exclusive or free of third-party
 rights. Model-specific terms (e.g. OpenRAIL use restrictions) will be shown in the Model Manager
-and the EULA.
+(there is no EULA since 0.10.0).
 
 ## Open items
 
@@ -136,11 +135,12 @@ and the EULA.
    excluded. The repository's text encoder (Qwen3-4B) has no separate licence on the card;
    Qwen3-4B is published under Apache-2.0.
 2. Z-Image is not in the catalogue (not used).
-3. Draft EULA incorporating OpenRAIL Attachment A use restrictions.
+3. ~~Draft EULA incorporating OpenRAIL Attachment A use restrictions~~ — no EULA since 0.10.0
+   (personal use); each model's own licence, OpenRAIL use restrictions included, is still
+   shown and must be accepted before the model downloads.
 4. ~~Add a licences folder with the full third-party texts to the installer~~ — done in 0.9.0
    (`packaging/licences`, installed to `{app}\licences`).
-6. Have the EULA draft (`packaging/windows/EULA.txt`) and the privacy policy draft
-   (`PRIVACY.md`) reviewed by counsel; fill in the publisher's legal name and address.
+6. Have the privacy policy draft (`PRIVACY.md`) reviewed by counsel; fill in the publisher's legal name and address.
 5. Fonts and icons: none bundled yet; any added must be audited here first.
 
 ## Test-only tools (not shipped)

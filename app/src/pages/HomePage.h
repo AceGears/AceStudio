@@ -29,7 +29,6 @@ public:
     explicit HomePage(AppContext& ctx, QWidget* parent = nullptr);
     ~HomePage() override;
     static std::vector<ProjectTemplate> templates();
-    void refreshLicence(const QString& text);
 
 Q_SIGNALS:
     void newProjectRequested();
@@ -51,7 +50,6 @@ private:
     AppContext& m_ctx;
     QLineEdit* m_prompt = nullptr;
     QComboBox* m_type = nullptr;
-    QLabel* m_licence = nullptr;
     QGridLayout* m_recentGrid = nullptr;
     QWidget* m_recentBox = nullptr;
     std::map<QString, QLabel*> m_thumbLabels;

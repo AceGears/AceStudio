@@ -11,8 +11,7 @@ possible, a sample file. Please do not open a public issue for a vulnerability.
 ## Threat model
 
 AceStudio is a desktop app. The user is trusted; **files and network data are not**. An
-attacker may hand the user a crafted project, image, palette, Lua script, AI model or
-licence key, or may run code as *another* user on the same computer, or may host a web
+attacker may hand the user a crafted project, image, palette, Lua script or AI model, or may run code as *another* user on the same computer, or may host a web
 page the user visits.
 
 | Surface | Who can reach it | Defence |
@@ -27,7 +26,6 @@ page the user visits.
 | MCP task files (`<data>/mcp-tasks`) | the same user | random 128-bit task ids; ids are validated before they become file names |
 | AI model downloads | network attacker, compromised host | HTTPS; every file's SHA-256 pinned in the catalogue; manifest paths checked for `..` and absolute paths; models load with `use_safetensors=True` / `torch.load(weights_only=True)`, never pickle |
 | AI Python packages (pip) | compromised PyPI package | versions pinned in `ai_worker/requirements`, installed into AceStudio's own environment; hashes are **not** pinned (see residual risks) |
-| Licence keys | anyone | Ed25519 signatures (Monocypher, RFC 8032 vectors in the tests); only the public key ships; parser fuzzed |
 | Bundled Python | the installer | python.org's own SHA-256 checked at build time; pip wheel hash pinned |
 
 No telemetry is sent. The app makes network connections only for model and package
@@ -37,7 +35,8 @@ downloads the user starts.
 
 Fuzzing: libFuzzer with AddressSanitizer and UndefinedBehaviorSanitizer (clang 18) on nine
 targets (`tests/fuzz`): project files, PNG, GIF, APNG, WebP, palettes, licence keys, Lua
-scripts and MCP messages. Each target ran 10 minutes from seed files (about 12 million
+scripts and MCP messages. (The licence-key target was removed with licensing in 0.10.0;
+eight remain.) Each target ran 10 minutes from seed files (about 12 million
 inputs in all); GIF, MCP, WebP, Lua, PNG and APNG ran a second 10 minutes on the grown corpus
 after the first fixes. The new GIF decoder then ran twice more: 20 minutes with 4 workers
 (which found finding 6), and after that fix another 20 minutes with 4 workers (about 391,000
@@ -78,10 +77,6 @@ left in the upstream code.
 
 ## Residual risks
 
-- **Licence enforcement is client-side.** Keys cannot be forged without AceGears' secret key,
-  but the 14-day trial start is kept in the user's data folder and the registry; someone who
-  deletes both gets a new trial. A patched binary can skip the check. The source repository
-  must stay private, or anyone can build without the check.
 - **pip packages are pinned by version, not hash.** A compromised release of a pinned
   version on PyPI would be installed. Moving to `--require-hashes` lock files is planned.
 - **Nightly builds are public while the repository is public.** The GitHub release with the
@@ -94,8 +89,6 @@ left in the upstream code.
   those folders.
 - **The app bridge trusts every process of the same user.** That is the same trust boundary
   as the user's own files; turn the bridge off when not using an AI assistant.
-- **Development-key builds** accept keys anyone can make (the development secret is public).
-  Only builds made with `ACESTUDIO_LICENCE_PUBLIC_KEY` set may be sold (`tools/licence`).
 
 ## Running the fuzzers
 

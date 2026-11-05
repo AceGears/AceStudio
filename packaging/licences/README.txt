@@ -1,7 +1,7 @@
 AceStudio third-party notices
 =============================
 
-AceStudio is proprietary software by AceGears (see EULA.txt). It includes the
+AceStudio is proprietary software by AceGears, for personal use. It includes the
 following third-party components, each under its own licence. The full texts
 are in this folder.
 
@@ -16,7 +16,6 @@ stb (stb_image etc.)          MIT or public domain             stb-LICENSE.txt
 libwebp 1.6.0                 BSD 3-Clause (+ patent grant)    libwebp-COPYING.txt, libwebp-PATENTS.txt
 Lua 5.4.9                     MIT                              lua-LICENSE.txt
 sol2 3.3.0                    MIT                              sol2-LICENSE.txt
-Monocypher 4.0.3              BSD 2-Clause or CC0              monocypher-LICENCE.txt
 Python 3.12.10 (embeddable)   PSF License                      python\LICENSE.txt
 pip 26.2.2                    MIT                              python\pip-LICENSE.txt
 Microsoft Visual C++ runtime  Microsoft Visual Studio          redistributed under its

@@ -100,7 +100,7 @@ HomePage::HomePage(AppContext& ctx, QWidget* parent) : QWidget(parent), m_ctx(ct
     col->setContentsMargins(40, 28, 40, 32);
     col->setSpacing(18);
 
-    // Header: the logo, the product name and the licence state.
+    // Header: the logo and the product name.
     auto* header = new QHBoxLayout;
     auto* logo = new QLabel(content);
     logo->setPixmap(QPixmap(QStringLiteral(":/branding/logo-256.png")).scaled(112, 112, Qt::KeepAspectRatio, Qt::SmoothTransformation));
@@ -110,9 +110,7 @@ HomePage::HomePage(AppContext& ctx, QWidget* parent) : QWidget(parent), m_ctx(ct
     titles->addStretch();
     titles->addWidget(label(tr("GAME ASSET STUDIO"), "eyebrow", content));
     titles->addWidget(label(tr("Welcome to AceStudio"), "h1", content));
-    m_licence = label(QString(), "muted", content);
     titles->addWidget(label(tr("Version %1").arg(QString::fromLatin1(kVersionString)), "muted", content));
-    titles->addWidget(m_licence);
     titles->addStretch();
     header->addSpacing(12);
     header->addLayout(titles, 1);
@@ -200,8 +198,6 @@ HomePage::HomePage(AppContext& ctx, QWidget* parent) : QWidget(parent), m_ctx(ct
 }
 
 HomePage::~HomePage() { *m_alive = false; }
-
-void HomePage::refreshLicence(const QString& text) { m_licence->setText(text); }
 
 void HomePage::showEvent(QShowEvent* e) {
     QWidget::showEvent(e);

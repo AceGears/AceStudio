@@ -168,12 +168,8 @@ fs::path resolvePath(Runtime& rt, const std::string& p) {
     fail("the script may not use files outside the allowed folders: " + p);
 }
 
-// A path the script writes to: inside the allowed folders, and only when
-// writing is allowed (the licence's trial may have ended).
-fs::path writePath(Runtime& rt, const std::string& p) {
-    if (!rt.opts.readOnlyReason.empty()) fail(rt.opts.readOnlyReason);
-    return resolvePath(rt, p);
-}
+// A path the script writes to: inside the allowed folders.
+fs::path writePath(Runtime& rt, const std::string& p) { return resolvePath(rt, p); }
 
 void noteWritten(Runtime& rt, const fs::path& p) { rt.result.written.push_back(p); }
 

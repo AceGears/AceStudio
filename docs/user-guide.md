@@ -3,19 +3,15 @@
 Version 0.9.0. AceStudio is a pixel-art and game-asset studio for Windows with local AI
 tools. This guide covers everyday use; the README has the full feature list and the CLI.
 
-## 1. Install, trial and licence
+## 1. Install
 
 **Install.** Run `AceStudio-<version>-setup-x64.exe`. It installs for your Windows user only (no
 administrator rights) into `%LOCALAPPDATA%\Programs\AceStudio` by default, adds Start menu entries and
 opens `.acestudio` files with AceStudio. It includes a private Python for the AI features, so
 you do not need to install Python.
 
-**Trial.** Everything works for 14 days. After that you can still open, view and inspect your
-projects, and autosave and crash recovery keep working, but saving and exporting need a
-licence. The status bar shows the days left.
-
-**Licence.** **Help › Licence…** (or the status-bar button) → paste your key → **Activate**.
-Keys are checked offline; AceStudio never contacts a licence server.
+**Personal use.** There is no account, licence key, trial or activation: everything works
+from the first start.
 
 **Uninstall.** Windows Settings › Apps › AceStudio › Uninstall. Your projects, settings and
 downloaded AI models are kept; **Help › Privacy** lists where they are if you want to remove
@@ -260,7 +256,6 @@ The **Tilesets and Tools** tab has the tileset generator and the other asset too
 | AI setup fails | Check the AI panel's message; **Help › Open Logs Folder** has the details. A proxy or firewall must allow pypi.org and download.pytorch.org. |
 | "Not enough video memory" | Close other GPU programs, lower the image size, or use the CPU-only tools. |
 | A model download is refused (401/403) | The model is gated: accept its terms on its website, then enter your access token in **Models…**. |
-| Saving is disabled | The trial has ended: **Help › Licence…**. Your work is not lost; recovery files are kept. |
 | The window layout is broken | **Window › Reset Layout**. |
 
 Logs: **Help › Open Logs Folder**. Include `acestudio.log` when you report a problem.
