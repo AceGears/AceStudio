@@ -32,6 +32,12 @@ public:
 
     QString filePath() const { return m_path; }
     QString displayName() const;
+    // A name for an unsaved document (from the imported file or the generated
+    // asset): the tab shows it and Save As and Export start with it.
+    void setSuggestedName(const QString& name);
+    // The file name without its extension, else the suggested name, else
+    // "untitled": the default for Save As and exports.
+    QString baseName() const;
     bool isModified() const { return !m_editor.history().isClean() || m_neverSaved; }
     int currentFrame() const { return m_frame; }
     LayerId currentLayer() const { return m_layer; }
@@ -142,6 +148,7 @@ private:
 
     Editor m_editor;
     QString m_path;
+    QString m_suggestedName;
     ProjectInfo m_info;
     QPointer<ToolState> m_tools;
     CanvasWidget* m_canvas = nullptr;

@@ -83,12 +83,27 @@ Route routeAnimation(const Image& sprite, std::string_view hint, motion::Action 
             return r;
         }
     }
-    // No hint: the pixels. A sprite that is mostly bright warm colours is fire.
+    // No hint: the pixels. Warm colours alone are not enough (a red potion
+    // is 54 % "flame-coloured"; a coin pouch has a bright yellow pile). A
+    // fire has a bright yellow core that is taller than it is wide: measured
+    // on generated sprites from the test PC, campfire cores 2.3-2.9 times
+    // taller than wide, coin piles 0.4-0.5.
     if (!creature && subj.body != motion::Body::Biped && subj.body != motion::Body::Quadruped) {
         const std::size_t all = opaque(sprite);
         const std::size_t hot = count(fx::autoRegion(sprite, fx::Effect::Fire));
-        if (all > 0 && hot * 100 >= all * 30)
-            return effect(fx::Effect::Fire, r.body, "Most of the sprite is flame-coloured, so it is animated as fire.");
+        std::size_t core = 0;
+        int cx0 = sprite.width(), cy0 = sprite.height(), cx1 = -1, cy1 = -1;
+        for (int y = 0; y < sprite.height(); ++y)
+            for (int x = 0; x < sprite.width(); ++x) {
+                const Rgba8 c = sprite.pixel(x, y);
+                if (c.a == 0 || c.r < 225 || c.g < 170 || c.b > 140) continue;
+                ++core;
+                cx0 = std::min(cx0, x); cx1 = std::max(cx1, x);
+                cy0 = std::min(cy0, y); cy1 = std::max(cy1, y);
+            }
+        const bool tallCore = cx1 >= cx0 && (cy1 - cy0 + 1) * 2 >= (cx1 - cx0 + 1) * 3;
+        if (all > 0 && hot * 10 >= all && core * 50 >= all && tallCore)
+            return effect(fx::Effect::Fire, r.body, "It has flames (a bright core rising from warm colours), so it is animated as fire.");
     }
     r.method = Method::Body;
     switch (subj.body) {

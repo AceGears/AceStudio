@@ -63,7 +63,22 @@ DocumentView::~DocumentView() {
 }
 
 QString DocumentView::displayName() const {
-    return m_path.isEmpty() ? tr("Untitled") : QFileInfo(m_path).fileName();
+    if (!m_path.isEmpty()) return QFileInfo(m_path).fileName();
+    return m_suggestedName.isEmpty() ? tr("Untitled") : m_suggestedName;
+}
+
+void DocumentView::setSuggestedName(const QString& name) {
+    // Only characters that are valid in a Windows file name.
+    QString n = name.trimmed();
+    static const QString bad = QStringLiteral("<>:\"/\\|?*");
+    for (QChar& c : n)
+        if (bad.contains(c) || c.unicode() < 32) c = QLatin1Char('_');
+    m_suggestedName = n.left(80);
+}
+
+QString DocumentView::baseName() const {
+    if (!m_path.isEmpty()) return QFileInfo(m_path).completeBaseName();
+    return m_suggestedName.isEmpty() ? QStringLiteral("untitled") : m_suggestedName;
 }
 
 void DocumentView::refreshCanvas() {

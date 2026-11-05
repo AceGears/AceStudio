@@ -678,7 +678,7 @@ void MainWindow::buildMenus() {
             for (int y = 0; y < b.h; ++y)
                 for (int x = 0; x < b.w; ++x) wings.set(x, y, sel->get(b.x + x, b.y + y));
         }
-        animateSprite(b.empty() ? img : img.copy(b), QFileInfo(v->displayName()).completeBaseName(), wings);
+        animateSprite(b.empty() ? img : img.copy(b), v->baseName(), wings);
     }))->setObjectName(QStringLiteral("anim.sprite"));
 
     QMenu* aiMenu = menuBar()->addMenu(tr("AI &Studio"));
@@ -985,7 +985,7 @@ void MainWindow::buildWorkspaces() {
     m_world = new WorldBuilderPage(m_ctx, [this]() -> std::optional<std::pair<Image, QString>> {
         DocumentView* v = currentView();
         if (!v) return std::nullopt;
-        return std::pair{v->document().composite(v->currentFrame()), QFileInfo(v->displayName()).completeBaseName()};
+        return std::pair{v->document().composite(v->currentFrame()), v->baseName()};
     }, m_pages);
     connect(m_world, &WorldBuilderPage::statusMessage, this, [this](const QString& t) { statusBar()->showMessage(t, 6000); });
     auto* worldTabs = new QTabWidget(m_pages);
@@ -1455,7 +1455,7 @@ bool MainWindow::saveAs(DocumentView* view) {
     if (suggested.isEmpty()) {
         const QString dir = m_ctx.recentProjects().isEmpty() ? QDir::homePath()
                                                              : QFileInfo(m_ctx.recentProjects().first()).absolutePath();
-        suggested = QDir(dir).filePath(QStringLiteral("untitled.acestudio"));
+        suggested = QDir(dir).filePath(view->baseName() + QStringLiteral(".acestudio"));
     }
     QString path = QFileDialog::getSaveFileName(this, tr("Save Project As"), suggested, kProjectFilter);
     if (path.isEmpty()) return false;
@@ -1646,6 +1646,7 @@ DocumentView* MainWindow::openAnimationAsDocument(const std::vector<Image>& fram
     if (!tags.empty())
         if (auto st = d.replaceTags(tags); !st) report(st.error());
     auto* view = new DocumentView(std::move(doc).value(), QString(), ProjectInfo{}, m_tools, m_tabs);
+    view->setSuggestedName(name);
     addView(view);
     view->markNeverSaved();
     return view;
@@ -1671,6 +1672,7 @@ DocumentView* MainWindow::openImageAsDocument(const Image& img, const QString& n
     const LayerId l = doc.value().addLayer(name.toStdString()).value();
     (void)doc.value().setCel(l, 0, Cel{img, 0, 0});
     auto* view = new DocumentView(std::move(doc).value(), QString(), ProjectInfo{}, m_tools, m_tabs);
+    view->setSuggestedName(name);
     addView(view);
     view->markNeverSaved();
     return view;
@@ -1731,7 +1733,7 @@ void MainWindow::exportAnimation(int kind) {
             const QString f = QString::fromStdString(preset["folder"].get<std::string>());
             if (QDir(f).exists()) folder = f;
         }
-        suggested = QDir(folder).filePath(QStringLiteral("untitled.acestudio"));
+        suggested = QDir(folder).filePath(v->baseName() + QStringLiteral(".acestudio"));
     }
     ExportDialog dlg(k, v->document(), v->currentFrame(), suggested, preset, this);
     if (dlg.exec() != QDialog::Accepted) return;
@@ -1784,7 +1786,7 @@ void MainWindow::editOnionSkin() {
 void MainWindow::exportPng() {
     DocumentView* v = currentView();
     if (!v) return;
-    QString base = v->filePath().isEmpty() ? QDir(QDir::homePath()).filePath(QStringLiteral("untitled"))
+    QString base = v->filePath().isEmpty() ? QDir(QDir::homePath()).filePath(v->baseName())
                                            : v->filePath().left(v->filePath().lastIndexOf(QLatin1Char('.')));
     const QString suggested = v->document().frameCount() > 1 ? QStringLiteral("%1_%2.png").arg(base).arg(v->currentFrame() + 1)
                                                             : base + QStringLiteral(".png");

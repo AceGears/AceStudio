@@ -47,6 +47,24 @@ TEST_CASE("The router picks effects from the asset's name", "[router]") {
 
 TEST_CASE("Without a name, the pixels decide", "[router]") {
     CHECK(routeAnimation(campfire(), "").effect == fx::Effect::Fire);
+    // A campfire whose stone ring is most of the sprite (flames ~17 %, as a
+    // generated one on the test PC) is still fire.
+    Image ring(40, 40);
+    ring.fillRect({2, 30, 36, 8}, Rgba8{130, 130, 135, 255});
+    ring.fillRect({6, 26, 28, 6}, kBrown);
+    ring.fillRect({16, 10, 8, 16}, Rgba8{240, 110, 30, 255});
+    ring.fillRect({18, 14, 4, 11}, Rgba8{255, 225, 100, 255});
+    CHECK(routeAnimation(ring, "").method == Method::Effect);
+    // Warm but not fire: a red potion (no bright core) and a coin pouch (a
+    // wide yellow pile).
+    Image potion(24, 24);
+    potion.fillRect({8, 2, 8, 4}, kBrown);
+    potion.fillRect({4, 6, 16, 16}, Rgba8{220, 40, 40, 255});
+    CHECK(routeAnimation(potion, "").method != Method::Effect);
+    Image pouch(24, 24);
+    pouch.fillRect({3, 8, 18, 15}, kBrown);
+    pouch.fillRect({4, 4, 16, 5}, Rgba8{250, 200, 60, 255});
+    CHECK(routeAnimation(pouch, "").method != Method::Effect);
     const Route b = routeAnimation(biped(), "");
     CHECK(b.method == Method::Body);
     CHECK(b.body == motion::Body::Biped);
