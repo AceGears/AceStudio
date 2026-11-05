@@ -1,8 +1,11 @@
 #include "SpriteAnimateDialog.h"
 
 #include "QtBridge.h"
+#include "ai/AiService.h"
 
+#include "acestudio/core/AiWorker.h"
 #include "acestudio/core/AnimRouter.h"
+#include "acestudio/core/ModelCatalog.h"
 #include "acestudio/core/PngCodec.h"
 
 #include <QCheckBox>
@@ -45,8 +48,9 @@ const char* bodyLabel(::acestudio::motion::Body b) {
 }
 } // namespace
 
-SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& name, OpenFn open, QWidget* parent, const Mask& wingMask)
-    : QDialog(parent), m_sprite(sprite), m_wingMask(wingMask), m_open(std::move(open)) {
+SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& name, OpenFn open, QWidget* parent, const Mask& wingMask,
+                                         AiService* ai)
+    : QDialog(parent), m_sprite(sprite), m_wingMask(wingMask), m_open(std::move(open)), m_ai(ai) {
     m_name = name;
     setWindowTitle(tr("Animate Sprite"));
     m_subject = ::acestudio::motion::analyzeSubject(m_sprite);
@@ -136,6 +140,9 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     m_method->addItem(tr("Flag or cloth (wave)"), code(::acestudio::fx::Effect::Flag));
     m_method->addItem(tr("Smoke (rise)"), code(::acestudio::fx::Effect::Smoke));
     m_method->addItem(tr("Magic (pulse and glow)"), code(::acestudio::fx::Effect::Pulse));
+    // New drawings where moving pixels cannot work (a wingbeat): FLUX.2 klein
+    // redraws the wings around the protected body, on this PC.
+    if (m_ai) m_method->addItem(tr("AI key poses: wing flap (FLUX.2 klein)"), -2);
     if (route.method == ::acestudio::anim::Method::Effect)
         m_method->setCurrentIndex(std::max(0, m_method->findData(code(route.effect, route.fireStyle))));
     m_method->setToolTip(tr("Effects animate only the part that should move (the flames, the canopy, the cloth) "
@@ -173,6 +180,13 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     m_speed->setSuffix(QStringLiteral(" %"));
     m_speed->setToolTip(tr("Preview playback speed (the frame durations you open or export do not change)"));
     form->addRow(tr("Preview &speed:"), m_speed);
+    m_poseButton = new QPushButton(tr("Draw the Poses"), this);
+    m_poseButton->setToolTip(tr("FLUX.2 klein redraws the wings in three new positions around the unchanged body "
+                                "(two tries each, the more consistent one is kept). About a minute on this PC."));
+    m_poseButton->setAutoDefault(false);
+    m_poseButton->setVisible(false);
+    connect(m_poseButton, &QPushButton::clicked, this, &SpriteAnimateDialog::startPoses);
+    form->addRow(QString(), m_poseButton);
     m_wingLine = new QSlider(Qt::Horizontal, this);
     m_wingLine->setRange(10, 90);
     m_wingLine->setValue(45);
@@ -298,6 +312,108 @@ std::vector<::acestudio::motion::Action> SpriteAnimateDialog::checkedActions() c
     return o;
 }
 
+bool SpriteAnimateDialog::aiMode() const { return m_method && m_method->currentData().toInt() == -2; }
+
+SpriteAnimateDialog::~SpriteAnimateDialog() {
+    // Jobs still running are cancelled: their result has nowhere to go.
+    if (m_ai)
+        for (const std::string& id : m_poseJobs)
+            if (const ai::Job* j = m_ai->job(id); j && (j->state == ai::JobState::Queued || j->state == ai::JobState::Running)) m_ai->cancel(id);
+}
+
+void SpriteAnimateDialog::startPoses() {
+    if (!m_ai || !m_ai->catalog() || !m_ai->store()) return;
+    auto installed = [this](const char* id) -> const ::acestudio::ai::ModelEntry* {
+        const ::acestudio::ai::ModelEntry* m = m_ai->catalog()->find(id);
+        return m && m_ai->store()->state(*m) == ::acestudio::ai::InstallState::Installed ? m : nullptr;
+    };
+    const ::acestudio::ai::ModelEntry* klein = installed("flux2-klein-4b");
+    const ::acestudio::ai::ModelEntry* cut = installed("birefnet-general");
+    if (!cut) cut = installed("birefnet-lite");
+    if (!klein || !cut) {
+        m_info->setText(tr("AI key poses need FLUX.2 klein and a BiRefNet model (AI Studio › Models…)."));
+        return;
+    }
+    auto path = [this](const ::acestudio::ai::ModelEntry& m) {
+        const auto u = m_ai->store()->entryPath(m).u8string();
+        return std::string(u.begin(), u.end());
+    };
+    m_plan = ::acestudio::keypose::planFor(::acestudio::motion::Action::Flap, m_subject.body);
+    m_poseWings = ::acestudio::keypose::wingMask(m_sprite, m_wingLine->value() / 100.0, m_wingFrom->value() / 100.0,
+                                                 m_wingTo->value() / 100.0, m_wingMask);
+    m_inpaint = ::acestudio::keypose::inpaintInputs(m_sprite, m_poseWings, 512);
+    m_poseJobs.clear();
+    m_aiClip.reset();
+    m_poseNotes.clear();
+    const std::string subject = m_name.isEmpty() ? std::string("winged creature") : m_name.toStdString();
+    for (const ::acestudio::keypose::PoseSpec& pose : m_plan.poses) {
+        if (pose.original) continue;
+        nlohmann::json p = {{"model_dir", path(*klein)},
+                            {"prompt", ::acestudio::keypose::posePrompt(subject, pose)},
+                            {"width", m_inpaint.init.width()},
+                            {"height", m_inpaint.init.height()},
+                            {"steps", 4},
+                            {"seed", 4242},
+                            {"count", 2},
+                            {"strength", 1.0},
+                            {"optimize", true},
+                            {"cutout", {{"model", path(*cut)}, {"threshold", 0.5}}}};
+        if (const ::acestudio::ai::ModelEntry* lora = installed("pixel-art-klein-lora")) p["lora"] = {{"path", path(*lora)}, {"scale", lora->loraScale}};
+        auto id = m_ai->submit("image.klein", std::move(p), tr("Key pose: %1").arg(qs(pose.key)),
+                               {{"init_image", &m_inpaint.init}, {"mask", &m_inpaint.mask}, {"reference0", &m_inpaint.init}});
+        if (!id) {
+            m_info->setText(qs(id.error().message));
+            return;
+        }
+        m_poseJobs.push_back(id.value());
+    }
+    disconnect(m_poseConn);
+    m_poseConn = connect(m_ai, &AiService::jobFinished, this, &SpriteAnimateDialog::onPoseJob);
+    m_poseButton->setEnabled(false);
+    m_info->setText(tr("Drawing %n pose(s) on this PC…", nullptr, static_cast<int>(m_poseJobs.size())));
+}
+
+void SpriteAnimateDialog::onPoseJob(const QString& qid) {
+    if (std::find(m_poseJobs.begin(), m_poseJobs.end(), qid.toStdString()) == m_poseJobs.end()) return;
+    int done = 0;
+    for (const std::string& id : m_poseJobs)
+        if (const ai::Job* j = m_ai->job(id); j && j->state != ai::JobState::Queued && j->state != ai::JobState::Running) ++done;
+    if (done < static_cast<int>(m_poseJobs.size())) {
+        m_info->setText(tr("Drawn %1 of %2 poses…").arg(done).arg(m_poseJobs.size()));
+        return;
+    }
+    disconnect(m_poseConn);
+    m_poseButton->setEnabled(true);
+    std::vector<::acestudio::keypose::Aligned> chosen;
+    std::size_t g = 0;
+    for (const ::acestudio::keypose::PoseSpec& pose : m_plan.poses) {
+        if (pose.original) continue;
+        const ai::Job* j = m_ai->job(m_poseJobs[g++]);
+        std::vector<::acestudio::keypose::Aligned> variants;
+        if (j && j->state == ai::JobState::Succeeded)
+            for (int i = 0; i < 2; ++i)
+                if (auto o = j->outputs.find("image" + std::to_string(i)); o != j->outputs.end())
+                    if (auto raw = readPng(o->second)) {
+                        const Image reduced = ::acestudio::keypose::reduceToSprite(raw.value(), m_inpaint, m_sprite);
+                        auto a = ::acestudio::keypose::align(reduced, m_sprite, m_plan, 3);
+                        ::acestudio::keypose::restoreBody(a.image, m_sprite, m_poseWings);
+                        variants.push_back(std::move(a));
+                    }
+        if (variants.empty()) {
+            m_poseNotes << tr("%1: not drawn (%2)").arg(qs(pose.key), j ? qs(j->error).section(QLatin1Char('\n'), 0, 0) : tr("job lost"));
+            m_info->setText(m_poseNotes.join(QStringLiteral("<br>")));
+            return;
+        }
+        auto& b = variants[::acestudio::keypose::best(variants)];
+        QString note = tr("%1: body match %2%, identity %3%").arg(qs(pose.key)).arg(qRound(b.anchorMatch * 100)).arg(qRound(b.identity * 100));
+        for (const std::string& issue : b.issues) note += QStringLiteral(" · ") + qs(issue);
+        m_poseNotes << note;
+        chosen.push_back(std::move(b));
+    }
+    m_aiClip = ::acestudio::keypose::assemble(m_plan, m_sprite, chosen);
+    rebuild();
+}
+
 std::optional<::acestudio::fx::Effect> SpriteAnimateDialog::effect() const {
     const int e = m_method ? m_method->currentData().toInt() : -1;
     if (e < 0) return std::nullopt;
@@ -327,7 +443,7 @@ std::vector<::acestudio::motion::Clip> SpriteAnimateDialog::effectClips(const Im
 }
 
 std::vector<::acestudio::motion::Clip> SpriteAnimateDialog::fullClips() {
-    if (m_previewScale >= 1.0 || m_clips.empty()) return m_clips;
+    if (aiMode() || m_previewScale >= 1.0 || m_clips.empty()) return m_clips;   // AI poses are drawn at full size
     if (effect()) {
         QApplication::setOverrideCursor(Qt::WaitCursor);
         auto clips = effectClips(m_sprite);
@@ -345,7 +461,31 @@ std::vector<::acestudio::motion::Clip> SpriteAnimateDialog::fullClips() {
 }
 
 void SpriteAnimateDialog::rebuild() {
-    if (!m_info || !m_preview || !m_customBox || !m_speed) return;   // still being built
+    if (!m_info || !m_preview || !m_customBox || !m_speed || !m_poseButton) return;   // still being built
+    m_poseButton->setVisible(aiMode());
+    if (aiMode()) {
+        // The wing line and span say which pixels are wings (the rest of the
+        // body is protected while the wings are redrawn).
+        m_actions->setEnabled(false);
+        m_body->setEnabled(false);
+        m_customBox->setVisible(false);
+        for (QWidget* w : std::initializer_list<QWidget*>{m_wingLine, m_wingLabel, m_wingFrom, m_wingTo, m_spanLabel}) w->setVisible(true);
+        m_clips.clear();
+        if (m_aiClip) {
+            m_clips = {*m_aiClip};
+            m_previewClip = 0;
+            m_previewFrame = 0;
+            m_info->setText(tr("Wing flap from AI key poses, %1 frames, the sprite's own colours; the body is unchanged.").arg(m_aiClip->frames.size()) +
+                            QStringLiteral("<br>") + m_poseNotes.join(QStringLiteral("<br>")));
+            showFrame();
+        } else if (m_poseJobs.empty() || m_poseButton->isEnabled()) {
+            m_timer->stop();
+            m_preview->clear();
+            m_info->setText(tr("FLUX.2 klein draws the wings in three new positions (level, down, rising) around the unchanged body. "
+                               "Set the wing line so that only the wings are above it, then Draw the Poses."));
+        }
+        return;
+    }
     const bool fxMode = effect().has_value();
     m_actions->setEnabled(!fxMode);
     m_body->setEnabled(!fxMode);

@@ -1662,7 +1662,7 @@ void MainWindow::animateSprite(const Image& sprite, const QString& name, const M
                                    const QString& n) {
                                 if (openAnimationAsDocument(frames, durations, n, tags)) showWorkspace(Workspace::Animation);
                             },
-                            this, wingMask);
+                            this, wingMask, m_ai);
     dlg.exec();
 }
 

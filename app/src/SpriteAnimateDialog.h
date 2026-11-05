@@ -6,6 +6,7 @@
 
 #include "acestudio/core/Document.h"
 #include "acestudio/core/Effects.h"
+#include "acestudio/core/KeyPoses.h"
 #include "acestudio/core/SpriteMotion.h"
 
 #include <QDialog>
@@ -20,18 +21,24 @@ class QDoubleSpinBox;
 class QLabel;
 class QListWidget;
 class QSlider;
+class QPushButton;
 class QSpinBox;
 class QTimer;
 class QWidget;
 
 namespace acestudio::ui {
 
+class AiService;
+
 class SpriteAnimateDialog : public QDialog {
     Q_OBJECT
 public:
     using OpenFn = std::function<void(const std::vector<Image>& frames, const std::vector<int>& durations,
                                       const std::vector<AnimationTag>& tags, const QString& name)>;
-    SpriteAnimateDialog(const Image& sprite, const QString& name, OpenFn open, QWidget* parent = nullptr, const Mask& wingMask = {});
+    // `ai` (optional) enables AI key poses (new drawings for wings and turns).
+    SpriteAnimateDialog(const Image& sprite, const QString& name, OpenFn open, QWidget* parent = nullptr, const Mask& wingMask = {},
+                        AiService* ai = nullptr);
+    ~SpriteAnimateDialog() override;
 
 private:
     ::acestudio::motion::Options options(bool full) const;
@@ -46,6 +53,10 @@ private:
     // The chosen effect, or nothing for body motion.
     std::optional<::acestudio::fx::Effect> effect() const;
     std::vector<::acestudio::motion::Clip> effectClips(const Image& sprite) const;
+    // AI key poses.
+    bool aiMode() const;
+    void startPoses();
+    void onPoseJob(const QString& id);
 
     Image m_sprite;
     Mask m_wingMask;
@@ -61,6 +72,15 @@ private:
     int m_previewClip = 0;
     int m_previewFrame = 0;
 
+    AiService* m_ai = nullptr;
+    QPushButton* m_poseButton = nullptr;
+    ::acestudio::keypose::Plan m_plan;
+    ::acestudio::keypose::InpaintInputs m_inpaint;
+    Mask m_poseWings;
+    std::vector<std::string> m_poseJobs;   // one per pose to draw, in plan order
+    std::optional<::acestudio::motion::Clip> m_aiClip;
+    QStringList m_poseNotes;
+    QMetaObject::Connection m_poseConn;
     QComboBox* m_method = nullptr;
     QLabel* m_route = nullptr;
     QSpinBox* m_speed = nullptr;
