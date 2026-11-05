@@ -168,7 +168,7 @@ TEST_CASE("a wing flap folds the part above the wing line", "[motion]") {
     auto clip = animate(dragon, o);
     REQUIRE(clip);
     const auto& fr = clip.value().frames;
-    REQUIRE(fr.size() == 6);
+    REQUIRE(fr.size() == 8);   // fast downstroke, slower recovery
     // Frame 0: wing up (skin above the body). Frame 3: folded below the line, so skin appears under the body's top.
     auto skinBelowRow = [&](const Image& f, int row) {
         for (int y = row; y < f.height(); ++y)
@@ -387,4 +387,103 @@ TEST_CASE("A three-quarter stance (far foot higher) walks with every foot ground
     const ClipCheck chk = checkClip(clip.value());
     for (const auto& issue : chk.issues) UNSCOPED_INFO(issue);
     CHECK(chk.floatingFrames == 0);
+}
+
+namespace {
+// Is `part` (a rectangle of `src`) found unchanged somewhere in `frame`?
+bool foundIntact(const Image& src, const IntRect& part, const Image& frame) {
+    for (int oy = 0; oy + part.h <= frame.height(); ++oy)
+        for (int ox = 0; ox + part.w <= frame.width(); ++ox) {
+            bool ok = true;
+            for (int y = 0; y < part.h && ok; ++y)
+                for (int x = 0; x < part.w && ok; ++x) {
+                    const Rgba8 a = src.pixel(part.x + x, part.y + y);
+                    if (a.a && frame.pixel(ox + x, oy + y) != a) ok = false;
+                }
+            if (ok) return true;
+        }
+    return false;
+}
+
+// A side-view walker, toes pointing right: boots stick out forward.
+Image sideWalker(bool faceLeft) {
+    Image img(28, 44);
+    img.fillRect({9, 2, 9, 10}, kSkin);
+    img.fillRect({8, 12, 12, 14}, kShirt);
+    img.fillRect({9, 26, 3, 14}, kPants);
+    img.fillRect({15, 26, 3, 14}, kPants);
+    img.fillRect({9, 40, 5, 3}, kInk);    // boots, toes to the right
+    img.fillRect({15, 40, 5, 3}, kInk);
+    if (!faceLeft) return img;
+    Image m(img.width(), img.height());
+    for (int y = 0; y < img.height(); ++y)
+        for (int x = 0; x < img.width(); ++x) m.setPixel(img.width() - 1 - x, y, img.pixel(x, y));
+    return m;
+}
+} // namespace
+
+TEST_CASE("The walk moves pixels, it never redraws them", "[motion][rig]") {
+    const Image src = sideWalker(false);
+    for (Action a : {Action::Walk, Action::Run, Action::Idle}) {
+        Options o;
+        o.action = a;
+        o.frames = 8;
+        auto clip = animate(src, o);
+        REQUIRE(clip);
+        for (const Image& f : clip.value().frames) {
+            // The head and torso are a whole-pixel copy in every frame.
+            CHECK(foundIntact(src, {9, 2, 9, 10}, f));
+            CHECK(foundIntact(src, {8, 14, 12, 10}, f));
+            // Each boot keeps its exact shape.
+            CHECK(foundIntact(src, {9, 40, 5, 3}, f));
+            CHECK(foundIntact(src, {15, 40, 5, 3}, f));
+            // Only the sprite's own colours.
+            CHECK(colours(f).size() <= colours(src).size());
+        }
+    }
+}
+
+TEST_CASE("The idle breathes without moving the feet", "[motion][rig]") {
+    const Image src = sideWalker(false);
+    Options o;
+    o.action = Action::Idle;
+    o.frames = 8;
+    auto clip = animate(src, o);
+    REQUIRE(clip);
+    const auto& fr = clip.value().frames;
+    // The boots sit at the same place in every frame; the head rises in some.
+    const IntRect boots0 = fr[0].opaqueBounds();
+    bool rose = false;
+    for (const Image& f : fr) {
+        CHECK(lowestRow(f) == lowestRow(fr[0]));
+        rose = rose || f.opaqueBounds().y < boots0.y;
+    }
+    CHECK(rose);
+}
+
+TEST_CASE("A walker steps the way it faces", "[motion][rig]") {
+    for (bool left : {false, true}) {
+        const Image src = sideWalker(left);
+        const Subject s = analyzeSubject(src);
+        CHECK(s.facing == (left ? -1 : 1));
+        Options o;
+        o.action = Action::Walk;
+        o.frames = 8;
+        auto clip = animate(src, o);
+        REQUIRE(clip);
+        // In the first half of the swing the lifted foot moves forward: the
+        // boot pixels' centre in the lowest rows shifts towards the facing.
+        auto soleCentre = [](const Image& f) {
+            double sx = 0;
+            int n = 0;
+            const int y = lowestRow(f);
+            for (int x = 0; x < f.width(); ++x)
+                if (f.pixel(x, y).a) { sx += x; ++n; }
+            return n ? sx / n : 0.0;
+        };
+        // Frames 1-3: one foot planted (the other lifted). A planted foot
+        // moves back as the body goes forward.
+        const double d = soleCentre(clip.value().frames[3]) - soleCentre(clip.value().frames[1]);
+        CHECK((left ? d > 0 : d < 0));
+    }
 }

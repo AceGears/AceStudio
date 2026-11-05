@@ -1,5 +1,7 @@
 #include "acestudio/core/SpriteMotion.h"
 
+#include "PixelRig.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -32,7 +34,7 @@ const std::vector<ActionInfo> kActions = {
     {Action::Cast, "cast", "Cast", 6, 100, false},
     {Action::Swim, "swim", "Swim", 6, 120, true},
     {Action::Fly, "fly", "Fly / hover", 6, 110, true},
-    {Action::Flap, "flap", "Wing flap", 6, 80, true},
+    {Action::Flap, "flap", "Wing flap", 8, 75, true},
     {Action::Climb, "climb", "Climb", 6, 110, true},
     {Action::Sit, "sit", "Sit", 4, 110, false},
     {Action::Sleep, "sleep", "Sleep", 4, 300, true},
@@ -753,6 +755,24 @@ Subject analyzeSubject(const Image& sprite) {
                     if (side == 0) while (r.x + r.w < lx0 + 1 && armColumn(r.x + r.w)) ++r.w;
                     else while (r.x - 1 > lx1 - 1 && armColumn(r.x - 1)) { --r.x; ++r.w; }
                 }
+                // An arm is drawn apart from the torso beside it: its inner
+                // edge differs in colour (or an outline) from the torso column
+                // next to it in most rows. A shirt or coat wider than the legs
+                // is the same colour on both sides and stays with the body.
+                if (!r.empty()) {
+                    const int inner = side == 0 ? r.x + r.w - 1 : r.x, next = side == 0 ? inner + 1 : inner - 1;
+                    int both = 0, differ = 0;
+                    for (int y = r.y; y < r.y + r.h; ++y) {
+                        if (next < bb.x || next >= bb.x + bb.w) break;
+                        const Rgba8 a = sprite.pixel(inner, y), b = sprite.pixel(next, y);
+                        if (a.a == 0 || b.a == 0) continue;
+                        ++both;
+                        const int dl = std::abs((a.r * 299 + a.g * 587 + a.b * 114) - (b.r * 299 + b.g * 587 + b.b * 114)) / 1000;
+                        const int dc = std::abs(a.r - b.r) + std::abs(a.g - b.g) + std::abs(a.b - b.b);
+                        if (dl > 24 || dc > 60) ++differ;
+                    }
+                    if (both > 0 && differ * 2 < both) r = {};
+                }
                 // Long and thin, mostly continuous, not most of the figure.
                 if (!r.empty() && r.w >= 2 && r.h >= 2 * r.w && r.h >= bb.h / 5 && r.w * 10 <= bb.w * 3 && rows * 4 >= r.h * 3)
                     s.arms.push_back(r);
@@ -775,6 +795,28 @@ Subject analyzeSubject(const Image& sprite) {
                     if (sprite.pixel(x, y).a > 0) lowest = std::max(lowest, y);
             s.footBottoms.push_back(lowest);
         }
+    // Facing: a foot sticks out past its leg on the side the toes point to.
+    if (s.legTop >= 0 && s.feet.size() >= 2 && !s.frontView) {
+        double sum = 0;
+        int n = 0;
+        const int midRow = (s.legTop + s.footRow) / 2;
+        for (std::size_t i = 0; i < s.feet.size(); ++i) {
+            const auto [x0, x1] = s.feet[i];
+            int m0 = -1, m1 = -1;
+            for (int x = x0; x <= x1; ++x)
+                if (sprite.pixel(x, midRow).a > 0) { if (m0 < 0) m0 = x; m1 = x; }
+            const int sole = i < s.footBottoms.size() ? s.footBottoms[i] : s.footRow;
+            int f0 = -1, f1 = -1;
+            for (int y = sole - std::max(1, (sole - s.legTop) / 5); y <= sole; ++y)
+                for (int x = x0; x <= x1; ++x)
+                    if (sprite.pixel(x, y).a > 0) { f0 = f0 < 0 ? x : std::min(f0, x); f1 = std::max(f1, x); }
+            if (m0 < 0 || f0 < 0) continue;
+            // Toe overhang forward minus heel overhang back.
+            sum += (f1 - m1) - (m0 - f0);
+            ++n;
+        }
+        if (n > 0) s.facing = sum / n > 0.5 ? 1 : sum / n < -0.5 ? -1 : 0;
+    }
     s.headLeft = spriteFacesLeft(sprite);
     return s;
 }
@@ -874,6 +916,12 @@ Result<std::vector<Clip>> animatePack(const Image& sprite, const std::vector<Act
         // Swimmers get longer, smoother cycles for the wave.
         const bool smooth = body == Body::Swimmer && (a == Action::Idle || a == Action::Swim);
         const int frames = std::clamp(base.frames > 0 && list.size() == 1 ? base.frames : smooth ? 12 : info.frames, 1, 64);
+        // Walks, runs and idles of bodies with legs: whole-pixel moves only.
+        const detail::WingSpec wing{base.wingLine, base.wingFrom, base.wingTo, base.wingMask.isNull() ? nullptr : &base.wingMask};
+        if (auto rig = detail::rigRender(sprite, subj, body, a, frames, amount, wing)) {
+            rendered.push_back({std::move(rig->frames), rig->box});
+            continue;
+        }
         rendered.push_back(render(sprite, subj, body, a, frames, info.loops, amount, base.custom, base.wingLine, base.wingFrom, base.wingTo, base.wingMask));
     }
     const IntRect box = usedBox(rendered);

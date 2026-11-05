@@ -8,6 +8,7 @@ add_library(acestudio_core STATIC
     src/ResourceProfile.cpp
     src/Effects.cpp
     src/AnimRouter.cpp
+    src/PixelRig.cpp
     src/AnimCodec.cpp
     src/Animation.cpp
     src/AnimationQA.cpp

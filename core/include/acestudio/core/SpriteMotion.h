@@ -66,6 +66,9 @@ struct Subject {
     // Lowest row of each foot (same order as `feet`). In a three-quarter view
     // the far foot stands a row or two higher: each foot keeps its own ground.
     std::vector<int> footBottoms;
+    // Which way a footed body faces, from where its toes point: +1 right,
+    // -1 left, 0 unknown or seen from the front. A walk moves forward.
+    int facing = 0;
 };
 Subject analyzeSubject(const Image& sprite);
 
