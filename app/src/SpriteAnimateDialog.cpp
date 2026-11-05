@@ -123,14 +123,21 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     m_method = new QComboBox(this);
     m_method->setAccessibleName(tr("Animation method"));
     m_method->addItem(tr("Body motion (actions)"), -1);
-    m_method->addItem(tr("Fire (flicker and rise)"), static_cast<int>(::acestudio::fx::Effect::Fire));
-    m_method->addItem(tr("Water (ripple)"), static_cast<int>(::acestudio::fx::Effect::Water));
-    m_method->addItem(tr("Plant (sway)"), static_cast<int>(::acestudio::fx::Effect::Sway));
-    m_method->addItem(tr("Flag or cloth (wave)"), static_cast<int>(::acestudio::fx::Effect::Flag));
-    m_method->addItem(tr("Smoke (rise)"), static_cast<int>(::acestudio::fx::Effect::Smoke));
-    m_method->addItem(tr("Magic (pulse and glow)"), static_cast<int>(::acestudio::fx::Effect::Pulse));
+    // Item data: effect * 16 + fire style.
+    using FS = ::acestudio::fx::FireStyle;
+    auto code = [](::acestudio::fx::Effect e, FS s = FS::Campfire) { return static_cast<int>(e) * 16 + static_cast<int>(s); };
+    m_method->addItem(tr("Fire: campfire"), code(::acestudio::fx::Effect::Fire, FS::Campfire));
+    m_method->addItem(tr("Fire: torch (narrow, fast)"), code(::acestudio::fx::Effect::Fire, FS::Torch));
+    m_method->addItem(tr("Fire: furnace (strong, bright)"), code(::acestudio::fx::Effect::Fire, FS::Furnace));
+    m_method->addItem(tr("Fire: raging (big, splitting)"), code(::acestudio::fx::Effect::Fire, FS::Raging));
+    m_method->addItem(tr("Fire: magic (swirling)"), code(::acestudio::fx::Effect::Fire, FS::Magic));
+    m_method->addItem(tr("Water (ripple)"), code(::acestudio::fx::Effect::Water));
+    m_method->addItem(tr("Plant (sway)"), code(::acestudio::fx::Effect::Sway));
+    m_method->addItem(tr("Flag or cloth (wave)"), code(::acestudio::fx::Effect::Flag));
+    m_method->addItem(tr("Smoke (rise)"), code(::acestudio::fx::Effect::Smoke));
+    m_method->addItem(tr("Magic (pulse and glow)"), code(::acestudio::fx::Effect::Pulse));
     if (route.method == ::acestudio::anim::Method::Effect)
-        m_method->setCurrentIndex(std::max(0, m_method->findData(static_cast<int>(route.effect))));
+        m_method->setCurrentIndex(std::max(0, m_method->findData(code(route.effect, route.fireStyle))));
     m_method->setToolTip(tr("Effects animate only the part that should move (the flames, the canopy, the cloth) "
                             "in the sprite's own colours, as a seamless loop. No AI is used."));
     form->addRow(tr("Me&thod:"), m_method);
@@ -294,12 +301,13 @@ std::vector<::acestudio::motion::Action> SpriteAnimateDialog::checkedActions() c
 std::optional<::acestudio::fx::Effect> SpriteAnimateDialog::effect() const {
     const int e = m_method ? m_method->currentData().toInt() : -1;
     if (e < 0) return std::nullopt;
-    return static_cast<::acestudio::fx::Effect>(e);
+    return static_cast<::acestudio::fx::Effect>(e / 16);
 }
 
 std::vector<::acestudio::motion::Clip> SpriteAnimateDialog::effectClips(const Image& sprite) const {
     ::acestudio::fx::EffectOptions o;
     o.effect = *effect();
+    o.fire = static_cast<::acestudio::fx::FireStyle>(m_method->currentData().toInt() % 16);
     o.frames = m_frames->value();   // 0 (Default) = the effect's own loop length
     o.amount = m_amount->value() / 100.0;
     const ::acestudio::fx::EffectClip fxc = ::acestudio::fx::animateEffect(sprite, o);

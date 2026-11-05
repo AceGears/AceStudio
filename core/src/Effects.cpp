@@ -109,6 +109,29 @@ struct TileNoise {
     }
 };
 
+struct FireParams {
+    double turbulence;   // how strongly the rising noise eats the flame
+    int risePeriods;     // noise periods risen per loop (speed of the flicker)
+    double warp;         // sideways lean and swirl of the tongues
+    double lean;         // constant lean (torch in a draught), px at the tip
+    double width, height;
+    double warpCell;     // size of the swirl (larger = slower, broader curls)
+    int sparks;          // rising sparks at a time
+    double core;         // shifts the levels: > 0 gives a larger bright core
+    int frames, frameMs;
+};
+
+FireParams fireParams(FireStyle s) {
+    switch (s) {
+    case FireStyle::Torch: return {0.95, 2, 0.7, 0.7, 1.05, 1.1, 5.0, 1, 0.0, 10, 60};
+    case FireStyle::Furnace: return {1.2, 2, 1.0, 0.0, 1.3, 1.05, 6.0, 4, 0.12, 12, 70};
+    case FireStyle::Raging: return {1.45, 2, 1.6, 0.0, 1.45, 1.35, 6.0, 5, 0.04, 16, 70};
+    case FireStyle::Magic: return {0.9, 1, 2.2, 0.0, 1.2, 1.15, 9.0, 2, 0.0, 16, 90};
+    case FireStyle::Campfire: break;
+    }
+    return {1.0, 1, 1.0, 0.0, 1.25, 1.15, 6.0, 2, 0.0, 12, 80};
+}
+
 // Fire, generated rather than bent. The drawn flame is only used for its
 // place, size and colours; every frame a new flame is made:
 //  - a teardrop "fuel" shape over the logs, strongest at the base centre;
@@ -123,7 +146,8 @@ struct TileNoise {
 EffectClip fire(const Image& src, const Mask& flameColours, const EffectOptions& o) {
     EffectClip out;
     const int W = src.width(), H = src.height();
-    const int frames = o.frames > 0 ? o.frames : 12;
+    const FireParams fp = fireParams(o.fire);
+    const int frames = o.frames > 0 ? o.frames : fp.frames;
     auto lumaOf = [](const Rgba8& c) { return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b; };
     // Flame, logs, embers. Dull warm colours (brown wood) are not flame.
     Mask flame(W, H), logs(W, H), embers(W, H);
@@ -147,7 +171,7 @@ EffectClip fire(const Image& src, const Mask& flameColours, const EffectOptions&
     out.region = flame;
     const IntRect fb = maskBounds(flame);
     if (fb.empty()) {
-        for (int f = 0; f < frames; ++f) { out.frames.push_back(src); out.durations.push_back(o.frameMs); }
+        for (int f = 0; f < frames; ++f) { out.frames.push_back(src); out.durations.push_back(o.frameMs > 0 ? o.frameMs : fp.frameMs); }
         return out;
     }
     // Ramp: the flame's colours from red through orange to yellow (by hue,
@@ -195,38 +219,63 @@ EffectClip fire(const Image& src, const Mask& flameColours, const EffectOptions&
     auto tile = [&](double cw, double ch, unsigned salt) {
         return TileNoise{cw, ch, std::max(1, static_cast<int>(std::ceil(W / cw)) + 1), std::max(1, static_cast<int>(std::lround(period / ch))), o.seed * 977u + salt};
     };
-    const TileNoise n1 = tile(3.0, 7.5, 1), n2 = tile(1.8, 4.5, 2), n3 = tile(1.2, 3.0, 3), warp = tile(6.0, 12.0, 4);
+    const TileNoise n1 = tile(3.0, 7.5, 1), n2 = tile(1.8, 4.5, 2), n3 = tile(1.2, 3.0, 3), warp = tile(fp.warpCell, fp.warpCell * 2, 4);
     static const double kLevels[] = {0.06, 0.16, 0.30, 0.47, 0.66, 0.86};
     for (int f = 0; f < frames; ++f) {
         const double t = static_cast<double>(f) / frames;
-        const double rise = t * period;
+        const double rise = t * period * fp.risePeriods;
         Image img = src;
         for (int y = 0; y < H; ++y)
             for (int x = 0; x < W; ++x)
                 if (flame.get(x, y)) img.setPixel(x, y, {0, 0, 0, 0});
-        const int top = std::max(0, base - static_cast<int>(flameH * 1.3));
+        const int top = std::max(0, base - static_cast<int>(flameH * 1.3 * fp.height));
+        // Levels first, colours after: the rim of the flame is drawn darker
+        // (as pixel artists do), so a small flame does not end in a flat
+        // bright edge.
+        std::vector<int> lvl(static_cast<std::size_t>(W) * static_cast<std::size_t>(H), -1);
+        auto L = [&](int x, int y) -> int& { return lvl[static_cast<std::size_t>(y) * static_cast<std::size_t>(W) + static_cast<std::size_t>(x)]; };
         for (int y = top; y <= base + 1 && y < H; ++y)
             for (int x = 0; x < W; ++x) {
                 if (logs.get(x, y)) continue;   // logs and stones in front
-                const double u = std::clamp((base + 1.0 - y) / (flameH * 1.15), 0.0, 1.5);
-                const double wid = halfW * 1.25 * (1.05 - 0.55 * std::min(u, 1.0));
-                const double d = std::abs(x - cx) / std::max(0.5, wid);
+                const double u = std::clamp((base + 1.0 - y) / (flameH * 1.15 * fp.height), 0.0, 1.5);
+                const double wid = halfW * fp.width * (1.05 - 0.55 * std::min(u, 1.0));
+                const double d = std::abs(x - cx - fp.lean * u * u) / std::max(0.5, wid);
                 const double shape = std::max(0.0, 1 - d * d) * std::max(0.0, 1 - std::pow(std::min(u, 1.0), 1.6)) * 1.45;
                 if (shape <= 0) continue;
-                const double xw = x + (warp(x, y + rise) - 0.5) * 2 * (1.0 + 3.5 * u);
+                const double xw = x + (warp(x, y + rise) - 0.5) * 2 * fp.warp * (1.0 + 3.5 * u);
                 const double n = 0.55 * n1(xw, y + rise) + 0.3 * n2(xw, y + 2 * rise) + 0.15 * n3(xw, y + 3 * rise);
-                const double I = shape * (1.0 - (0.25 + 1.35 * u) * n * amount);
+                const double I = shape * (1.0 - (0.25 + 1.35 * u) * n * amount * fp.turbulence) + fp.core * std::max(0.0, 1 - 2 * u);
                 int level = -1;
                 for (int i = 0; i < 6; ++i)
                     if (I > kLevels[i]) level = i;
-                if (level >= 0) img.setPixel(x, y, ramp[static_cast<std::size_t>(level)]);
+                L(x, y) = level;
             }
+        for (int y = top; y <= base + 1 && y < H; ++y)
+            for (int x = 0; x < W; ++x) {
+                int level = L(x, y);
+                if (level < 0) continue;
+                const bool rim = x == 0 || x == W - 1 || y == 0 || L(x - 1, y) < 0 || L(x + 1, y) < 0 || L(x, y - 1) < 0;
+                if (rim) level = std::min(level, 2);
+                img.setPixel(x, y, ramp[static_cast<std::size_t>(level)]);
+            }
+        // Sparks: leave the tips, rise and drift, cooling through the ramp
+        // (brightest first) before they vanish. Each repeats once per loop.
+        for (int sp = 0; sp < fp.sparks; ++sp) {
+            const double life = std::fmod(t * (1 + sp % 2) + hash01(static_cast<unsigned>(sp), 9, o.seed), 1.0);
+            const double sx0 = cx + halfW * 0.8 * (hash01(static_cast<unsigned>(sp), 10, o.seed) * 2 - 1);
+            const int px = static_cast<int>(std::lround(sx0 + fp.lean * life + 1.6 * std::sin(kTau * (life * 1.5 + sp * 0.37))));
+            const int py = static_cast<int>(std::lround(base - flameH * fp.height * (0.55 + 0.9 * life)));
+            if (px < 0 || py < 0 || px >= W || py >= H || img.pixel(px, py).a) continue;
+            const int nr = static_cast<int>(ramp.size());
+            const int idx = std::clamp(nr - 1 - static_cast<int>(life * nr), 0, nr - 1);
+            img.setPixel(px, py, ramp[static_cast<std::size_t>(idx)]);
+        }
         // Embers glow and fade.
         for (int y = fb.y; y <= base && y < H; ++y)
             for (int x = 0; x < W; ++x)
                 if (embers.get(x, y) && n3(x * 3.0, y * 3.0 + 3 * rise) > 0.6) img.setPixel(x, y, ramp.back());
         out.frames.push_back(std::move(img));
-        out.durations.push_back(o.frameMs > 0 ? o.frameMs : 80);
+        out.durations.push_back(o.frameMs > 0 ? o.frameMs : fp.frameMs);
     }
     return out;
 }
@@ -385,6 +434,23 @@ EffectClip pulse(const Image& src, const Mask& region, const EffectOptions& o) {
 
 } // namespace
 
+const char* toString(FireStyle s) noexcept {
+    switch (s) {
+    case FireStyle::Campfire: return "campfire";
+    case FireStyle::Torch: return "torch";
+    case FireStyle::Furnace: return "furnace";
+    case FireStyle::Raging: return "raging";
+    case FireStyle::Magic: return "magic";
+    }
+    return "campfire";
+}
+
+std::optional<FireStyle> fireStyleFromString(std::string_view s) noexcept {
+    for (FireStyle f : {FireStyle::Campfire, FireStyle::Torch, FireStyle::Furnace, FireStyle::Raging, FireStyle::Magic})
+        if (s == toString(f)) return f;
+    return std::nullopt;
+}
+
 const char* toString(Effect e) noexcept {
     switch (e) {
     case Effect::Fire: return "fire";
@@ -431,8 +497,12 @@ Mask autoRegion(const Image& img, Effect e) {
 EffectClip animateEffect(const Image& sprite, const EffectOptions& in) {
     EffectOptions o = in;
     // 0 = the effect's own loop length: fire needs longer to rise and break up.
-    o.frames = std::clamp(o.frames > 0 ? o.frames : (o.effect == Effect::Fire ? 12 : 8), 2, 64);
-    if (o.effect == Effect::Fire && in.frameMs == 90) o.frameMs = 80;
+    // 0 = the effect's own loop length and speed (fire: set by its style).
+    if (o.effect != Effect::Fire) {
+        o.frames = o.frames > 0 ? o.frames : 8;
+        o.frameMs = o.frameMs > 0 ? o.frameMs : 90;
+    }
+    o.frames = o.frames > 0 ? std::clamp(o.frames, 2, 64) : 0;
     o.amount = std::clamp(o.amount, 0.25, 2.0);
     const Mask region = o.region.isNull() || o.region.width() != sprite.width() || o.region.height() != sprite.height()
                             ? autoRegion(sprite, o.effect)

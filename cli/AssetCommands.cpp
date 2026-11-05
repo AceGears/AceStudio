@@ -360,8 +360,15 @@ int cmdEffect(const Args& a, Output& out) {
     const auto e = fx::effectFromString(name);
     if (!e) return out.fail(kUsage, "effect: --effect expects auto, fire, water, sway, flag, smoke or pulse");
     o.effect = *e;
+    if (auto st = a.opt("style")) {
+        const auto fs = fx::fireStyleFromString(*st);
+        if (!fs) return out.fail(kUsage, "effect: --style expects campfire, torch, furnace, raging or magic");
+        o.fire = *fs;
+    } else if (o.effect == fx::Effect::Fire) {
+        o.fire = anim::routeAnimation(img.value(), fs::path(a.positional[1]).stem().string()).fireStyle;
+    }
     o.frames = optInt(a, "frames").value_or(0);   // 0 = the effect's own
-    o.frameMs = optInt(a, "ms").value_or(90);
+    o.frameMs = optInt(a, "ms").value_or(0);   // 0 = the effect's own
     o.seed = static_cast<unsigned>(optInt(a, "seed").value_or(1));
     if (auto am = a.opt("amount")) {
         try { o.amount = std::stod(*am); } catch (...) { return out.fail(kUsage, "effect: --amount expects a number"); }
@@ -388,7 +395,8 @@ int cmdEffect(const Args& a, Output& out) {
     for (int y = 0; y < c.region.height(); ++y)
         for (int x = 0; x < c.region.width(); ++x) moving += c.region.get(x, y);
     return out.success({{"files", {png.string(), gif.string()}}, {"effect", name}, {"frames", c.frames.size()},
-                        {"frameWidth", fw}, {"frameHeight", fh}, {"animatedPixels", moving}, {"reason", reason}},
+                        {"frameWidth", fw}, {"frameHeight", fh}, {"animatedPixels", moving}, {"reason", reason},
+                        {"style", o.effect == fx::Effect::Fire ? fx::toString(o.fire) : ""}},
                        "Wrote " + png.string() + " and " + gif.string() + "\n");
 }
 

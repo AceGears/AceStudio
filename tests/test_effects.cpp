@@ -103,3 +103,56 @@ TEST_CASE("a tree sways from the top and keeps its trunk", "[fx]") {
     }
     CHECK(topMoved);
 }
+
+TEST_CASE("generated fire changes every frame and rises", "[fx][fire]") {
+    const Image src = campfire();
+    for (FireStyle st : {FireStyle::Campfire, FireStyle::Torch, FireStyle::Furnace, FireStyle::Raging, FireStyle::Magic}) {
+        INFO(toString(st));
+        EffectOptions o;
+        o.effect = Effect::Fire;
+        o.fire = st;
+        const EffectClip c = animateEffect(src, o);
+        REQUIRE(c.frames.size() >= 8);
+        const auto palette = colours(src);
+        int upward = 0, pairs = 0;
+        for (std::size_t i = 0; i < c.frames.size(); ++i) {
+            const Image& a = c.frames[i];
+            const Image& b = c.frames[(i + 1) % c.frames.size()];
+            CHECK_FALSE(a == b);   // never a held frame
+            for (std::uint32_t col : colours(a)) CHECK(palette.count(col) == 1);
+            // Buoyancy: the flame pattern of the next frame matches this one
+            // best when shifted up (features rise), not down.
+            auto score = [&](int dy) {
+                int same = 0;
+                for (int y = 2; y < 22; ++y)
+                    for (int x = 0; x < a.width(); ++x) {
+                        const int ty = y + dy;
+                        if (ty < 0 || ty >= b.height()) continue;
+                        same += (a.pixel(x, y).a && a.pixel(x, y) == b.pixel(x, ty)) ? 1 : 0;
+                    }
+                return same;
+            };
+            int best = 0, bestScore = -1;
+            for (int dy = -3; dy <= 3; ++dy)
+                if (const int s = score(dy); s > bestScore) { bestScore = s; best = dy; }
+            ++pairs;
+            upward += best <= 0 ? 1 : 0;
+        }
+        CHECK(upward * 4 >= pairs * 3);   // mostly rising (or still), rarely sinking
+    }
+}
+
+TEST_CASE("raging fire reaches higher than a torch", "[fx][fire]") {
+    // The test campfire with room above it.
+    Image src(32, 64);
+    src.blit(campfire(), 0, 32);
+    auto tallest = [&](FireStyle st) {
+        EffectOptions o;
+        o.effect = Effect::Fire;
+        o.fire = st;
+        int top = src.height();
+        for (const Image& f : animateEffect(src, o).frames) top = std::min(top, f.opaqueBounds().y);
+        return top;
+    };
+    CHECK(tallest(FireStyle::Raging) < tallest(FireStyle::Torch));
+}

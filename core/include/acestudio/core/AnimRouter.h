@@ -24,6 +24,7 @@ const char* toString(Method m) noexcept;
 struct Route {
     Method method = Method::Body;
     fx::Effect effect = fx::Effect::Pulse;   // when method == Effect
+    fx::FireStyle fireStyle = fx::FireStyle::Campfire;   // when effect == Fire
     motion::Body body = motion::Body::Object;
     std::string reason;                      // one sentence for the user
 };

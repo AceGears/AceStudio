@@ -21,10 +21,21 @@ enum class Effect { Fire, Water, Sway, Flag, Smoke, Pulse };
 const char* toString(Effect e) noexcept;
 std::optional<Effect> effectFromString(std::string_view s) noexcept;
 
+// How a fire behaves (the same flame model, different physics):
+//   Campfire  irregular flames of uneven height, moderate turbulence, sparks
+//   Torch     narrow, fast flicker, leaning one way, a steady base
+//   Furnace   strong, fast-changing, a large bright core, many embers
+//   Raging    big and aggressive: tall tongues that split and merge often
+//   Magic     slower, swirling tongues; the sprite's own (any) colours
+enum class FireStyle { Campfire, Torch, Furnace, Raging, Magic };
+const char* toString(FireStyle s) noexcept;
+std::optional<FireStyle> fireStyleFromString(std::string_view s) noexcept;
+
 struct EffectOptions {
     Effect effect = Effect::Fire;
-    int frames = 0;              // loop length; 0 = the effect's own (fire 12, the others 8)
-    int frameMs = 90;
+    FireStyle fire = FireStyle::Campfire;
+    int frames = 0;              // loop length; 0 = the effect's own (fire 12-16, the others 8)
+    int frameMs = 0;             // 0 = the effect's own (fire 60-90, the others 90)
     double amount = 1.0;         // strength of the motion (0.25..2)
     unsigned seed = 1;           // the noise pattern (same seed, same animation)
     // Which pixels move. Empty = found automatically: warm bright colours

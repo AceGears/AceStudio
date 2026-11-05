@@ -46,7 +46,14 @@ std::size_t opaque(const Image& img) {
     return n;
 }
 
-Route effect(fx::Effect e, motion::Body body, std::string why) { return {Method::Effect, e, body, std::move(why)}; }
+Route effect(fx::Effect e, motion::Body body, std::string why) {
+    Route r;
+    r.method = Method::Effect;
+    r.effect = e;
+    r.body = body;
+    r.reason = std::move(why);
+    return r;
+}
 
 } // namespace
 
@@ -61,8 +68,15 @@ Route routeAnimation(const Image& sprite, std::string_view hint, motion::Action 
                                       "slime", "wolf", "bird", "fish", "spirit", "elemental", "golem", "hero", "character", "monster",
                                       "beast", "cat", "dog", "horse", "bat", "spider", "insect", "bee", "butterfly"});
     if (!creature) {
-        if (hasWord(h, {"fire", "flame", "torch", "campfire", "candle", "brazier", "bonfire", "lava", "ember"}))
-            return effect(fx::Effect::Fire, r.body, "Fire: the flames flicker and rise in their own colours, the logs stay still.");
+        if (hasWord(h, {"fire", "flame", "torch", "campfire", "candle", "brazier", "bonfire", "lava", "ember", "furnace", "forge",
+                        "inferno", "blaze", "burning", "hearth", "fireplace"})) {
+            Route f = effect(fx::Effect::Fire, r.body, "Fire: flames rise, flicker and break up in the sprite's own colours; the logs stay still.");
+            if (hasWord(h, {"torch", "candle", "lantern", "sconce"})) f.fireStyle = fx::FireStyle::Torch;
+            else if (hasWord(h, {"furnace", "forge", "kiln", "smelter", "brazier"})) f.fireStyle = fx::FireStyle::Furnace;
+            else if (hasWord(h, {"inferno", "blaze", "burning", "bonfire", "wildfire", "raging"})) f.fireStyle = fx::FireStyle::Raging;
+            else if (hasWord(h, {"magic", "arcane", "spell", "ghost", "spirit", "cursed", "fel", "soul"})) f.fireStyle = fx::FireStyle::Magic;
+            return f;
+        }
         if (hasWord(h, {"water", "waterfall", "river", "lake", "pond", "fountain", "stream", "sea", "ocean", "wave"}))
             return effect(fx::Effect::Water, r.body, "Water: the surface ripples and shimmers in a seamless loop.");
         if (hasWord(h, {"flag", "banner", "pennant", "standard", "cape", "curtain", "cloth"}))
