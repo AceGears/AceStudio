@@ -246,8 +246,11 @@ or is a case that has not been run yet.
     HD sprite with many actions.
   - Generating flap keyframes with AI is not built. There is no 2D bone editor or IK for
     user-placed bones; the rig is measured from the silhouette.
-- **Procedural effects** (fire, water, sway, flag, smoke, pulse) were reviewed visually on
-  synthetic sprites only (a campfire, a tree, a pond). Not yet on generated sprites on the PC.
+- **Procedural effects:** fire was reviewed on two generated campfires on the PC. Water, sway,
+  flag, smoke and pulse were reviewed on synthetic sprites only.
+- **The animation router** decides fire from pixels only with a bright core taller than wide;
+  other effects need a hint in the name (an imported file's name counts). Without a name, a
+  tree or a flag gets body motion until the method is changed.
 - **Performance work (0.10.0)** was measured on the test PC only (RTX 4070 Laptop, 8 GB, 32 GB
   RAM, Balanced): see `docs/devlog/2026-11.md`. Not measured: Eco and Performance profiles,
   SDXL, HD sizes, other GPUs. System RAM was full during the first model load (klein with CPU
@@ -267,8 +270,8 @@ or is a case that has not been run yet.
     reads the sheet's `.json`). Wang-16 (dual-grid) sheets are not supported in the map yet.
 - **Claude Code over MCP (Test F)** has not run on the test PC: this session cannot type into
   a terminal there. The MCP tools are covered by CI.
-- **Uninstall (Test G)** ran on the test PC: projects, settings and models were kept, and the reinstall
-  worked. The new prompt to close a running AceStudio (`AppMutex`) has not been seen on the PC yet.
+- **Uninstall (Test G)** ran on the test PC twice: projects, settings and models were kept, and the
+  reinstall worked. With AceStudio open, the uninstaller asks to close it (seen on nightly-3f6e18d).
 - **`connect claude --global`** prints the `claude mcp add` command instead of editing
   `~/.claude.json`, because Claude Code rewrites that file itself while running.
 - **The VS Code and Claude Desktop user-wide paths** are the documented defaults (`%APPDATA%`).
