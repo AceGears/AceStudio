@@ -1,12 +1,14 @@
 #include "Accessibility.h"
 
 #include <QAbstractButton>
+#include <QAbstractScrollArea>
 #include <QAbstractItemView>
 #include <QAbstractSlider>
 #include <QAbstractSpinBox>
 #include <QApplication>
 #include <QBoxLayout>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QEvent>
 #include <QFormLayout>
 #include <QGridLayout>
@@ -96,6 +98,23 @@ class Helper : public QObject {
 public:
     using QObject::QObject;
     bool eventFilter(QObject* o, QEvent* e) override {
+        // Scrolling a page must not change the drop-down or number box that
+        // happens to pass under the pointer (it changed the AI Studio palette
+        // on the test PC). Without focus, the wheel scrolls the page instead.
+        if (e->type() == QEvent::Wheel && o->isWidgetType()) {
+            auto* w = static_cast<QWidget*>(o);
+            const bool guarded = qobject_cast<QComboBox*>(w) || qobject_cast<QAbstractSpinBox*>(w) ||
+                                 (qobject_cast<QAbstractSlider*>(w) && !qobject_cast<QScrollBar*>(w));
+            if (guarded && !w->hasFocus()) {
+                for (QWidget* p = w->parentWidget(); p; p = p->parentWidget())
+                    if (auto* area = qobject_cast<QAbstractScrollArea*>(p)) {
+                        QCoreApplication::sendEvent(area->viewport(), e);
+                        return true;
+                    }
+                e->ignore();
+                return true;
+            }
+        }
         if (e->type() == QEvent::Show && o->isWidgetType()) {
             auto* w = static_cast<QWidget*>(o);
             if (w->isWindow()) {
@@ -112,7 +131,19 @@ public:
 
 } // namespace
 
+namespace {
+// Wheel focus would let a passing scroll focus (and then change) a control.
+void noWheelFocus(QWidget* root) {
+    for (QWidget* w : root->findChildren<QWidget*>())
+        if ((qobject_cast<QComboBox*>(w) || qobject_cast<QAbstractSpinBox*>(w) ||
+             (qobject_cast<QAbstractSlider*>(w) && !qobject_cast<QScrollBar*>(w))) &&
+            w->focusPolicy() == Qt::WheelFocus)
+            w->setFocusPolicy(Qt::StrongFocus);
+}
+} // namespace
+
 void nameControls(QWidget* root) {
+    noWheelFocus(root);
     // Buddies first: an explicit label wins.
     QHash<QWidget*, QString> buddies;
     for (QLabel* l : root->findChildren<QLabel*>())

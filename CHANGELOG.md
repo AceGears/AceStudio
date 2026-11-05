@@ -4,6 +4,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 
 ## [0.10.0] — 2026-11-01 — Premium AI game asset studio (unreleased)
 
+### Fixed
+- Scrolling a page no longer changes a drop-down, number box or slider under the pointer.
+- Clean 32 px sprites were scored 0 as "noise".
+
 ### Added
 - **Performance and resources.**
   - Resource profiles (Eco, Balanced, Performance) in Settings › Generation, with collapsible
@@ -16,6 +20,8 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   - Every AI job reports its time, CPU time, peak memory and VRAM, and per-stage timings.
   - AI Studio › Benchmark…: fixed cases and seeds, original versus optimised pipeline,
     with a JSON and Markdown report and every image and animation.
+  - Measured on an RTX 4070 Laptop (8 GB): a pixel sprite after the first in 9–11 s instead of
+    26–31 s, a four-item asset pack in 40 s instead of 113 s, at the same quality score.
 - **Animation.**
   - Procedural effects without AI: fire, water, plant sway, flags, smoke and magic pulse, in
     the sprite's own colours, looping seamlessly. In Animate Sprite (Method), the CLI

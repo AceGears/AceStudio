@@ -248,10 +248,10 @@ or is a case that has not been run yet.
     user-placed bones; the rig is measured from the silhouette.
 - **Procedural effects** (fire, water, sway, flag, smoke, pulse) were reviewed visually on
   synthetic sprites only (a campfire, a tree, a pond). Not yet on generated sprites on the PC.
-- **Performance work (0.10.0):** the speed optimisations (512 px generation for small pixel
-  sprites, LoRA switching without reloading klein) and the resource profiles are built and
-  unit-tested, but have not been measured on the PC yet. AI Studio › Benchmark… runs the
-  measurement; until its report exists there are no before/after numbers.
+- **Performance work (0.10.0)** was measured on the test PC only (RTX 4070 Laptop, 8 GB, 32 GB
+  RAM, Balanced): see `docs/devlog/2026-11.md`. Not measured: Eco and Performance profiles,
+  SDXL, HD sizes, other GPUs. System RAM was full during the first model load (klein with CPU
+  offload); machines with 16 GB have not been tried.
 - **GameMaker export** follows GameMaker's `_stripN` import convention. It has not been
   imported into GameMaker, which is not available here.
 - **Phaser export** was checked in Phaser 3.90.0 and 4.2.1 (headless Chromium) for loading,
