@@ -319,7 +319,6 @@ void BenchmarkRunner::runAnimation(const Step& s) {
         // Procedural fire (no AI): the flame region flickers in its own colours.
         fx::EffectOptions o;
         o.effect = fx::Effect::Fire;
-        o.frames = 8;
         const fx::EffectClip clip = fx::animateEffect(sprite, o);
         frames = clip.frames;
         durations = clip.durations;

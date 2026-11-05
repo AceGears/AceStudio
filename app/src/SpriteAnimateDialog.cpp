@@ -300,7 +300,7 @@ std::optional<::acestudio::fx::Effect> SpriteAnimateDialog::effect() const {
 std::vector<::acestudio::motion::Clip> SpriteAnimateDialog::effectClips(const Image& sprite) const {
     ::acestudio::fx::EffectOptions o;
     o.effect = *effect();
-    o.frames = m_frames->value() > 0 ? m_frames->value() : 8;
+    o.frames = m_frames->value();   // 0 (Default) = the effect's own loop length
     o.amount = m_amount->value() / 100.0;
     const ::acestudio::fx::EffectClip fxc = ::acestudio::fx::animateEffect(sprite, o);
     ::acestudio::motion::Clip c;

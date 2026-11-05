@@ -360,7 +360,7 @@ int cmdEffect(const Args& a, Output& out) {
     const auto e = fx::effectFromString(name);
     if (!e) return out.fail(kUsage, "effect: --effect expects auto, fire, water, sway, flag, smoke or pulse");
     o.effect = *e;
-    o.frames = optInt(a, "frames").value_or(8);
+    o.frames = optInt(a, "frames").value_or(0);   // 0 = the effect's own
     o.frameMs = optInt(a, "ms").value_or(90);
     o.seed = static_cast<unsigned>(optInt(a, "seed").value_or(1));
     if (auto am = a.opt("amount")) {

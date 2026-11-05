@@ -23,7 +23,7 @@ std::optional<Effect> effectFromString(std::string_view s) noexcept;
 
 struct EffectOptions {
     Effect effect = Effect::Fire;
-    int frames = 8;              // loop length
+    int frames = 0;              // loop length; 0 = the effect's own (fire 12, the others 8)
     int frameMs = 90;
     double amount = 1.0;         // strength of the motion (0.25..2)
     unsigned seed = 1;           // the noise pattern (same seed, same animation)

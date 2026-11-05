@@ -89,104 +89,144 @@ Rgba8 shifted(const std::vector<Rgba8>& r, const Rgba8& c, int by) {
     return r[static_cast<std::size_t>(i)];
 }
 
-// Fire, made of coherent shapes rather than per-pixel noise (which sliced
-// the flames into diagonal stripes on the test PC's campfires):
-//  - each column of the flame stretches or shrinks as a whole, by an amount
-//    that varies smoothly along the fire and travels through it: two or three
-//    tongues rise and fall in turn. The colours of a column come from that
-//    column (sampled along its own height), so the bright core stays at the
-//    base and the dark tips at the top;
-//  - whole rows sway sideways, more towards the tips, by an amount that
-//    changes smoothly with height (no tearing between rows);
-//  - logs and stones are never painted over; a few embers rise above.
+// Value noise that tiles: periodic in x over `gx` cells and in y over `gy`
+// cells, so scrolling it by one period loops seamlessly.
+struct TileNoise {
+    double cw, ch;   // cell width and height in pixels
+    int gx, gy;
+    unsigned seed;
+    double operator()(double x, double y) const {
+        const double xf = x / cw, yf = y / ch;
+        const double fx0 = std::floor(xf), fy0 = std::floor(yf);
+        double tx = xf - fx0, ty = yf - fy0;
+        tx = tx * tx * (3 - 2 * tx);
+        ty = ty * ty * (3 - 2 * ty);
+        auto wrap = [](long v, int n) { return static_cast<unsigned>(((v % n) + n) % n); };
+        const long ix = static_cast<long>(fx0), iy = static_cast<long>(fy0);
+        const unsigned x0 = wrap(ix, gx), x1 = wrap(ix + 1, gx), y0 = wrap(iy, gy), y1 = wrap(iy + 1, gy);
+        const double a = hash01(x0, y0, seed), b = hash01(x1, y0, seed), c = hash01(x0, y1, seed), d = hash01(x1, y1, seed);
+        return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+    }
+};
+
+// Fire, generated rather than bent. The drawn flame is only used for its
+// place, size and colours; every frame a new flame is made:
+//  - a teardrop "fuel" shape over the logs, strongest at the base centre;
+//  - turbulence rising through it (tall noise cells make tongues), eating
+//    it away more towards the tips, so tongues lick, lean (a sideways warp
+//    that grows with height) and tear off as they rise;
+//  - the result quantised to a ramp of the sprite's own fire colours, from
+//    dark red at the edges to the pale yellow core;
+//  - logs and stones stay in front; embers among the logs glow and fade.
+// The noise rises exactly one period per loop: seamless. Bending the drawn
+// flame (the earlier versions) could not make it look like fire.
 EffectClip fire(const Image& src, const Mask& flameColours, const EffectOptions& o) {
     EffectClip out;
-    // The flame's dark outline is part of the flame where no log can be (the
-    // upper part of the fire): left out, it stayed still while the flame
-    // moved and showed as dark cracks.
-    Mask region = flameColours;
-    {
-        const IntRect cb = maskBounds(flameColours);
-        const int logLine = cb.y + static_cast<int>(cb.h * 0.6);
-        for (int pass = 0; pass < 2 && !cb.empty(); ++pass) {
-            Mask grown = region;
-            for (int y = std::max(0, cb.y - 2); y < std::min(src.height(), logLine); ++y)
-                for (int x = std::max(0, cb.x - 2); x < std::min(src.width(), cb.x + cb.w + 2); ++x) {
-                    if (region.get(x, y) || src.pixel(x, y).a == 0) continue;
-                    bool next = false;
-                    for (int dy = -1; dy <= 1 && !next; ++dy)
-                        for (int dx = -1; dx <= 1 && !next; ++dx)
-                            next = x + dx >= 0 && y + dy >= 0 && x + dx < src.width() && y + dy < src.height() && region.get(x + dx, y + dy);
-                    if (next) grown.set(x, y, true);
-                }
-            region = grown;
-        }
-    }
-    out.region = region;
-    const IntRect fb = maskBounds(region);
     const int W = src.width(), H = src.height();
-    const auto r = ramp(src, region);
-    const double flameH = std::max(2, fb.h);
-    const double amp = 0.22 * std::clamp(o.amount, 0.25, 2.0);
-    const double swayAmp = std::max(1.0, fb.w * 0.08) * std::clamp(o.amount, 0.25, 2.0);
-    // Tongue width: wide enough that neighbouring columns differ by about a
-    // pixel in height (narrow tongues put the dark tip of a short column
-    // inside its taller neighbour: dark cracks).
-    const double tongue = std::max(6.0, fb.w * 1.1);
-    const double ph1 = kTau * hash01(1, 1, o.seed), ph2 = kTau * hash01(2, 2, o.seed);
-    // Each column's flame: lowest and highest flame pixel.
-    std::vector<int> colBase(static_cast<std::size_t>(W), -1), colTop(static_cast<std::size_t>(W), -1);
-    for (int x = 0; x < W; ++x)
-        for (int y = 0; y < H; ++y)
-            if (region.get(x, y)) {
-                if (colTop[static_cast<std::size_t>(x)] < 0) colTop[static_cast<std::size_t>(x)] = y;
-                colBase[static_cast<std::size_t>(x)] = y;
-            }
-    const int embers = fb.empty() ? 0 : std::clamp(fb.w / 8, 1, 4);
-    for (int f = 0; f < o.frames; ++f) {
-        const double t = static_cast<double>(f) / o.frames;
-        Image img = src;
-        if (!fb.empty()) {
-            // Clear the flame, then draw it again stretched and swayed.
-            for (int y = fb.y; y < fb.y + fb.h; ++y)
-                for (int x = fb.x; x < fb.x + fb.w; ++x)
-                    if (region.get(x, y)) img.setPixel(x, y, {0, 0, 0, 0});
-            const int reach = static_cast<int>(std::ceil(flameH * amp)) + 1;
-            for (int x = fb.x; x < fb.x + fb.w; ++x) {
-                const int base = colBase[static_cast<std::size_t>(x)], top = colTop[static_cast<std::size_t>(x)];
-                if (base < 0) continue;
-                // Tongues: a travelling wave along the fire (whole cycles per loop).
-                const double v = 0.7 * std::sin(kTau * (x / tongue - t) + ph1) + 0.3 * std::sin(kTau * (x / (tongue * 0.5) + 2 * t) + ph2);
-                const double hf = 1.0 + amp * v;
-                const double len = base - top + 1;
-                const int newTop = static_cast<int>(std::lround(base - len * hf + 1));
-                for (int y = std::max(0, std::min(newTop, top) - reach); y <= base; ++y) {
-                    if (y < newTop) continue;
-                    // The row's sway: the same for the whole row (measured from
-                    // the bottom of the whole fire, not this column's base,
-                    // which tore rows apart), smooth in height.
-                    const double u = std::clamp((fb.y + fb.h - 1 - y) / flameH, 0.0, 1.2);
-                    const int dx = static_cast<int>(std::lround(swayAmp * std::pow(u, 1.5) * std::sin(kTau * (t - 0.35 * u)) ));
-                    // Source row along this column's own flame.
-                    const int sy = static_cast<int>(std::lround(base - (base - y) / hf));
-                    if (sy < top || sy > base || !region.get(x, sy)) continue;
-                    const int tx = x + dx;
-                    if (tx < 0 || tx >= W || y < 0 || y >= H) continue;
-                    const Rgba8 here = src.pixel(tx, y);
-                    if (here.a && !region.get(tx, y)) continue;   // logs, stones stay in front
-                    img.setPixel(tx, y, src.pixel(x, sy));
-                }
-            }
-            for (int e = 0; e < embers && !r.empty(); ++e) {
-                const double ex = fb.x + fb.w * (0.25 + 0.5 * hash01(static_cast<unsigned>(e), 5, o.seed));
-                const double rise = std::fmod(t + static_cast<double>(e) / embers, 1.0);
-                const int px = static_cast<int>(std::lround(ex + 1.5 * std::sin(kTau * (rise + e * 0.3))));
-                const int py = static_cast<int>(std::lround(fb.y - rise * flameH * 0.6));
-                if (rise < 0.7 && px >= 0 && py >= 0 && px < W && py < H && img.pixel(px, py).a == 0) img.setPixel(px, py, r.back());
-            }
+    const int frames = o.frames > 0 ? o.frames : 12;
+    auto lumaOf = [](const Rgba8& c) { return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b; };
+    // Flame, logs, embers. Dull warm colours (brown wood) are not flame.
+    Mask flame(W, H), logs(W, H), embers(W, H);
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) {
+            const Rgba8 c = src.pixel(x, y);
+            if (!c.a) continue;
+            const Hsv v = hsv(c);
+            const bool f = flameColours.get(x, y) && !(v.v < 0.7 && v.h >= 12 && v.h <= 60);
+            (f ? flame : logs).set(x, y, true);
         }
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) {
+            if (!flame.get(x, y)) continue;
+            int n = 0;
+            for (int dy = -1; dy <= 1; ++dy)
+                for (int dx = -1; dx <= 1; ++dx)
+                    n += (x + dx >= 0 && y + dy >= 0 && x + dx < W && y + dy < H && logs.get(x + dx, y + dy)) ? 1 : 0;
+            if (n >= 4) { embers.set(x, y, true); flame.set(x, y, false); }
+        }
+    out.region = flame;
+    const IntRect fb = maskBounds(flame);
+    if (fb.empty()) {
+        for (int f = 0; f < frames; ++f) { out.frames.push_back(src); out.durations.push_back(o.frameMs); }
+        return out;
+    }
+    // Ramp: the flame's colours from red through orange to yellow (by hue,
+    // pale ones last), plus a darker red for the outer edge.
+    std::vector<Rgba8> cols;
+    for (int y = fb.y; y < fb.y + fb.h; ++y)
+        for (int x = fb.x; x < fb.x + fb.w; ++x)
+            if (flame.get(x, y)) {
+                const Rgba8 c = src.pixel(x, y);
+                if (std::find(cols.begin(), cols.end(), c) == cols.end()) cols.push_back(c);
+            }
+    std::sort(cols.begin(), cols.end(), [&](const Rgba8& a, const Rgba8& b) {
+        const Hsv ha = hsv(a), hb = hsv(b);
+        const double ka = ha.h + (std::min({a.r, a.g, a.b}) > 200 ? 60 : 0), kb = hb.h + (std::min({b.r, b.g, b.b}) > 200 ? 60 : 0);
+        return ka != kb ? ka < kb : lumaOf(a) < lumaOf(b);
+    });
+    std::vector<Rgba8> ramp;
+    const int k = static_cast<int>(cols.size());
+    for (int i = 0; i < 5; ++i) ramp.push_back(cols[static_cast<std::size_t>(std::lround(i * (k - 1) / 4.0))]);
+    // The outer edge: the darkest red already in the sprite (an outline),
+    // else the flame's own darkest colour. No new colours: the palette stays.
+    Rgba8 edge = ramp[0];
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) {
+            const Rgba8 c = src.pixel(x, y);
+            if (!c.a) continue;
+            const Hsv v = hsv(c);
+            if ((v.h <= 20 || v.h >= 340) && v.s >= 0.5 && v.v >= 0.25 && lumaOf(c) < lumaOf(edge)) edge = c;
+        }
+    ramp.insert(ramp.begin(), edge);
+    // The fuel shape.
+    double sx = 0;
+    std::vector<int> xs;
+    for (int y = fb.y; y < fb.y + fb.h; ++y)
+        for (int x = fb.x; x < fb.x + fb.w; ++x)
+            if (flame.get(x, y)) { sx += x; xs.push_back(x); }
+    std::sort(xs.begin(), xs.end());
+    const double cx = sx / static_cast<double>(xs.size());
+    const double halfW = std::max(2.0, (xs[xs.size() * 95 / 100] - xs[xs.size() * 5 / 100]) / 2.0);
+    const int base = fb.y + fb.h - 1;
+    const double flameH = fb.h;
+    const double amount = std::clamp(o.amount, 0.25, 2.0);
+    // Noise: one period in y is what the flame rises per loop.
+    const int period = std::max(24, static_cast<int>(flameH * 1.5)) / 6 * 6;
+    auto tile = [&](double cw, double ch, unsigned salt) {
+        return TileNoise{cw, ch, std::max(1, static_cast<int>(std::ceil(W / cw)) + 1), std::max(1, static_cast<int>(std::lround(period / ch))), o.seed * 977u + salt};
+    };
+    const TileNoise n1 = tile(3.0, 7.5, 1), n2 = tile(1.8, 4.5, 2), n3 = tile(1.2, 3.0, 3), warp = tile(6.0, 12.0, 4);
+    static const double kLevels[] = {0.06, 0.16, 0.30, 0.47, 0.66, 0.86};
+    for (int f = 0; f < frames; ++f) {
+        const double t = static_cast<double>(f) / frames;
+        const double rise = t * period;
+        Image img = src;
+        for (int y = 0; y < H; ++y)
+            for (int x = 0; x < W; ++x)
+                if (flame.get(x, y)) img.setPixel(x, y, {0, 0, 0, 0});
+        const int top = std::max(0, base - static_cast<int>(flameH * 1.3));
+        for (int y = top; y <= base + 1 && y < H; ++y)
+            for (int x = 0; x < W; ++x) {
+                if (logs.get(x, y)) continue;   // logs and stones in front
+                const double u = std::clamp((base + 1.0 - y) / (flameH * 1.15), 0.0, 1.5);
+                const double wid = halfW * 1.25 * (1.05 - 0.55 * std::min(u, 1.0));
+                const double d = std::abs(x - cx) / std::max(0.5, wid);
+                const double shape = std::max(0.0, 1 - d * d) * std::max(0.0, 1 - std::pow(std::min(u, 1.0), 1.6)) * 1.45;
+                if (shape <= 0) continue;
+                const double xw = x + (warp(x, y + rise) - 0.5) * 2 * (1.0 + 3.5 * u);
+                const double n = 0.55 * n1(xw, y + rise) + 0.3 * n2(xw, y + 2 * rise) + 0.15 * n3(xw, y + 3 * rise);
+                const double I = shape * (1.0 - (0.25 + 1.35 * u) * n * amount);
+                int level = -1;
+                for (int i = 0; i < 6; ++i)
+                    if (I > kLevels[i]) level = i;
+                if (level >= 0) img.setPixel(x, y, ramp[static_cast<std::size_t>(level)]);
+            }
+        // Embers glow and fade.
+        for (int y = fb.y; y <= base && y < H; ++y)
+            for (int x = 0; x < W; ++x)
+                if (embers.get(x, y) && n3(x * 3.0, y * 3.0 + 3 * rise) > 0.6) img.setPixel(x, y, ramp.back());
         out.frames.push_back(std::move(img));
-        out.durations.push_back(o.frameMs);
+        out.durations.push_back(o.frameMs > 0 ? o.frameMs : 80);
     }
     return out;
 }
@@ -390,7 +430,9 @@ Mask autoRegion(const Image& img, Effect e) {
 
 EffectClip animateEffect(const Image& sprite, const EffectOptions& in) {
     EffectOptions o = in;
-    o.frames = std::clamp(o.frames, 2, 64);
+    // 0 = the effect's own loop length: fire needs longer to rise and break up.
+    o.frames = std::clamp(o.frames > 0 ? o.frames : (o.effect == Effect::Fire ? 12 : 8), 2, 64);
+    if (o.effect == Effect::Fire && in.frameMs == 90) o.frameMs = 80;
     o.amount = std::clamp(o.amount, 0.25, 2.0);
     const Mask region = o.region.isNull() || o.region.width() != sprite.width() || o.region.height() != sprite.height()
                             ? autoRegion(sprite, o.effect)
