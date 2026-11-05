@@ -42,7 +42,18 @@ struct WingSpec {
 
 // Nullopt when the rig does not handle this body and action.
 std::optional<RigClip> rigRender(const Image& sprite, const Subject& subj, Body body, Action action, int frames, double amount,
-                                 const WingSpec& wing = {});
+                                 const WingSpec& wing = {}, SwimStyle swim = SwimStyle::Auto);
+
+// Swimming of a swimmer body (idle, swim, dash): every column of the fish
+// moves up or down by whole pixels as a wave travels from head to tail, so
+// no pixel is redrawn. How much of the body the wave uses follows the fish's
+// build (fish biology's swimming modes): a long, slender body undulates
+// along its whole length (anguilliform, eels); a typical fish bends its rear
+// half (subcarangiform); a deep, short body its rear third (carangiform);
+// the tail fin trails the body by a fraction of a beat.
+// A thunniform swimmer keeps its body stiff and beats only the tail stalk.
+std::optional<RigClip> swimRender(const Image& sprite, const Subject& subj, Action action, int frames, double amount,
+                                  SwimStyle style = SwimStyle::Auto);
 
 // Wing flap of any body: the wings are copied row by row (never resampled),
 // folding about their root with a fast downstroke, a slower recovery and the

@@ -159,6 +159,19 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     m_body->setToolTip(tr("How the sprite moves. Automatic is measured from its silhouette: separate feet walk, "
                           "a round shape hops, anything else rocks."));
     form->addRow(tr("&Body:"), m_body);
+    // A water creature by name (a fish's fins can read as feet).
+    if (route.method == ::acestudio::anim::Method::Body && route.body != m_subject.body)
+        m_body->setCurrentIndex(std::max(0, m_body->findData(QString::fromLatin1(::acestudio::motion::toString(route.body)))));
+    m_swim = new QComboBox(this);
+    m_swim->setAccessibleName(tr("Swimming style"));
+    m_swim->addItem(tr("Automatic (from the build)"), static_cast<int>(::acestudio::motion::SwimStyle::Auto));
+    m_swim->addItem(tr("Eel: whole body undulates"), static_cast<int>(::acestudio::motion::SwimStyle::Anguilliform));
+    m_swim->addItem(tr("Most fish: rear half bends"), static_cast<int>(::acestudio::motion::SwimStyle::Subcarangiform));
+    m_swim->addItem(tr("Deep-bodied fish: rear third"), static_cast<int>(::acestudio::motion::SwimStyle::Carangiform));
+    m_swim->addItem(tr("Tuna or shark: stiff body, fast tail"), static_cast<int>(::acestudio::motion::SwimStyle::Thunniform));
+    m_swim->setCurrentIndex(std::max(0, m_swim->findData(static_cast<int>(route.swimStyle))));
+    m_swim->setToolTip(tr("How much of a swimmer's body the wave runs through. Only used for swimmers."));
+    form->addRow(tr("S&wimming:"), m_swim);
     m_face = new QComboBox(this);
     m_face->addItem(tr("Right (as drawn)"));
     m_face->addItem(tr("Left (mirrored)"));
@@ -281,6 +294,7 @@ SpriteAnimateDialog::SpriteAnimateDialog(const Image& sprite, const QString& nam
     });
     connect(m_body, &QComboBox::currentIndexChanged, this, &SpriteAnimateDialog::rebuild);
     connect(m_face, &QComboBox::currentIndexChanged, this, &SpriteAnimateDialog::rebuild);
+    connect(m_swim, &QComboBox::currentIndexChanged, this, &SpriteAnimateDialog::rebuild);
     connect(m_amount, &QSlider::valueChanged, this, &SpriteAnimateDialog::rebuild);
     connect(m_frames, &QSpinBox::valueChanged, this, &SpriteAnimateDialog::rebuild);
     connect(m_method, &QComboBox::currentIndexChanged, this, &SpriteAnimateDialog::rebuild);
@@ -304,6 +318,7 @@ std::vector<::acestudio::motion::Action> SpriteAnimateDialog::checkedActions() c
     // The reduced copy moves like the full sprite: same measured body.
     else if (!full && m_previewScale < 1.0) o.body = m_subject.body;
     o.faceLeft = m_face->currentIndex() == 1;
+    o.swim = static_cast<::acestudio::motion::SwimStyle>(m_swim->currentData().toInt());
     o.custom = {m_bob->value(), m_sway->value(), m_squash->value(), m_tilt->value(), m_legSwing->value()};
     o.wingLine = m_wingLine->value() / 100.0;
     o.wingFrom = m_wingFrom->value() / 100.0;

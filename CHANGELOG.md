@@ -9,6 +9,16 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - Clean 32 px sprites were scored 0 as "noise".
 
 ### Added
+
+- Fish swim like fish: the body bends sideways as a wave travels to the tail,
+  seen from the side as foreshortening (whole columns crowd together, nothing
+  is resampled) with a small up-and-down wave for the slightly-from-above game
+  camera; the tail fin trails a tenth of a beat. Four styles: eel
+  (anguilliform, whole body), most fish (subcarangiform, rear half),
+  deep-bodied fish (carangiform, rear third), tuna and sharks (thunniform,
+  stiff body, fast tail). The style comes from the build or the name
+  (`eel`, `tuna`, `piranha` ...); water creatures are told by name too, since
+  fins often read as feet. Animate dialog: Swimming; CLI: `--swim`.
 - **Performance and resources.**
   - Resource profiles (Eco, Balanced, Performance) in Settings › Generation, with collapsible
     advanced limits: CPU threads, priority, GPU busy share, idle release, background-removal

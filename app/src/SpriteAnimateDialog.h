@@ -87,6 +87,7 @@ private:
     QListWidget* m_actions = nullptr;
     QComboBox* m_body = nullptr;
     QComboBox* m_face = nullptr;
+    QComboBox* m_swim = nullptr;
     QSlider* m_amount = nullptr;
     QSpinBox* m_frames = nullptr;
     QSlider* m_wingLine = nullptr;

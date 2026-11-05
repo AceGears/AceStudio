@@ -72,6 +72,7 @@ const char* kUsageText =
     "                                  Deterministic atlas + TexturePacker-style JSON\n"
     "  animate <sprite.png> --out <folder> [--action idle,walk,...|all] [--frames N] [--amount X]\n"
     "          [--body biped|quadruped|blob|flyer|object|swimmer] [--face left] [--wing-line 0.45] [--wing-span 0-1]\n"
+    "          [--swim auto|anguilliform|subcarangiform|carangiform|thunniform] (water creatures are also told by name)\n"
     "                                  Animate a sprite without AI: one strip PNG + JSON per action\n"
     "  effect <sprite.png> --out <folder> [--effect auto|fire|water|sway|flag|smoke|pulse] [--style campfire|torch|furnace|raging|magic] [--frames 8]\n"
     "         [--ms 90] [--amount 1] [--seed 1]\n"

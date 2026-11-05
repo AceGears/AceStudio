@@ -48,6 +48,17 @@ enum class Body { Biped, Quadruped, Blob, Flyer, Object, Swimmer };
 const char* toString(Body b);
 std::optional<Body> bodyFromString(std::string_view s);
 
+// How a swimmer swims (fish biology's body-caudal modes): how much of the
+// body the wave runs through. Auto picks from the build (length over depth).
+//  anguilliform:   the whole body undulates (eels, sea snakes, lampreys)
+//  subcarangiform: the rear half bends (trout, carp, goldfish, most fish)
+//  carangiform:    the rear third (deep, short fish: bream, perch, piranha)
+//  thunniform:     a stiff body; only the narrow tail stalk and fin beat,
+//                  fast (tuna, mackerel, sharks, dolphins)
+enum class SwimStyle { Auto, Anguilliform, Subcarangiform, Carangiform, Thunniform };
+const char* toString(SwimStyle s);
+std::optional<SwimStyle> swimStyleFromString(std::string_view s);
+
 // What the silhouette says about the subject.
 struct Subject {
     Body body = Body::Object;
@@ -86,6 +97,7 @@ struct Options {
     int frames = 0;             // 0 = the action's default
     double amount = 1.0;        // scales every movement (0.25..2)
     std::optional<Body> body;   // overrides the measured body
+    SwimStyle swim = SwimStyle::Auto;   // swimmers only
     bool faceLeft = false;      // mirror the result
     // Wing flap: everything above this line (fraction of the sprite's height
     // from the top) is a wing that folds about the line.

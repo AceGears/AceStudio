@@ -72,3 +72,22 @@ TEST_CASE("Without a name, the pixels decide", "[router]") {
     // Poses the rig cannot draw go to the AI pipeline.
     CHECK(routeAnimation(biped(), "", motion::Action::Cast).method == Method::Ai);
 }
+
+TEST_CASE("Water creatures swim by name, in their own style", "[router][swim]") {
+    Image fish(40, 20);
+    fish.fillRect({8, 4, 28, 12}, Rgba8{230, 120, 40, 255});
+    fish.fillRect({2, 2, 6, 16}, Rgba8{200, 80, 30, 255});
+    using SS = motion::SwimStyle;
+    const std::pair<const char*, SS> cases[] = {{"Moray Eel", SS::Anguilliform}, {"goldfish_02", SS::Subcarangiform},
+                                                {"Blue Tuna", SS::Thunniform},   {"great white shark", SS::Thunniform},
+                                                {"piranha", SS::Carangiform},    {"river fish", SS::Subcarangiform}};
+    for (const auto& [name, style] : cases) {
+        const Route r = routeAnimation(fish, name);
+        INFO(name);
+        CHECK(r.method == Method::Body);
+        CHECK(r.body == motion::Body::Swimmer);
+        CHECK(r.swimStyle == style);
+    }
+    // A fish-named character with legs still walks.
+    CHECK(routeAnimation(biped(), "fishman").body == motion::Body::Biped);
+}

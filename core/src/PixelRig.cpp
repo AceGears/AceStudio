@@ -55,8 +55,9 @@ struct LegPose {
 } // namespace
 
 std::optional<RigClip> rigRender(const Image& sprite, const Subject& subj, Body body, Action action, int frames, double amount,
-                                 const WingSpec& wing) {
+                                 const WingSpec& wing, SwimStyle swim) {
     if (action == Action::Flap) return flapRender(sprite, subj, frames, amount, wing);
+    if (body == Body::Swimmer) return swimRender(sprite, subj, action, frames, amount, swim);
     const bool footed = (body == Body::Biped || body == Body::Quadruped) && subj.legTop >= 0 && subj.feet.size() >= 2;
     const bool locomotion = action == Action::Walk || action == Action::Run || action == Action::Sprint;
     if (!footed || !(locomotion || action == Action::Idle) || frames < 1) return std::nullopt;
@@ -342,6 +343,93 @@ RigClip flapRender(const Image& sprite, const Subject& subj, int frames, double 
                 for (int x = bb.x; x < bb.x + bb.w; ++x)
                     if (isWing[static_cast<std::size_t>(y) * static_cast<std::size_t>(sw) + static_cast<std::size_t>(x)]) put(x, yy, sprite.pixel(x, y));
             prev = ty;
+        }
+        out.frames.push_back(std::move(img));
+    }
+    return out;
+}
+
+std::optional<RigClip> swimRender(const Image& sprite, const Subject& subj, Action action, int frames, double amount,
+                                  SwimStyle style) {
+    if (action != Action::Idle && action != Action::Swim && action != Action::Dash) return std::nullopt;
+    const IntRect bb = subj.bounds;
+    if (bb.empty() || frames < 1) return std::nullopt;
+    amount = std::clamp(amount, 0.25, 2.0);
+    // Mode from the build: length over depth.
+    const double aspect = static_cast<double>(bb.w) / std::max(1, bb.h);
+    SwimStyle mode = style;
+    if (mode == SwimStyle::Auto)
+        mode = aspect >= 3.2 ? SwimStyle::Anguilliform : aspect <= 1.6 ? SwimStyle::Carangiform : SwimStyle::Subcarangiform;
+    using Mode = SwimStyle;
+    // Tail amplitude in pixels and beats per loop.
+    const double tailAmp = bb.h * (action == Action::Dash ? 0.16 : action == Action::Swim ? 0.11 : 0.05) * amount;
+    // Thunniform swimmers beat fast; everyone beats faster in a dash.
+    const int beats = (action == Action::Dash ? 2 : 1) * (mode == Mode::Thunniform ? 2 : 1);
+    auto envelope = [&](double u) {   // 0 at the head, 1 at the tail
+        switch (mode) {
+        case Mode::Anguilliform: return 0.3 + 0.7 * u;
+        case Mode::Carangiform: return std::pow(std::max(0.0, (u - 0.45) / 0.55), 2.0);
+        case Mode::Thunniform: return std::pow(std::max(0.0, (u - 0.72) / 0.28), 1.5);
+        case Mode::Subcarangiform:
+        case Mode::Auto: break;
+        }
+        return std::pow(std::max(0.0, (u - 0.2) / 0.8), 1.5);
+    };
+    const double wavelength = mode == Mode::Anguilliform ? 0.7 : mode == Mode::Carangiform ? 1.25 : mode == Mode::Thunniform ? 1.6 : 1.0;
+    // A fish bends sideways, towards and away from a side-view camera. Seen
+    // from the side that shows as foreshortening: where the body turns
+    // towards the viewer its columns crowd together (whole columns are
+    // dropped, never resampled). Games look at water from slightly above, so
+    // the sideways bend also shows as a small up-and-down wave.
+    const double lateral = bb.w * (action == Action::Dash ? 0.16 : action == Action::Swim ? 0.11 : 0.05) * amount;
+    const double vertical = std::min(0.3 * lateral, tailAmp);
+    const int margin = static_cast<int>(std::ceil(vertical)) + 4;
+    const int dir = subj.headLeft ? 1 : -1;   // from the head towards the tail
+    const int headX = subj.headLeft ? bb.x : bb.x + bb.w - 1;
+    RigClip out;
+    out.box = {bb.x - margin, bb.y - margin, bb.w + 2 * margin, bb.h + 2 * margin};
+    std::vector<double> z(static_cast<std::size_t>(bb.w));
+    std::vector<int> fromCol;
+    for (int f = 0; f < frames; ++f) {
+        const double t = static_cast<double>(f) / frames;
+        Image img(out.box.w, out.box.h);
+        // A dash lunges forward and glides back; an idle hovers.
+        const int forward = action == Action::Dash ? iround(bb.w * 0.08 * amount * std::sin(kPi * t)) * -dir : 0;
+        const int hover = action == Action::Idle ? iround(std::max(1.0, bb.h / 40.0) * std::sin(2 * kPi * t)) : 0;
+        // Sideways bend of each column, counted from the head (k = 0).
+        for (int k = 0; k < bb.w; ++k) {
+            const double u = static_cast<double>(k) / std::max(1, bb.w - 1);
+            // The tail fin (last eighth) trails the body by a tenth of a beat.
+            const double lag = u > 0.875 ? 0.1 * (u - 0.875) / 0.125 : 0.0;
+            const double phase = 2 * kPi * (beats * t - lag) - 2 * kPi * u / wavelength;
+            z[static_cast<std::size_t>(k)] = lateral * envelope(u) * std::sin(phase);
+        }
+        // Where each column lands: one step per column, shortened by the
+        // bend. Each landing column shows exactly one source column (the
+        // one nearest the tail), so no two columns mix.
+        fromCol.assign(static_cast<std::size_t>(bb.w), -1);
+        double pos = 0;
+        int last = 0;
+        for (int k = 0; k < bb.w; ++k) {
+            if (k > 0) {
+                const double dz = z[static_cast<std::size_t>(k)] - z[static_cast<std::size_t>(k - 1)];
+                pos += 1.0 / std::sqrt(1.0 + dz * dz);
+            }
+            last = std::clamp(iround(pos), 0, bb.w - 1);
+            fromCol[static_cast<std::size_t>(last)] = k;
+        }
+        for (int d = 0; d <= last; ++d) {
+            const int k = fromCol[static_cast<std::size_t>(d)];
+            if (k < 0) continue;
+            const int sx = headX + dir * k;
+            const int dy = iround(vertical / std::max(1e-9, lateral) * z[static_cast<std::size_t>(k)]) + hover;
+            const int tx = headX + dir * d + forward - out.box.x;
+            for (int y = bb.y; y < bb.y + bb.h; ++y) {
+                const Rgba8 c = sprite.pixel(sx, y);
+                if (!c.a) continue;
+                const int ty = y + dy - out.box.y;
+                if (tx >= 0 && ty >= 0 && tx < img.width() && ty < img.height()) img.setPixel(tx, ty, c);
+            }
         }
         out.frames.push_back(std::move(img));
     }

@@ -62,6 +62,30 @@ Route routeAnimation(const Image& sprite, std::string_view hint, motion::Action 
     const motion::Subject subj = motion::analyzeSubject(sprite);
     r.body = subj.body;
     const std::string h = lower(hint);
+    // Water creatures by name: the silhouette alone often reads a fish's
+    // fins as feet. The swimming style follows the kind of animal.
+    using SS = motion::SwimStyle;
+    SS swim = SS::Auto;
+    if (hasWord(h, {"eel", "moray", "lamprey", "hagfish", "sea snake", "seasnake", "leech", "serpent"})) swim = SS::Anguilliform;
+    else if (hasWord(h, {"tuna", "mackerel", "shark", "dolphin", "porpoise", "swordfish", "marlin", "sailfish", "orca", "bonito"}))
+        swim = SS::Thunniform;
+    else if (hasWord(h, {"bream", "perch", "piranha", "pompano", "sunfish", "bluegill", "angelfish", "tang", "discus", "butterflyfish",
+                         "pufferfish", "puffer"}))
+        swim = SS::Carangiform;
+    else if (hasWord(h, {"fish", "goldfish", "trout", "salmon", "carp", "koi", "bass", "cod", "pike", "catfish", "minnow", "herring",
+                         "guppy", "sardine", "anchovy", "clownfish", "betta", "snapper", "grouper", "barracuda"}))
+        swim = SS::Subcarangiform;
+    if (swim != SS::Auto && r.body != motion::Body::Biped) {
+        r.body = motion::Body::Swimmer;
+        r.swimStyle = swim;
+        r.method = Method::Body;
+        static const char* kWhy[] = {"", "An eel-like swimmer: the whole body undulates, head to tail.",
+                                     "A fish: the wave runs through the rear half of the body, the tail fin trailing.",
+                                     "A deep-bodied fish: only the rear third bends, the head stays steady.",
+                                     "A fast swimmer: the body stays stiff and the tail beats quickly."};
+        r.reason = kWhy[static_cast<int>(swim)];
+        return r;
+    }
     // Living things move their bodies even when their name mentions fire
     // ("fire drake") or water ("water spirit").
     const bool creature = hasWord(h, {"dragon", "drake", "knight", "warrior", "rogue", "mage", "wizard", "troll", "goblin", "orc",
@@ -123,7 +147,7 @@ Route routeAnimation(const Image& sprite, std::string_view hint, motion::Action 
     switch (subj.body) {
     case motion::Body::Biped: r.reason = "Two legs: walk and run cycles with planted feet and swinging arms."; break;
     case motion::Body::Quadruped: r.reason = "Four legs: the legs move in diagonal pairs."; break;
-    case motion::Body::Swimmer: r.reason = "A swimmer: a wave runs through the body from head to tail."; break;
+    case motion::Body::Swimmer: r.reason = "A swimmer: a wave runs through the body from head to tail, the tail most."; break;
     case motion::Body::Flyer: r.reason = "A flyer: it hovers; Flap folds the wings above the wing line."; break;
     case motion::Body::Blob: r.reason = "No legs: it hops and squashes."; break;
     case motion::Body::Object:

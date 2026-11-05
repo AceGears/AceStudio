@@ -430,7 +430,19 @@ int cmdAnimate(const Args& a, Output& out) {
     }
     if (auto b = a.opt("body")) {
         o.body = motion::bodyFromString(*b);
-        if (!o.body) return out.fail(kUsage, "animate: --body expects biped, quadruped, blob, flyer or object");
+        if (!o.body) return out.fail(kUsage, "animate: --body expects biped, quadruped, blob, flyer, swimmer or object");
+    } else {
+        // The file name tells water creatures apart (a fish's fins read as feet).
+        const anim::Route r = anim::routeAnimation(img.value(), fs::path(a.positional[1]).stem().string());
+        if (r.body == motion::Body::Swimmer && r.swimStyle != motion::SwimStyle::Auto) {
+            o.body = r.body;
+            o.swim = r.swimStyle;
+        }
+    }
+    if (auto sw = a.opt("swim")) {
+        const auto s = motion::swimStyleFromString(*sw);
+        if (!s) return out.fail(kUsage, "animate: --swim expects auto, anguilliform, subcarangiform, carangiform or thunniform");
+        o.swim = *s;
     }
     o.faceLeft = a.opt("face").value_or("right") == "left";
     try {

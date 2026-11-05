@@ -26,6 +26,7 @@ struct Route {
     fx::Effect effect = fx::Effect::Pulse;   // when method == Effect
     fx::FireStyle fireStyle = fx::FireStyle::Campfire;   // when effect == Fire
     motion::Body body = motion::Body::Object;
+    motion::SwimStyle swimStyle = motion::SwimStyle::Auto;   // when body == Swimmer
     std::string reason;                      // one sentence for the user
 };
 

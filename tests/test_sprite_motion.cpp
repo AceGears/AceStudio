@@ -487,3 +487,83 @@ TEST_CASE("A walker steps the way it faces", "[motion][rig]") {
         CHECK((left ? d > 0 : d < 0));
     }
 }
+
+namespace {
+// A side-view fish facing right: body, eye, tail fin on the left.
+Image fish(int length, int depth) {
+    Image img(length + 8, depth + 8);
+    const double cx = 4 + length * 0.55, cy = 4 + depth / 2.0, rx = length * 0.45, ry = depth / 2.0;
+    for (int y = 0; y < img.height(); ++y)
+        for (int x = 0; x < img.width(); ++x)
+            if ((x - cx) * (x - cx) / (rx * rx) + (y - cy) * (y - cy) / (ry * ry) <= 1.0) img.setPixel(x, y, kShirt);
+    const int tailX = static_cast<int>(cx - rx);
+    for (int x = 4; x <= tailX; ++x)
+        for (int y = static_cast<int>(cy) - (tailX - x + 1); y <= static_cast<int>(cy) + (tailX - x + 1); ++y)
+            if (y >= 0 && y < img.height()) img.setPixel(x, y, kPants);
+    img.setPixel(static_cast<int>(cx + rx * 0.6), static_cast<int>(cy) - 1, kInk);
+    return img;
+}
+// How far a column's pixels move up or down over the clip.
+int columnTravel(const std::vector<Image>& frames, double u) {
+    int lo = 1 << 20, hi = -(1 << 20);
+    for (const Image& f : frames) {
+        const IntRect bb = f.opaqueBounds();
+        const int x = bb.x + static_cast<int>(u * (bb.w - 1));
+        int top = -1;
+        for (int y = 0; y < f.height() && top < 0; ++y)
+            if (f.pixel(x, y).a) top = y;
+        if (top < 0) continue;
+        lo = std::min(lo, top);
+        hi = std::max(hi, top);
+    }
+    return hi - lo;
+}
+} // namespace
+
+TEST_CASE("A fish swims by moving whole columns, the tail most", "[motion][rig][swim]") {
+    for (auto [len, depth] : {std::pair{40, 16}, std::pair{60, 12}, std::pair{30, 22}}) {
+        const Image src = fish(len, depth);
+        Options o;
+        o.action = Action::Swim;
+        o.body = Body::Swimmer;
+        o.frames = 12;
+        auto clip = animate(src, o);
+        REQUIRE(clip);
+        const auto& fr = clip.value().frames;
+        long srcCount = 0;
+        for (const Rgba8& c : src.pixels()) srcCount += c.a ? 1 : 0;
+        std::set<int> widths;
+        for (const Image& f : fr) {
+            // No pixel is redrawn: only the sprite's colours, and every
+            // column of a frame is a whole column of the sprite, moved.
+            CHECK(colours(f).size() <= colours(src).size());
+            long n = 0;
+            for (const Rgba8& c : f.pixels()) n += c.a ? 1 : 0;
+            // Foreshortening drops a few columns, never more.
+            CHECK(n <= srcCount);
+            CHECK(n * 10 >= srcCount * 8);
+            widths.insert(f.opaqueBounds().w);
+            const IntRect fb = f.opaqueBounds();
+            for (int x = fb.x; x < fb.x + fb.w; ++x) {
+                bool matched = false;
+                for (int sx = 0; sx < src.width() && !matched; ++sx)
+                    for (int dy = -8; dy <= 8 + f.height() && !matched; ++dy) {
+                        bool ok = true;
+                        for (int y = 0; y < f.height() && ok; ++y) {
+                            const int yy = y - dy + (f.height() - src.height()) / 2 * 0;
+                            const Rgba8 a = f.pixel(x, y);
+                            const Rgba8 b = yy >= 0 && yy < src.height() ? src.pixel(sx, yy) : Rgba8{0, 0, 0, 0};
+                            if ((a.a != 0) != (b.a != 0) || (a.a && a != b)) ok = false;
+                        }
+                        matched = ok;
+                    }
+                CHECK(matched);
+            }
+        }
+        // The body swings towards the viewer: the length changes.
+        CHECK(widths.size() >= 2);
+        // The tail (left end) moves further than the head (right end).
+        CHECK(columnTravel(fr, 0.05) > columnTravel(fr, 0.95));
+        CHECK(columnTravel(fr, 0.05) >= 1);
+    }
+}

@@ -628,6 +628,23 @@ std::optional<Body> bodyFromString(std::string_view s) {
     return std::nullopt;
 }
 
+const char* toString(SwimStyle s) {
+    switch (s) {
+    case SwimStyle::Auto: return "auto";
+    case SwimStyle::Anguilliform: return "anguilliform";
+    case SwimStyle::Subcarangiform: return "subcarangiform";
+    case SwimStyle::Carangiform: return "carangiform";
+    case SwimStyle::Thunniform: return "thunniform";
+    }
+    return "auto";
+}
+
+std::optional<SwimStyle> swimStyleFromString(std::string_view s) {
+    for (SwimStyle v : {SwimStyle::Auto, SwimStyle::Anguilliform, SwimStyle::Subcarangiform, SwimStyle::Carangiform, SwimStyle::Thunniform})
+        if (s == toString(v)) return v;
+    return std::nullopt;
+}
+
 Subject analyzeSubject(const Image& sprite) {
     Subject s;
     s.bounds = sprite.opaqueBounds();
@@ -918,7 +935,7 @@ Result<std::vector<Clip>> animatePack(const Image& sprite, const std::vector<Act
         const int frames = std::clamp(base.frames > 0 && list.size() == 1 ? base.frames : smooth ? 12 : info.frames, 1, 64);
         // Walks, runs and idles of bodies with legs: whole-pixel moves only.
         const detail::WingSpec wing{base.wingLine, base.wingFrom, base.wingTo, base.wingMask.isNull() ? nullptr : &base.wingMask};
-        if (auto rig = detail::rigRender(sprite, subj, body, a, frames, amount, wing)) {
+        if (auto rig = detail::rigRender(sprite, subj, body, a, frames, amount, wing, base.swim)) {
             rendered.push_back({std::move(rig->frames), rig->box});
             continue;
         }
