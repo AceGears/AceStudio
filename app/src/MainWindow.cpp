@@ -1,5 +1,4 @@
 #include "MainWindow.h"
-#include "licensing/Licensing.h"
 #include "scripting/AppBridgeServer.h"
 #include "scripting/McpSetupDialog.h"
 #include "ui/WorkspaceRail.h"
@@ -121,7 +120,6 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
     m_stack->addWidget(buildWelcome());
     m_stack->addWidget(m_tabs);
 
-    initLicensing(m_ctx.dataDir());
     m_tools = new ToolState(this);
     buildDocks();
     m_bridge = new AppBridgeServer(
@@ -145,19 +143,6 @@ MainWindow::MainWindow(AppContext& ctx, QWidget* parent) : QMainWindow(parent), 
         l->setMinimumWidth(110);
         statusBar()->addPermanentWidget(l);
     }
-    // Trial / licence state; click it to open Help › Licence.
-    m_statusLicence = new QPushButton(this);
-    m_statusLicence->setFlat(true);
-    m_statusLicence->setAccessibleName(tr("Licence status"));
-    connect(m_statusLicence, &QPushButton::clicked, this, &MainWindow::showLicence);
-    statusBar()->addPermanentWidget(m_statusLicence);
-    updateLicenceStatus();
-    if (!writesAllowed(currentLicence()))
-        QTimer::singleShot(0, this, [this] {
-            statusBar()->showMessage(tr("The trial has ended: you can open and view your work; saving and exporting need a licence key "
-                                        "(Help › Licence)."),
-                                     15000);
-        });
 
     connect(&m_ctx, &AppContext::recentProjectsChanged, this, &MainWindow::rebuildRecentMenus);
     rebuildRecentMenus();
@@ -382,7 +367,6 @@ void MainWindow::buildMenus() {
         const int i = m_tools->currentTip();
         if (i < 0) { report(Error{ErrorCode::InvalidArgument, "No brush tip is selected"}); return; }
         const auto& tip = m_tools->tips()[static_cast<std::size_t>(i)];
-        if (!licenceAllows(this, tr("Exporting"))) return;
         const QString f = QFileDialog::getSaveFileName(this, tr("Export Brush Tip"), tip.name + QStringLiteral(".png"), tr("PNG images (*.png)"));
         if (!f.isEmpty()) report(saveBrushTip(*tip.image, toPath(f)));
     });
@@ -820,7 +804,6 @@ void MainWindow::buildMenus() {
     help->addAction(tr("&User Guide"), this, [this] { showDocument(QStringLiteral("user-guide.md"), tr("User Guide")); });
     help->addAction(tr("&Privacy"), this, [this] { showDocument(QStringLiteral("PRIVACY.md"), tr("Privacy")); });
     help->addSeparator();
-    help->addAction(tr("&Licence…"), this, &MainWindow::showLicence);
     help->addAction(tr("Third-Party &Notices"), this, &MainWindow::showNotices);
     QAction* about = help->addAction(tr("&About AceStudio"), this, &MainWindow::showAbout);
     about->setMenuRole(QAction::AboutRole);
@@ -1080,7 +1063,6 @@ void MainWindow::showWorkspace(Workspace w) {
             }
     }
     m_workspace = w;
-    if (w == Workspace::Home) updateLicenceStatus();
     QWidget* page = m_pageFor[static_cast<std::size_t>(w)];
     const bool changed = m_pages->currentWidget() != page;
     m_pages->setCurrentWidget(page);
@@ -1435,7 +1417,6 @@ bool MainWindow::openProject(const QString& pathIn) {
 
 bool MainWindow::save(DocumentView* view) {
     if (!view) return false;
-    if (!licenceAllows(this, tr("Saving"))) return false;
     if (view->filePath().isEmpty()) return saveAs(view);
     const QString err = view->saveTo(QString());
     if (!err.isEmpty()) {
@@ -1450,7 +1431,6 @@ bool MainWindow::save(DocumentView* view) {
 
 bool MainWindow::saveAs(DocumentView* view) {
     if (!view) return false;
-    if (!licenceAllows(this, tr("Saving"))) return false;
     QString suggested = view->filePath();
     if (suggested.isEmpty()) {
         const QString dir = m_ctx.recentProjects().isEmpty() ? QDir::homePath()
@@ -1524,26 +1504,6 @@ void MainWindow::rebuildRecentMenus() {
 
 void MainWindow::setThemeAndPersist(const QString& theme) { m_ctx.setSetting("general.theme", theme.toStdString()); }
 
-void MainWindow::showLicence() {
-    LicenceDialog dlg(this);
-    connect(&dlg, &LicenceDialog::licenceChanged, this, &MainWindow::updateLicenceStatus);
-    dlg.exec();
-    updateLicenceStatus();
-}
-
-void MainWindow::updateLicenceStatus() {
-    const LicenceStatus& s = currentLicence();
-    QString text;
-    switch (s.mode) {
-    case LicenceMode::Licensed: text = tr("Licensed"); break;
-    case LicenceMode::Trial: text = tr("Trial: %n day(s) left", nullptr, s.trialDaysLeft); break;
-    case LicenceMode::TrialEnded: text = tr("Trial ended: enter a key"); break;
-    }
-    m_statusLicence->setText(text);
-    if (m_home) m_home->refreshLicence(qs(describeLicence(s)));
-    m_statusLicence->setToolTip(qs(describeLicence(s)));
-}
-
 void MainWindow::showAbout() {
     QMessageBox box(this);
     box.setWindowTitle(tr("About AceStudio"));
@@ -1552,12 +1512,11 @@ void MainWindow::showAbout() {
     box.setText(
         tr("<h3>AceStudio %1</h3>"
            "<p>AI-assisted game asset creation and 2D animation studio.</p>"
-           "<p>%4</p>"
+           "<p>For personal use: no account, licence key or activation.</p>"
            "<p>Project format schema %2.</p>"
            "<p>Built with Qt %3, used under the GNU LGPL v3 and dynamically linked. "
            "See Help › Third-Party Notices.</p>")
-            .arg(QString::fromLatin1(kVersionString)).arg(kProjectSchemaVersion).arg(QString::fromLatin1(qVersion()))
-            .arg(qs(describeLicence(currentLicence())).toHtmlEscaped()));
+            .arg(QString::fromLatin1(kVersionString)).arg(kProjectSchemaVersion).arg(QString::fromLatin1(qVersion())));
     box.exec();
 }
 
@@ -1576,7 +1535,6 @@ void MainWindow::showNotices() {
         "with the WebM project's additional patent grant</li>"
         "<li><b>Lua 5.4.9</b> — MIT License, Copyright (C) 1994-2026 Lua.org, PUC-Rio</li>"
         "<li><b>sol2 3.3.0</b> — MIT License, Copyright (c) 2013-2022 Rapptz, ThePhD, and contributors</li>"
-        "<li><b>Monocypher 4.0.3</b> — BSD 2-Clause or CC0 (licence key signatures)</li>"
         "<li><b>Python 3.12</b> (bundled, for the optional AI features) — PSF License; <b>pip</b> — MIT License</li>"
         "</ul><p>The full licence texts are in the <i>licences</i> folder next to AceStudio.exe.</p>")
                     .arg(QString::fromLatin1(qVersion())));
@@ -1719,7 +1677,6 @@ bool MainWindow::insertImageAsLayer(DocumentView* v, const Image& src, const QSt
 void MainWindow::exportAnimation(int kind) {
     DocumentView* v = currentView();
     if (!v) return;
-    if (!licenceAllows(this, tr("Exporting"))) return;
     const auto k = static_cast<ExportKind>(kind);
     nlohmann::json presets = m_ctx.settings().get("export.presets");
     if (!presets.is_object()) presets = nlohmann::json::object();
@@ -1790,7 +1747,6 @@ void MainWindow::exportPng() {
                                            : v->filePath().left(v->filePath().lastIndexOf(QLatin1Char('.')));
     const QString suggested = v->document().frameCount() > 1 ? QStringLiteral("%1_%2.png").arg(base).arg(v->currentFrame() + 1)
                                                             : base + QStringLiteral(".png");
-    if (!licenceAllows(this, tr("Exporting"))) return;
     const QString path = QFileDialog::getSaveFileName(this, tr("Export Frame as PNG"), suggested, tr("PNG Images (*.png)"));
     if (path.isEmpty()) return;
     if (auto st = writePng(v->document().composite(v->currentFrame()), toPath(path)); !st) {

@@ -173,25 +173,16 @@ not been run.
 
 ## Phase 8 commercial polish (limits)
 
-### Licensing
-- Enforcement is client-side and offline. Deleting both the trial file and its registry value
-  restarts the trial, and a patched binary skips the check (SECURITY.md).
-- Builds without the release public key (`ACESTUDIO_LICENCE_PUBLIC_KEY`) accept keys made with
-  the public development key. The licence dialog and CI say so. The release key pair has not
-  been generated yet; the publisher must do it (`tools/licence/README.md`).
-- There is no online activation, seat counting or revocation list; an expiry date in the key
-  is the only way to end a licence.
-
 ### Installer and distribution
 - The installer and executables are **not code-signed**. Seen on the test PC: SmartScreen
   blocks the installer ("Windows protected your PC") until the user picks More info › Run
   anyway. A code-signing certificate is required before release.
 - The interactive install (wizard pages) was exercised on the test PC only up to the EULA
-  page; the full install, AI setup and uninstall were tested silently in CI.
+  page (removed in 0.10.0); the full install, AI setup and uninstall were tested silently in CI.
 - Per-user install only by default; an all-users install is possible from the command line
   (`/ALLUSERS`) but was not tested.
 - Nightly installers are attached to a GitHub release, public while the repository is.
-- The EULA (`packaging/windows/EULA.txt`) and PRIVACY.md are drafts for legal review.
+- PRIVACY.md is a draft for legal review.
 
 ### Accessibility
 - The UI audit checks that every control has an accessible name and can be reached with Tab,

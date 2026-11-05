@@ -19,7 +19,9 @@ namespace acestudio::cli {
 
 using nlohmann::json;
 
-enum Exit : int { kOk = 0, kUsage = 1, kIo = 2, kCorrupt = 3, kUnsupported = 4, kInternal = 5, kScript = 6, kLicence = 7 };
+// Exit codes are part of the CLI's contract; 7 (licence required) was used by
+// the trial and stays unassigned so scripts that test codes keep their meaning.
+enum Exit : int { kOk = 0, kUsage = 1, kIo = 2, kCorrupt = 3, kUnsupported = 4, kInternal = 5, kScript = 6 };
 
 inline int exitFor(ErrorCode c) {
     switch (c) {

@@ -1,5 +1,5 @@
 # libFuzzer targets (clang only). See fuzz_targets.cpp.
-set(_fuzz_targets PROJECT PNG GIF APNG WEBP PALETTE LICENCE LUA MCP)
+set(_fuzz_targets PROJECT PNG GIF APNG WEBP PALETTE LUA MCP)
 foreach(t ${_fuzz_targets})
     string(TOLOWER ${t} _name)
     add_executable(fuzz_${_name} fuzz_targets.cpp)

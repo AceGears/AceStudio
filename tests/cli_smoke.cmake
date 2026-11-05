@@ -1,7 +1,7 @@
 # End-to-end CLI test, run by CTest: cmake -DCLI=... -DWORKDIR=... -P cli_smoke.cmake
 file(REMOVE_RECURSE "${WORKDIR}")
 file(MAKE_DIRECTORY "${WORKDIR}")
-# A data folder of our own: a fresh 14-day trial, nothing from the real user.
+# A data folder of our own: nothing from the real user.
 set(ENV{ACESTUDIO_DATA_DIR} "${WORKDIR}/data")
 
 function(run expected_code)
@@ -227,32 +227,14 @@ if(NOT EXISTS "${WORKDIR}/tiled/level.tmx" OR NOT EXISTS "${WORKDIR}/tiled/level
     message(FATAL_ERROR "map export did not write the Tiled map")
 endif()
 
-# Licence: after the trial, writing commands exit 7 and reading ones still work.
-run(0 --json licence)
-string(JSON mode GET "${LAST_OUT}" mode)
-if(NOT mode STREQUAL "trial")
-    message(FATAL_ERROR "a fresh data folder should be in the trial: ${LAST_OUT}")
-endif()
+# Personal use: no licence or trial. An expired trial record left in the data
+# folder by an earlier version changes nothing, and the old command is gone.
 string(TIMESTAMP now "%s" UTC)
 math(EXPR old "(${now} - 20 * 86400) * 1000")
 file(WRITE "${WORKDIR}/data/trial.json" "{\"started\":\"old\",\"startedMs\":${old}}")
-run(7 new "${WORKDIR}/after-trial.acestudio" --width 8 --height 8)
-run(7 render "${P}" --out "${WORKDIR}/after.png")
-run(0 info "${P}")
-run(0 --json licence)
-string(JSON writes GET "${LAST_OUT}" writesAllowed)
-string(JSON devkey GET "${LAST_OUT}" developmentKey)
-if(writes)
-    message(FATAL_ERROR "writes should be refused after the trial: ${LAST_OUT}")
-endif()
-run(7 licence install "ACESTUDIO-1.not-a-key")
-if(LICENCE_TOOL AND devkey)   # dev keys only verify in development-key builds
-    execute_process(COMMAND "${LICENCE_TOOL}" issue --secret dev --name "CLI Smoke" OUTPUT_VARIABLE key OUTPUT_STRIP_TRAILING_WHITESPACE)
-    run(0 licence install "${key}")
-    run(0 new "${WORKDIR}/after-trial.acestudio" --width 8 --height 8)
-    run(0 licence remove)
-    run(7 new "${WORKDIR}/after-trial2.acestudio" --width 8 --height 8)
-endif()
+run(0 new "${WORKDIR}/after-trial.acestudio" --width 8 --height 8)
+run(0 render "${P}" --out "${WORKDIR}/after.png")
+run(1 licence)
 
 message(STATUS "cli_smoke passed")
 

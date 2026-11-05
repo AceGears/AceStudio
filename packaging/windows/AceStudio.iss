@@ -4,10 +4,11 @@
 ; - Installs for the current user by default (no admin); "Install for all
 ;   users" is offered too (needs admin).
 ; - Includes the embeddable Python (dist\python) so the AI features need no
-;   separate Python, and the third-party licence texts.
+;   separate Python, and the third-party licence texts. AceStudio is for
+;   personal use: there is no licence page, key or trial.
 ; - Associates .acestudio files with AceStudio.
-; - Uninstalling removes the program only: projects, settings, AI models,
-;   licence key and trial record (user data folder) are kept.
+; - Uninstalling removes the program only: projects, settings and AI models
+;   (user data folder) are kept.
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -35,7 +36,6 @@ PrivilegesRequiredOverridesAllowed=dialog commandline
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
-LicenseFile=EULA.txt
 OutputDir={#OutputDir}
 OutputBaseFilename=AceStudio-{#AppVersion}-setup-x64
 Compression=lzma2/max
@@ -75,7 +75,6 @@ Name: "association"; Description: "Open .acestudio projects with AceStudio"; Gro
 ; "portable" is a development marker and must never reach customers.
 Source: "{#DistDir}\*"; DestDir: "{app}"; Excludes: "portable,*.pdb,__pycache__"; Flags: recursesubdirs ignoreversion createallsubdirs
 Source: "..\licences\*"; DestDir: "{app}\licences"; Flags: ignoreversion
-Source: "EULA.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\AceStudio"; Filename: "{app}\AceStudio.exe"

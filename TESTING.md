@@ -45,10 +45,9 @@ temporary directories, and `ACESTUDIO_DATA_DIR` redirects the app's settings and
 | `cli_smoke` | end-to-end | every CLI command, JSON output, exit codes, overwrite protection, corrupt-file handling |
 | `test_regression` | regression | projects written by 0.1.0, 0.5.0 and 0.8.1 (`tests/data/compat`) open and render identically; golden renders of blend modes, adjustments/masks/clipping, onion skin and the packed sheet with its JSON (`tests/data/golden`) |
 | `test_fuzz_regressions` | regression | every input the fuzzers found (`tests/fuzz/regressions`) |
-| `test_licence` | unit | Ed25519 against RFC 8032 vectors, key format, tampering, expiry, trial start (earliest of file and registry), read-only after the trial |
 | `ui_audit` | end-to-end (app, offscreen) | every menu command runs; every window it opens has a name for each control and keyboard access; background autosave writes and removes recovery files |
 | `perf_budget` | performance | `acestudio_bench` medians against `bench/perf_budgets.json` (optimised builds only) |
-| `tests/fuzz` | fuzzing (manual) | libFuzzer + ASan/UBSan targets for projects, PNG, GIF, APNG, WebP, palettes, licence keys, Lua, MCP (SECURITY.md) |
+| `tests/fuzz` | fuzzing (manual) | libFuzzer + ASan/UBSan targets for projects, PNG, GIF, APNG, WebP, palettes, Lua, MCP (SECURITY.md) |
 | Installer test (CI, Windows) | end-to-end | silent per-user install, files and association, CLI from the install folder, AI setup with the bundled Python, silent uninstall keeping user data |
 
 ## Recorded results

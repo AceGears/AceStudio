@@ -82,12 +82,10 @@ add_executable(AceStudio WIN32
     ${PROJECT_SOURCE_DIR}/mcp/ClientConfigs.cpp
     src/SingleInstance.h
     src/SingleInstance.cpp
-    src/licensing/Licensing.h
     src/Accessibility.h
     src/Accessibility.cpp
     src/selftest/UiAudit.h
     src/selftest/UiAudit.cpp
-    src/licensing/Licensing.cpp
     src/Shortcuts.h
     src/Shortcuts.cpp
     src/ToolState.h

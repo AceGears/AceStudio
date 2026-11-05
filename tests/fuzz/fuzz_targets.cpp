@@ -7,7 +7,6 @@
 #include "acestudio/core/PaletteIO.h"
 #include "acestudio/core/PngCodec.h"
 #include "acestudio/core/ProjectIO.h"
-#include "acestudio/core/Licence.h"
 #include "acestudio/core/Script.h"
 
 #ifdef FUZZ_MCP
@@ -39,8 +38,6 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     if (size < 1) return 0;
     static const char* exts[] = {".gpl", ".pal", ".hex", ".txt", ".ase", ".act", ".json"};
     (void)parsePalette(text.substr(1), exts[data[0] % 7]);
-#elif defined(FUZZ_LICENCE)
-    (void)verifyLicenceKey(std::string(text), licencePublicKey(), "2026-11-01");
 #elif defined(FUZZ_LUA)
     ScriptOptions o;
     o.limits.memoryBytes = 32u << 20;

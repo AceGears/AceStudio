@@ -164,13 +164,13 @@ in Unity).
 | Performance profiling | ✅ Benchmarks for editing, file and export paths. Fixed: blend loops per mode (composites −35%), parallel cel compression and decompression (load 3×), copy-on-write images (autosave snapshot 430 → 0.01 ms, strokes 2×), autosave off the UI thread (a 1.1–1.3 s pause removed). Numbers in TESTING |
 | Accessibility | ✅ Every control has a name and is reachable with Tab: `--ui-audit` over 136 commands, 55 windows, 689 controls, 0 failures (CTest). High Contrast theme with Windows detection, text size 100–200%, rebindable shortcuts. Screen readers not run (KNOWN_ISSUES) |
 | Inno Setup installer | ✅ Per-user, with association, licences, docs, EULA draft and bundled Python 3.12; CI installs, runs AI setup and uninstalls it. On the test PC SmartScreen blocks it until it is signed; the wizard was checked up to the EULA page |
-| Licensing module | ✅ Offline Ed25519 keys, 14-day trial, read-only after it (app, CLI, Lua, MCP). The release key pair is the publisher's to generate |
+| Licensing module | ✅ Offline Ed25519 keys, 14-day trial, read-only after it (app, CLI, Lua, MCP). Removed in 0.10.0: AceStudio is for personal use |
 | Full docs | ✅ User guide, privacy policy (draft for legal review), SECURITY, ADR-006 to ADR-011, LICENSE_AUDIT, KNOWN_ISSUES, TESTING |
 | Security review | ✅ Threat model; 9 fuzz targets; 6 findings fixed (one in stb_image); residual risks listed in SECURITY.md |
 | Regression suite | ✅ Old-version projects (0.1.0, 0.5.0, 0.8.1), golden renders, UI audit, performance budgets in CI |
 
-Open before a sale (not code): code signing, the release licence key pair, legal review of the
-EULA and privacy policy, a private repository and nightlies.
+Open (not code): code signing and legal review of the privacy policy. (The licence key pair and
+EULA are no longer needed since 0.10.0.)
 
 ## Phase 9 — Release Candidate · ⬜
 Clean-machine install tests; GPU matrix; recovery tests; export verification across engines.

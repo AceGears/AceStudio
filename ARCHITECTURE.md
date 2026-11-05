@@ -238,7 +238,7 @@ duplicate implementation of document logic, file formats or export in any front 
   the `.acestudio` association goes to HKCU. Installs into `{autopf}\AceStudio`
   (`%LOCALAPPDATA%\Programs\AceStudio` for a per-user install).
 - **Contents.** The program, Qt (dynamic, LGPL), the app-local VC++ runtime, the AI worker
-  source, `licences\`, `docs\` and `EULA.txt`. CI checks that every DLL an executable imports is
+  source, `licences\` and `docs\`. CI checks that every DLL an executable imports is
   present.
 - **Python.** The 3.12 embeddable package (python.org's SHA-256 checked in CI) and a pinned
   pip wheel. On first AI setup the embeddable Python is copied to the user's AI folder, its
@@ -246,7 +246,7 @@ duplicate implementation of document logic, file formats or export in any front 
   zip; running pip from the wheel failed on the runner). Users no longer need to install
   Python; a system Python is used only if the bundled one is missing.
 - **Models are never bundled**: each is an optional download after its licence is accepted.
-- **Uninstall keeps user data** (settings, recovery files, licence, models).
+- **Uninstall keeps user data** (settings, recovery files, models).
 - **CI test.** A silent per-user install, the files and association, the CLI from the install
   folder, `ai setup` with the bundled Python, then a silent uninstall that must remove the
   program and keep the data.
@@ -271,24 +271,16 @@ duplicate implementation of document logic, file formats or export in any front 
 - **Undo.** Edits to the host document go through its `Editor`, so a script is one undo
   step, rolled back on error.
 
-### ADR-008 — Licensing: offline Ed25519 keys and a 14-day trial (0.9.0)
-- **Keys** are `ACESTUDIO-1.<base64url JSON>.<base64url signature>`. The JSON holds the
-  licensee, e-mail, edition, issue date and optional expiry; the signature is Ed25519
-  (Monocypher 4.0.3, checked against the RFC 8032 vectors). Verification is offline: only the
-  public key is in the program.
-- **Key pairs.** The release public key is a CMake variable (`ACESTUDIO_LICENCE_PUBLIC_KEY`,
-  from a CI variable). Without it, builds use a development key whose seed is public; the
-  licence dialog and `acestudio-cli licence` (`developmentKey`) say so, and CI warns when a
-  nightly is built that way. The private key lives only with the publisher
-  (`tools/licence`, never shipped).
-- **Trial.** 14 days of everything. The start date is kept in `trial.json` and in the
-  registry; the earliest wins, so deleting one does not restart the trial. A test data folder
-  (`ACESTUDIO_DATA_DIR`) keeps the registry out.
-- **After the trial, read-only** rather than locked out: files open and render; saving,
-  exporting and write commands (app, CLI exit 7, Lua, MCP) are refused with a clear message.
-  Autosave and crash recovery keep working, so no work is ever lost to licensing.
-- **Not DRM.** A determined user can patch a binary; the aim is honest users' convenience and
-  a clear line, without activation servers or telemetry.
+### ADR-008 — Licensing (0.9.0; withdrawn in 0.10.0)
+- 0.9.0 had offline Ed25519 licence keys (Monocypher), a 14-day trial and read-only mode
+  after it. 0.10.0 is for personal use and removes all of it: the licence module, the
+  `acestudio-licence` key tool, Monocypher, the app's licence dialog and status, the CLI
+  `licence` command and the installer's EULA page.
+- CLI exit code 7 ("needs a licence") stays unassigned, so scripts that test exit codes keep
+  their meaning.
+- `licence.key`, `trial.json` and the registry value left by 0.9.0 are ignored, not deleted.
+- Model licences are unrelated and unchanged: each model is still downloaded only after its
+  licence is accepted.
 
 ### ADR-009 — Accessibility is tested, not reviewed (0.9.0)
 - Every control gets an accessible name. Most are derived automatically when a window is
@@ -302,7 +294,7 @@ duplicate implementation of document logic, file formats or export in any front 
 
 ### ADR-010 — Untrusted input: own decoders where fuzzing found problems (0.9.0)
 - Every parser of untrusted input has a libFuzzer target (`tests/fuzz`): project, PNG, GIF,
-  APNG, WebP, palette, licence key, Lua and MCP messages. Findings become regression inputs.
+  APNG, WebP, palette, Lua and MCP messages. Findings become regression inputs.
 - Decoders check the total decoded size (1 GB for an animation) before allocating.
 - GIF is decoded by AceStudio's own bounds-checked decoder: fuzzing found a use-after-free in
   stb_image's GIF loader. stb_image is compiled for PNG only. See SECURITY.md.

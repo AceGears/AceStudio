@@ -20,7 +20,6 @@ class QAction;
 class QActionGroup;
 class QDockWidget;
 class QLabel;
-class QPushButton;
 class QListWidget;
 class QMenu;
 class QStackedWidget;
@@ -91,8 +90,6 @@ private:
     void setThemeAndPersist(const QString& theme);
     void resetLayout();
     void showAbout();
-    void showLicence();
-    void updateLicenceStatus();
     void showNotices();
     void showDocument(const QString& fileName, const QString& title);
     void importPng(bool asLayer);
@@ -167,7 +164,6 @@ private:
     LogPanel* m_log = nullptr;
 
     QLabel* m_statusCursor = nullptr;
-    QPushButton* m_statusLicence = nullptr;
     QLabel* m_statusZoom = nullptr;
     QLabel* m_statusCanvas = nullptr;
 

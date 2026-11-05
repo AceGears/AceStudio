@@ -1,5 +1,4 @@
 #include "AssetDialogs.h"
-#include "../licensing/Licensing.h"
 
 #include "AssetCommon.h"
 
@@ -465,7 +464,6 @@ void ParallaxDialog::generate() {
 
 void ParallaxDialog::exportFiles() {
     if (m_set.layers.empty()) return;
-    if (!licenceAllows(this, tr("Exporting"))) return;
     const QString f = QFileDialog::getSaveFileName(this, tr("Export Parallax Set"), QStringLiteral("parallax.json"), tr("Parallax JSON (*.json)"));
     if (f.isEmpty()) return;
     const fs::path json = withExtension(f, ".json");
@@ -641,7 +639,6 @@ void UiKitDialog::rebuild() {
 
 void UiKitDialog::exportFiles() {
     if (!m_files) return;
-    if (!licenceAllows(this, tr("Exporting"))) return;
     const QString f = QFileDialog::getSaveFileName(this, tr("Export UI Kit"), QStringLiteral("ui_kit.png"), tr("PNG image (*.png)"));
     if (f.isEmpty()) return;
     const fs::path png = withExtension(f, ".png");
@@ -892,7 +889,6 @@ void SliceDialog::reslice() {
 
 void SliceDialog::exportJson() {
     if (m_slices.empty()) return;
-    if (!licenceAllows(this, tr("Exporting"))) return;
     const QString f = QFileDialog::getSaveFileName(this, tr("Export Slices"), QStringLiteral("sheet.json"), tr("Slice JSON (*.json)"));
     if (f.isEmpty()) return;
     const fs::path json = withExtension(f, ".json");
@@ -905,7 +901,6 @@ void SliceDialog::exportJson() {
 
 void SliceDialog::exportPngs() {
     if (m_slices.empty()) return;
-    if (!licenceAllows(this, tr("Exporting"))) return;
     const QString dir = QFileDialog::getExistingDirectory(this, tr("Export Sprites to Folder"));
     if (dir.isEmpty()) return;
     const fs::path d = toPath(dir);
@@ -1112,7 +1107,6 @@ void AtlasDialog::repack() {
 
 void AtlasDialog::exportFiles() {
     if (!m_atlas) return;
-    if (!licenceAllows(this, tr("Exporting"))) return;
     const QString f = QFileDialog::getSaveFileName(this, tr("Export Atlas"), QStringLiteral("atlas.png"), tr("PNG image (*.png)"));
     if (f.isEmpty()) return;
     const fs::path png = withExtension(f, ".png");

@@ -1,5 +1,4 @@
 #include "AssetCommon.h"
-#include "../licensing/Licensing.h"
 
 #include "../DocumentView.h"
 #include "../QtBridge.h"
@@ -87,7 +86,6 @@ unsigned EngineChoice::engines() const {
 
 bool writeAssetFiles(QWidget* parent, AssetWriteOptions opts, const std::filesystem::path& confirmedFile,
                      const std::function<Result<WrittenFiles>(const AssetWriteOptions&)>& write) {
-    if (!licenceAllows(parent, QObject::tr("Exporting"))) return false;
     const QString title = parent ? parent->windowTitle() : QString();
     AssetWriteOptions dry = opts;
     dry.dryRun = true;
