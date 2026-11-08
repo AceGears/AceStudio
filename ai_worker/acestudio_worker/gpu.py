@@ -11,13 +11,18 @@ import sys
 CUDA13_MIN_DRIVER = 580
 
 
-def nvidia_driver():
-    """The NVIDIA driver version as a string ("591.44"), or None when there
-    is no NVIDIA GPU or nvidia-smi is missing."""
+def _nvidia_smi():
     exe = shutil.which("nvidia-smi")
     if exe is None and sys.platform == "win32":
         candidate = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "nvidia-smi.exe")
         exe = candidate if os.path.exists(candidate) else None
+    return exe
+
+
+def nvidia_driver():
+    """The NVIDIA driver version as a string ("591.44"), or None when there
+    is no NVIDIA GPU or nvidia-smi is missing."""
+    exe = _nvidia_smi()
     if exe is None:
         return None
     try:
@@ -28,6 +33,30 @@ def nvidia_driver():
         return None
     m = re.search(r"\d+(\.\d+)*", out.stdout or "")
     return m.group(0) if out.returncode == 0 and m else None
+
+
+def free_vram():
+    """Free memory on GPU 0 in bytes, or None when unknown. Uses PyTorch when
+    the job has already initialised CUDA (cheap); otherwise nvidia-smi (about
+    0.1 s, so only for rare calls such as creating an ONNX session)."""
+    torch = sys.modules.get("torch")
+    if torch is not None:
+        try:
+            if torch.cuda.is_available() and torch.cuda.is_initialized():
+                return int(torch.cuda.mem_get_info()[0])
+        except Exception:   # noqa: BLE001
+            pass
+    exe = _nvidia_smi()
+    if exe is None:
+        return None
+    try:
+        out = subprocess.run([exe, "--query-gpu=memory.free", "--format=csv,noheader,nounits", "--id=0"],
+                             stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    m = re.search(r"\d+", out.stdout or "")
+    return int(m.group(0)) * 2**20 if out.returncode == 0 and m else None
 
 
 def driver_major(version):

@@ -83,12 +83,58 @@ def onnx_session(model_path, device="auto", provider=None, optimization="all"):
             ort.preload_dlls()
         except Exception:   # noqa: BLE001 - the session creation below reports it
             pass
-    # CUDA: grow the memory arena only by what is asked for (the default
-    # doubles it), so with arena shrinkage after each run a cached session
-    # holds little more than its weights between jobs.
-    providers = [(p, {"arena_extend_strategy": "kSameAsRequested"}) if p == "CUDAExecutionProvider" else p for p in providers]
+    providers = [(p, cuda_provider_options()) if p == "CUDAExecutionProvider" else p for p in providers]
     sess = ort.InferenceSession(model_path, sess_options=opts, providers=providers)
     return sess, sess.get_providers()[0]
+
+
+# ONNX Runtime CUDA arena cap. The cap is the free VRAM at session creation
+# minus a headroom for the CUDA context and other processes, clamped: a
+# BiRefNet run at 1024x1024 needs roughly 1-1.5 GB of working memory, and
+# more than 4 GB is never useful to the models this worker runs, while an
+# uncapped arena (the default) can claim the whole card and push the
+# diffusion model into shared system memory.
+ORT_GPU_MIN_BYTES = 1 * 2**30
+ORT_GPU_MAX_BYTES = 4 * 2**30
+ORT_GPU_HEADROOM_BYTES = 768 * 2**20
+
+
+def ort_gpu_mem_limit(free_bytes=None):
+    """Bytes the ONNX Runtime CUDA arena may grow to, or None for no cap.
+    ACESTUDIO_ORT_GPU_MEM_MB overrides it (0 = no cap); otherwise it is
+    sized from the free VRAM."""
+    env = os.environ.get("ACESTUDIO_ORT_GPU_MEM_MB")
+    if env is not None:
+        try:
+            mb = int(env)
+        except ValueError:
+            mb = -1
+        if mb == 0:
+            return None
+        if mb > 0:
+            return mb * 2**20
+    if free_bytes is None:
+        from .gpu import free_vram
+        free_bytes = free_vram()
+    if free_bytes is None:
+        return ORT_GPU_MAX_BYTES
+    return int(max(ORT_GPU_MIN_BYTES, min(ORT_GPU_MAX_BYTES, free_bytes - ORT_GPU_HEADROOM_BYTES)))
+
+
+def cuda_provider_options(free_bytes=None):
+    """CUDA execution provider options:
+    - kSameAsRequested: the arena grows only by what is asked for (the
+      default doubles it), so with arena shrinkage after each run (see
+      run_options) a cached session holds little more than its weights;
+    - gpu_mem_limit: the arena never grows past the free-VRAM budget;
+    - HEURISTIC cuDNN algorithm search: the default EXHAUSTIVE search
+      benchmarks every convolution on the first run and allocates large
+      workspaces while doing so (seconds, and a VRAM spike)."""
+    opts = {"arena_extend_strategy": "kSameAsRequested", "cudnn_conv_algo_search": "HEURISTIC"}
+    limit = ort_gpu_mem_limit(free_bytes)
+    if limit:
+        opts["gpu_mem_limit"] = str(int(limit))
+    return opts
 
 
 def run_options(provider):
@@ -105,11 +151,18 @@ def run_options(provider):
     return ro
 
 
+def cached_session_count():
+    return len(_sessions)
+
+
 def release_sessions():
-    """Drops the cached ONNX sessions (and the GPU memory they hold)."""
+    """Drops the cached ONNX sessions (and the GPU memory they hold).
+    Returns how many were released."""
+    n = len(_sessions)
     _sessions.clear()
     import gc
     gc.collect()
+    return n
 
 
 def _cached_session(model_path, device, provider, optimization):
@@ -216,3 +269,57 @@ def run_onnx(ctx, model_path, device, fn, cpu_memory_mb=None):
                     level="warning")
         return result, used
     raise last_error
+
+
+class PngWriter:
+    """Encodes and writes PNGs on one background thread, so a diffusion step
+    callback does not wait for PNG compression and disk I/O (live previews).
+    Latest wins: a preview still waiting when a newer one arrives is dropped,
+    since it would be stale by the time it was shown. on_written(path,
+    payload) runs on the writer thread after the file is complete."""
+
+    def __init__(self, on_written=None, on_error=None):
+        import threading
+        self._cond = threading.Condition()
+        self._pending = None
+        self._closed = False
+        self._on_written = on_written
+        self._on_error = on_error
+        self.written = []
+        self.dropped = 0
+        self._thread = threading.Thread(target=self._loop, name="png-writer", daemon=True)
+        self._thread.start()
+
+    def submit(self, img, path, payload=None):
+        with self._cond:
+            if self._closed:
+                return
+            if self._pending is not None:
+                self.dropped += 1
+            self._pending = (img, path, payload)
+            self._cond.notify_all()
+
+    def _loop(self):
+        while True:
+            with self._cond:
+                while self._pending is None and not self._closed:
+                    self._cond.wait()
+                if self._pending is None:
+                    return
+                img, path, payload = self._pending
+                self._pending = None
+            try:
+                save_png(img, path)
+                self.written.append(path)
+                if self._on_written:
+                    self._on_written(path, payload)
+            except Exception as e:   # noqa: BLE001 - a preview never fails the job
+                if self._on_error:
+                    self._on_error(e)
+
+    def close(self, timeout=10.0):
+        """Writes what is still pending, then stops the thread."""
+        with self._cond:
+            self._closed = True
+            self._cond.notify_all()
+        self._thread.join(timeout)

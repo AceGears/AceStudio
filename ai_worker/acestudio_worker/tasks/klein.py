@@ -29,11 +29,13 @@ outputs:
   raw0..rawN        full-size generations when `pixel` is given
 """
 
+import gc
 import os
 import random
 import threading
 import time
 
+from .. import residency
 from ..imaging import load_rgba, require, save_png
 from ..jobs import Cancelled, JobError
 from .generate import pixelate
@@ -42,6 +44,17 @@ NAME = "image.klein"
 
 _cache = {"key": None, "pipe": None, "inpaint": None}
 _cache_lock = threading.Lock()
+
+
+def unload():
+    """Drops the cached pipelines (idle policy). True if one was loaded."""
+    with _cache_lock:
+        had = _cache["pipe"] is not None
+        _cache.update(key=None, pipe=None, inpaint=None)
+    return had
+
+
+residency.register(NAME, unload)
 
 
 def available():
@@ -77,6 +90,38 @@ def _memory_plan(torch, device, weights, offload):
     if offload == "auto":
         offload = "model" if device == "cuda" and vram < 20 else "none"
     return weights, offload, vram
+
+
+# Text-encoder modules kept in BF16 when its weights are stored in FP8.
+_TE_SKIP = ("embed", "norm", "lm_head", "rotary")
+
+
+def _load_text_encoder_fp8(model_dir, torch, dtype):
+    """Loads only the text encoder (class from model_index.json) and stores
+    its weights in FP8 at once, exactly as the pipeline-wide cast does.
+    Transformers 5 loads on the meta device and streams the safetensors
+    shards (always low-memory, `dtype=`); 4.x needs low_cpu_mem_usage."""
+    import importlib
+    import json
+    from diffusers.hooks import apply_layerwise_casting
+    with open(os.path.join(model_dir, "model_index.json"), encoding="utf-8") as f:
+        lib, cls_name = json.load(f)["text_encoder"]
+    module = importlib.import_module(lib)
+    cls = getattr(module, cls_name)
+    kwargs = {"use_safetensors": True}
+    major = 0
+    try:
+        major = int(str(getattr(module, "__version__", "0")).split(".")[0])
+    except ValueError:
+        pass
+    if lib == "transformers" and major >= 5:
+        kwargs["dtype"] = dtype
+    else:
+        kwargs.update(torch_dtype=dtype, low_cpu_mem_usage=True)
+    te = cls.from_pretrained(os.path.join(model_dir, "text_encoder"), **kwargs)
+    apply_layerwise_casting(te, storage_dtype=torch.float8_e4m3fn, compute_dtype=dtype, skip_modules_pattern=_TE_SKIP)
+    gc.collect()
+    return te
 
 
 def _switch_lora(pipe, lora):
@@ -120,7 +165,22 @@ def _pipelines(ctx, model_dir, lora, device, weights, offload, preload=None):
             torch.cuda.empty_cache()
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
     ctx.progress(0.02, "Loading FLUX.2 klein (the first run takes a few minutes)", force=True, uninterruptible=True)
-    pipe = Flux2KleinPipeline.from_pretrained(model_dir, torch_dtype=dtype, use_safetensors=True)
+    load_kwargs = {"torch_dtype": dtype, "use_safetensors": True, "low_cpu_mem_usage": True}
+    te_cast = False
+    if weights == "fp8" and device == "cuda":
+        # Low-RAM load: the text encoder is loaded and stored in FP8 before
+        # the transformer is read, so the two BF16 copies (8.0 + 7.75 GB)
+        # are never in memory together.
+        try:
+            load_kwargs["text_encoder"] = _load_text_encoder_fp8(model_dir, torch, dtype)
+            te_cast = True
+        except JobError:
+            raise
+        except Exception as e:   # noqa: BLE001 - the one-step load below still works
+            ctx.log("Staged text-encoder load failed (%s: %s); loading the whole pipeline at once"
+                    % (type(e).__name__, str(e).splitlines()[0][:200] if str(e) else ""), level="warning")
+            load_kwargs.pop("text_encoder", None)
+    pipe = Flux2KleinPipeline.from_pretrained(model_dir, **load_kwargs)
     pipe.set_progress_bar_config(disable=True)
     build_lora = dict(preload, scale=(lora or {}).get("scale", 1.0)) if preload else lora
     if build_lora:
@@ -145,8 +205,10 @@ def _pipelines(ctx, model_dir, lora, device, weights, offload, preload=None):
             "pos_embed", "patch_embed", "norm", "^proj_in$", "^proj_out$", "lora_")
         pipe.transformer.enable_layerwise_casting(storage_dtype=torch.float8_e4m3fn, compute_dtype=dtype,
                                                   skip_modules_pattern=skip)
-        apply_layerwise_casting(pipe.text_encoder, storage_dtype=torch.float8_e4m3fn, compute_dtype=dtype,
-                                skip_modules_pattern=("embed", "norm", "lm_head", "rotary"))
+        if not te_cast:
+            apply_layerwise_casting(pipe.text_encoder, storage_dtype=torch.float8_e4m3fn, compute_dtype=dtype,
+                                    skip_modules_pattern=_TE_SKIP)
+        gc.collect()   # the BF16 storage replaced by FP8 goes back to the OS now
     if device == "cuda":
         if offload == "model":
             pipe.enable_model_cpu_offload()
@@ -247,25 +309,46 @@ def run(ctx):
     peak = 0.0
     if device == "cuda":
         torch.cuda.reset_peak_memory_stats()
-    try:
-        for i in range(count):
-            ctx.check_cancel()
-            gen = torch.Generator(device="cpu").manual_seed(seed + i)
-            t1 = time.monotonic()
-            common = dict(prompt=prompt, num_inference_steps=steps, guidance_scale=guidance, generator=gen,
-                          width=width, height=height, callback_on_step_end=on_step)
+    reduced = None   # what the out-of-memory retry changed, once it was needed
+
+    def generate_one(i):
+        gen = torch.Generator(device="cpu").manual_seed(seed + i)   # same seed on a retry
+        common = dict(prompt=prompt, num_inference_steps=steps, guidance_scale=guidance, generator=gen,
+                      width=width, height=height, callback_on_step_end=on_step)
+        with ctx.stage("diffusion"):
             if init_path:
                 init = load_rgba(init_path).convert("RGB").resize((width, height))
                 mask = load_rgba(mask_path).convert("L").resize((width, height))
                 if ref_images:
                     common["image_reference"] = ref_images
-                with ctx.stage("diffusion"):
-                    result = runner(image=init, mask_image=mask, strength=strength, **common)
-            else:
-                if ref_images:
-                    common["image"] = ref_images
-                with ctx.stage("diffusion"):
-                    result = runner(**common)
+                return runner(image=init, mask_image=mask, strength=strength, **common)
+            if ref_images:
+                common["image"] = ref_images
+            return runner(**common)
+
+    try:
+        for i in range(count):
+            ctx.check_cancel()
+            t1 = time.monotonic()
+            oom = False
+            try:
+                result = generate_one(i)
+            except Cancelled:
+                raise
+            except Exception as e:
+                # OOM recovery: retry this image once with less memory; a
+                # second OOM fails the job below.
+                if device != "cuda" or reduced is not None or not residency.is_oom(e):
+                    raise
+                oom = True
+            if oom:
+                # Outside the except block, so the failed step's traceback (and
+                # the GPU tensors its frames hold) is gone before the retry.
+                reduced = residency.lower_memory(runner, offload) or ["caches freed"]
+                ctx.log("The GPU ran out of memory; retrying once with %s" % ", ".join(reduced), level="warning")
+                done[0] = i * steps
+                t1 = time.monotonic()
+                result = generate_one(i)
             step_times.append((time.monotonic() - t1) / steps)
             ctx.check_cancel()
             generated.append(result.images[0])
@@ -275,10 +358,15 @@ def run(ctx):
                                 bool((pixel or {}).get("crop", False)))
     except Cancelled:
         raise
-    except torch.cuda.OutOfMemoryError:
-        torch.cuda.empty_cache()
+    except Exception as e:
+        if device != "cuda" or not residency.is_oom(e):
+            raise
         with _cache_lock:
             _cache.update(key=None, pipe=None, inpaint=None)
+        residency.free_for_retry()
+        if reduced is not None:
+            raise JobError("The GPU ran out of memory, also after a retry with %s. Try a smaller size or fewer "
+                           "reference images, or close other programs that use the GPU." % ", ".join(reduced), kind="oom")
         raise JobError("The GPU ran out of memory. Try a smaller size or fewer reference images.", kind="oom")
     info = {"seed": seed, "device": device, "weights": weights, "offload": offload, "steps": steps,
             "width": width, "height": height, "references": len(ref_images), "inpaint": bool(init_path),
@@ -286,4 +374,6 @@ def run(ctx):
     if device == "cuda":
         info["vramGb"] = round(vram, 1)
         info["peakVramGb"] = round(peak, 2)   # during generation (the cutout runs afterwards)
+    if reduced is not None:
+        info["oomRetry"] = reduced
     return {"outputs": outputs, "info": info}

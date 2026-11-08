@@ -35,6 +35,10 @@ class Server:
         self._job = None            # (job_id, Context, thread)
         self._job_lock = threading.Lock()
         self.shutting_down = False
+        # Idle policy (resource profile): trims, then unloads, models only
+        # while no job runs; it shares the job lock with job.submit.
+        from .residency import IdleReaper
+        self.reaper = IdleReaper(self._job_lock, lambda: self._job is not None, self.log).start()
 
     # -- output -----------------------------------------------------------
     def send(self, obj):
@@ -143,6 +147,7 @@ class Server:
             ctx = Context(job_id, job_dir, params.get("params") or {}, self)
             thread = threading.Thread(target=self._run, args=(task, ctx), name="job-" + job_id, daemon=True)
             self._job = (job_id, ctx, thread)
+            self.reaper.job_started()
         thread.start()
         return {"accepted": True}
 
@@ -204,6 +209,7 @@ class Server:
         sampler.stop()
         with self._job_lock:
             self._job = None
+            self.reaper.job_finished(ctx.params.get("resources"))
         self.notify(*outcome)
 
 

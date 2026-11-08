@@ -25,8 +25,8 @@ writes its outputs there too. Paths are UTF-8 strings.
 | Method | Params |
 |---|---|
 | `capabilities` | Full capabilities after probing PyTorch/ONNX devices: `{numpy, pillow, torch, diffusers, onnxruntime, cuda, devices: [{index, name, vramMb}], onnxProviders: [...], probed: true}` |
-| `job.progress` | `{job, progress?: 0..1, message, step?, steps?}` — rate-limited to ~20/s except for meaningful steps |
-| `job.done` | `{job, outputs: {name: path}, info: {...}}` — `info.metrics`: `{wallSeconds, cpuSeconds, cpuCoresAverage, peakRssGb, peakDeviceVramGb?, stages: {load, diffusion, cutout, pixel, save, dutyRest, ...}}` |
+| `job.progress` | `{job, progress?: 0..1, message, step?, steps?, preview?}` — rate-limited to ~20/s except for meaningful steps; a message may carry only a live `preview` (PNG path), written on a background thread |
+| `job.done` | `{job, outputs: {name: path}, info: {...}}` — `info.metrics`: `{wallSeconds, cpuSeconds, cpuCoresAverage, peakRssGb, peakDeviceVramGb?, stages: {load, diffusion, cutout, pixel, save, dutyRest, ...}}`; `info.oomRetry` is present when the job ran out of GPU memory once and succeeded on the retry (tiled/sliced VAE, model offload or half-size upscale tiles) |
 | `job.failed` | `{job, error, kind}` — `kind`: `error`, `oom`, `missing_dependency`, `missing_model`, `invalid_input` |
 | `job.cancelled` | `{job}` |
 | `log` | `{level: info|warning|error, message}` |
@@ -46,7 +46,9 @@ submit the next job immediately.
   job ends Cancelled (not retried).
 - **Resource limits** (Settings › Generation › Resource profile): the worker is started with
   `ACESTUDIO_CPU_THREADS` and `ACESTUDIO_LOW_PRIORITY`; each job's `params.resources` carries
-  `gpuDutyPercent` (the worker rests between steps) and `keepCutoutLoaded`. Eco also lets a
+  `gpuDutyPercent` (the worker rests between steps), `keepCutoutLoaded` and `idleUnloadSeconds`
+  (the worker drops its models after this long without a job: half the profile's idle time;
+  0 = never; `idleTrimSeconds`, default 60, only returns PyTorch's cached GPU blocks). Eco also lets a
   cancel interrupt a model load (the worker is restarted after 5 s). An idle worker is stopped
   after the profile's idle time to release its memory.
 - **Restart storms:** after 3 crashes within 2 minutes the worker is left in the Failed state,
