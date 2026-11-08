@@ -76,6 +76,13 @@ Name: "association"; Description: "Open .acestudio projects with AceStudio"; Gro
 Source: "{#DistDir}\*"; DestDir: "{app}"; Excludes: "portable,*.pdb,__pycache__"; Flags: recursesubdirs ignoreversion createallsubdirs
 Source: "..\licences\*"; DestDir: "{app}\licences"; Flags: ignoreversion
 
+[InstallDelete]
+; Leftovers of the licensing removed in 0.10.0 (3488cab). Nothing reads them any more; an upgrade
+; from 0.9.x tidies them away. Only these licensing files: user projects and settings are untouched.
+Type: files; Name: "{app}\EULA.txt"
+Type: files; Name: "{userappdata}\AceStudio\trial.json"
+Type: files; Name: "{userappdata}\AceStudio\licence.key"
+
 [Icons]
 Name: "{autoprograms}\AceStudio"; Filename: "{app}\AceStudio.exe"
 Name: "{autodesktop}\AceStudio"; Filename: "{app}\AceStudio.exe"; Tasks: desktopicon
@@ -87,6 +94,8 @@ Root: HKA; Subkey: "Software\Classes\AceStudio.Project"; ValueType: string; Valu
 Root: HKA; Subkey: "Software\Classes\AceStudio.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\AceStudio.exe,0"; Tasks: association
 Root: HKA; Subkey: "Software\Classes\AceStudio.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\AceStudio.exe"" ""%1"""; Tasks: association
 Root: HKA; Subkey: "Software\Classes\Applications\AceStudio.exe\SupportedTypes"; ValueType: string; ValueName: ".acestudio"; ValueData: ""; Flags: uninsdeletekey
+; 0.9.x stored the trial start here; remove it on upgrade (licensing was removed in 0.10.0).
+Root: HKCU; Subkey: "Software\AceGears\AceStudio"; ValueType: none; ValueName: "TrialStartMs"; Flags: deletevalue
 
 [Run]
 Filename: "{app}\AceStudio.exe"; Description: "{cm:LaunchProgram,AceStudio}"; Flags: nowait postinstall skipifsilent

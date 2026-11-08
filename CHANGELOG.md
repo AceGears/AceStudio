@@ -9,6 +9,8 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - Clean 32 px sprites were scored 0 as "noise".
 - Model downloads refuse non-HTTPS URLs (except to this machine) and no longer send an access
   token to a different host after a redirect.
+- Upgrading from 0.9.x removes the leftover licensing files (EULA.txt, trial.json, licence.key)
+  and the TrialStartMs registry value.
 
 ### Added
 - Development: the AceStudio agent organization for Claude Code (`.claude/`, `CLAUDE.md`,
