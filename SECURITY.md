@@ -21,11 +21,12 @@ page the user visits.
 | Palettes (`.gpl`, `.pal`, `.hex`, `.txt`, `.ase`, `.act`) | anyone who sends a file | bounds-checked parser; fuzzed |
 | Lua scripts | anyone who sends a script the user runs | sandbox: no io/os/package/debug/native modules, text-only `load`, files only inside allowed folders, `require` only of `.lua` files there, memory limit covering images and documents, time limit and cancel that `pcall` cannot swallow; fuzzed |
 | MCP server, stdio | the AI client the user configured | file tools limited to `--root` folders; every request validated; malformed input returns JSON-RPC errors; fuzzed |
-| MCP server, HTTP (`--http`) | processes on this computer; web pages via DNS rebinding | loopback only; Host and Origin must be localhost (DNS rebinding); optional bearer token compared in constant time; header 64 KB and body 64 MB limits; strict Content-Length and chunk parsing |
-| App bridge (named pipe / local socket) | processes of the **same user** | the pipe is created for the current user only (`UserAccessOption`); off with Scripts › Allow AI Assistants |
+| MCP server, HTTP (`--http`) | processes on this computer; web pages via DNS rebinding | loopback only; Host and Origin must be localhost (DNS rebinding); bearer token always required (from `ACESTUDIO_MCP_TOKEN`, `--token-file`, or a random 256-bit token saved to a user-only file) and compared in constant time; header 64 KB and body 64 MB limits; strict Content-Length and chunk parsing |
+| App bridge (named pipe / local socket) | processes of the **same user** | the pipe is created for the current user only (`UserAccessOption`); the app and acestudio-mcp each check that the process at the other end runs as the current user (pipe owner SID on Windows, `SO_PEERCRED`/`getpeereid` elsewhere); off with Scripts › Allow AI Assistants |
 | MCP task files (`<data>/mcp-tasks`) | the same user | random 128-bit task ids; ids are validated before they become file names |
+| AI worker jobs (paths in job parameters) | whoever can make the app, the CLI or acestudio-mcp submit a job | the host checks every path parameter is inside the AI data folders, the model folder or the job's own folder (inputs may also be files the user chose) before queuing it (`core/src/AiJobPaths.cpp`); the worker refuses relative and `..` paths again |
 | AI model downloads | network attacker, compromised host | HTTPS; every file's SHA-256 pinned in the catalogue; manifest paths checked for `..` and absolute paths; models load with `use_safetensors=True` / `torch.load(weights_only=True)`, never pickle |
-| AI Python packages (pip) | compromised PyPI package | versions pinned in `ai_worker/requirements`, installed into AceStudio's own environment; hashes are **not** pinned (see residual risks) |
+| AI Python packages (pip) | compromised PyPI package; a look-alike package on a second index (dependency confusion) | versions pinned in `ai_worker/requirements`, installed into AceStudio's own environment, wheels only (`--only-binary :all:`); each pip run uses exactly one index (torch from download.pytorch.org with `--no-deps`, everything else from PyPI); hashes are **not** pinned (see residual risks) |
 | Bundled Python | the installer | python.org's own SHA-256 checked at build time; pip wheel hash pinned |
 
 No telemetry is sent. The app makes network connections only for model and package
@@ -76,6 +77,50 @@ Found and fixed:
    (plain `http://` only to 127.0.0.1/localhost/::1 for local mirrors and tests). Every
    redirect target is re-checked, and `Authorization`, `Cookie` and `Proxy-Authorization` are
    dropped when a redirect changes host. Tests: `ai_worker/tests/test_download_security.py`.
+8. **MCP HTTP ran without authentication by default** (SEC-006, audit 2026-11-07). Without
+   `--token`, any local process (or another user on the same computer) could call every tool
+   over `--http`, and a token given with `--token` showed in process listings. The server now
+   always requires a bearer token: from `ACESTUDIO_MCP_TOKEN`, from `--token-file FILE`, or,
+   if neither is given, a new random 256-bit token written to `<user data>/mcp-http-token`
+   (created 0600 on Linux; `%APPDATA%` is per-user on Windows). `--token` still works and
+   prints a warning. `--no-auth` exists for the conformance suite only and prints a warning.
+   The Host/Origin checks and the token helpers moved to `mcp/HttpSecurity.cpp` and are now
+   unit-tested (`tests/test_mcp.cpp`, tag `[security]`).
+9. **The app bridge trusted whoever held its predictable name** (SEC-007, audit 2026-11-07).
+   The pipe name `acestudio-bridge-<user>` is predictable by design: the app and
+   acestudio-mcp must find each other with no shared state. The app already created it with
+   `QLocalServer::UserAccessOption` (a DACL for the current user's SID on Windows, owner-only
+   socket permissions on Linux). But another user could create a pipe or socket with that name
+   first (squatting), and acestudio-mcp would then send document requests and Lua code to that
+   process and trust its replies. Now acestudio-mcp checks, before sending anything, that the
+   pipe's server process runs as the current user. The app also checks every client (defence
+   in depth). Windows uses `GetNamedPipeServerProcessId`/`GetNamedPipeClientProcessId` and
+   compares token user SIDs; Linux uses `SO_PEERCRED`; macOS/BSD use `getpeereid`. Test:
+   `tests/test_app_bridge.cpp`.
+10. **The AI worker trusted every path in a job** (SEC-005, audit 2026-11-07). Job parameters
+   name the model files and folders to load, input images and the download destination, and
+   the worker used them as given. A front end that passed a path through unchecked would let
+   a job read or write anywhere the user can. `WorkerSupervisor::submit()`, which the app, the
+   CLI and acestudio-mcp (through the CLI) all use, now calls `checkJobPaths()`. Every path
+   parameter (`input*`, `init_image`, `mask`, `reference*`, `references`, `model`,
+   `model_dir`, `vae_dir`, `dest_dir`, `lora.path`, `lora_preload.path`, `controlnet.dir` and
+   `.image`, `ip_adapter.dir` and `.images`, `preview.dir`, `cutout.model`) must be absolute
+   and resolve inside the AI data folders, the model folder, the jobs folder or the job's own
+   folder. An input may also be a file the user chose explicitly. Names relative to a folder
+   (`ip_adapter.weight` and `.encoder`, `files[].path`) may not contain `..`. The worker
+   checks again on `job.submit`: the job folder and every path must be absolute, with no
+   `..` component. Tests: `tests/test_ai_worker.cpp` (`[security]`) and
+   `ai_worker/tests/test_job_paths.py`.
+11. **The PyTorch install searched two indexes at once** (SEC-002, audit 2026-11-07). The
+   torch requirement files combined `--index-url https://download.pytorch.org/...` with
+   `--extra-index-url https://pypi.org/simple`. pip then picks the best match for every
+   package from both indexes, so a package published under the same name on either index
+   could be chosen (dependency confusion). The requirement files no longer name any index.
+   `runtime.install` installs torch alone from its PyTorch index with `--no-deps`. It then
+   reads torch's dependencies from the installed package's metadata and installs them from
+   PyPI in a separate pip run, like every other requirements file (explicit
+   `--index-url https://pypi.org/simple`). `PIP_EXTRA_INDEX_URL` is removed from pip's
+   environment. Test: `ai_worker/tests/test_runtime_install.py`.
 
 Third-party notes: UBSan reports "applying zero offset to null pointer" inside miniz's
 inflate (`miniz.c:474`, `miniz_tinfl.c:202`) on APNG input. This is pointer arithmetic on a
@@ -84,8 +129,15 @@ left in the upstream code.
 
 ## Residual risks
 
-- **pip packages are pinned by version, not hash.** A compromised release of a pinned
-  version on PyPI would be installed. Moving to `--require-hashes` lock files is planned.
+- **pip packages are pinned by version, not hash** (SEC-002, still open). A compromised
+  release of a pinned version on PyPI or download.pytorch.org would be installed, and only
+  the top-level packages are pinned: their dependencies (and torch's) resolve to the newest
+  allowed versions at install time. TODO: generate full `--require-hashes` lock files per
+  profile and platform (for example `pip-compile --generate-hashes` or `uv pip compile
+  --generate-hashes`, run against both indexes with network access), check them in next to
+  `ai_worker/requirements/*.txt`, and pass `--require-hashes` in `runtime_install.py`. This
+  was not done in the 2026-11 fix because generating real hashes needs network resolution,
+  and made-up hashes would be worse than none.
 - **Nightly builds are public while the repository is public.** The GitHub release with the
   nightly installer can be downloaded by anyone until the repository is made private.
 - **The installer and executables are not code-signed yet.** Windows SmartScreen will warn,
@@ -96,6 +148,9 @@ left in the upstream code.
   those folders.
 - **The app bridge trusts every process of the same user.** That is the same trust boundary
   as the user's own files; turn the bridge off when not using an AI assistant.
+- **Another local user can block the app bridge** by taking its predictable name first. They
+  cannot read or answer requests, because both ends refuse a peer of another user. The app
+  logs "Cannot open the MCP bridge" and the app_* tools report that AceStudio is not running.
 
 ## Running the fuzzers
 

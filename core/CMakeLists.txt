@@ -5,6 +5,7 @@ add_library(acestudio_core STATIC
     src/Atlas.cpp
     src/Autotile.cpp
     src/AiWorker.cpp
+    src/AiJobPaths.cpp
     src/ResourceProfile.cpp
     src/Effects.cpp
     src/AnimRouter.cpp

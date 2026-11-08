@@ -125,3 +125,63 @@ class Context:
         if kind is not None and not isinstance(value, kind):
             raise JobError(-32602, "Parameter '%s' has the wrong type" % name, kind="invalid_input")
         return value
+
+
+# -- path checks (SEC-005) ---------------------------------------------------
+# The host confines every job path to AceStudio's AI folders before it submits
+# a job (core/src/AiJobPaths.cpp). This is a second, simpler line of defence:
+# the job folder and every path parameter must be absolute and free of ".."
+# components, and file names inside a folder must stay relative.
+
+# Parameters holding a path (inputs, model files and folders, output folders).
+PATH_PARAMS = ("input", "init_image", "mask", "model", "model_dir", "vae_dir", "dest_dir")
+# Nested {"key": {"field": path}} parameters.
+NESTED_PATH_PARAMS = {"lora": ("path",), "lora_preload": ("path",), "preview": ("dir",), "cutout": ("model",),
+                      "controlnet": ("dir", "image"), "ip_adapter": ("dir",)}
+# Names relative to a folder parameter.
+NESTED_NAME_PARAMS = {"ip_adapter": ("weight", "encoder")}
+
+
+def _has_dotdot(path):
+    return ".." in path.replace("\\", "/").split("/")
+
+
+def _check_absolute(name, value):
+    if value is None or value == "":
+        return
+    if not isinstance(value, str):
+        raise JobError(-32602, "Parameter '%s' must be a path" % name, kind="invalid_input")
+    if not os.path.isabs(value) or _has_dotdot(value):
+        raise JobError(-32602, "Parameter '%s' must be an absolute path without '..': %r" % (name, value),
+                       kind="invalid_input")
+
+
+def _numbered(key, prefix):
+    return key.startswith(prefix) and key[len(prefix):].isdigit()
+
+
+def check_job_paths(job_dir, params):
+    """Raises JobError (invalid_input) for a relative or '..' job folder or path parameter."""
+    _check_absolute("dir", job_dir)
+    if not job_dir:
+        raise JobError(-32602, "The job folder must be an absolute path", kind="invalid_input")
+    if not isinstance(params, dict):
+        return
+    for key, value in params.items():
+        if key in PATH_PARAMS or _numbered(key, "input") or _numbered(key, "reference"):
+            _check_absolute(key, value)
+        elif key == "references":
+            for i, v in enumerate(value if isinstance(value, list) else [value]):
+                _check_absolute("references[%d]" % i, v)
+        if isinstance(value, dict):
+            for field in NESTED_PATH_PARAMS.get(key, ()):
+                _check_absolute("%s.%s" % (key, field), value.get(field))
+            for field in NESTED_NAME_PARAMS.get(key, ()):
+                name = value.get(field)
+                if name is not None and (not isinstance(name, str) or os.path.isabs(name) or _has_dotdot(name)):
+                    raise JobError(-32602, "Parameter '%s.%s' must be a relative name without '..'" % (key, field),
+                                   kind="invalid_input")
+            if key in ("controlnet", "ip_adapter"):
+                images = value.get("images")
+                for i, v in enumerate(images if isinstance(images, list) else []):
+                    _check_absolute("%s.images[%d]" % (key, i), v)

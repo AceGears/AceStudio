@@ -194,7 +194,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           python -m pip install -r requirements.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          $server = Start-Process -FilePath $mcp -ArgumentList "--root", $root, "--http", "39200", "--conformance-fixtures" -PassThru -NoNewWindow
+          $server = Start-Process -FilePath $mcp -ArgumentList "--root", $root, "--http", "39200", "--no-auth", "--conformance-fixtures" -PassThru -NoNewWindow
           Start-Sleep -Seconds 2
           $failed = $false
           # Every scenario, then each spec version on its own: no expected failures.

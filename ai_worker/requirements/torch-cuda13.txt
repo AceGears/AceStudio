@@ -2,6 +2,7 @@
 # diffusion-cuda profile when the installed driver supports it; otherwise torch-cuda.txt
 # (CUDA 12.6) is used. Checked 2026-10-31: download.pytorch.org/whl/cu130/torch/ lists
 # torch-2.14.1+cu130-cp314-cp314-win_amd64.whl.
---index-url https://download.pytorch.org/whl/cu130
---extra-index-url https://pypi.org/simple
+# No index lines here (SEC-002): runtime_install.py installs torch alone from the
+# PyTorch index with --no-deps, then torch's own dependencies from PyPI in a
+# separate pip run, so no pip run ever searches both indexes.
 torch==2.14.1+cu130

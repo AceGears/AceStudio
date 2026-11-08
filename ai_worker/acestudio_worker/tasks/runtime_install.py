@@ -4,8 +4,16 @@ Only profiles shipped in requirements/ can be installed (no arbitrary
 package names from the host). pip output is streamed as progress messages;
 cancelling terminates pip. The host restarts the worker afterwards so newly
 installed packages are picked up.
+
+Indexes (SEC-002): no pip run searches more than one index, so a package
+name cannot be taken over on another index (dependency confusion). torch is
+installed alone from the PyTorch index with --no-deps; its dependencies, read
+from the installed torch's metadata, then come from PyPI in a separate run,
+like every other requirements file. PIP_EXTRA_INDEX_URL is removed from pip's
+environment for the same reason.
 """
 
+import json
 import os
 import platform
 import re
@@ -28,6 +36,13 @@ PROFILES = {
     "diffusion-cpu": ["torch-cpu.txt", "diffusion.txt"],
     "base": ["base.txt"],
 }
+PYPI_INDEX = "https://pypi.org/simple"
+# torch builds come only from the official PyTorch index for their variant.
+TORCH_INDEX = {
+    "torch-cpu.txt": "https://download.pytorch.org/whl/cpu",
+    "torch-cuda.txt": "https://download.pytorch.org/whl/cu126",
+    "torch-cuda13.txt": "https://download.pytorch.org/whl/cu130",
+}
 
 
 def available():
@@ -45,6 +60,9 @@ def _pip(ctx, args, label):
            "--progress-bar", "off", "--only-binary", ":all:"] + args
     ctx.log("Running: " + " ".join(cmd))
     env = dict(os.environ, PYTHONUNBUFFERED="1")
+    # One index per pip run (SEC-002): an extra index from the environment
+    # would bring back the mixing that --index-url avoids.
+    env.pop("PIP_EXTRA_INDEX_URL", None)
     # stdin=DEVNULL: the worker's stdin is the protocol pipe, and the main
     # thread is blocked reading it. On Windows a child that inherits that
     # handle stalls at startup (CPython queries its stdin, and a query on a
@@ -113,7 +131,7 @@ def run(ctx):
         if not os.path.exists(path):
             raise JobError("Requirements file missing: " + path, kind="missing_dependency")
         ctx.progress(i / len(files), "Installing %s" % name, force=True)
-        _pip(ctx, ["-r", path], name)
+        _install_file(ctx, name, path)
     info = {"profile": profile, "restartRequired": True}
     if profile == "diffusion-cuda":
         cuda = _check_torch_cuda(ctx)
@@ -122,10 +140,55 @@ def run(ctx):
         if cuda.split(".")[0] == "13":
             # ONNX Runtime's CUDA build matches CUDA 13 and reuses torch's DLLs.
             _uninstall(ctx, ["onnxruntime-directml", "onnxruntime"])
-            _pip(ctx, ["-r", os.path.join(REQ_DIR, "onnx-cuda.txt")], "onnx-cuda.txt")
+            _install_file(ctx, "onnx-cuda.txt", os.path.join(REQ_DIR, "onnx-cuda.txt"))
             info["onnxRuntime"] = "onnxruntime-gpu"
     ctx.progress(1.0, "Installed %s" % profile, force=True)
     return {"outputs": {}, "info": info}
+
+
+def _install_file(ctx, name, path):
+    """Installs one requirements file, never from two indexes in one pip run."""
+    index = TORCH_INDEX.get(name)
+    if index is None:
+        _pip(ctx, ["--index-url", PYPI_INDEX, "-r", path], name)
+        return
+    # torch alone from the PyTorch index; the local version label (+cu126)
+    # also keeps PyPI's CPU build from being chosen.
+    _pip(ctx, ["--index-url", index, "--no-deps", "-r", path], name)
+    deps = _requirements_of(ctx, "torch")
+    if deps:
+        _pip(ctx, ["--index-url", PYPI_INDEX] + deps, name + " (dependencies)")
+
+
+_REQUIRES_CODE = r"""
+import json, sys
+from importlib.metadata import requires
+from pip._vendor.packaging.requirements import Requirement
+out = []
+for text in requires(sys.argv[1]) or []:
+    req = Requirement(text)
+    if req.marker is not None and not req.marker.evaluate({"extra": ""}):
+        continue
+    if req.url:
+        raise SystemExit("direct URL requirement: " + text)
+    extras = "[%s]" % ",".join(sorted(req.extras)) if req.extras else ""
+    out.append(req.name + extras + str(req.specifier))
+print(json.dumps(out))
+"""
+
+
+def _requirements_of(ctx, dist):
+    """The installed distribution's dependencies for this platform, without
+    optional extras (pip's own packaging library evaluates the markers). Runs
+    in a fresh interpreter, which sees the package pip just installed."""
+    out = subprocess.run([sys.executable, "-c", _REQUIRES_CODE, dist], stdin=subprocess.DEVNULL,
+                         capture_output=True, text=True, timeout=300)
+    if out.returncode != 0:
+        raise JobError("Cannot read the dependencies of %s:\n%s" % (dist, (out.stderr or out.stdout)[-1500:]),
+                       kind="missing_dependency")
+    deps = json.loads(out.stdout.strip().splitlines()[-1])
+    ctx.log("%s needs: %s" % (dist, ", ".join(deps) or "nothing"))
+    return deps
 
 
 def _uninstall(ctx, packages):

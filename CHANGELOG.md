@@ -11,6 +11,19 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   token to a different host after a redirect.
 - Upgrading from 0.9.x removes the leftover licensing files (EULA.txt, trial.json, licence.key)
   and the TrialStartMs registry value.
+- `acestudio-mcp --http` no longer runs without authentication. It reads the bearer token from
+  `ACESTUDIO_MCP_TOKEN` or `--token-file`, or generates a random 256-bit token and saves it in
+  `mcp-http-token` in the user data folder. `--token` warns that the token is visible in the
+  process list; `--no-auth` is for tests only.
+- The app bridge between AceStudio and acestudio-mcp checks that the process at the other end
+  belongs to the same user, so another user who takes the bridge's name first cannot receive
+  document requests or Lua code.
+- AI jobs are refused when a path in them points outside AceStudio's AI folders, the model
+  folder or the job's own folder (inputs may also be files you chose). The AI worker also
+  refuses relative paths and `..` in job paths.
+- Setting up the AI runtime no longer lets one pip run search both the PyTorch index and PyPI.
+  torch comes from download.pytorch.org alone (`--no-deps`); its dependencies and every other
+  package then come from PyPI in separate runs.
 
 ### Added
 - Development: the AceStudio agent organization for Claude Code (`.claude/`, `CLAUDE.md`,

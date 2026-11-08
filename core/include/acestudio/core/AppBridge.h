@@ -12,11 +12,23 @@
 //                (runs on a copy of the current document; one undo step)
 //   open      {path} -> {opened}
 
+#include <cstdint>
 #include <string>
 
 namespace acestudio {
 
-// The socket name for the current user.
+// The socket name for the current user. It is predictable on purpose (the
+// app and acestudio-mcp find each other without shared state), so it is not
+// a secret: the server restricts the socket to the current user
+// (QLocalServer::UserAccessOption) and both ends check who is at the other
+// end with localPeerIsCurrentUser() before trusting it (SEC-007).
 std::string appBridgeName();
+
+// True when the process at the other end of a connected local socket runs as
+// the current user. `nativeHandle` is QLocalSocket::socketDescriptor(): the
+// named-pipe HANDLE on Windows, a Unix-domain socket descriptor elsewhere.
+// `peerIsServer`: true on the client side (the peer is the pipe server).
+// Any failure to find out counts as "no".
+bool localPeerIsCurrentUser(std::intptr_t nativeHandle, bool peerIsServer);
 
 } // namespace acestudio

@@ -10,6 +10,7 @@
 #include "AceTools.h"
 #include "ClientConfigs.h"
 #include "ConformanceFixtures.h"
+#include "HttpSecurity.h"
 #include "McpProtocol.h"
 
 #include "acestudio/core/AppBridge.h"
@@ -46,14 +47,6 @@ namespace fs = std::filesystem;
 constexpr qsizetype kMaxHeaderBytes = 64 * 1024;
 constexpr qsizetype kMaxBodyBytes = 64 * 1024 * 1024;
 
-// Compares secrets without leaking how many leading bytes matched.
-bool constantTimeEquals(const std::string& a, const std::string& b) {
-    unsigned char diff = static_cast<unsigned char>(a.size() != b.size());
-    const std::size_t n = std::max(a.size(), b.size());
-    for (std::size_t i = 0; i < n; ++i)
-        diff |= static_cast<unsigned char>((i < a.size() ? a[i] : 0) ^ (i < b.size() ? b[i] : 0));
-    return diff == 0;
-}
 using namespace std::chrono_literals;
 
 namespace {
@@ -114,6 +107,10 @@ Result<json> bridgeCall(const std::string& method, const json& params, int timeo
     if (!sock.waitForConnected(1500))
         return Error{ErrorCode::NotFound, "AceStudio is not running (or is an older version without the MCP bridge). "
                                           "Start the AceStudio app and try again."};
+    // SEC-007: the pipe name is predictable, so make sure the app at the other
+    // end is this user's before sending it anything.
+    if (!localPeerIsCurrentUser(static_cast<std::intptr_t>(sock.socketDescriptor()), true))
+        return Error{ErrorCode::PermissionDenied, "The AceStudio bridge is held by another user's process; not using it."};
     static std::atomic<int> nextId{1};
     const int id = nextId++;
     const std::string line = json{{"id", id}, {"method", method}, {"params", params}}.dump() + "\n";
@@ -161,7 +158,8 @@ private:
         while (!m_stop) {
             QLocalSocket sock;
             sock.connectToServer(QString::fromStdString(appBridgeName()));
-            if (!sock.waitForConnected(1000)) {
+            if (!sock.waitForConnected(1000) || !localPeerIsCurrentUser(static_cast<std::intptr_t>(sock.socketDescriptor()), true)) {
+                sock.abort();
                 for (int i = 0; i < 30 && !m_stop; ++i) std::this_thread::sleep_for(100ms);
                 continue;
             }
@@ -410,23 +408,6 @@ struct HttpRequest {
         return it->second;
     }
 };
-
-bool isLocalHost(std::string host) {
-    if (!host.empty() && host.front() == '[') {
-        const auto e = host.find(']');
-        host = e == std::string::npos ? host : host.substr(0, e + 1);
-    } else if (const auto c = host.rfind(':'); c != std::string::npos) {
-        host = host.substr(0, c);
-    }
-    for (char& ch : host) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-    return host == "localhost" || host == "127.0.0.1" || host == "[::1]";
-}
-
-bool isLocalOrigin(const std::string& origin) {
-    for (const char* scheme : {"http://", "https://"})
-        if (origin.rfind(scheme, 0) == 0) return isLocalHost(origin.substr(std::string(scheme).size()));
-    return false;
-}
 
 // Mcp-Name / Mcp-Param-* values: "=?base64?...?=" is strict Base64 of
 // UTF-8 (bad padding or characters: nullopt); anything else is literal.
@@ -910,9 +891,12 @@ private:
 int usage(const char* why) {
     if (why) std::fprintf(stderr, "error: %s\n", why);
     std::fprintf(stderr,
-                 "Usage: acestudio-mcp [--root DIR]... [--cli PATH] [--http PORT [--host 127.0.0.1] [--token TOKEN]]\n"
+                 "Usage: acestudio-mcp [--root DIR]... [--cli PATH] [--http PORT [--host 127.0.0.1] [--token-file FILE]]\n"
                  "  stdio by default; --http serves Streamable HTTP at http://127.0.0.1:PORT/mcp\n"
-                 "  --token: require \"Authorization: Bearer TOKEN\" on HTTP (or set ACESTUDIO_MCP_TOKEN)\n"
+                 "  HTTP always requires \"Authorization: Bearer TOKEN\". The token comes from ACESTUDIO_MCP_TOKEN,\n"
+                 "  --token-file FILE (first line) or --token TOKEN (visible to other processes: avoid it). Without\n"
+                 "  one, a random 256-bit token is generated and saved (readable by this user only) to\n"
+                 "  <user data>/mcp-http-token. --no-auth turns the token off (testing only).\n"
                  "  Tools may use files inside the --root folders only (default: the current folder).\n"
                  "  Protocol: MCP 2026-07-28, and 2025-11-25 / 2025-06-18 / 2025-03-26 / 2024-11-05 via initialize.\n"
                  "  --print-config claude-code|cursor|vscode|codex|opencode   print a client setup for this executable\n"
@@ -929,6 +913,7 @@ int main(int argc, char** argv) {
     std::optional<int> httpPort;
     bool fixtures = false;   // test only: the conformance suite's fixtures
     std::string token;
+    bool noAuth = false;     // test only: HTTP without a bearer token
     std::optional<fs::path> taskDir;
     bool taskFiles = true;
     if (qEnvironmentVariableIsSet("ACESTUDIO_MCP_TOKEN")) token = qEnvironmentVariable("ACESTUDIO_MCP_TOKEN").toStdString();
@@ -963,6 +948,16 @@ int main(int argc, char** argv) {
             auto v = next();
             if (!v || v->empty()) return usage("--token needs a value");
             token = *v;
+            std::fprintf(stderr, "warning: --token is visible to other processes in the process list; "
+                                 "use ACESTUDIO_MCP_TOKEN or --token-file instead\n");
+        } else if (a == "--token-file") {
+            auto v = next();
+            if (!v) return usage("--token-file needs a file");
+            auto t = readTokenFile(fs::path(std::u8string(v->begin(), v->end())));
+            if (!t) return usage(t.error().message.c_str());
+            token = t.value();
+        } else if (a == "--no-auth") {
+            noAuth = true;
         } else if (a == "--task-dir") {
             auto v = next();
             if (!v) return usage("--task-dir needs a folder");
@@ -1031,6 +1026,24 @@ int main(int argc, char** argv) {
     server.setTaskObserver([&hub](const json& task) { hub.taskChanged(task); });
 
     if (httpPort) {
+        // SEC-006: HTTP never runs without a bearer token unless asked to.
+        bool generated = false;
+        std::string tokenFile;
+        if (noAuth) {
+            token.clear();
+            std::fprintf(stderr, "warning: --no-auth: every local process can call this server's tools\n");
+        } else if (token.empty()) {
+            token = generateHttpToken();
+            generated = true;
+            if (auto f = defaultTokenFile()) {
+                if (auto st = writeTokenFile(*f, token)) {
+                    const auto u = f->u8string();
+                    tokenFile.assign(u.begin(), u.end());
+                } else {
+                    std::fprintf(stderr, "warning: %s\n", st.error().message.c_str());
+                }
+            }
+        }
         HttpTransport http(server, hub, watcher, token, &app);
         if (!http.listen(host, static_cast<quint16>(*httpPort))) {
             std::fprintf(stderr, "error: cannot listen on port %d\n", *httpPort);
@@ -1038,7 +1051,14 @@ int main(int argc, char** argv) {
         }
         std::fprintf(stderr, "acestudio-mcp %s: http://%s:%u/mcp%s\n", kVersionString,
                      host.protocol() == QAbstractSocket::IPv6Protocol ? "[::1]" : "127.0.0.1", http.port(),
-                     token.empty() ? "" : " (bearer token required)");
+                     token.empty() ? " (no authentication)" : " (bearer token required)");
+        // The token goes to a user-only file rather than into logs; only when
+        // that fails is it printed, so the user can still connect.
+        if (generated && !tokenFile.empty())
+            std::fprintf(stderr, "bearer token generated: send \"Authorization: Bearer <token>\" with the token in %s\n",
+                         tokenFile.c_str());
+        else if (generated)
+            std::fprintf(stderr, "bearer token generated: %s\n", token.c_str());
         return app.exec();
     }
     StdioTransport stdio(server, hub, watcher);

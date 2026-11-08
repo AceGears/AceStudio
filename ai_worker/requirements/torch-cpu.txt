@@ -1,6 +1,7 @@
 # PyTorch CPU-only build (slow; for machines without a supported GPU).
 # Checked 2026-10-31: torch 2.14.1 is the newest release listed on
 # pytorch.org/get-started/previous-versions. The +cpu label pins the CPU build.
---index-url https://download.pytorch.org/whl/cpu
---extra-index-url https://pypi.org/simple
+# No index lines here (SEC-002): runtime_install.py installs torch alone from the
+# PyTorch index with --no-deps, then torch's own dependencies from PyPI in a
+# separate pip run, so no pip run ever searches both indexes.
 torch==2.14.1+cpu
