@@ -18,7 +18,7 @@
 //    foot travels forward on an eased arc with the knee pushed forward, the
 //    body is lowest just after contact and highest at the up pose, the head
 //    follows a frame later;
-//  - arms beside the body swing against the legs;
+//  - arms beside the body swing against the legs, each as one rigid block;
 //  - an idle breathes: everything above the waist rises a pixel and settles,
 //    the head a frame later; the legs never move.
 
@@ -40,7 +40,10 @@ struct WingSpec {
     const Mask* mask = nullptr;
 };
 
-// Nullopt when the rig does not handle this body and action.
+// Nullopt when the rig does not handle this body and action. Arms (and
+// whatever they hold) move as rigid blocks. A footed body with no toe
+// direction is seen from the front when the whole sprite, or a biped's legs
+// alone (the arms left out), are close to their mirror image.
 std::optional<RigClip> rigRender(const Image& sprite, const Subject& subj, Body body, Action action, int frames, double amount,
                                  const WingSpec& wing = {}, SwimStyle swim = SwimStyle::Auto);
 
@@ -57,7 +60,10 @@ std::optional<RigClip> swimRender(const Image& sprite, const Subject& subj, Acti
 
 // Wing flap of any body: the wings are copied row by row (never resampled),
 // folding about their root with a fast downstroke, a slower recovery and the
-// tips trailing the root; the body rises on the downstroke.
+// tips trailing the root; the body rises on the downstroke. A lowered wing
+// keeps at least 42 % of its drawn height (two rows at least), stays above
+// its root and spreads sideways (whole columns repeated), so the silhouette
+// area changes little; the body, head included, is drawn over the wings.
 RigClip flapRender(const Image& sprite, const Subject& subj, int frames, double amount, const WingSpec& wing);
 
 } // namespace acestudio::motion::detail

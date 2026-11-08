@@ -79,6 +79,31 @@ std::optional<RigClip> rigRender(const Image& sprite, const Subject& subj, Body 
                 same += (a && b) ? 1 : 0;
             }
         front = all > 0 && same * 10 >= all * 8;
+        // One held item (a shield on one arm, a sword in the other hand)
+        // breaks the whole sprite's mirror image. A standing biped's legs
+        // decide instead: below the hips, between the outer feet, mirrored
+        // about the legs' own middle, leaving out the arms' boxes. Feet that
+        // end on different rows are a three-quarter stance, not a front view.
+        const bool staggered = subj.footBottoms.size() >= 2 &&
+                               *std::min_element(subj.footBottoms.begin(), subj.footBottoms.end()) !=
+                                   *std::max_element(subj.footBottoms.begin(), subj.footBottoms.end());
+        if (!front && body == Body::Biped && subj.feet.size() == 2 && !staggered) {
+            const int lx0 = subj.feet.front().first, lx1 = subj.feet.back().second;
+            auto solid = [&](int px, int py) {
+                if (sprite.pixel(px, py).a == 0) return false;
+                for (const IntRect& r : subj.arms)
+                    if (px >= r.x && py >= r.y && px < r.x + r.w && py < r.y + r.h) return false;
+                return true;
+            };
+            long legSame = 0, legAll = 0;
+            for (int y = subj.legTop; y <= subj.footRow; ++y)
+                for (int x = lx0; x <= lx1; ++x) {
+                    const bool p = solid(x, y), q = solid(lx0 + lx1 - x, y);
+                    legAll += (p || q) ? 1 : 0;
+                    legSame += (p && q) ? 1 : 0;
+                }
+            front = legAll > 0 && legSame * 10 >= legAll * 8;
+        }
     }
 
     // Legs and their geometry.
@@ -258,7 +283,10 @@ std::optional<RigClip> rigRender(const Image& sprite, const Subject& subj, Body 
                 for (int x = bb.x; x < bb.x + bb.w; ++x)
                     if (at(x, waist - 1) == -1) put(x, waist - 1 - k, sprite.pixel(x, waist - 1));
 
-        // Arms: sheared from the shoulder, against the leg on their side.
+        // Arms: swing against the leg on their side. An arm moves as one
+        // rigid block, by half the hand's swing: it may hold a shield or a
+        // sword, and shearing it from the shoulder bent held items into steps
+        // in every other frame.
         for (std::size_t a = 0; a < subj.arms.size() && locomotion; ++a) {
             const IntRect& r = subj.arms[a];
             const bool leftArm = r.x + r.w / 2 < bb.x + bb.w / 2;
@@ -267,11 +295,10 @@ std::optional<RigClip> rigRender(const Image& sprite, const Subject& subj, Body 
             const LegPose lp = legPose(opposite, t);
             const int hand = front ? 0 : iround(0.6 * lp.fx);
             const int armLift = front ? -iround(0.5 * lp.lift) : 0;
-            for (int y = r.y; y < r.y + r.h; ++y) {
-                const int ox = iround(hand * static_cast<double>(y - r.y) / std::max(1, r.h - 1));
+            const int ox = iround(hand / 2.0);
+            for (int y = r.y; y < r.y + r.h; ++y)
                 for (int x = r.x; x < r.x + r.w; ++x)
                     if (at(x, y) == 100 + static_cast<int>(a)) put(x + ox, y + dy + armLift, sprite.pixel(x, y));
-            }
         }
         out.frames.push_back(std::move(img));
     }
@@ -288,6 +315,7 @@ RigClip flapRender(const Image& sprite, const Subject& subj, int frames, double 
     const int wx0 = bb.x + static_cast<int>(std::floor(std::clamp(std::min(wing.from, wing.to), 0.0, 1.0) * bb.w));
     const int wx1 = bb.x + static_cast<int>(std::ceil(std::clamp(std::max(wing.from, wing.to), 0.0, 1.0) * bb.w));
     std::vector<char> isWing(static_cast<std::size_t>(sw) * static_cast<std::size_t>(sprite.height()), 0);
+    auto wingAt = [&](int x, int y) { return isWing[static_cast<std::size_t>(y) * static_cast<std::size_t>(sw) + static_cast<std::size_t>(x)] != 0; };
     int wingTop = rootRow, root = bb.y;
     for (int y = bb.y; y < bb.y + bb.h; ++y)
         for (int x = bb.x; x < bb.x + bb.w; ++x) {
@@ -300,20 +328,31 @@ RigClip flapRender(const Image& sprite, const Subject& subj, int frames, double 
         }
     const int R = wing.mask && !wing.mask->isNull() ? root + 1 : rootRow;   // the fold line (first row below the wings)
     const int D = std::max(1, R - wingTop);                                  // wing length in rows
-    // Fold keys (1 = as drawn, negative = folded below the root). Fast down,
-    // slow up; never flat (|s| >= 0.3 except while crossing in one frame).
-    auto fold = [](double t) {
-        static const double k[] = {1.0, 0.55, -0.35, -0.75, -0.65, -0.3, 0.35, 0.75, 1.0};
+    // How far the wing is open: 1 = as drawn (raised), 0 = the lowest pose.
+    // Fast down, slow up; eight different poses.
+    auto openness = [](double t) {
+        static const double k[] = {1.0, 0.74, 0.23, 0.0, 0.06, 0.26, 0.63, 0.86, 1.0};
         const double x = std::fmod(t + 1.0, 1.0) * 8.0;
-        const int i = static_cast<int>(x);
+        const int i = std::min(7, static_cast<int>(x));
         const double u = smoothstep(x - i);
         return k[i] + (k[i + 1] - k[i]) * u;
     };
+    // The wing's projected height, as a fraction of its drawn height. It
+    // never drops under 42 % (and two rows): a wing folded flat reads as a
+    // line, and one folded past its root hangs upside down below the back.
+    const double minFold = std::min(1.0, std::max(0.42, 2.0 / D));
+    auto fold = [&](double t) { return minFold + (1.0 - minFold) * openness(t); };
+    // A lowered wing is a spread wing: its rows widen about the body's middle
+    // (whole columns repeated), so the silhouette keeps most of its area.
+    const double spread = 0.65;
+    const int cx = bb.x + bb.w / 2;
     const double lag = 1.0 / 16.0;   // the tips trail the root by half a key
     const int lift = std::max(1, iround(bb.h / 32.0 * amount));
     const int margin = D + lift + 4;
+    const int side = static_cast<int>(std::ceil(spread * (1.0 - minFold) * (bb.w / 2.0 + 1.0))) + 2;
     RigClip out;
-    out.box = {bb.x - 2, bb.y - margin, bb.w + 4, bb.h + 2 * margin};
+    out.box = {bb.x - side, bb.y - margin, bb.w + 2 * side, bb.h + 2 * margin};
+    std::vector<std::pair<int, int>> cols;   // (target column, source column) of one wing row
     for (int f = 0; f < frames; ++f) {
         const double t = static_cast<double>(f) / frames;
         Image img(out.box.w, out.box.h);
@@ -321,29 +360,37 @@ RigClip flapRender(const Image& sprite, const Subject& subj, int frames, double 
             const int dx = x - out.box.x, dy = y - out.box.y;
             if (dx >= 0 && dy >= 0 && dx < img.width() && dy < img.height() && c.a) img.setPixel(dx, dy, c);
         };
-        // The body rises on the downstroke (when the wings are below the line).
-        const double s0 = fold(t);
-        const int dy = s0 < 0 ? -iround(lift * std::min(1.0, -s0 / 0.6)) : 0;
-        for (int y = bb.y; y < bb.y + bb.h; ++y)
-            for (int x = bb.x; x < bb.x + bb.w; ++x)
-                if (sprite.pixel(x, y).a && !isWing[static_cast<std::size_t>(y) * static_cast<std::size_t>(sw) + static_cast<std::size_t>(x)])
-                    put(x, y + dy, sprite.pixel(x, y));
+        // The body rises on the downstroke (as the wings pass below half open).
+        const double o0 = openness(t);
+        const int dy = -iround(lift * std::clamp((0.43 - o0) / 0.34, 0.0, 1.0));
         // Wing rows, from the root outwards so the tip's outline ends on top.
         // A row that lands more than one row away from the previous one is
-        // drawn across the gap (the membrane stretches; no stripes).
+        // drawn across the gap (the membrane stretches; no stripes). Every
+        // row stays above the root.
         int prev = R + dy;
         for (int y = R - 1; y >= wingTop; --y) {
             const double d = R - y;   // rows from the root
             const double u = d / D;   // 0 at the root, 1 at the tip
             const double sc = fold(t - lag * u * amount);
-            const int ty = R + dy - iround(d * sc);
+            const int ty = R + dy - std::max(1, iround(d * sc));
+            const double hs = 1.0 + spread * (1.0 - sc);
+            cols.clear();
+            for (int x = bb.x; x < bb.x + bb.w; ++x) {
+                if (!wingAt(x, y)) continue;
+                const int lo = cx + iround((x - cx) * hs), hi = cx + iround((x + 1 - cx) * hs);
+                for (int tx = lo; tx < std::max(hi, lo + 1); ++tx) cols.push_back({tx, x});
+            }
             const int step = ty < prev ? 1 : -1;
             const int from = std::abs(ty - prev) > 1 ? prev - step : ty;
             for (int yy = from; yy != ty - step; yy -= step)
-                for (int x = bb.x; x < bb.x + bb.w; ++x)
-                    if (isWing[static_cast<std::size_t>(y) * static_cast<std::size_t>(sw) + static_cast<std::size_t>(x)]) put(x, yy, sprite.pixel(x, y));
+                for (const auto& [tx, sx] : cols) put(tx, yy, sprite.pixel(sx, y));
             prev = ty;
         }
+        // The body (head, neck, back) is drawn over the wings: a wing never
+        // hides the head.
+        for (int y = bb.y; y < bb.y + bb.h; ++y)
+            for (int x = bb.x; x < bb.x + bb.w; ++x)
+                if (sprite.pixel(x, y).a && !wingAt(x, y)) put(x, y + dy, sprite.pixel(x, y));
         out.frames.push_back(std::move(img));
     }
     return out;

@@ -11,6 +11,13 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   token to a different host after a redirect.
 - Upgrading from 0.9.x removes the leftover licensing files (EULA.txt, trial.json, licence.key)
   and the TrialStartMs registry value.
+- Wing flap: the wing no longer covers the dragon's head (the body is drawn over the wings), never
+  folds to a single edge-on row and never hangs upside down below its root; a lowered wing keeps at
+  least 42 % of its height and spreads sideways, so the silhouette area varies far less (about 8 %
+  instead of 20 % on the 128 px benchmark dragon).
+- Walk and run: a front-facing figure holding a shield or a sword is recognised as seen from the
+  front (the legs decide, not the whole sprite), so it steps in place instead of scissoring its legs
+  together; arms and held items move as rigid blocks instead of being sheared into steps.
 
 ### Added
 - Development: the AceStudio agent organization for Claude Code (`.claude/`, `CLAUDE.md`,
