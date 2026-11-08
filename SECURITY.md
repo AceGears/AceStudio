@@ -26,7 +26,7 @@ page the user visits.
 | MCP task files (`<data>/mcp-tasks`) | the same user | random 128-bit task ids; ids are validated before they become file names |
 | AI worker jobs (paths in job parameters) | whoever can make the app, the CLI or acestudio-mcp submit a job | the host checks every path parameter is inside the AI data folders, the model folder or the job's own folder (inputs may also be files the user chose) before queuing it (`core/src/AiJobPaths.cpp`); the worker refuses relative and `..` paths again |
 | AI model downloads | network attacker, compromised host | HTTPS; every file's SHA-256 pinned in the catalogue; manifest paths checked for `..` and absolute paths; models load with `use_safetensors=True` / `torch.load(weights_only=True)`, never pickle |
-| AI Python packages (pip) | compromised PyPI package | versions pinned in `ai_worker/requirements`, installed into AceStudio's own environment; hashes are **not** pinned (see residual risks) |
+| AI Python packages (pip) | compromised PyPI package; a look-alike package on a second index (dependency confusion) | versions pinned in `ai_worker/requirements`, installed into AceStudio's own environment, wheels only (`--only-binary :all:`); each pip run uses exactly one index (torch from download.pytorch.org with `--no-deps`, everything else from PyPI); hashes are **not** pinned (see residual risks) |
 | Bundled Python | the installer | python.org's own SHA-256 checked at build time; pip wheel hash pinned |
 
 No telemetry is sent. The app makes network connections only for model and package
@@ -111,6 +111,16 @@ Found and fixed:
    checks again on `job.submit`: the job folder and every path must be absolute, with no
    `..` component. Tests: `tests/test_ai_worker.cpp` (`[security]`) and
    `ai_worker/tests/test_job_paths.py`.
+11. **The PyTorch install searched two indexes at once** (SEC-002, audit 2026-11-07). The
+   torch requirement files combined `--index-url https://download.pytorch.org/...` with
+   `--extra-index-url https://pypi.org/simple`. pip then picks the best match for every
+   package from both indexes, so a package published under the same name on either index
+   could be chosen (dependency confusion). The requirement files no longer name any index.
+   `runtime.install` installs torch alone from its PyTorch index with `--no-deps`. It then
+   reads torch's dependencies from the installed package's metadata and installs them from
+   PyPI in a separate pip run, like every other requirements file (explicit
+   `--index-url https://pypi.org/simple`). `PIP_EXTRA_INDEX_URL` is removed from pip's
+   environment. Test: `ai_worker/tests/test_runtime_install.py`.
 
 Third-party notes: UBSan reports "applying zero offset to null pointer" inside miniz's
 inflate (`miniz.c:474`, `miniz_tinfl.c:202`) on APNG input. This is pointer arithmetic on a
@@ -119,8 +129,15 @@ left in the upstream code.
 
 ## Residual risks
 
-- **pip packages are pinned by version, not hash.** A compromised release of a pinned
-  version on PyPI would be installed. Moving to `--require-hashes` lock files is planned.
+- **pip packages are pinned by version, not hash** (SEC-002, still open). A compromised
+  release of a pinned version on PyPI or download.pytorch.org would be installed, and only
+  the top-level packages are pinned: their dependencies (and torch's) resolve to the newest
+  allowed versions at install time. TODO: generate full `--require-hashes` lock files per
+  profile and platform (for example `pip-compile --generate-hashes` or `uv pip compile
+  --generate-hashes`, run against both indexes with network access), check them in next to
+  `ai_worker/requirements/*.txt`, and pass `--require-hashes` in `runtime_install.py`. This
+  was not done in the 2026-11 fix because generating real hashes needs network resolution,
+  and made-up hashes would be worse than none.
 - **Nightly builds are public while the repository is public.** The GitHub release with the
   nightly installer can be downloaded by anyone until the repository is made private.
 - **The installer and executables are not code-signed yet.** Windows SmartScreen will warn,

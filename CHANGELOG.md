@@ -21,6 +21,9 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - AI jobs are refused when a path in them points outside AceStudio's AI folders, the model
   folder or the job's own folder (inputs may also be files you chose). The AI worker also
   refuses relative paths and `..` in job paths.
+- Setting up the AI runtime no longer lets one pip run search both the PyTorch index and PyPI.
+  torch comes from download.pytorch.org alone (`--no-deps`); its dependencies and every other
+  package then come from PyPI in separate runs.
 
 ### Added
 - Development: the AceStudio agent organization for Claude Code (`.claude/`, `CLAUDE.md`,

@@ -5,6 +5,7 @@
 # The +cu126 local label makes pip install the CUDA build or fail. Without it, the PyPI
 # index (needed for torch's own dependencies) offered the CPU-only Windows build instead,
 # which pip took silently (seen on a user's PC: a 126.7 MB wheel instead of ~2.5 GB).
---index-url https://download.pytorch.org/whl/cu126
---extra-index-url https://pypi.org/simple
+# No index lines here (SEC-002): runtime_install.py installs torch alone from the
+# PyTorch index with --no-deps, then torch's own dependencies from PyPI in a
+# separate pip run, so no pip run ever searches both indexes.
 torch==2.14.1+cu126
