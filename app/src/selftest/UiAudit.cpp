@@ -16,6 +16,7 @@
 #include <QListWidget>
 #include <QDockWidget>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QHeaderView>
 #include <QScrollBar>
@@ -193,7 +194,11 @@ int runUiAudit(MainWindow& window, const QString& reportPath, const QString& pro
     for (const WorkspaceInfo& w : workspaceInfos()) {
         current = QStringLiteral("workspace ") + QString::fromLatin1(w.key);
         window.showWorkspace(w.id);
-        QApplication::processEvents();
+        // Pages fade in (motion::fadeIn, 170 ms at normal speed); let the fade
+        // finish so the audit and its screenshots see the page, not a blank one.
+        QElapsedTimer fade;
+        fade.start();
+        while (fade.elapsed() < 400) QApplication::processEvents(QEventLoop::AllEvents, 20);
         while (closeModal(a, current)) QApplication::processEvents();
         if (QWidget* page = window.m_pageFor[static_cast<std::size_t>(w.id)]) {
             auditWindow(page, a, current, QStringLiteral("Workspace: ") + QString::fromLatin1(w.key));

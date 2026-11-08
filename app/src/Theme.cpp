@@ -5,6 +5,8 @@
 #include <QPalette>
 #include <QProxyStyle>
 #include <QStyleFactory>
+#include <QTabBar>
+#include <QWidget>
 
 #include <algorithm>
 
@@ -89,6 +91,12 @@ void applyTextScale(QApplication& app, int percent) {
     if (base.pointSizeF() > 0) f.setPointSizeF(base.pointSizeF() * p / 100.0);
     else if (base.pixelSize() > 0) f.setPixelSize(std::max(1, base.pixelSize() * p / 100));
     app.setFont(f);
+    // QMainWindow's dock tab bars (QMainWindowTabBar) kept the font of the
+    // largest scale after the text size went back down (UI audit, 2026-11-08:
+    // "Layers"/"AI Studio" dock tabs stayed at 200% at 100%). Give every tab
+    // bar the new font explicitly; each later scale change sets it again.
+    for (QWidget* w : QApplication::allWidgets())
+        if (auto* bar = qobject_cast<QTabBar*>(w)) bar->setFont(f);
 }
 
 const ThemeTokens& themeTokens() { return g_tokens; }

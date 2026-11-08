@@ -24,6 +24,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - Setting up the AI runtime no longer lets one pip run search both the PyTorch index and PyPI.
   torch comes from download.pytorch.org alone (`--no-deps`); its dependencies and every other
   package then come from PyPI in separate runs.
+- Dock tab labels (Layers, AI Studio, Palette, Preview, Properties) followed the text size up
+  but not back down; they now follow every change.
+- The UI audit (`--ui-audit`, `ACESTUDIO_UI_SHOTS`) waits for a page's fade-in before checking and
+  capturing it; Home, AI Studio, Characters and other pages were captured blank.
 
 ### Added
 - Development: the AceStudio agent organization for Claude Code (`.claude/`, `CLAUDE.md`,
