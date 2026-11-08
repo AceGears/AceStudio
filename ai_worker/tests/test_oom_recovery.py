@@ -124,41 +124,38 @@ class UpscaleOomTests(unittest.TestCase):
     def test_retry_with_half_the_tile(self):
         tiles = []
 
-        def fake_upscale(ctx, rgb, infer, scale, tile, **kw):
+        def run_image(tile):
             tiles.append(tile)
             if tile > 96:
                 raise RuntimeError("CUDA out of memory. Tried to allocate 1.2 GiB")
             return "up"
 
         state = {"tile": 192, "retried": None}
-        with mock.patch.object(upscale, "upscale_rgb", fake_upscale):
-            self.assertEqual(upscale.upscale_with_retry(self.ctx(), None, None, 4, state), "up")
-            self.assertEqual(tiles, [192, 96])
-            self.assertEqual(state, {"tile": 96, "retried": 192})
-            # Later frames keep the smaller tile and are not retried again.
-            upscale.upscale_with_retry(self.ctx(), None, None, 4, state)
-            self.assertEqual(tiles[-1], 96)
+        self.assertEqual(upscale.upscale_with_retry(self.ctx(), run_image, state), "up")
+        self.assertEqual(tiles, [192, 96])
+        self.assertEqual(state, {"tile": 96, "retried": 192})
+        # Later frames keep the smaller tile and are not retried again.
+        upscale.upscale_with_retry(self.ctx(), run_image, state)
+        self.assertEqual(tiles[-1], 96)
 
     def test_second_oom_raises(self):
-        def fake_upscale(ctx, rgb, infer, scale, tile, **kw):
+        def run_image(tile):
             raise RuntimeError("CUDA out of memory")
 
         state = {"tile": 128, "retried": None}
-        with mock.patch.object(upscale, "upscale_rgb", fake_upscale):
-            with self.assertRaises(RuntimeError):
-                upscale.upscale_with_retry(self.ctx(), None, None, 4, state)
+        with self.assertRaises(RuntimeError):
+            upscale.upscale_with_retry(self.ctx(), run_image, state)
         self.assertEqual(state["tile"], 64)
 
     def test_smallest_tile_is_not_retried(self):
         calls = []
 
-        def fake_upscale(ctx, rgb, infer, scale, tile, **kw):
+        def run_image(tile):
             calls.append(tile)
             raise RuntimeError("CUDA out of memory")
 
-        with mock.patch.object(upscale, "upscale_rgb", fake_upscale):
-            with self.assertRaises(RuntimeError):
-                upscale.upscale_with_retry(self.ctx(), None, None, 4, {"tile": 48, "retried": None})
+        with self.assertRaises(RuntimeError):
+            upscale.upscale_with_retry(self.ctx(), run_image, {"tile": 48, "retried": None})
         self.assertEqual(calls, [48])
 
 

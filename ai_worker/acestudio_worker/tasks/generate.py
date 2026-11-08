@@ -37,7 +37,7 @@ import time
 import threading
 
 from .. import residency
-from ..imaging import load_rgba, require, save_png
+from ..imaging import PngWriter, load_rgba, require, save_png
 from ..jobs import Cancelled, JobError
 
 NAME = "image.generate"
@@ -453,6 +453,9 @@ def run(ctx):
     if ip is not None:
         pipe.set_ip_adapter_scale(ip_scale)
     init_path = ctx.param("init_image")
+    strength = float(ctx.param("strength", 0.6)) if init_path else None
+    if init_path and not 0.0 < strength <= 1.0:
+        raise JobError("strength must be in (0, 1]", kind="invalid_input")
     total_steps = steps * count
     done_steps = [0]
     last_step = [time.monotonic()]
@@ -469,6 +472,17 @@ def run(ctx):
             decoder = None
 
     last_step = [time.monotonic()]
+    latest = {"message": "Generating"}
+    writer = None
+    if decoder is not None:
+        # Previews are decoded on the step thread (TAESD: milliseconds, needs
+        # the latents) but PNG-encoded and written on a background thread;
+        # the preview is announced once its file is complete.
+        def announce(path, _payload):
+            ctx.progress(None, latest["message"], force=True, preview=path)
+
+        writer = PngWriter(on_written=announce,
+                           on_error=lambda e: ctx.log("Preview failed: %s" % e, "warning"))
 
     def on_step(p, step, timestep, kwargs):
         done_steps[0] += 1
@@ -477,32 +491,30 @@ def run(ctx):
             # pipeline still decodes the latents (5-8 s on 8 GB with offload).
             p._interrupt = True
             ctx.check_cancel()
-        ctx.rest_after_step(time.monotonic() - last_step[0])   # resource profile: GPU duty cycle
-        ctx.wait_if_paused()                                    # Pause All
-        last_step[0] = time.monotonic()
-        path = None
-        if decoder is not None and "latents" in kwargs and (step + 1) % every == 0:
+        step_seconds = time.monotonic() - last_step[0]
+        ctx.rest_after_step(step_seconds)   # resource profile: GPU duty cycle
+        ctx.wait_if_paused()                # Pause All
+        if writer is not None and "latents" in kwargs and (step + 1) % every == 0:
             try:
-                path = save_png(preview_image(decoder, kwargs["latents"]), ctx.path("preview_%d.png" % done_steps[0]))
+                writer.submit(preview_image(decoder, kwargs["latents"]), ctx.path("preview_%d.png" % done_steps[0]))
             except Exception as e:   # noqa: BLE001
                 ctx.log("Preview failed: %s" % e, "warning")
         # Cancellation is checked between steps. When steps are slow (full
         # precision spilling past VRAM: 25-45 s each), say so, so a cancel
-        # waits for the step instead of restarting the worker.
-        now = time.monotonic()
-        slow = now - last_step[0] > 5.0
-        last_step[0] = now
-        ctx.progress(0.05 + 0.9 * done_steps[0] / total_steps, "Step %d of %d" % (done_steps[0], total_steps),
-                     step=done_steps[0], steps=total_steps, force=True, preview=path, uninterruptible=slow)
+        # waits for the step instead of restarting the worker. (Measured from
+        # the step's start: the previous code compared against a timestamp
+        # taken a moment earlier, so this never triggered.)
+        slow = step_seconds > 5.0
+        latest["message"] = "Step %d of %d" % (done_steps[0], total_steps)
+        last_step[0] = time.monotonic()
+        ctx.progress(0.05 + 0.9 * done_steps[0] / total_steps, latest["message"],
+                     step=done_steps[0], steps=total_steps, force=True, uninterruptible=slow)
         return kwargs
 
     outputs = {}
     pixel = ctx.param("pixel")
     generated = []
     reduced = None   # what the out-of-memory retry changed, once it was needed
-    strength = float(ctx.param("strength", 0.6)) if init_path else None
-    if init_path and not 0.0 < strength <= 1.0:
-        raise JobError("strength must be in (0, 1]", kind="invalid_input")
 
     def generate_one(i):
         gen = torch.Generator(device="cpu").manual_seed(seed + i)   # same seed on a retry
@@ -544,6 +556,8 @@ def run(ctx):
                 result = generate_one(i)
             ctx.check_cancel()
             generated.append(result.images[0])
+        if writer is not None:
+            writer.close()   # the last previews are on disk before post-processing
         from .postprocess import finish_images
         outputs.update(finish_images(ctx, generated, pipe, torch, device, pixelate, save_png,
                                      bool((pixel or {}).get("crop", False)) and tileable == "none"))
@@ -560,6 +574,9 @@ def run(ctx):
                            "images, or close other programs that use the GPU." % ", ".join(reduced), kind="oom")
         raise JobError("The GPU ran out of memory. Try a smaller size, fewer images, or Offload = model.",
                        kind="oom")
+    finally:
+        if writer is not None:
+            writer.close()
     return {"outputs": outputs,
             "info": {"seed": seed, "device": device, "offload": offload, "steps": steps, "width": width,
                      "height": height, "img2img": bool(init_path), "controlnet": cn_image is not None,

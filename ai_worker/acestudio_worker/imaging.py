@@ -269,3 +269,57 @@ def run_onnx(ctx, model_path, device, fn, cpu_memory_mb=None):
                     level="warning")
         return result, used
     raise last_error
+
+
+class PngWriter:
+    """Encodes and writes PNGs on one background thread, so a diffusion step
+    callback does not wait for PNG compression and disk I/O (live previews).
+    Latest wins: a preview still waiting when a newer one arrives is dropped,
+    since it would be stale by the time it was shown. on_written(path,
+    payload) runs on the writer thread after the file is complete."""
+
+    def __init__(self, on_written=None, on_error=None):
+        import threading
+        self._cond = threading.Condition()
+        self._pending = None
+        self._closed = False
+        self._on_written = on_written
+        self._on_error = on_error
+        self.written = []
+        self.dropped = 0
+        self._thread = threading.Thread(target=self._loop, name="png-writer", daemon=True)
+        self._thread.start()
+
+    def submit(self, img, path, payload=None):
+        with self._cond:
+            if self._closed:
+                return
+            if self._pending is not None:
+                self.dropped += 1
+            self._pending = (img, path, payload)
+            self._cond.notify_all()
+
+    def _loop(self):
+        while True:
+            with self._cond:
+                while self._pending is None and not self._closed:
+                    self._cond.wait()
+                if self._pending is None:
+                    return
+                img, path, payload = self._pending
+                self._pending = None
+            try:
+                save_png(img, path)
+                self.written.append(path)
+                if self._on_written:
+                    self._on_written(path, payload)
+            except Exception as e:   # noqa: BLE001 - a preview never fails the job
+                if self._on_error:
+                    self._on_error(e)
+
+    def close(self, timeout=10.0):
+        """Writes what is still pending, then stops the thread."""
+        with self._cond:
+            self._closed = True
+            self._cond.notify_all()
+        self._thread.join(timeout)
