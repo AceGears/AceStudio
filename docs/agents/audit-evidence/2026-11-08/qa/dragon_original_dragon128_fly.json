@@ -1,0 +1,73 @@
+{
+ "frames": 6,
+ "size": [
+  121,
+  123
+ ],
+ "kind": "body",
+ "warnings": [
+  "top-most part (head/crest/wing tip, bbox [65, 6, 106, 27], 511 px in frame 0) loses >40% of its pixels in frames [1, 2, 3, 4, 5] (worst F3: 44% present): part squashed, hidden or lost"
+ ],
+ "area_cv": 0.0152,
+ "centroid_jitter_px": 2.369,
+ "component_counts": [
+  1,
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "palette_union": 29,
+ "palette_frame0": 29,
+ "consecutive_diff": [
+  0.927,
+  0.825,
+  0.951,
+  0.931,
+  0.82
+ ],
+ "loop_seam_diff": 0.944,
+ "loop_seam_ratio": 1.02,
+ "static_regions": {
+  "occupied_cells": 57,
+  "static_cells": 0,
+  "static_frac": 0.0,
+  "static_cell_rects": []
+ },
+ "pingpong": {
+  "pairs_checked": 2,
+  "pairs_matched": [],
+  "matched_frac": 0.0,
+  "unique_poses": 6,
+  "is_pingpong": false
+ },
+ "top_region": {
+  "available": true,
+  "bbox": [
+   65,
+   6,
+   106,
+   27
+  ],
+  "area0": 511,
+  "presence": [
+   1.0,
+   0.532,
+   0.534,
+   0.444,
+   0.534,
+   0.532
+  ],
+  "min_presence": 0.444,
+  "worst_frame": 3,
+  "frames_lost": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ]
+ },
+ "source": "original_dragon128_fly.png"
+}

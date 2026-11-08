@@ -1,0 +1,85 @@
+{
+ "frames": 12,
+ "size": [
+  63,
+  44
+ ],
+ "kind": "body",
+ "warnings": [
+  "loop seam jump 0.832 is 10.4x the typical frame change: visible pop when looping"
+ ],
+ "area_cv": 0.0078,
+ "centroid_jitter_px": 0.412,
+ "component_counts": [
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "palette_union": 32,
+ "palette_frame0": 32,
+ "consecutive_diff": [
+  0.091,
+  0.806,
+  0.047,
+  0.08,
+  0.822,
+  0.086,
+  0.812,
+  0.076,
+  0.047,
+  0.08,
+  0.014
+ ],
+ "loop_seam_diff": 0.832,
+ "loop_seam_ratio": 10.39,
+ "static_regions": {
+  "occupied_cells": 57,
+  "static_cells": 0,
+  "static_frac": 0.0,
+  "static_cell_rects": []
+ },
+ "pingpong": {
+  "pairs_checked": 5,
+  "pairs_matched": [],
+  "matched_frac": 0.0,
+  "unique_poses": 12,
+  "is_pingpong": false
+ },
+ "top_region": {
+  "available": true,
+  "bbox": [
+   20,
+   2,
+   39,
+   9
+  ],
+  "area0": 97,
+  "presence": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "min_presence": 1.0,
+  "worst_frame": 0,
+  "frames_lost": []
+ },
+ "source": "fish_reconstructed_idle.png"
+}

@@ -1,0 +1,98 @@
+{
+ "frames": 4,
+ "size": [
+  20,
+  32
+ ],
+ "kind": "body",
+ "warnings": [
+  "loop seam jump 0.538 is 3.4x the typical frame change: visible pop when looping"
+ ],
+ "area_cv": 0.019,
+ "centroid_jitter_px": 0.127,
+ "component_counts": [
+  1,
+  1,
+  1,
+  1
+ ],
+ "palette_union": 26,
+ "palette_frame0": 26,
+ "consecutive_diff": [
+  0.159,
+  0.558,
+  0.16
+ ],
+ "loop_seam_diff": 0.538,
+ "loop_seam_ratio": 3.37,
+ "static_regions": {
+  "occupied_cells": 44,
+  "static_cells": 6,
+  "static_frac": 0.136,
+  "static_cell_rects": [
+   [
+    4,
+    28,
+    2,
+    4
+   ],
+   [
+    6,
+    28,
+    2,
+    4
+   ],
+   [
+    8,
+    28,
+    2,
+    4
+   ],
+   [
+    10,
+    28,
+    2,
+    4
+   ],
+   [
+    12,
+    28,
+    2,
+    4
+   ],
+   [
+    14,
+    28,
+    2,
+    4
+   ]
+  ]
+ },
+ "pingpong": {
+  "pairs_checked": 1,
+  "pairs_matched": [],
+  "matched_frac": 0.0,
+  "unique_poses": 4,
+  "is_pingpong": false
+ },
+ "top_region": {
+  "available": true,
+  "bbox": [
+   7,
+   2,
+   12,
+   7
+  ],
+  "area0": 31,
+  "presence": [
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "min_presence": 1.0,
+  "worst_frame": 0,
+  "frames_lost": []
+ },
+ "source": "original_char32_idle.png"
+}

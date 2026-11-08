@@ -1,0 +1,94 @@
+{
+ "frames": 12,
+ "size": [
+  54,
+  44
+ ],
+ "kind": "body",
+ "warnings": [
+  "top-most part (head/crest/wing tip, bbox [16, 3, 35, 10], 97 px in frame 0) loses >40% of its pixels in frames [2, 3, 4, 5, 8, 9, 10, 11] (worst F9: 28% present): part squashed, hidden or lost"
+ ],
+ "area_cv": 0.0124,
+ "centroid_jitter_px": 0.169,
+ "component_counts": [
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "palette_union": 32,
+ "palette_frame0": 32,
+ "consecutive_diff": [
+  0.401,
+  0.337,
+  0.451,
+  0.388,
+  0.391,
+  0.532,
+  0.402,
+  0.333,
+  0.446,
+  0.38,
+  0.391
+ ],
+ "loop_seam_diff": 0.534,
+ "loop_seam_ratio": 1.36,
+ "static_regions": {
+  "occupied_cells": 59,
+  "static_cells": 0,
+  "static_frac": 0.0,
+  "static_cell_rects": []
+ },
+ "pingpong": {
+  "pairs_checked": 5,
+  "pairs_matched": [],
+  "matched_frac": 0.0,
+  "unique_poses": 12,
+  "is_pingpong": false
+ },
+ "top_region": {
+  "available": true,
+  "bbox": [
+   16,
+   3,
+   35,
+   10
+  ],
+  "area0": 97,
+  "presence": [
+   1.0,
+   0.804,
+   0.423,
+   0.371,
+   0.433,
+   0.433,
+   0.773,
+   0.66,
+   0.433,
+   0.278,
+   0.423,
+   0.443
+  ],
+  "min_presence": 0.278,
+  "worst_frame": 9,
+  "frames_lost": [
+   2,
+   3,
+   4,
+   5,
+   8,
+   9,
+   10,
+   11
+  ]
+ },
+ "source": "fish_reconstructed_swim.png"
+}
