@@ -299,7 +299,12 @@ Result<JobId> AiService::submit(const std::string& task, nlohmann::json params, 
     // Per-job limits from the resource profile (a caller may set its own).
     if (params.is_object() && !params.contains("resources")) {
         const ResourceLimits l = limits();
-        params["resources"] = {{"gpuDutyPercent", l.gpuDutyPercent}, {"keepCutoutLoaded", l.keepCutoutLoaded}};
+        // The worker drops its models (VRAM and RAM) after half the profile's
+        // idle time (Eco 60 s, Balanced 300 s, Performance never); the whole
+        // worker is still stopped after the full idle time (releaseIfIdle).
+        params["resources"] = {{"gpuDutyPercent", l.gpuDutyPercent},
+                               {"keepCutoutLoaded", l.keepCutoutLoaded},
+                               {"idleUnloadSeconds", l.idleUnloadMinutes * 30}};
     }
     auto id = m_sup->submit(task, std::move(params), label.toStdString(), images);
     if (id) Q_EMIT jobChanged(qs(id.value()));
