@@ -28,6 +28,13 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   but not back down; they now follow every change.
 - The UI audit (`--ui-audit`, `ACESTUDIO_UI_SHOTS`) waits for a page's fade-in before checking and
   capturing it; Home, AI Studio, Characters and other pages were captured blank.
+- Wing flap: the wing no longer covers the dragon's head (the body is drawn over the wings), never
+  folds to a single edge-on row and never hangs upside down below its root; a lowered wing keeps at
+  least 42 % of its height and spreads sideways, so the silhouette area varies far less (about 8 %
+  instead of 20 % on the 128 px benchmark dragon).
+- Walk and run: a front-facing figure holding a shield or a sword is recognised as seen from the
+  front (the legs decide, not the whole sprite), so it steps in place instead of scissoring its legs
+  together; arms and held items move as rigid blocks instead of being sheared into steps.
 
 ### Added
 - Development: the AceStudio agent organization for Claude Code (`.claude/`, `CLAUDE.md`,

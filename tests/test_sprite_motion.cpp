@@ -169,18 +169,27 @@ TEST_CASE("a wing flap folds the part above the wing line", "[motion]") {
     REQUIRE(clip);
     const auto& fr = clip.value().frames;
     REQUIRE(fr.size() == 8);   // fast downstroke, slower recovery
-    // Frame 0: wing up (skin above the body). Frame 3: folded below the line, so skin appears under the body's top.
+    // Frame 0: wing up (skin above the body). The wing lowers but never hangs
+    // below its root (the body's top, which rises with the downstroke).
     auto skinBelowRow = [&](const Image& f, int row) {
         for (int y = row; y < f.height(); ++y)
             for (int x = 0; x < f.width(); ++x)
                 if (f.pixel(x, y) == kSkin) return true;
         return false;
     };
+    auto skinTop = [&](const Image& f) {
+        for (int y = 0; y < f.height(); ++y)
+            for (int x = 0; x < f.width(); ++x)
+                if (f.pixel(x, y) == kSkin) return y;
+        return f.height();
+    };
     // All frames share one canvas; in frame 0 the wing's top is the opaque top and the body starts 14 rows lower.
     const int line = fr[0].opaqueBounds().y + 14;
-    CHECK_FALSE(skinBelowRow(fr[0], line));
     bool folded = false;
-    for (const Image& f : fr) folded = folded || skinBelowRow(f, line + 2);
+    for (const Image& f : fr) {
+        CHECK_FALSE(skinBelowRow(f, line));
+        folded = folded || skinTop(f) >= skinTop(fr[0]) + 4;
+    }
     CHECK(folded);
     const ClipCheck chk = checkClip(clip.value());
     INFO(chk.maxAreaChange << " " << chk.minNeighbourIoU << " " << chk.loopIoU);
