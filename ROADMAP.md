@@ -172,5 +172,17 @@ in Unity).
 Open (not code): code signing and legal review of the privacy policy. (The licence key pair and
 EULA are no longer needed since 0.10.0.)
 
+## Agent-organization pass · 2026-11-08 (CI-verified; PC verification open)
+- Security findings 8–11 fixed (SECURITY.md).
+- AI worker memory and speed work: the GPU benchmark is still to run (`bench/ai_worker_bench.md`).
+- Animation re-audit, and near-term fixes for fire, flap, walk and QA.
+- UI audit fixes.
+- Remote GPU design.
+
+Next steps:
+- ADR-ANIM-001 part rig, steps 1–8: rig data model and schema 4, part segmentation, filling the pixels hidden behind parts, part renderer, then the species modules.
+- The remote GPU gateway prototype, local only and free.
+- The GPU benchmark on the test PC.
+
 ## Phase 9 — Release Candidate · ⬜
 Clean-machine install tests; GPU matrix; recovery tests; export verification across engines.

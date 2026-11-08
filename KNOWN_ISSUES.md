@@ -228,7 +228,11 @@ or is a case that has not been run yet.
   - A three-quarter stance (the far foot a row or two higher) is a biped; each foot keeps its
     own ground line. First seen on a generated 64 px rogue (benchmark run 1), which had
     rocked as an object. Under a long cloak a few hem pixels move with the legs.
-  - **Wing flap** folds everything above a line. On a generated HD dragon (test PC), the
+  - **Wing flap (since 2026-11-08):** the body and head now draw over the wing, and the wing lowers and
+    spreads without going below its root. On the audit dragon this gave an area variation of 7.8 % (was
+    19.9 %), measured with a Python port of the code; CI checks ≤ 8 % on a test dragon. Both wings
+    are still one mask: there is no far wing or foreshortening until the part rig
+    (`docs/agents/ADR-ANIM-001-part-rig.md`) is built. Older note: the flap folds everything above a line. On a generated HD dragon (test PC), the
     default span folded the head and neck with the wings. A span of 38–100 % kept the head
     still and flapped the near wing; the far wing, behind the head, stays still.
   - Selecting the wings first (the selection becomes the wing mask) gives exact control.
@@ -269,6 +273,36 @@ or is a case that has not been run yet.
   Portable or Insiders installs keep their settings elsewhere.
 - **Acceptance tests A–G:** see `docs/devlog/2026-11.md` for what was run and with what
   result. Anything needing klein on the GPU is still open.
+
+## 2026-11-08 agent work: implemented, CI-verified, not yet run on the test PC
+Everything below is merged into main and passes CI (Linux GCC and Windows MSVC builds plus tests).
+None of it has been run in the installed app on the test PC or with the real AI models.
+- **Security** (SECURITY.md findings 8–11):
+  - MCP HTTP always uses a token.
+  - The app bridge checks that the process at the other end belongs to the same user.
+  - AI job paths are confined.
+  - torch and PyPI packages are installed in separate runs.
+  - The new pip install flow has not run against the real PyTorch index.
+  - A relative `ai.modelDirectory` setting is now refused.
+- **AI worker speed and memory** (`bench/ai_worker_bench.md`): the expected gains are estimates until that benchmark is run on the GPU. The changes are:
+  - the ONNX Runtime CUDA memory is capped;
+  - FLUX.2 klein loads in stages, so RAM peaks lower;
+  - models are unloaded after an idle time;
+  - a job that runs out of GPU memory is retried once;
+  - Real-ESRGAN is cached;
+  - preview images are written in the background.
+- **Animation:** the re-audit (`docs/agents/AUDIT_2026-11-08-animation.md`) still rates dragon,
+  fish, fire and walk as **failing** the standard. The following fixes landed after it:
+  - fire flames are no longer clipped at the top, split into tongues and flicker irregularly;
+  - the dragon flap keeps the head visible;
+  - front-view walk is detected even with a shield, and held items are no longer sheared;
+  - the app's checks now report ping-pong clips and a head covered by a part, and flaps no longer have the 70 % allowance.
+  
+  These fixes were checked by tests and Python ports only, not re-rendered on the PC. Fish turning,
+  separate fins and real wing depth need the part rig (ADR-ANIM-001).
+- **UI:** dock tab labels now follow the text size back down. The `--ui-audit` screenshots wait
+  for each page's fade-in. Screen readers are still not tested.
+- **Remote GPU:** design only (`docs/agents/CLOUD_GPU_DESIGN.md`). Nothing has been built or provisioned.
 
 ## Planned in later phases
 - Plugin API (Phase 8 or later). Profiling of BiRefNet on CUDA: part of its 2.6 s is CPU
