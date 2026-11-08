@@ -11,6 +11,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   token to a different host after a redirect.
 - Upgrading from 0.9.x removes the leftover licensing files (EULA.txt, trial.json, licence.key)
   and the TrialStartMs registry value.
+- Dock tab labels (Layers, AI Studio, Palette, Preview, Properties) followed the text size up
+  but not back down; they now follow every change.
+- The UI audit (`--ui-audit`, `ACESTUDIO_UI_SHOTS`) waits for a page's fade-in before checking and
+  capturing it; Home, AI Studio, Characters and other pages were captured blank.
 
 ### Added
 - Development: the AceStudio agent organization for Claude Code (`.claude/`, `CLAUDE.md`,
