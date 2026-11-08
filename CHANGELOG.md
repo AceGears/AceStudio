@@ -15,6 +15,9 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   `ACESTUDIO_MCP_TOKEN` or `--token-file`, or generates a random 256-bit token and saves it in
   `mcp-http-token` in the user data folder. `--token` warns that the token is visible in the
   process list; `--no-auth` is for tests only.
+- The app bridge between AceStudio and acestudio-mcp checks that the process at the other end
+  belongs to the same user, so another user who takes the bridge's name first cannot receive
+  document requests or Lua code.
 
 ### Added
 - Development: the AceStudio agent organization for Claude Code (`.claude/`, `CLAUDE.md`,

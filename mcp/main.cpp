@@ -107,6 +107,10 @@ Result<json> bridgeCall(const std::string& method, const json& params, int timeo
     if (!sock.waitForConnected(1500))
         return Error{ErrorCode::NotFound, "AceStudio is not running (or is an older version without the MCP bridge). "
                                           "Start the AceStudio app and try again."};
+    // SEC-007: the pipe name is predictable, so make sure the app at the other
+    // end is this user's before sending it anything.
+    if (!localPeerIsCurrentUser(static_cast<std::intptr_t>(sock.socketDescriptor()), true))
+        return Error{ErrorCode::PermissionDenied, "The AceStudio bridge is held by another user's process; not using it."};
     static std::atomic<int> nextId{1};
     const int id = nextId++;
     const std::string line = json{{"id", id}, {"method", method}, {"params", params}}.dump() + "\n";
@@ -154,7 +158,8 @@ private:
         while (!m_stop) {
             QLocalSocket sock;
             sock.connectToServer(QString::fromStdString(appBridgeName()));
-            if (!sock.waitForConnected(1000)) {
+            if (!sock.waitForConnected(1000) || !localPeerIsCurrentUser(static_cast<std::intptr_t>(sock.socketDescriptor()), true)) {
+                sock.abort();
                 for (int i = 0; i < 30 && !m_stop; ++i) std::this_thread::sleep_for(100ms);
                 continue;
             }

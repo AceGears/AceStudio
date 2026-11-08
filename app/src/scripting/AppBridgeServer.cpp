@@ -104,6 +104,14 @@ bool AppBridgeServer::running() const { return m_server && m_server->isListening
 
 void AppBridgeServer::onConnection() {
     while (QLocalSocket* sock = m_server->nextPendingConnection()) {
+        // UserAccessOption already limits the pipe to this user; check the
+        // peer as well in case the ACL is weaker than expected (SEC-007).
+        if (!localPeerIsCurrentUser(static_cast<std::intptr_t>(sock->socketDescriptor()), false)) {
+            ACE_LOG_WARN("bridge", "Refused an MCP bridge connection from another user's process");
+            sock->abort();
+            sock->deleteLater();
+            continue;
+        }
         auto buffer = std::make_shared<QByteArray>();
         connect(sock, &QLocalSocket::readyRead, this, [this, sock, buffer] {
             *buffer += sock->readAll();

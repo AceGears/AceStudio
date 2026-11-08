@@ -22,7 +22,7 @@ page the user visits.
 | Lua scripts | anyone who sends a script the user runs | sandbox: no io/os/package/debug/native modules, text-only `load`, files only inside allowed folders, `require` only of `.lua` files there, memory limit covering images and documents, time limit and cancel that `pcall` cannot swallow; fuzzed |
 | MCP server, stdio | the AI client the user configured | file tools limited to `--root` folders; every request validated; malformed input returns JSON-RPC errors; fuzzed |
 | MCP server, HTTP (`--http`) | processes on this computer; web pages via DNS rebinding | loopback only; Host and Origin must be localhost (DNS rebinding); bearer token always required (from `ACESTUDIO_MCP_TOKEN`, `--token-file`, or a random 256-bit token saved to a user-only file) and compared in constant time; header 64 KB and body 64 MB limits; strict Content-Length and chunk parsing |
-| App bridge (named pipe / local socket) | processes of the **same user** | the pipe is created for the current user only (`UserAccessOption`); off with Scripts › Allow AI Assistants |
+| App bridge (named pipe / local socket) | processes of the **same user** | the pipe is created for the current user only (`UserAccessOption`); the app and acestudio-mcp each check that the process at the other end runs as the current user (pipe owner SID on Windows, `SO_PEERCRED`/`getpeereid` elsewhere); off with Scripts › Allow AI Assistants |
 | MCP task files (`<data>/mcp-tasks`) | the same user | random 128-bit task ids; ids are validated before they become file names |
 | AI model downloads | network attacker, compromised host | HTTPS; every file's SHA-256 pinned in the catalogue; manifest paths checked for `..` and absolute paths; models load with `use_safetensors=True` / `torch.load(weights_only=True)`, never pickle |
 | AI Python packages (pip) | compromised PyPI package | versions pinned in `ai_worker/requirements`, installed into AceStudio's own environment; hashes are **not** pinned (see residual risks) |
@@ -85,6 +85,17 @@ Found and fixed:
    prints a warning. `--no-auth` exists for the conformance suite only and prints a warning.
    The Host/Origin checks and the token helpers moved to `mcp/HttpSecurity.cpp` and are now
    unit-tested (`tests/test_mcp.cpp`, tag `[security]`).
+9. **The app bridge trusted whoever held its predictable name** (SEC-007, audit 2026-11-07).
+   The pipe name `acestudio-bridge-<user>` is predictable by design: the app and
+   acestudio-mcp must find each other with no shared state. The app already created it with
+   `QLocalServer::UserAccessOption` (a DACL for the current user's SID on Windows, owner-only
+   socket permissions on Linux). But another user could create a pipe or socket with that name
+   first (squatting), and acestudio-mcp would then send document requests and Lua code to that
+   process and trust its replies. Now acestudio-mcp checks, before sending anything, that the
+   pipe's server process runs as the current user. The app also checks every client (defence
+   in depth). Windows uses `GetNamedPipeServerProcessId`/`GetNamedPipeClientProcessId` and
+   compares token user SIDs; Linux uses `SO_PEERCRED`; macOS/BSD use `getpeereid`. Test:
+   `tests/test_app_bridge.cpp`.
 
 Third-party notes: UBSan reports "applying zero offset to null pointer" inside miniz's
 inflate (`miniz.c:474`, `miniz_tinfl.c:202`) on APNG input. This is pointer arithmetic on a
@@ -105,6 +116,9 @@ left in the upstream code.
   those folders.
 - **The app bridge trusts every process of the same user.** That is the same trust boundary
   as the user's own files; turn the bridge off when not using an AI assistant.
+- **Another local user can block the app bridge** by taking its predictable name first. They
+  cannot read or answer requests, because both ends refuse a peer of another user. The app
+  logs "Cannot open the MCP bridge" and the app_* tools report that AceStudio is not running.
 
 ## Running the fuzzers
 
