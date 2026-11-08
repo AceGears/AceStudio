@@ -91,18 +91,18 @@ std::vector<Mask> splitByErosion(const Mask& wings) {
             for (int x = 0; x < w; ++x)
                 for (int k = 0; k < 2; ++k)
                     if (pieces[static_cast<std::size_t>(k)].get(x, y)) {
-                        label[static_cast<std::size_t>(y) * w + x] = k;
+                        label[static_cast<std::size_t>(y * w + x)] = k;
                         front.emplace_back(x, y);
                     }
         while (!front.empty()) {
             std::vector<std::pair<int, int>> next;
             for (const auto& [x, y] : front) {
-                const int l = label[static_cast<std::size_t>(y) * w + x];
+                const int l = label[static_cast<std::size_t>(y * w + x)];
                 for (int dy = -1; dy <= 1; ++dy)
                     for (int dx = -1; dx <= 1; ++dx) {
                         const int nx = x + dx, ny = y + dy;
-                        if (!wings.get(nx, ny) || label[static_cast<std::size_t>(ny) * w + nx] >= 0) continue;
-                        label[static_cast<std::size_t>(ny) * w + nx] = l;
+                        if (!wings.get(nx, ny) || label[static_cast<std::size_t>(ny * w + nx)] >= 0) continue;
+                        label[static_cast<std::size_t>(ny * w + nx)] = l;
                         next.emplace_back(nx, ny);
                     }
             }
@@ -111,7 +111,7 @@ std::vector<Mask> splitByErosion(const Mask& wings) {
         Mask m0(w, h), m1(w, h);
         for (int y = 0; y < h; ++y)
             for (int x = 0; x < w; ++x) {
-                const int l = label[static_cast<std::size_t>(y) * w + x];
+                const int l = label[static_cast<std::size_t>(y * w + x)];
                 if (l == 0) m0.set(x, y, true);
                 else if (l == 1) m1.set(x, y, true);
                 else if (wings.get(x, y)) m0.set(x, y, true);   // cut off by the erosion: crumbs

@@ -128,11 +128,11 @@ TEST_CASE("Pixels a front part hides are filled in on the part behind", "[rig]")
     rig::addPart(r, img, "body", rectMask(24, 24, {2, 9, 20, 4}), {12, 11}, 1);
     const int leg = r.find("leg");
     REQUIRE(leg >= 0);
-    CHECK_FALSE(r.parts[leg].own.get(9, 10));   // the newest claim won
+    CHECK_FALSE(r.parts[static_cast<std::size_t>(leg)].own.get(9, 10));   // the newest claim won
     rig::inpaintHidden(r, 6);
     rig::prepare(r);
     auto pose = r.rest();
-    pose[r.find("body")].visible = false;
+    pose[static_cast<std::size_t>(r.find("body"))].visible = false;
     const Image out = rig::renderPose(r, pose, {0, 0, 24, 24});
     for (int y = 2; y < 22; ++y)
         for (int x = 8; x < 12; ++x) {

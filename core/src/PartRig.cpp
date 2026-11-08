@@ -136,12 +136,12 @@ std::vector<Mask> components(const Mask& m) {
     std::vector<int> sizes;
     for (int y = 0; y < h; ++y)
         for (int x = 0; x < w; ++x) {
-            if (!m.get(x, y) || label[static_cast<std::size_t>(y) * w + x] >= 0) continue;
+            if (!m.get(x, y) || label[static_cast<std::size_t>(y * w + x)] >= 0) continue;
             const int id = static_cast<int>(out.size());
             Mask piece(w, h);
             int n = 0;
             std::vector<std::pair<int, int>> stack{{x, y}};
-            label[static_cast<std::size_t>(y) * w + x] = id;
+            label[static_cast<std::size_t>(y * w + x)] = id;
             while (!stack.empty()) {
                 const auto [px, py] = stack.back();
                 stack.pop_back();
@@ -150,8 +150,8 @@ std::vector<Mask> components(const Mask& m) {
                 for (int dy = -1; dy <= 1; ++dy)
                     for (int dx = -1; dx <= 1; ++dx) {
                         const int nx = px + dx, ny = py + dy;
-                        if ((dx || dy) && m.get(nx, ny) && label[static_cast<std::size_t>(ny) * w + nx] < 0) {
-                            label[static_cast<std::size_t>(ny) * w + nx] = id;
+                        if ((dx || dy) && m.get(nx, ny) && label[static_cast<std::size_t>(ny * w + nx)] < 0) {
+                            label[static_cast<std::size_t>(ny * w + nx)] = id;
                             stack.emplace_back(nx, ny);
                         }
                     }
