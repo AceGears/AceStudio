@@ -35,6 +35,17 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - Walk and run: a front-facing figure holding a shield or a sword is recognised as seen from the
   front (the legs decide, not the whole sprite), so it steps in place instead of scissoring its legs
   together; arms and held items move as rigid blocks instead of being sheared into steps.
+- Fire effect: flame tips are no longer cut off flat at the top of the canvas (the flame is
+  fitted under row 1); the flame splits into separate tongues at the top instead of one
+  teardrop; it changes at an irregular rate (each tongue's rise surges and slows, the fire
+  breathes in gusts); no lone pale pixels on the dark rim and no torn-off single pixels.
+  Logs and stones stay untouched, colours stay the sprite's own, and the loop is now exactly
+  seamless (the noise cells fit the rise period).
+- Animation checks (`checkClip`) now report ping-pong cycles (poses played forwards then
+  backwards) and a top part (head, horns, wing tip) losing over 40% of its pixels, as
+  `anim_qa.py` does. Wing flaps lost their 70% size-change exemption and use the 8% limit of
+  the animation standard, so the current row-fold flap is reported as failing until the part
+  rig lands (ADR-ANIM-001).
 
 ### Added
 - Development: the AceStudio agent organization for Claude Code (`.claude/`, `CLAUDE.md`,

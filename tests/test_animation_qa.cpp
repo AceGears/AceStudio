@@ -3,6 +3,10 @@
 #include <catch2/catch_approx.hpp>
 
 #include "acestudio/core/AnimationQA.h"
+#include "acestudio/core/SpriteMotion.h"
+
+#include <string>
+#include <vector>
 
 using namespace acestudio;
 using Catch::Approx;
@@ -256,4 +260,104 @@ TEST_CASE("Pose overlap expectations: big motions may overlap less", "[qa]") {
     // Identical poses overlap fully.
     const auto same = expectationsFromPoses({standingPose(), standingPose()}, poseFramingBox({standingPose()}, 1.0), 64);
     CHECK(same[1].poseOverlapPrev == Approx(1.0));
+}
+
+// --- Temporal clip checks (anim_qa.py ported; ADR-ANIM-001 step 0) ---------
+
+namespace {
+// A 32x32 figure (figure() above) with a 3x3 "hand" whose height sets the pose.
+Image posed(int hand) {
+    Image img = figure(32, 32, 16, 28);
+    img.fillRect({22, 12 + hand, 3, 3}, kSkin);
+    return img;
+}
+
+bool mentions(const std::vector<std::string>& issues, const std::string& word) {
+    for (const auto& s : issues)
+        if (s.find(word) != std::string::npos) return true;
+    return false;
+}
+} // namespace
+
+TEST_CASE("A cycle that plays its poses forwards and backwards is ping-pong", "[qa][temporal]") {
+    // Poses 0 1 2 3 4 3 2 1: frame i equals frame 8-i.
+    std::vector<Image> frames;
+    for (int k : {0, 1, 2, 3, 4, 3, 2, 1}) frames.push_back(posed(k));
+    const PingPongCheck pp = detectPingPong(frames);
+    CHECK(pp.pairsChecked == 3);
+    CHECK(pp.pairsMatched == 3);
+    CHECK(pp.uniquePoses == 5);
+    CHECK(pp.pingPong);
+    // The app's clip check reports it.
+    motion::Clip clip;
+    clip.name = "idle";
+    clip.loops = true;
+    clip.frames = frames;
+    clip.durations.assign(frames.size(), 100);
+    const motion::ClipCheck chk = motion::checkClip(clip);
+    for (const auto& issue : chk.issues) UNSCOPED_INFO(issue);
+    CHECK(mentions(chk.issues, "ping-pong"));
+}
+
+TEST_CASE("A cycle that moves on through new poses is not ping-pong", "[qa][temporal]") {
+    std::vector<Image> frames;
+    for (int k = 0; k < 8; ++k) frames.push_back(posed(k));
+    const PingPongCheck pp = detectPingPong(frames);
+    CHECK(pp.pairsChecked == 3);
+    CHECK(pp.pairsMatched == 0);
+    CHECK(pp.uniquePoses == 8);
+    CHECK_FALSE(pp.pingPong);
+    motion::Clip clip;
+    clip.name = "idle";
+    clip.loops = true;
+    clip.frames = frames;
+    clip.durations.assign(frames.size(), 100);
+    CHECK_FALSE(mentions(motion::checkClip(clip).issues, "ping-pong"));
+    // A frozen clip (every frame the same) is not called ping-pong, and too
+    // short a clip cannot be one.
+    CHECK_FALSE(detectPingPong(std::vector<Image>(6, posed(0))).pingPong);
+    CHECK_FALSE(detectPingPong({posed(0), posed(1), posed(0)}).pingPong);
+    CHECK(frameDifference(posed(0), posed(0)) == Approx(0.0));
+    CHECK(frameDifference(posed(0), posed(3)) > 0.0);
+    CHECK(frameDifference(Image(4, 4), Image(5, 4)) == Approx(1.0));
+}
+
+TEST_CASE("The top part losing its pixels is reported; moving it is not", "[qa][temporal]") {
+    // The head (skin, top rows) bobs by up to 2 px: still present.
+    std::vector<Image> bob;
+    for (int dy : {0, 1, 2, 1}) {
+        Image f(32, 32);
+        f.blit(figure(32, 32, 16, 28), 0, dy);
+        bob.push_back(f);
+    }
+    const TopRegionCheck kept = topRegionPresence(bob);
+    REQUIRE(kept.available);
+    CHECK(kept.area == 16);   // the head's top 4 rows (the top 20% of the figure), 4 px wide
+    CHECK(kept.minPresence == Approx(1.0));
+    CHECK(kept.framesLost.empty());
+    // The head (rows 9..13) is covered (by a wing, say) in frames 2 and 3;
+    // in frame 1 its top three rows are, which leaves half of the 4-row
+    // region findable (the two rows below, shifted up).
+    std::vector<Image> covered = {figure(32, 32, 16, 28), figure(32, 32, 16, 28), figure(32, 32, 16, 28), figure(32, 32, 16, 28)};
+    covered[1].fillRect({14, 9, 4, 3}, kShirt);
+    covered[2].fillRect({14, 9, 4, 5}, kShirt);
+    covered[3].fillRect({14, 9, 4, 5}, Rgba8{0, 0, 0, 0});
+    const TopRegionCheck lost = topRegionPresence(covered);
+    REQUIRE(lost.available);
+    CHECK(lost.presence[0] == Approx(1.0));
+    CHECK(lost.presence[1] == Approx(0.5));
+    CHECK(lost.minPresence == Approx(0.0));
+    CHECK(lost.worstFrame == 2);
+    CHECK((lost.framesLost == std::vector<int>{1, 2, 3}));
+    // The app's clip check reports the lost part.
+    motion::Clip clip;
+    clip.name = "idle";
+    clip.loops = true;
+    clip.frames = covered;
+    clip.durations.assign(covered.size(), 100);
+    const motion::ClipCheck chk = motion::checkClip(clip);
+    for (const auto& issue : chk.issues) UNSCOPED_INFO(issue);
+    CHECK(mentions(chk.issues, "top part"));
+    clip.frames = bob;
+    CHECK_FALSE(mentions(motion::checkClip(clip).issues, "top part"));
 }

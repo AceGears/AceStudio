@@ -155,4 +155,39 @@ std::vector<Image> correctFrames(const std::vector<Image>& frames, const QARepor
 // Every opaque pixel mapped to its nearest palette colour (alpha kept).
 Image mapToPalette(const Image& img, const Palette& palette);
 
+// --- Temporal checks of a whole clip (the same rules as anim_qa.py) -------
+
+// Share (0..1) of the pixels opaque in either frame that differ between the
+// two (colour or alpha). 1 when the sizes differ, 0 when both are empty.
+double frameDifference(const Image& a, const Image& b);
+
+// Ping-pong: in a palindromic cycle frame i equals frame n-i (i = 1..n-1),
+// so the motion plays the same poses forwards and backwards instead of
+// following through. Frames closer than `sameBelow` (frameDifference) count
+// as equal.
+struct PingPongCheck {
+    int pairsChecked = 0;   // pairs (i, n-i) with i != n-i
+    int pairsMatched = 0;
+    int uniquePoses = 0;    // distinct frames in the clip
+    bool pingPong = false;  // every pair matches, at least 4 frames and 2 poses
+};
+PingPongCheck detectPingPong(const std::vector<Image>& frames, double sameBelow = 0.002);
+
+// Part presence: the top-most opaque region of frame 0 (the 4-connected piece
+// holding the highest pixel within the top 20% of the sprite's height:
+// usually the head, crest, horns or a wing tip) is searched in every frame
+// within +-max(4, height/6) px; its presence is the best share of its pixels
+// found with the same colour. A part squashed away, hidden under another
+// part or cut off scores low even when the silhouette area barely changes.
+struct TopRegionCheck {
+    bool available = false;        // frame 0 had opaque pixels
+    IntRect region;                // the region in frame 0
+    int area = 0;                  // its pixel count
+    std::vector<double> presence;  // per frame, 0..1 (frame 0 is 1)
+    double minPresence = 1.0;
+    int worstFrame = 0;
+    std::vector<int> framesLost;   // frames that lost more than `maxLoss` of it
+};
+TopRegionCheck topRegionPresence(const std::vector<Image>& frames, double maxLoss = 0.40);
+
 } // namespace acestudio
