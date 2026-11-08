@@ -228,13 +228,22 @@ or is a case that has not been run yet.
   - A three-quarter stance (the far foot a row or two higher) is a biped; each foot keeps its
     own ground line. First seen on a generated 64 px rogue (benchmark run 1), which had
     rocked as an object. Under a long cloak a few hem pixels move with the legs.
-  - **Wing flap (since 2026-11-08):** the body and head now draw over the wing, and the wing lowers and
-    spreads without going below its root. On the audit dragon this gave an area variation of 7.8 % (was
-    19.9 %), measured with a Python port of the code; CI checks ≤ 8 % on a test dragon. Both wings
-    are still one mask: there is no far wing or foreshortening until the part rig
-    (`docs/agents/ADR-ANIM-001-part-rig.md`) is built. Older note: the flap folds everything above a line. On a generated HD dragon (test PC), the
-    default span folded the head and neck with the wings. A span of 38–100 % kept the head
-    still and flapped the near wing; the far wing, behind the head, stays still.
+  - **Part rig (ADR-ANIM-001, branch `agents/part-rig`):** flap, fly, swim, dash, walk, run and
+    sprint now cut the sprite into parts that move and turn on their own. Implemented and tested
+    with a local build on synthetic sprites and four golden sprites (dragon, fish, rogue, knight).
+    Not yet seen in the app on the PC.
+    - Wings: each wing turns about its shoulder. A far wing (found when the two wings are apart or
+      can be split) is drawn behind the body and trails the near one. When no wing is found, the
+      older flap is used. The wing finder is a heuristic; on a sprite whose wing and head share
+      colours, select the wings first.
+    - Fish: the body bends without losing length, the tail fin beats and foreshortens, and the
+      fins paddle. There is still no turn clip (it needs other views).
+    - Legs: each leg has a thigh, shin and foot, with the knee placed by IK. The planted foot
+      stays on its row and moves back at one speed. There is no pelvis or shoulder
+      counter-rotation yet, and idle uses the older rig.
+    - Nothing of the rig is saved in the project (no schema change), and there is no part painter yet.
+    - Older note, from before the part rig: on a generated HD dragon (test PC), the old default
+      span folded the head and neck in with the wings.
   - Selecting the wings first (the selection becomes the wing mask) gives exact control.
   - Sprites larger than 320 px are previewed from a reduced copy; the checks shown are the
     preview's. Opening or exporting renders at full size, which takes a few seconds for an
@@ -298,8 +307,8 @@ None of it has been run in the installed app on the test PC or with the real AI 
   - front-view walk is detected even with a shield, and held items are no longer sheared;
   - the app's checks now report ping-pong clips and a head covered by a part, and flaps no longer have the 70 % allowance.
   
-  These fixes were checked by tests and Python ports only, not re-rendered on the PC. Fish turning,
-  separate fins and real wing depth need the part rig (ADR-ANIM-001).
+  These fixes were checked by tests and Python ports only, not re-rendered on the PC. The part rig
+  (ADR-ANIM-001, see above) now adds separate fins and wing depth. Fish turning still needs views.
 - **UI:** dock tab labels now follow the text size back down. The `--ui-audit` screenshots wait
   for each page's fade-in. Screen readers are still not tested.
 - **Remote GPU:** design only (`docs/agents/CLOUD_GPU_DESIGN.md`). Nothing has been built or provisioned.

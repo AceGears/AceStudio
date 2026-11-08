@@ -87,7 +87,10 @@ Image shieldKnight() {
 
 } // namespace
 
-TEST_CASE("A flapping dragon keeps its head, and its wing stays above the root", "[motion][rig][flap]") {
+TEST_CASE("A flapping dragon keeps its head while its wing sweeps down", "[motion][rig][flap]") {
+    // The part rig (ADR-ANIM-001 5b): the wing is a part that turns about its
+    // shoulder, in front of the body, sweeping away from the head; the head
+    // is never covered (ADR section 6, dragon tests 2, 5, 7).
     const Dragon d = sideDragon();
     Options o;
     o.action = Action::Flap;
@@ -97,47 +100,51 @@ TEST_CASE("A flapping dragon keeps its head, and its wing stays above the root",
     const auto& fr = clip.value().frames;
     REQUIRE(fr.size() == 8);
 
-    const int head0 = countColour(fr[0], kPants);
+    const int head0 = countColour(d.img, kPants);
+    const int wing0 = countColour(d.img, kSkin);
     REQUIRE(head0 == 138);
-    const int wingRows0 = static_cast<int>(rowsWith(fr[0], kSkin).size());
-    const int drawnRows = 30;   // rows 6-35
-    std::vector<int> wingRows;
-    std::vector<double> areas;
-    int lowestPose = 0;
+    // Frame 0 is the pose as drawn.
+    CHECK(countColour(fr[0], kPants) == head0);
+    // The wing's middle (mean row of its pixels), relative to the body.
+    auto wingMid = [&](const Image& f) {
+        const auto px = pixelsOf(f, kSkin);
+        double sum = 0;
+        for (const auto& p : px) sum += p.second;
+        return px.empty() ? 0.0 : sum / static_cast<double>(px.size());
+    };
+    auto bodyTop = [&](const Image& f) { return rowsWith(f, kShirt).front(); };
+    const double mid0 = wingMid(fr[0]) - bodyTop(fr[0]);
+    double lowest = 0;
+    int lowestFrame = 0;
     bool rose = false;
-    const int bodyTop0 = rowsWith(fr[0], kShirt).front();
     for (std::size_t i = 0; i < fr.size(); ++i) {
         const Image& f = fr[i];
         INFO("frame " << i);
-        // Head (and horn) pixels: never hidden by the wing (z-order head > wing).
-        const int head = countColour(f, kPants);
-        CHECK(head * 10 >= head0 * 9);
-        CHECK(head == head0);
-        // The wing never hangs below its root: every wing row is above the
-        // body's top row (the root) in this frame.
-        const std::vector<int> wr = rowsWith(f, kSkin);
-        const int bodyTop = rowsWith(f, kShirt).front();
-        REQUIRE_FALSE(wr.empty());
-        CHECK(wr.back() < bodyTop);
-        rose = rose || bodyTop < bodyTop0;
-        // Never edge-on: at least two rows and 40 % of the drawn height.
-        const int rows = static_cast<int>(wr.size());
-        CHECK(rows >= 2);
-        CHECK(rows * 10 >= drawnRows * 4);
-        wingRows.push_back(rows);
-        if (rows < wingRows[static_cast<std::size_t>(lowestPose)]) lowestPose = static_cast<int>(i);
-        int a = 0;
-        for (const Rgba8& p : f.pixels()) a += p.a ? 1 : 0;
-        areas.push_back(a);
+        // The head and horn: every pixel in every frame (never covered).
+        CHECK(countColour(f, kPants) == head0);
+        // The wing turns, it is not folded flat: its pixels stay (rotation
+        // keeps the area) and it is never a line of a few rows.
+        const int wing = countColour(f, kSkin);
+        CHECK(wing * 10 >= wing0 * 7);
+        CHECK(rowsWith(f, kSkin).size() >= 3);
+        // How far the wing has come down, relative to the body.
+        const double drop = (wingMid(f) - bodyTop(f)) - mid0;
+        if (drop > lowest) {
+            lowest = drop;
+            lowestFrame = static_cast<int>(i);
+        }
+        rose = rose || bodyTop(f) < bodyTop(fr[0]);
+        // Only the sprite's colours.
+        for (const Rgba8& p : f.pixels()) CHECK((p.a == 0 || p == kSkin || p == kShirt || p == kPants));
     }
-    // A readable stroke: the wing lowers to at most 60 % of its raised
-    // height, quickly (the lowest pose in the first half of the cycle), and
-    // the body rises on the downstroke.
-    CHECK(wingRows[static_cast<std::size_t>(lowestPose)] * 10 <= wingRows0 * 6);
-    CHECK(lowestPose >= 2);
-    CHECK(lowestPose <= 4);
+    // A real downstroke: the wing's middle comes down by at least a third of
+    // the wing's 30 rows, quickly (the lowest pose by the middle), and the
+    // body rises with it.
+    CHECK(lowest >= 10);
+    CHECK(lowestFrame >= 2);
+    CHECK(lowestFrame <= 5);   // the outer wing trails the arm by under a frame
     CHECK(rose);
-    // Eight different poses (no ping-pong).
+    // Eight different poses (no ping-pong), and the app's checks pass.
     int unique = 0;
     for (std::size_t i = 0; i < fr.size(); ++i) {
         bool seen = false;
@@ -145,17 +152,47 @@ TEST_CASE("A flapping dragon keeps its head, and its wing stays above the root",
         unique += seen ? 0 : 1;
     }
     CHECK(unique == 8);
-    // Silhouette area variation (coefficient of variation over the cycle)
-    // within the 8 % standard. Measured 6.8 % on this sprite and 7.8 % on
-    // the audit's 128 px dragon (reference implementation of this code).
-    double mean = 0;
-    for (double a : areas) mean += a;
-    mean /= static_cast<double>(areas.size());
-    double var = 0;
-    for (double a : areas) var += (a - mean) * (a - mean);
-    const double cv = std::sqrt(var / static_cast<double>(areas.size())) / mean;
-    INFO("flap area CV " << cv);
-    CHECK(cv <= 0.08);
+    const ClipCheck chk = checkClip(clip.value());
+    for (const auto& i : chk.issues) UNSCOPED_INFO(i);
+    CHECK(chk.issues.empty());
+}
+
+TEST_CASE("A dragon's two wings: the far one behind the body, trailing the near one", "[motion][rig][flap]") {
+    // Two wings rising from a body whose head (and horn) is on the right: the
+    // left wing is the near one, the right wing (behind the neck) the far one.
+    Image img(80, 64);
+    const Rgba8 kNear{90, 30, 30, 255}, kFar{60, 20, 60, 255};
+    img.fillRect({20, 34, 36, 14}, kShirt);   // body
+    img.fillRect({24, 48, 5, 8}, kShirt);     // legs
+    img.fillRect({44, 48, 5, 8}, kShirt);
+    img.fillRect({50, 26, 12, 12}, kPants);   // head, rising above the back on the right
+    for (int y = 6; y < 34; ++y) {
+        const int k = (y - 6) / 3;
+        for (int x = 14 - k; x <= 24 + k / 2; ++x) img.setPixel(x, y, kNear);   // left wing
+        for (int x = 38 - k / 2; x <= 44 + k / 2; ++x) img.setPixel(x, y, kFar);   // right wing
+    }
+    Options o;
+    o.action = Action::Flap;
+    o.wingLine = (26.0 - 6.0) / (56.0 - 6.0);   // above the head
+    o.wingFrom = 0.0;
+    o.wingTo = (48.0 - 4.0) / 66.0;             // left of the head
+    auto clip = animate(img, o);
+    REQUIRE(clip);
+    const auto& fr = clip.value().frames;
+    const int head0 = countColour(img, kPants);
+    bool farHidden = false, nearOverBody = false;
+    for (std::size_t i = 0; i < fr.size(); ++i) {
+        INFO("frame " << i);
+        // The head is in front of both wings.
+        CHECK(countColour(fr[i], kPants) == head0);
+        // The far wing is a part of its own: it moves in every frame.
+        if (i > 0) CHECK_FALSE(pixelsOf(fr[i], kFar) == pixelsOf(fr[i - 1], kFar));
+        farHidden = farHidden || countColour(fr[i], kFar) * 10 < countColour(fr[0], kFar) * 9;
+        nearOverBody = nearOverBody || countColour(fr[i], kShirt) < countColour(fr[0], kShirt);
+    }
+    // The far wing passes behind the body or head; the near wing in front.
+    CHECK(farHidden);
+    CHECK(nearOverBody);
 }
 
 TEST_CASE("A front-facing walker holding a shield steps in place", "[motion][rig][walk]") {

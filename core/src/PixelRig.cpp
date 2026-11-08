@@ -1,5 +1,7 @@
 #include "PixelRig.h"
 
+#include "RigModules.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -54,21 +56,8 @@ struct LegPose {
 
 } // namespace
 
-std::optional<RigClip> rigRender(const Image& sprite, const Subject& subj, Body body, Action action, int frames, double amount,
-                                 const WingSpec& wing, SwimStyle swim) {
-    if (action == Action::Flap) return flapRender(sprite, subj, frames, amount, wing);
-    if (body == Body::Swimmer) return swimRender(sprite, subj, action, frames, amount, swim);
-    const bool footed = (body == Body::Biped || body == Body::Quadruped) && subj.legTop >= 0 && subj.feet.size() >= 2;
-    const bool locomotion = action == Action::Walk || action == Action::Run || action == Action::Sprint;
-    if (!footed || !(locomotion || action == Action::Idle) || frames < 1) return std::nullopt;
-
+bool seenFromFront(const Image& sprite, const Subject& subj, Body body) {
     const IntRect bb = subj.bounds;
-    const int H = bb.h, W = sprite.width();
-    amount = std::clamp(amount, 0.25, 2.0);
-    // Forward: where the toes point. When the toes do not tell, a sprite
-    // that is close to its own mirror image is seen from the front; anything
-    // else is taken as facing right.
-    const int dir = subj.facing < 0 ? -1 : 1;
     bool front = subj.frontView;
     if (!front && subj.facing == 0) {
         long same = 0, all = 0;
@@ -105,6 +94,35 @@ std::optional<RigClip> rigRender(const Image& sprite, const Subject& subj, Body 
             front = legAll > 0 && legSame * 10 >= legAll * 8;
         }
     }
+    return front;
+}
+
+std::optional<RigClip> rigRender(const Image& sprite, const Subject& subj, Body body, Action action, int frames, double amount,
+                                 const WingSpec& wing, SwimStyle swim) {
+    // Wings: the part rig; the row-folding renderer stays as the fallback.
+    if (action == Action::Flap || action == Action::Fly)
+        if (auto clip = flightRender(sprite, subj, action, frames, amount, wing)) return clip;
+    if (action == Action::Flap) return flapRender(sprite, subj, frames, amount, wing);
+    if (body == Body::Swimmer) {
+        if (auto clip = swimRigRender(sprite, subj, action, frames, amount, swim)) return clip;
+        return swimRender(sprite, subj, action, frames, amount, swim);
+    }
+    const bool footed = (body == Body::Biped || body == Body::Quadruped) && subj.legTop >= 0 && subj.feet.size() >= 2;
+    const bool locomotion = action == Action::Walk || action == Action::Run || action == Action::Sprint;
+    if (!footed || !(locomotion || action == Action::Idle) || frames < 1) return std::nullopt;
+    // Walks and runs: the part rig (two-bone legs, planted feet); the
+    // row-shifting legs below stay for idles and as the fallback.
+    if (locomotion)
+        if (auto clip = gaitRender(sprite, subj, body, action, frames, amount)) return clip;
+
+    const IntRect bb = subj.bounds;
+    const int H = bb.h, W = sprite.width();
+    amount = std::clamp(amount, 0.25, 2.0);
+    // Forward: where the toes point. When the toes do not tell, a sprite
+    // that is close to its own mirror image is seen from the front; anything
+    // else is taken as facing right.
+    const int dir = subj.facing < 0 ? -1 : 1;
+    const bool front = seenFromFront(sprite, subj, body);
 
     // Legs and their geometry.
     std::vector<Leg> legs;

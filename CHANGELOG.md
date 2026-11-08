@@ -139,6 +139,17 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - **`acestudio-cli slice --cells CxR`** cuts AI-generated sheets whose spacing is uneven.
 
 ### Changed
+- **Animate Sprite uses a part rig** (ADR-ANIM-001) for flap, fly, swim, dash, walk, run and
+  sprint. The sprite is cut into parts, which move and turn without blur or new colours and keep
+  the pixels other parts hid:
+  - wings, body and head end;
+  - body columns, tail fin and fins;
+  - thigh, shin and foot per leg.
+
+  The far wing is drawn behind the body and trails the near one, and the head is never covered. A
+  fish keeps its length while it bends. A planted foot stays on its row and moves back at one
+  speed, and the knee comes from two-bone IK. Sprites the rig cannot read fall back to the
+  previous renderers. The flap no longer has its own area limit in the clip checks.
 - **Personal use — no licence key, trial or activation.** Saving, exporting and every write
   command work from the first start, with no time limit. Removed: Help › Licence…, the
   status-bar licence button, `acestudio-cli licence`, the `acestudio-licence` key tool, the

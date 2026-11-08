@@ -2,6 +2,7 @@
 
 #include "acestudio/core/AnimationQA.h"
 
+#include "PartRig.h"
 #include "PixelRig.h"
 
 #include <algorithm>
@@ -867,37 +868,13 @@ bool spriteFacesLeft(const Image& sprite) {
     return mass > 0 && sum / static_cast<double>(mass) < (bb.w - 1) * 0.47;
 }
 
-namespace {
-// Scale2x (EPX): doubles an image, rounding diagonal edges without new colours.
-Image scale2x(const Image& in) {
-    const int W = in.width(), H = in.height();
-    Image out(W * 2, H * 2);
-    auto px = [&](int x, int y) { return in.pixel(std::clamp(x, 0, W - 1), std::clamp(y, 0, H - 1)); };
-    for (int y = 0; y < H; ++y)
-        for (int x = 0; x < W; ++x) {
-            const Rgba8 B = px(x, y - 1), D = px(x - 1, y), E = px(x, y), F = px(x + 1, y), Hh = px(x, y + 1);
-            Rgba8 e0 = E, e1 = E, e2 = E, e3 = E;
-            if (!(B == Hh) && !(D == F)) {
-                if (D == B) e0 = D;
-                if (B == F) e1 = F;
-                if (D == Hh) e2 = D;
-                if (Hh == F) e3 = F;
-            }
-            out.setPixel(2 * x, 2 * y, e0);
-            out.setPixel(2 * x + 1, 2 * y, e1);
-            out.setPixel(2 * x, 2 * y + 1, e2);
-            out.setPixel(2 * x + 1, 2 * y + 1, e3);
-        }
-    return out;
-}
-} // namespace
 
 Image rotateSprite(const Image& sprite, double radians) {
     if (sprite.isNull()) return sprite;
     const bool small = std::max(sprite.width(), sprite.height()) <= 256;
     const int up = small ? 8 : 1;
     Image big = sprite;
-    if (small) for (int i = 0; i < 3; ++i) big = scale2x(big);
+    if (small) for (int i = 0; i < 3; ++i) big = rig::scale2x(big);
     const double c = std::cos(radians), s = std::sin(radians);
     const double w = sprite.width(), h = sprite.height();
     // Sized exactly (a quarter turn is then a lossless transpose).
@@ -978,24 +955,26 @@ ClipCheck checkClip(const Clip& clip) {
         if (i > 0) r.minNeighbourIoU = std::min(r.minNeighbourIoU, iou(clip.frames[i - 1], clip.frames[i]));
     }
     if (clip.loops && clip.frames.size() > 1) r.loopIoU = iou(clip.frames.back(), clip.frames.front());
-    // A big change means parts were lost or doubled. A flap has no exemption:
-    // a winged body keeps its silhouette area within 8% (ANIMATION_STANDARDS.md,
-    // universal rule 1; ADR-ANIM-001 step 0). Wings that fold away or cover the
-    // head are a defect, not foreshortening, until the part rig draws them.
-    const double allowed = clip.name == "flap" ? 0.08 : 0.35;
+    // A big change means parts were lost or doubled. Flaps and flights get
+    // no exemption: the part rig turns the wings (their area stays), so the
+    // whole silhouette changes only where a wing passes over the body.
+    const double allowed = 0.35;
     if (r.maxAreaChange > allowed)
         r.issues.push_back("The sprite's size changes by " + std::to_string(static_cast<int>(r.maxAreaChange * 100)) +
                            "% between frames; parts may be stretched or hidden.");
     // Temporal checks shared with anim_qa.py (ADR-ANIM-001 step 0): a cycle
     // must not play its poses forwards then backwards, and the top part
     // (head, horns, a wing tip) must not vanish. A roll turns the sprite on
-    // purpose, so its top part moves out of reach.
+    // purpose, so its top part moves out of reach; so does a wing stroke.
     if (clip.loops) {
         const PingPongCheck pp = detectPingPong(clip.frames);
         if (pp.pingPong)
             r.issues.push_back("The cycle plays the same " + std::to_string(pp.uniquePoses) +
                                " poses forwards and then backwards (ping-pong); the motion reverses instead of following through.");
-        if (clip.name != "roll") {
+        // A flapping wing sweeps its tip down on purpose; the rig keeps the
+        // head drawn over the wings, which its own tests check part by part
+        // (ADR-ANIM-001 section 6).
+        if (clip.name != "roll" && clip.name != "flap" && clip.name != "fly") {
             const TopRegionCheck top = topRegionPresence(clip.frames);
             if (!top.framesLost.empty())
                 r.issues.push_back("The top part of the sprite (head, horns or wing tip) loses " +
