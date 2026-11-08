@@ -7,8 +7,12 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 ### Fixed
 - Scrolling a page no longer changes a drop-down, number box or slider under the pointer.
 - Clean 32 px sprites were scored 0 as "noise".
+- Model downloads refuse non-HTTPS URLs (except to this machine) and no longer send an access
+  token to a different host after a redirect.
 
 ### Added
+- Development: the AceStudio agent organization for Claude Code (`.claude/`, `CLAUDE.md`,
+  `docs/agents/`): 28 specialist agents, 8 skills, a secret-blocking write hook.
 
 - Settings › Privacy: **Disable all network access** (model downloads and runtime setup refused in
   the app and the CLI; the AI worker refuses every non-local connection and name lookup, proxies
