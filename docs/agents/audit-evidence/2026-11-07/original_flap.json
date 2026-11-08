@@ -1,0 +1,189 @@
+{
+  "frames": 8,
+  "size": [
+    116,
+    106
+  ],
+  "kind": "body",
+  "per_frame": [
+    {
+      "area": 5408,
+      "semi_alpha": 0,
+      "centroid": [
+        56.86168639053255,
+        51.16826923076923
+      ],
+      "bbox": [
+        1,
+        1,
+        114,
+        104
+      ],
+      "components": 1,
+      "specks": 0,
+      "palette_size": 29,
+      "orphans": 1767
+    },
+    {
+      "area": 4778,
+      "semi_alpha": 0,
+      "centroid": [
+        56.492046881540396,
+        54.83821682712432
+      ],
+      "bbox": [
+        1,
+        11,
+        114,
+        103
+      ],
+      "components": 1,
+      "specks": 0,
+      "palette_size": 29,
+      "orphans": 1636
+    },
+    {
+      "area": 3276,
+      "semi_alpha": 0,
+      "centroid": [
+        55.038766788766786,
+        65.59554334554335
+      ],
+      "bbox": [
+        1,
+        37,
+        114,
+        102
+      ],
+      "components": 1,
+      "specks": 0,
+      "palette_size": 29,
+      "orphans": 1215
+    },
+    {
+      "area": 3083,
+      "semi_alpha": 0,
+      "centroid": [
+        56.222834901070385,
+        66.21342847875447
+      ],
+      "bbox": [
+        1,
+        44,
+        114,
+        100
+      ],
+      "components": 1,
+      "specks": 0,
+      "palette_size": 29,
+      "orphans": 1137
+    },
+    {
+      "area": 3377,
+      "semi_alpha": 0,
+      "centroid": [
+        55.6967722830915,
+        65.62096535386438
+      ],
+      "bbox": [
+        1,
+        44,
+        114,
+        100
+      ],
+      "components": 1,
+      "specks": 0,
+      "palette_size": 28,
+      "orphans": 1181
+    },
+    {
+      "area": 3083,
+      "semi_alpha": 0,
+      "centroid": [
+        56.222834901070385,
+        66.21342847875447
+      ],
+      "bbox": [
+        1,
+        44,
+        114,
+        100
+      ],
+      "components": 1,
+      "specks": 0,
+      "palette_size": 29,
+      "orphans": 1137
+    },
+    {
+      "area": 3276,
+      "semi_alpha": 0,
+      "centroid": [
+        55.038766788766786,
+        65.59554334554335
+      ],
+      "bbox": [
+        1,
+        37,
+        114,
+        102
+      ],
+      "components": 1,
+      "specks": 0,
+      "palette_size": 29,
+      "orphans": 1215
+    },
+    {
+      "area": 4778,
+      "semi_alpha": 0,
+      "centroid": [
+        56.492046881540396,
+        54.83821682712432
+      ],
+      "bbox": [
+        1,
+        11,
+        114,
+        103
+      ],
+      "components": 1,
+      "specks": 0,
+      "palette_size": 29,
+      "orphans": 1636
+    }
+  ],
+  "warnings": [
+    "silhouette area varies 22.7% (> 8%): possible proportion drift / missing or growing parts"
+  ],
+  "area_cv": 0.2268,
+  "centroid_jitter_px": 4.284,
+  "component_counts": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "palette_union": 29,
+  "palette_frame0": 29,
+  "consecutive_diff": [
+    0.738,
+    0.817,
+    0.89,
+    0.433,
+    0.433,
+    0.89,
+    0.817
+  ],
+  "loop_seam_diff": 0.738,
+  "loop_seam_ratio": 0.9,
+  "static_regions": {
+    "occupied_cells": 59,
+    "static_cells": 0,
+    "static_frac": 0.0,
+    "static_cell_rects": []
+  },
+  "source": "original_flap.gif"
+}

@@ -11,12 +11,52 @@ import hashlib
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from ..jobs import JobError
 
 NAME = "model.download"
 CHUNK = 1 << 20
+_LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+# Headers that carry credentials; they must not follow a redirect to another host.
+_SENSITIVE = {"authorization", "cookie", "proxy-authorization"}
+
+
+def _check_url(url):
+    """Only HTTPS, or plain HTTP to this machine (local mirrors and tests).
+
+    urllib would otherwise also accept http:// to remote hosts, file:// and
+    ftp://, which bypass transport security or read local files.
+    """
+    u = urllib.parse.urlsplit(url)
+    scheme = u.scheme.lower()
+    host = (u.hostname or "").lower()
+    if scheme == "https" and host:
+        return
+    if scheme == "http" and host in _LOOPBACK:
+        return
+    raise JobError("Refusing to download from %r: only https:// URLs are allowed." % url, kind="invalid_input")
+
+
+class _SafeRedirect(urllib.request.HTTPRedirectHandler):
+    """Re-checks every redirect target and drops credentials on a host change."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_url(newurl)
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None:
+            old_host = (urllib.parse.urlsplit(req.full_url).hostname or "").lower()
+            new_host = (urllib.parse.urlsplit(newurl).hostname or "").lower()
+            if old_host != new_host:
+                for store in (new.headers, new.unredirected_hdrs):
+                    for name in list(store):
+                        if name.lower() in _SENSITIVE:
+                            del store[name]
+        return new
+
+
+_opener = urllib.request.build_opener(_SafeRedirect)
 
 
 def available():
@@ -36,6 +76,7 @@ def _hash_file(path, ctx, done_before, total):
 
 
 def _download(ctx, url, part, expected_size, headers, done_before, total):
+    _check_url(url)
     have = os.path.getsize(part) if os.path.exists(part) else 0
     if expected_size and have > expected_size:
         os.remove(part)
@@ -45,7 +86,7 @@ def _download(ctx, url, part, expected_size, headers, done_before, total):
     if have:
         req.add_header("Range", "bytes=%d-" % have)
     try:
-        resp = urllib.request.urlopen(req, timeout=60)
+        resp = _opener.open(req, timeout=60)
     except urllib.error.HTTPError as e:
         if e.code == 416 and have:   # already complete
             return

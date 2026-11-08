@@ -69,6 +69,13 @@ Found and fixed:
    frame's colour indices before reading any data. Frames are now decoded only up to the last
    row that lands on the screen (browsers also clip such frames), a frame needing more than
    256 MB of indices is refused, and buffers grow with the data actually present.
+7. **Model downloads accepted any URL scheme and forwarded credentials across redirects**
+   (review, 2026-11-07). The worker's `model.download` passed URLs straight to urllib, so it
+   also accepted remote `http://`, `file://` and `ftp://`. An access-token header for a gated
+   model also followed a redirect to any other host. Downloads now allow only `https://`
+   (plain `http://` only to 127.0.0.1/localhost/::1 for local mirrors and tests). Every
+   redirect target is re-checked, and `Authorization`, `Cookie` and `Proxy-Authorization` are
+   dropped when a redirect changes host. Tests: `ai_worker/tests/test_download_security.py`.
 
 Third-party notes: UBSan reports "applying zero offset to null pointer" inside miniz's
 inflate (`miniz.c:474`, `miniz_tinfl.c:202`) on APNG input. This is pointer arithmetic on a

@@ -1,0 +1,3284 @@
+{
+ "idle_e": {
+  "frames": 4,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1244,
+    "semi_alpha": 0,
+    "centroid": [
+     69.83360128617363,
+     44.43971061093247
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 642
+   },
+   {
+    "area": 1206,
+    "semi_alpha": 0,
+    "centroid": [
+     69.74626865671642,
+     44.866500829187395
+    ],
+    "bbox": [
+     41,
+     26,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 617
+   },
+   {
+    "area": 1236,
+    "semi_alpha": 0,
+    "centroid": [
+     70.47977346278317,
+     44.36165048543689
+    ],
+    "bbox": [
+     41,
+     25,
+     98,
+     63
+    ],
+    "components": 1,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 619
+   },
+   {
+    "area": 1240,
+    "semi_alpha": 0,
+    "centroid": [
+     69.76532258064516,
+     44.730645161290326
+    ],
+    "bbox": [
+     42,
+     26,
+     99,
+     65
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 540
+   }
+  ],
+  "warnings": [
+   "loop seam jump 0.919 is 1.6x the typical frame change: visible pop when looping"
+  ],
+  "area_cv": 0.0122,
+  "centroid_jitter_px": 0.197,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.176,
+   0.591,
+   0.922
+  ],
+  "loop_seam_diff": 0.919,
+  "loop_seam_ratio": 1.55,
+  "static_regions": {
+   "occupied_cells": 19,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "walk_e": {
+  "frames": 8,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1322,
+    "semi_alpha": 0,
+    "centroid": [
+     84.66187594553706,
+     45.434947049924354
+    ],
+    "bbox": [
+     51,
+     27,
+     117,
+     64
+    ],
+    "components": 1,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 506
+   },
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     69.86768243785085,
+     44.46271050521251
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 625
+   },
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     69.86768243785085,
+     44.46271050521251
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 625
+   },
+   {
+    "area": 1154,
+    "semi_alpha": 0,
+    "centroid": [
+     66.73396880415945,
+     44.90987868284229
+    ],
+    "bbox": [
+     39,
+     26,
+     93,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 572
+   },
+   {
+    "area": 1144,
+    "semi_alpha": 0,
+    "centroid": [
+     66.61363636363636,
+     44.97552447552447
+    ],
+    "bbox": [
+     39,
+     26,
+     93,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 580
+   },
+   {
+    "area": 1144,
+    "semi_alpha": 0,
+    "centroid": [
+     66.61363636363636,
+     44.97552447552447
+    ],
+    "bbox": [
+     39,
+     26,
+     93,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 580
+   },
+   {
+    "area": 1243,
+    "semi_alpha": 0,
+    "centroid": [
+     61.862429605792435,
+     44.48189863234111
+    ],
+    "bbox": [
+     33,
+     25,
+     90,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 1,
+    "orphans": 0
+   },
+   {
+    "area": 1248,
+    "semi_alpha": 0,
+    "centroid": [
+     60.46073717948718,
+     44.4911858974359
+    ],
+    "bbox": [
+     32,
+     25,
+     89,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 617
+   }
+  ],
+  "warnings": [
+   "frames [1, 4] -> next are (near) identical: held/duplicate frames"
+  ],
+  "area_cv": 0.0495,
+  "centroid_jitter_px": 4.931,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.969,
+   0.0,
+   0.92,
+   0.157,
+   0.0,
+   0.976,
+   0.966
+  ],
+  "loop_seam_diff": 0.987,
+  "loop_seam_ratio": 1.07,
+  "static_regions": {
+   "occupied_cells": 21,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "run_e": {
+  "frames": 8,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     65.8307939053729,
+     44.44987971130714
+    ],
+    "bbox": [
+     37,
+     25,
+     94,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 604
+   },
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     69.86768243785085,
+     44.46271050521251
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 625
+   },
+   {
+    "area": 1233,
+    "semi_alpha": 0,
+    "centroid": [
+     69.78994322789943,
+     43.66504460665045
+    ],
+    "bbox": [
+     42,
+     25,
+     99,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 532
+   },
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     69.86768243785085,
+     44.46271050521251
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 625
+   },
+   {
+    "area": 1218,
+    "semi_alpha": 0,
+    "centroid": [
+     65.26108374384236,
+     41.57717569786535
+    ],
+    "bbox": [
+     37,
+     23,
+     94,
+     61
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 610
+   },
+   {
+    "area": 1222,
+    "semi_alpha": 0,
+    "centroid": [
+     61.337152209492636,
+     37.63256955810147
+    ],
+    "bbox": [
+     34,
+     19,
+     91,
+     57
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 593
+   },
+   {
+    "area": 1245,
+    "semi_alpha": 0,
+    "centroid": [
+     49.8714859437751,
+     30.23132530120482
+    ],
+    "bbox": [
+     28,
+     4,
+     78,
+     52
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 434
+   },
+   {
+    "area": 1243,
+    "semi_alpha": 0,
+    "centroid": [
+     42.67900241351569,
+     29.082059533386968
+    ],
+    "bbox": [
+     25,
+     1,
+     68,
+     54
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 430
+   }
+  ],
+  "warnings": [
+   "frames [2] introduce colours absent from frame 0 (union 60 vs 32): palette drift"
+  ],
+  "area_cv": 0.009,
+  "centroid_jitter_px": 4.066,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 60,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.924,
+   0.993,
+   0.993,
+   0.949,
+   0.968,
+   0.99,
+   0.974
+  ],
+  "loop_seam_diff": 0.998,
+  "loop_seam_ratio": 1.02,
+  "static_regions": {
+   "occupied_cells": 29,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "sprint_e": {
+  "frames": 6,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1249,
+    "semi_alpha": 0,
+    "centroid": [
+     25.137710168134507,
+     32.42594075260208
+    ],
+    "bbox": [
+     6,
+     4,
+     44,
+     61
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 595
+   },
+   {
+    "area": 1175,
+    "semi_alpha": 0,
+    "centroid": [
+     20.52,
+     36.71574468085107
+    ],
+    "bbox": [
+     1,
+     11,
+     40,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 604
+   },
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     20.46271050521251,
+     35.13231756214916
+    ],
+    "bbox": [
+     1,
+     8,
+     40,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 625
+   },
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     69.86768243785085,
+     44.46271050521251
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 625
+   },
+   {
+    "area": 1308,
+    "semi_alpha": 0,
+    "centroid": [
+     69.02675840978593,
+     42.67201834862385
+    ],
+    "bbox": [
+     40,
+     22,
+     97,
+     63
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 649
+   },
+   {
+    "area": 1233,
+    "semi_alpha": 0,
+    "centroid": [
+     69.78994322789943,
+     43.66504460665045
+    ],
+    "bbox": [
+     42,
+     25,
+     99,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 532
+   }
+  ],
+  "warnings": [
+   "frames [5] introduce colours absent from frame 0 (union 60 vs 32): palette drift"
+  ],
+  "area_cv": 0.0312,
+  "centroid_jitter_px": 19.088,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 60,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.963,
+   0.784,
+   1.0,
+   0.895,
+   0.991
+  ],
+  "loop_seam_diff": 1.0,
+  "loop_seam_ratio": 1.04,
+  "static_regions": {
+   "occupied_cells": 33,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "jump_e": {
+  "frames": 8,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1325,
+    "semi_alpha": 0,
+    "centroid": [
+     68.75924528301887,
+     41.111698113207545
+    ],
+    "bbox": [
+     40,
+     20,
+     97,
+     62
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 575
+   },
+   {
+    "area": 1325,
+    "semi_alpha": 0,
+    "centroid": [
+     69.25433962264151,
+     41.111698113207545
+    ],
+    "bbox": [
+     40,
+     20,
+     97,
+     62
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 579
+   },
+   {
+    "area": 1178,
+    "semi_alpha": 0,
+    "centroid": [
+     71.25636672325976,
+     45.4151103565365
+    ],
+    "bbox": [
+     42,
+     27,
+     99,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 604
+   },
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     69.86768243785085,
+     44.46271050521251
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 625
+   },
+   {
+    "area": 1244,
+    "semi_alpha": 0,
+    "centroid": [
+     69.79903536977491,
+     44.77411575562701
+    ],
+    "bbox": [
+     42,
+     26,
+     99,
+     65
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 533
+   },
+   {
+    "area": 1236,
+    "semi_alpha": 0,
+    "centroid": [
+     69.81796116504854,
+     43.6957928802589
+    ],
+    "bbox": [
+     42,
+     25,
+     99,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 525
+   },
+   {
+    "area": 1236,
+    "semi_alpha": 0,
+    "centroid": [
+     69.81796116504854,
+     43.6957928802589
+    ],
+    "bbox": [
+     42,
+     25,
+     99,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 525
+   },
+   {
+    "area": 1244,
+    "semi_alpha": 0,
+    "centroid": [
+     69.79903536977491,
+     44.77411575562701
+    ],
+    "bbox": [
+     42,
+     26,
+     99,
+     65
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 533
+   }
+  ],
+  "warnings": [
+   "frames [5] -> next are (near) identical: held/duplicate frames"
+  ],
+  "area_cv": 0.0365,
+  "centroid_jitter_px": 1.484,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.378,
+   0.964,
+   0.821,
+   0.926,
+   0.799,
+   0.0,
+   0.799
+  ],
+  "loop_seam_diff": 0.945,
+  "loop_seam_ratio": 1.18,
+  "static_regions": {
+   "occupied_cells": 20,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "fall_e": {
+  "frames": 4,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1238,
+    "semi_alpha": 0,
+    "centroid": [
+     69.8529886914378,
+     45.72617124394184
+    ],
+    "bbox": [
+     42,
+     27,
+     99,
+     66
+    ],
+    "components": 2,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 535
+   },
+   {
+    "area": 1238,
+    "semi_alpha": 0,
+    "centroid": [
+     69.8529886914378,
+     45.72617124394184
+    ],
+    "bbox": [
+     42,
+     27,
+     99,
+     66
+    ],
+    "components": 2,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 535
+   },
+   {
+    "area": 1240,
+    "semi_alpha": 0,
+    "centroid": [
+     69.76532258064516,
+     44.730645161290326
+    ],
+    "bbox": [
+     42,
+     26,
+     99,
+     65
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 540
+   },
+   {
+    "area": 1271,
+    "semi_alpha": 0,
+    "centroid": [
+     70.98190401258852,
+     41.44374508261212
+    ],
+    "bbox": [
+     43,
+     21,
+     98,
+     62
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 565
+   }
+  ],
+  "warnings": [
+   "connected-part count changes across frames [2, 2, 1, 1]: possible detached or missing body parts",
+   "frames [2] introduce colours absent from frame 0 (union 60 vs 32): palette drift",
+   "frames [0] -> next are (near) identical: held/duplicate frames"
+  ],
+  "area_cv": 0.0112,
+  "centroid_jitter_px": 1.474,
+  "component_counts": [
+   2,
+   2,
+   1,
+   1
+  ],
+  "palette_union": 60,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.0,
+   0.98,
+   0.993
+  ],
+  "loop_seam_diff": 0.951,
+  "loop_seam_ratio": 0.97,
+  "static_regions": {
+   "occupied_cells": 19,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "land_e": {
+  "frames": 4,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1277,
+    "semi_alpha": 0,
+    "centroid": [
+     70.76742364917776,
+     39.94909945184025
+    ],
+    "bbox": [
+     42,
+     20,
+     98,
+     60
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 593
+   },
+   {
+    "area": 1215,
+    "semi_alpha": 0,
+    "centroid": [
+     70.93415637860082,
+     40.95802469135803
+    ],
+    "bbox": [
+     41,
+     22,
+     99,
+     60
+    ],
+    "components": 1,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 602
+   },
+   {
+    "area": 1216,
+    "semi_alpha": 0,
+    "centroid": [
+     70.7623355263158,
+     43.45723684210526
+    ],
+    "bbox": [
+     41,
+     25,
+     99,
+     62
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 585
+   },
+   {
+    "area": 1219,
+    "semi_alpha": 0,
+    "centroid": [
+     70.99015586546349,
+     46.0
+    ],
+    "bbox": [
+     41,
+     27,
+     99,
+     65
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 595
+   }
+  ],
+  "warnings": [],
+  "area_cv": 0.0212,
+  "centroid_jitter_px": 0.71,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.61,
+   0.931,
+   0.936
+  ],
+  "loop_seam_diff": 0.978,
+  "loop_seam_ratio": 1.05,
+  "static_regions": {
+   "occupied_cells": 18,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "attack1_e": {
+  "frames": 6,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1274,
+    "semi_alpha": 0,
+    "centroid": [
+     70.7723704866562,
+     44.91993720565149
+    ],
+    "bbox": [
+     42,
+     25,
+     98,
+     65
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 591
+   },
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     69.86768243785085,
+     44.46271050521251
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 625
+   },
+   {
+    "area": 1046,
+    "semi_alpha": 0,
+    "centroid": [
+     69.6491395793499,
+     46.735181644359464
+    ],
+    "bbox": [
+     41,
+     32,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 514
+   },
+   {
+    "area": 740,
+    "semi_alpha": 0,
+    "centroid": [
+     69.17567567567568,
+     49.0527027027027
+    ],
+    "bbox": [
+     41,
+     42,
+     97,
+     63
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 342
+   },
+   {
+    "area": 749,
+    "semi_alpha": 0,
+    "centroid": [
+     69.48998664886516,
+     48.02136181575434
+    ],
+    "bbox": [
+     41,
+     41,
+     97,
+     62
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 31,
+    "orphans": 394
+   },
+   {
+    "area": 1234,
+    "semi_alpha": 0,
+    "centroid": [
+     69.82009724473258,
+     45.68152350081037
+    ],
+    "bbox": [
+     42,
+     27,
+     99,
+     66
+    ],
+    "components": 1,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 540
+   }
+  ],
+  "warnings": [
+   "silhouette area varies 21.7% (> 8%): possible proportion drift / missing or growing parts",
+   "frames [5] introduce colours absent from frame 0 (union 60 vs 32): palette drift"
+  ],
+  "area_cv": 0.2167,
+  "centroid_jitter_px": 0.634,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 60,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.828,
+   0.359,
+   0.853,
+   0.818,
+   0.999
+  ],
+  "loop_seam_diff": 0.986,
+  "loop_seam_ratio": 1.19,
+  "static_regions": {
+   "occupied_cells": 18,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "attack2_e": {
+  "frames": 6,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 740,
+    "semi_alpha": 0,
+    "centroid": [
+     69.17567567567568,
+     49.0527027027027
+    ],
+    "bbox": [
+     41,
+     42,
+     97,
+     63
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 342
+   },
+   {
+    "area": 1046,
+    "semi_alpha": 0,
+    "centroid": [
+     69.6491395793499,
+     46.735181644359464
+    ],
+    "bbox": [
+     41,
+     32,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 514
+   },
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     69.86768243785085,
+     44.46271050521251
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 625
+   },
+   {
+    "area": 1219,
+    "semi_alpha": 0,
+    "centroid": [
+     71.0,
+     43.10008203445447
+    ],
+    "bbox": [
+     42,
+     24,
+     98,
+     60
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 604
+   },
+   {
+    "area": 1219,
+    "semi_alpha": 0,
+    "centroid": [
+     71.0,
+     43.10008203445447
+    ],
+    "bbox": [
+     42,
+     24,
+     98,
+     60
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 604
+   },
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     69.86768243785085,
+     44.46271050521251
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 625
+   }
+  ],
+  "warnings": [
+   "silhouette area varies 16.4% (> 8%): possible proportion drift / missing or growing parts",
+   "frames [3] -> next are (near) identical: held/duplicate frames"
+  ],
+  "area_cv": 0.1638,
+  "centroid_jitter_px": 0.856,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.853,
+   0.359,
+   0.838,
+   0.0,
+   0.838
+  ],
+  "loop_seam_diff": 0.876,
+  "loop_seam_ratio": 1.05,
+  "static_regions": {
+   "occupied_cells": 16,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "attack3_e": {
+  "frames": 6,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1226,
+    "semi_alpha": 0,
+    "centroid": [
+     68.78629690048939,
+     43.20146818923328
+    ],
+    "bbox": [
+     40,
+     24,
+     96,
+     63
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 611
+   },
+   {
+    "area": 1226,
+    "semi_alpha": 0,
+    "centroid": [
+     68.78629690048939,
+     43.20146818923328
+    ],
+    "bbox": [
+     40,
+     24,
+     96,
+     63
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 611
+   },
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     69.86768243785085,
+     44.46271050521251
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 625
+   },
+   {
+    "area": 1237,
+    "semi_alpha": 0,
+    "centroid": [
+     69.92562651576395,
+     46.367825383993534
+    ],
+    "bbox": [
+     41,
+     27,
+     97,
+     65
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 613
+   },
+   {
+    "area": 1234,
+    "semi_alpha": 0,
+    "centroid": [
+     69.82009724473258,
+     45.68152350081037
+    ],
+    "bbox": [
+     42,
+     27,
+     99,
+     66
+    ],
+    "components": 1,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 540
+   },
+   {
+    "area": 1242,
+    "semi_alpha": 0,
+    "centroid": [
+     69.9718196457327,
+     47.409822866344605
+    ],
+    "bbox": [
+     41,
+     28,
+     97,
+     65
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 604
+   }
+  ],
+  "warnings": [
+   "frames [4] introduce colours absent from frame 0 (union 60 vs 32): palette drift",
+   "frames [0] -> next are (near) identical: held/duplicate frames"
+  ],
+  "area_cv": 0.0063,
+  "centroid_jitter_px": 0.734,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 60,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.0,
+   0.835,
+   0.906,
+   0.993,
+   0.995
+  ],
+  "loop_seam_diff": 0.96,
+  "loop_seam_ratio": 1.06,
+  "static_regions": {
+   "occupied_cells": 18,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "dodge_e": {
+  "frames": 5,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1222,
+    "semi_alpha": 0,
+    "centroid": [
+     70.02373158756137,
+     49.14648117839607
+    ],
+    "bbox": [
+     41,
+     30,
+     97,
+     67
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 606
+   },
+   {
+    "area": 1244,
+    "semi_alpha": 0,
+    "centroid": [
+     48.4935691318328,
+     64.19212218649518
+    ],
+    "bbox": [
+     29,
+     37,
+     68,
+     93
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 623
+   },
+   {
+    "area": 1277,
+    "semi_alpha": 0,
+    "centroid": [
+     48.423649177760375,
+     63.725920125293655
+    ],
+    "bbox": [
+     29,
+     36,
+     68,
+     93
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 612
+   },
+   {
+    "area": 1304,
+    "semi_alpha": 0,
+    "centroid": [
+     48.42868098159509,
+     63.50536809815951
+    ],
+    "bbox": [
+     29,
+     35,
+     68,
+     94
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 595
+   },
+   {
+    "area": 1277,
+    "semi_alpha": 0,
+    "centroid": [
+     48.423649177760375,
+     63.725920125293655
+    ],
+    "bbox": [
+     29,
+     36,
+     68,
+     93
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 612
+   }
+  ],
+  "warnings": [
+   "loop seam jump 0.991 is 2.5x the typical frame change: visible pop when looping"
+  ],
+  "area_cv": 0.0226,
+  "centroid_jitter_px": 11.242,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.99,
+   0.4,
+   0.046,
+   0.046
+  ],
+  "loop_seam_diff": 0.991,
+  "loop_seam_ratio": 2.48,
+  "static_regions": {
+   "occupied_cells": 25,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "roll_e": {
+  "frames": 8,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1268,
+    "semi_alpha": 0,
+    "centroid": [
+     70.95110410094637,
+     41.420347003154575
+    ],
+    "bbox": [
+     43,
+     21,
+     98,
+     62
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 582
+   },
+   {
+    "area": 1274,
+    "semi_alpha": 0,
+    "centroid": [
+     70.73626373626374,
+     39.925431711146
+    ],
+    "bbox": [
+     42,
+     20,
+     98,
+     60
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 612
+   },
+   {
+    "area": 1212,
+    "semi_alpha": 0,
+    "centroid": [
+     70.90016501650165,
+     40.93481848184818
+    ],
+    "bbox": [
+     41,
+     22,
+     99,
+     60
+    ],
+    "components": 1,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 615
+   },
+   {
+    "area": 1213,
+    "semi_alpha": 0,
+    "centroid": [
+     70.72712283594394,
+     43.434460016488046
+    ],
+    "bbox": [
+     41,
+     25,
+     99,
+     62
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 603
+   },
+   {
+    "area": 1233,
+    "semi_alpha": 0,
+    "centroid": [
+     70.45985401459853,
+     43.30494728304947
+    ],
+    "bbox": [
+     41,
+     24,
+     98,
+     62
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 624
+   },
+   {
+    "area": 1216,
+    "semi_alpha": 0,
+    "centroid": [
+     70.95559210526316,
+     45.97779605263158
+    ],
+    "bbox": [
+     41,
+     27,
+     99,
+     65
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 606
+   },
+   {
+    "area": 1272,
+    "semi_alpha": 0,
+    "centroid": [
+     70.75,
+     44.9064465408805
+    ],
+    "bbox": [
+     42,
+     25,
+     98,
+     65
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 617
+   },
+   {
+    "area": 1244,
+    "semi_alpha": 0,
+    "centroid": [
+     69.83360128617363,
+     44.43971061093247
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 642
+   }
+  ],
+  "warnings": [],
+  "area_cv": 0.0203,
+  "centroid_jitter_px": 0.806,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.834,
+   0.606,
+   0.932,
+   0.488,
+   0.92,
+   0.627,
+   0.82
+  ],
+  "loop_seam_diff": 0.94,
+  "loop_seam_ratio": 1.15,
+  "static_regions": {
+   "occupied_cells": 18,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "dash_e": {
+  "frames": 5,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1043,
+    "semi_alpha": 0,
+    "centroid": [
+     69.607861936721,
+     46.714285714285715
+    ],
+    "bbox": [
+     41,
+     32,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 521
+   },
+   {
+    "area": 737,
+    "semi_alpha": 0,
+    "centroid": [
+     69.11533242876527,
+     49.03663500678426
+    ],
+    "bbox": [
+     41,
+     42,
+     97,
+     63
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 332
+   },
+   {
+    "area": 746,
+    "semi_alpha": 0,
+    "centroid": [
+     69.43163538873995,
+     48.0053619302949
+    ],
+    "bbox": [
+     41,
+     41,
+     97,
+     62
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 400
+   },
+   {
+    "area": 737,
+    "semi_alpha": 0,
+    "centroid": [
+     69.11533242876527,
+     49.03663500678426
+    ],
+    "bbox": [
+     41,
+     42,
+     97,
+     63
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 332
+   },
+   {
+    "area": 1043,
+    "semi_alpha": 0,
+    "centroid": [
+     69.607861936721,
+     46.714285714285715
+    ],
+    "bbox": [
+     41,
+     32,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 521
+   }
+  ],
+  "warnings": [
+   "silhouette area varies 17.2% (> 8%): possible proportion drift / missing or growing parts"
+  ],
+  "area_cv": 0.1724,
+  "centroid_jitter_px": 0.648,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.83,
+   0.793,
+   0.793,
+   0.83
+  ],
+  "loop_seam_diff": 0.0,
+  "loop_seam_ratio": 0.0,
+  "static_regions": {
+   "occupied_cells": 14,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "block_e": {
+  "frames": 4,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1244,
+    "semi_alpha": 0,
+    "centroid": [
+     69.83360128617363,
+     44.43971061093247
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 642
+   },
+   {
+    "area": 1216,
+    "semi_alpha": 0,
+    "centroid": [
+     70.9654605263158,
+     43.07565789473684
+    ],
+    "bbox": [
+     42,
+     24,
+     98,
+     60
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 621
+   },
+   {
+    "area": 1216,
+    "semi_alpha": 0,
+    "centroid": [
+     72.16776315789474,
+     42.104440789473685
+    ],
+    "bbox": [
+     43,
+     23,
+     101,
+     62
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 620
+   },
+   {
+    "area": 1216,
+    "semi_alpha": 0,
+    "centroid": [
+     70.9654605263158,
+     43.07565789473684
+    ],
+    "bbox": [
+     42,
+     24,
+     98,
+     60
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 621
+   }
+  ],
+  "warnings": [],
+  "area_cv": 0.0099,
+  "centroid_jitter_px": 0.107,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.829,
+   0.844,
+   0.844
+  ],
+  "loop_seam_diff": 0.829,
+  "loop_seam_ratio": 0.98,
+  "static_regions": {
+   "occupied_cells": 18,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "hurt_e": {
+  "frames": 4,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1244,
+    "semi_alpha": 0,
+    "centroid": [
+     69.83360128617363,
+     44.43971061093247
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 642
+   },
+   {
+    "area": 1224,
+    "semi_alpha": 0,
+    "centroid": [
+     68.76143790849673,
+     43.18790849673203
+    ],
+    "bbox": [
+     40,
+     24,
+     96,
+     63
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 624
+   },
+   {
+    "area": 1224,
+    "semi_alpha": 0,
+    "centroid": [
+     68.76143790849673,
+     43.18790849673203
+    ],
+    "bbox": [
+     40,
+     24,
+     96,
+     63
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 624
+   },
+   {
+    "area": 1244,
+    "semi_alpha": 0,
+    "centroid": [
+     69.83360128617363,
+     44.43971061093247
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 642
+   }
+  ],
+  "warnings": [
+   "frames [1] -> next are (near) identical: held/duplicate frames"
+  ],
+  "area_cv": 0.0081,
+  "centroid_jitter_px": 0.777,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.833,
+   0.0,
+   0.833
+  ],
+  "loop_seam_diff": 0.0,
+  "loop_seam_ratio": 0.0,
+  "static_regions": {
+   "occupied_cells": 16,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "death_e": {
+  "frames": 8,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1235,
+    "semi_alpha": 0,
+    "centroid": [
+     69.90121457489879,
+     46.35465587044534
+    ],
+    "bbox": [
+     41,
+     27,
+     97,
+     65
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 623
+   },
+   {
+    "area": 1240,
+    "semi_alpha": 0,
+    "centroid": [
+     69.9475806451613,
+     47.39677419354839
+    ],
+    "bbox": [
+     41,
+     28,
+     97,
+     65
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 622
+   },
+   {
+    "area": 1220,
+    "semi_alpha": 0,
+    "centroid": [
+     69.99918032786886,
+     49.1327868852459
+    ],
+    "bbox": [
+     41,
+     30,
+     97,
+     67
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 625
+   },
+   {
+    "area": 1241,
+    "semi_alpha": 0,
+    "centroid": [
+     48.470588235294116,
+     64.22643029814665
+    ],
+    "bbox": [
+     29,
+     37,
+     68,
+     93
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 640
+   },
+   {
+    "area": 1274,
+    "semi_alpha": 0,
+    "centroid": [
+     48.4010989010989,
+     63.76059654631083
+    ],
+    "bbox": [
+     29,
+     36,
+     68,
+     93
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 628
+   },
+   {
+    "area": 1220,
+    "semi_alpha": 0,
+    "centroid": [
+     72.20081967213115,
+     42.14672131147541
+    ],
+    "bbox": [
+     43,
+     23,
+     101,
+     62
+    ],
+    "components": 2,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 612
+   },
+   {
+    "area": 1301,
+    "semi_alpha": 0,
+    "centroid": [
+     48.40661029976941,
+     63.538816295157574
+    ],
+    "bbox": [
+     29,
+     35,
+     68,
+     94
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 614
+   },
+   {
+    "area": 1274,
+    "semi_alpha": 0,
+    "centroid": [
+     48.4010989010989,
+     63.76059654631083
+    ],
+    "bbox": [
+     29,
+     36,
+     68,
+     93
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 628
+   }
+  ],
+  "warnings": [
+   "connected-part count changes across frames [1, 1, 1, 1, 1, 2, 1, 1]: possible detached or missing body parts"
+  ],
+  "area_cv": 0.0218,
+  "centroid_jitter_px": 14.605,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   2,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.82,
+   0.895,
+   0.99,
+   0.392,
+   0.997,
+   0.997,
+   0.046
+  ],
+  "loop_seam_diff": 0.99,
+  "loop_seam_ratio": 1.11,
+  "static_regions": {
+   "occupied_cells": 28,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "cast_e": {
+  "frames": 6,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     69.86768243785085,
+     44.46271050521251
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 630
+   },
+   {
+    "area": 1209,
+    "semi_alpha": 0,
+    "centroid": [
+     69.78163771712158,
+     44.889164598842015
+    ],
+    "bbox": [
+     41,
+     26,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 614
+   },
+   {
+    "area": 1197,
+    "semi_alpha": 0,
+    "centroid": [
+     69.90977443609023,
+     44.9640768588137
+    ],
+    "bbox": [
+     41,
+     26,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 616
+   },
+   {
+    "area": 1209,
+    "semi_alpha": 0,
+    "centroid": [
+     69.78163771712158,
+     44.889164598842015
+    ],
+    "bbox": [
+     41,
+     26,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 614
+   },
+   {
+    "area": 1233,
+    "semi_alpha": 0,
+    "centroid": [
+     70.43714517437145,
+     43.28304947283049
+    ],
+    "bbox": [
+     41,
+     24,
+     98,
+     63
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 623
+   },
+   {
+    "area": 1238,
+    "semi_alpha": 0,
+    "centroid": [
+     70.47980613893377,
+     43.3546042003231
+    ],
+    "bbox": [
+     41,
+     24,
+     98,
+     63
+    ],
+    "components": 2,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 623
+   }
+  ],
+  "warnings": [
+   "connected-part count changes across frames [1, 1, 1, 1, 1, 2]: possible detached or missing body parts",
+   "loop seam jump 0.825 is 1.8x the typical frame change: visible pop when looping"
+  ],
+  "area_cv": 0.0148,
+  "centroid_jitter_px": 0.624,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   2
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.174,
+   0.47,
+   0.47,
+   0.84,
+   0.059
+  ],
+  "loop_seam_diff": 0.825,
+  "loop_seam_ratio": 1.76,
+  "static_regions": {
+   "occupied_cells": 16,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "swim_e": {
+  "frames": 6,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1237,
+    "semi_alpha": 0,
+    "centroid": [
+     70.49878738884398,
+     44.362974939369444
+    ],
+    "bbox": [
+     41,
+     25,
+     98,
+     64
+    ],
+    "components": 1,
+    "specks": 2,
+    "palette_size": 32,
+    "orphans": 617
+   },
+   {
+    "area": 1235,
+    "semi_alpha": 0,
+    "centroid": [
+     70.52955465587044,
+     43.31983805668016
+    ],
+    "bbox": [
+     41,
+     24,
+     98,
+     62
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 618
+   },
+   {
+    "area": 1234,
+    "semi_alpha": 0,
+    "centroid": [
+     72.26012965964344,
+     44.33063209076175
+    ],
+    "bbox": [
+     43,
+     25,
+     101,
+     64
+    ],
+    "components": 2,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 618
+   },
+   {
+    "area": 1227,
+    "semi_alpha": 0,
+    "centroid": [
+     70.5876120619397,
+     43.20211898940505
+    ],
+    "bbox": [
+     41,
+     24,
+     98,
+     61
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 620
+   },
+   {
+    "area": 1236,
+    "semi_alpha": 0,
+    "centroid": [
+     70.52831715210355,
+     43.31553398058252
+    ],
+    "bbox": [
+     41,
+     24,
+     98,
+     61
+    ],
+    "components": 1,
+    "specks": 2,
+    "palette_size": 32,
+    "orphans": 619
+   },
+   {
+    "area": 1239,
+    "semi_alpha": 0,
+    "centroid": [
+     70.51251008878127,
+     44.386602098466504
+    ],
+    "bbox": [
+     41,
+     25,
+     98,
+     63
+    ],
+    "components": 1,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 614
+   }
+  ],
+  "warnings": [
+   "connected-part count changes across frames [1, 1, 2, 1, 1, 1]: possible detached or missing body parts",
+   "frames [2] introduce colours absent from frame 0 (union 60 vs 32): palette drift"
+  ],
+  "area_cv": 0.0031,
+  "centroid_jitter_px": 0.706,
+  "component_counts": [
+   1,
+   1,
+   2,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 60,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.825,
+   0.987,
+   0.988,
+   0.048,
+   0.823
+  ],
+  "loop_seam_diff": 0.072,
+  "loop_seam_ratio": 0.09,
+  "static_regions": {
+   "occupied_cells": 16,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "fly_e": {
+  "frames": 6,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1236,
+    "semi_alpha": 0,
+    "centroid": [
+     70.49271844660194,
+     43.329288025889966
+    ],
+    "bbox": [
+     41,
+     24,
+     98,
+     62
+    ],
+    "components": 1,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 619
+   },
+   {
+    "area": 1218,
+    "semi_alpha": 0,
+    "centroid": [
+     72.19047619047619,
+     42.118226600985224
+    ],
+    "bbox": [
+     43,
+     23,
+     101,
+     62
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 610
+   },
+   {
+    "area": 1222,
+    "semi_alpha": 0,
+    "centroid": [
+     72.22340425531915,
+     42.16039279869067
+    ],
+    "bbox": [
+     43,
+     23,
+     101,
+     62
+    ],
+    "components": 2,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 601
+   },
+   {
+    "area": 1236,
+    "semi_alpha": 0,
+    "centroid": [
+     72.28236245954693,
+     44.34385113268608
+    ],
+    "bbox": [
+     43,
+     25,
+     101,
+     64
+    ],
+    "components": 2,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 607
+   },
+   {
+    "area": 1215,
+    "semi_alpha": 0,
+    "centroid": [
+     72.42551440329218,
+     42.065843621399175
+    ],
+    "bbox": [
+     43,
+     23,
+     101,
+     59
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 601
+   },
+   {
+    "area": 1213,
+    "semi_alpha": 0,
+    "centroid": [
+     72.47568013190437,
+     42.026380873866444
+    ],
+    "bbox": [
+     43,
+     23,
+     101,
+     59
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 597
+   }
+  ],
+  "warnings": [
+   "connected-part count changes across frames [1, 1, 2, 2, 1, 1]: possible detached or missing body parts"
+  ],
+  "area_cv": 0.0077,
+  "centroid_jitter_px": 1.043,
+  "component_counts": [
+   1,
+   1,
+   2,
+   2,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.853,
+   0.059,
+   0.909,
+   0.91,
+   0.047
+  ],
+  "loop_seam_diff": 0.856,
+  "loop_seam_ratio": 1.0,
+  "static_regions": {
+   "occupied_cells": 18,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "flap_e": {
+  "frames": 6,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1216,
+    "semi_alpha": 0,
+    "centroid": [
+     72.42598684210526,
+     42.05921052631579
+    ],
+    "bbox": [
+     43,
+     23,
+     101,
+     59
+    ],
+    "components": 1,
+    "specks": 2,
+    "palette_size": 32,
+    "orphans": 598
+   },
+   {
+    "area": 1213,
+    "semi_alpha": 0,
+    "centroid": [
+     72.40313272877164,
+     42.05193734542457
+    ],
+    "bbox": [
+     43,
+     23,
+     101,
+     59
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 611
+   },
+   {
+    "area": 1233,
+    "semi_alpha": 0,
+    "centroid": [
+     72.3146796431468,
+     44.2992700729927
+    ],
+    "bbox": [
+     43,
+     25,
+     101,
+     62
+    ],
+    "components": 1,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 599
+   },
+   {
+    "area": 1216,
+    "semi_alpha": 0,
+    "centroid": [
+     72.25904605263158,
+     42.09786184210526
+    ],
+    "bbox": [
+     43,
+     23,
+     101,
+     61
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 600
+   },
+   {
+    "area": 1215,
+    "semi_alpha": 0,
+    "centroid": [
+     73.72427983539094,
+     41.08230452674897
+    ],
+    "bbox": [
+     44,
+     22,
+     103,
+     61
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 626
+   },
+   {
+    "area": 1226,
+    "semi_alpha": 0,
+    "centroid": [
+     73.80261011419249,
+     43.199021207177815
+    ],
+    "bbox": [
+     44,
+     24,
+     103,
+     63
+    ],
+    "components": 2,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 622
+   }
+  ],
+  "warnings": [
+   "connected-part count changes across frames [1, 1, 1, 1, 1, 2]: possible detached or missing body parts",
+   "frames [1] introduce colours absent from frame 0 (union 60 vs 32): palette drift"
+  ],
+  "area_cv": 0.0059,
+  "centroid_jitter_px": 0.842,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   2
+  ],
+  "palette_union": 60,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.923,
+   0.993,
+   0.909,
+   0.848,
+   0.907
+  ],
+  "loop_seam_diff": 0.87,
+  "loop_seam_ratio": 0.96,
+  "static_regions": {
+   "occupied_cells": 18,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "climb_e": {
+  "frames": 6,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1221,
+    "semi_alpha": 0,
+    "centroid": [
+     73.93202293202293,
+     43.13595413595414
+    ],
+    "bbox": [
+     44,
+     24,
+     103,
+     61
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 618
+   },
+   {
+    "area": 1208,
+    "semi_alpha": 0,
+    "centroid": [
+     74.0637417218543,
+     40.95943708609271
+    ],
+    "bbox": [
+     44,
+     22,
+     103,
+     58
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 612
+   },
+   {
+    "area": 1222,
+    "semi_alpha": 0,
+    "centroid": [
+     73.93044189852701,
+     43.12847790507365
+    ],
+    "bbox": [
+     44,
+     24,
+     103,
+     60
+    ],
+    "components": 1,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 611
+   },
+   {
+    "area": 1222,
+    "semi_alpha": 0,
+    "centroid": [
+     73.84697217675941,
+     43.157937806873974
+    ],
+    "bbox": [
+     44,
+     24,
+     103,
+     61
+    ],
+    "components": 1,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 615
+   },
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     69.86768243785085,
+     44.46271050521251
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 630
+   },
+   {
+    "area": 1165,
+    "semi_alpha": 0,
+    "centroid": [
+     69.937339055794,
+     47.454077253218884
+    ],
+    "bbox": [
+     38,
+     31,
+     100,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 487
+   }
+  ],
+  "warnings": [],
+  "area_cv": 0.0205,
+  "centroid_jitter_px": 1.339,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.908,
+   0.906,
+   0.067,
+   0.913,
+   0.938
+  ],
+  "loop_seam_diff": 0.964,
+  "loop_seam_ratio": 1.06,
+  "static_regions": {
+   "occupied_cells": 19,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "sit_e": {
+  "frames": 4,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1210,
+    "semi_alpha": 0,
+    "centroid": [
+     72.44462809917356,
+     42.001652892561985
+    ],
+    "bbox": [
+     43,
+     23,
+     101,
+     59
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 612
+   },
+   {
+    "area": 1283,
+    "semi_alpha": 0,
+    "centroid": [
+     69.90880748246298,
+     32.09041309431021
+    ],
+    "bbox": [
+     43,
+     10,
+     95,
+     54
+    ],
+    "components": 1,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 522
+   },
+   {
+    "area": 1224,
+    "semi_alpha": 0,
+    "centroid": [
+     69.73692810457516,
+     27.445261437908496
+    ],
+    "bbox": [
+     42,
+     8,
+     96,
+     46
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 561
+   },
+   {
+    "area": 1258,
+    "semi_alpha": 0,
+    "centroid": [
+     69.81160572337043,
+     27.457869634340224
+    ],
+    "bbox": [
+     41,
+     8,
+     97,
+     46
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 566
+   }
+  ],
+  "warnings": [
+   "frames [1, 2, 3] introduce colours absent from frame 0 (union 60 vs 32): palette drift"
+  ],
+  "area_cv": 0.023,
+  "centroid_jitter_px": 4.152,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 60,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.999,
+   0.97,
+   0.327
+  ],
+  "loop_seam_diff": 1.0,
+  "loop_seam_ratio": 1.03,
+  "static_regions": {
+   "occupied_cells": 19,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ },
+ "sleep_e": {
+  "frames": 4,
+  "size": [
+   127,
+   96
+  ],
+  "kind": "body",
+  "per_frame": [
+   {
+    "area": 1269,
+    "semi_alpha": 0,
+    "centroid": [
+     69.76753349093775,
+     32.7565011820331
+    ],
+    "bbox": [
+     42,
+     12,
+     96,
+     54
+    ],
+    "components": 1,
+    "specks": 1,
+    "palette_size": 32,
+    "orphans": 571
+   },
+   {
+    "area": 1165,
+    "semi_alpha": 0,
+    "centroid": [
+     69.937339055794,
+     47.454077253218884
+    ],
+    "bbox": [
+     38,
+     31,
+     100,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 487
+   },
+   {
+    "area": 1247,
+    "semi_alpha": 0,
+    "centroid": [
+     69.86768243785085,
+     44.46271050521251
+    ],
+    "bbox": [
+     41,
+     25,
+     97,
+     64
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 630
+   },
+   {
+    "area": 1279,
+    "semi_alpha": 0,
+    "centroid": [
+     69.98045347928068,
+     44.462861610633304
+    ],
+    "bbox": [
+     42,
+     24,
+     96,
+     65
+    ],
+    "components": 1,
+    "specks": 0,
+    "palette_size": 32,
+    "orphans": 586
+   }
+  ],
+  "warnings": [],
+  "area_cv": 0.0361,
+  "centroid_jitter_px": 6.308,
+  "component_counts": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "palette_union": 32,
+  "palette_frame0": 32,
+  "consecutive_diff": [
+   0.993,
+   0.938,
+   0.571
+  ],
+  "loop_seam_diff": 0.988,
+  "loop_seam_ratio": 1.05,
+  "static_regions": {
+   "occupied_cells": 22,
+   "static_cells": 0,
+   "static_frac": 0.0,
+   "static_cell_rects": []
+  }
+ }
+}

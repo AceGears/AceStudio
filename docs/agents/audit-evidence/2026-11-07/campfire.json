@@ -1,0 +1,333 @@
+{
+  "frames": 8,
+  "size": [
+    54,
+    58
+  ],
+  "kind": "effect",
+  "per_frame": [
+    {
+      "area": 1617,
+      "semi_alpha": 0,
+      "centroid": [
+        26.26530612244898,
+        36.98639455782313
+      ],
+      "bbox": [
+        0,
+        0,
+        53,
+        57
+      ],
+      "components": 1,
+      "specks": 0,
+      "palette_size": 19,
+      "orphans": 313
+    },
+    {
+      "area": 1620,
+      "semi_alpha": 0,
+      "centroid": [
+        26.29074074074074,
+        36.88456790123457
+      ],
+      "bbox": [
+        0,
+        0,
+        53,
+        57
+      ],
+      "components": 1,
+      "specks": 4,
+      "palette_size": 19,
+      "orphans": 320
+    },
+    {
+      "area": 1623,
+      "semi_alpha": 0,
+      "centroid": [
+        26.27048675292668,
+        36.79728897104128
+      ],
+      "bbox": [
+        0,
+        0,
+        53,
+        57
+      ],
+      "components": 1,
+      "specks": 1,
+      "palette_size": 19,
+      "orphans": 315
+    },
+    {
+      "area": 1631,
+      "semi_alpha": 0,
+      "centroid": [
+        26.206621704475783,
+        36.69957081545064
+      ],
+      "bbox": [
+        0,
+        0,
+        53,
+        57
+      ],
+      "components": 1,
+      "specks": 5,
+      "palette_size": 19,
+      "orphans": 324
+    },
+    {
+      "area": 1610,
+      "semi_alpha": 0,
+      "centroid": [
+        26.271428571428572,
+        37.125465838509314
+      ],
+      "bbox": [
+        0,
+        0,
+        53,
+        57
+      ],
+      "components": 1,
+      "specks": 6,
+      "palette_size": 19,
+      "orphans": 331
+    },
+    {
+      "area": 1595,
+      "semi_alpha": 0,
+      "centroid": [
+        26.295297805642633,
+        37.374294670846396
+      ],
+      "bbox": [
+        0,
+        0,
+        53,
+        57
+      ],
+      "components": 1,
+      "specks": 1,
+      "palette_size": 19,
+      "orphans": 322
+    },
+    {
+      "area": 1586,
+      "semi_alpha": 0,
+      "centroid": [
+        26.337957124842372,
+        37.452711223203025
+      ],
+      "bbox": [
+        0,
+        0,
+        53,
+        57
+      ],
+      "components": 1,
+      "specks": 1,
+      "palette_size": 19,
+      "orphans": 320
+    },
+    {
+      "area": 1598,
+      "semi_alpha": 0,
+      "centroid": [
+        26.30538172715895,
+        37.22403003754693
+      ],
+      "bbox": [
+        0,
+        0,
+        53,
+        57
+      ],
+      "components": 1,
+      "specks": 1,
+      "palette_size": 19,
+      "orphans": 317
+    }
+  ],
+  "warnings": [],
+  "area_cv": 0.0091,
+  "centroid_jitter_px": 0.117,
+  "component_counts": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "palette_union": 19,
+  "palette_frame0": 19,
+  "consecutive_diff": [
+    0.192,
+    0.2,
+    0.188,
+    0.18,
+    0.162,
+    0.136,
+    0.158
+  ],
+  "loop_seam_diff": 0.183,
+  "loop_seam_ratio": 1.01,
+  "diff_irregularity": 0.122,
+  "static_regions": {
+    "occupied_cells": 56,
+    "static_cells": 24,
+    "static_frac": 0.429,
+    "static_cell_rects": [
+      [
+        0,
+        28,
+        6,
+        7
+      ],
+      [
+        42,
+        28,
+        6,
+        7
+      ],
+      [
+        48,
+        28,
+        6,
+        7
+      ],
+      [
+        0,
+        35,
+        6,
+        7
+      ],
+      [
+        48,
+        35,
+        6,
+        7
+      ],
+      [
+        0,
+        42,
+        6,
+        7
+      ],
+      [
+        6,
+        42,
+        6,
+        7
+      ],
+      [
+        12,
+        42,
+        6,
+        7
+      ],
+      [
+        18,
+        42,
+        6,
+        7
+      ],
+      [
+        36,
+        42,
+        6,
+        7
+      ],
+      [
+        42,
+        42,
+        6,
+        7
+      ],
+      [
+        48,
+        42,
+        6,
+        7
+      ],
+      [
+        0,
+        49,
+        6,
+        7
+      ],
+      [
+        6,
+        49,
+        6,
+        7
+      ],
+      [
+        12,
+        49,
+        6,
+        7
+      ],
+      [
+        18,
+        49,
+        6,
+        7
+      ],
+      [
+        24,
+        49,
+        6,
+        7
+      ],
+      [
+        30,
+        49,
+        6,
+        7
+      ],
+      [
+        36,
+        49,
+        6,
+        7
+      ],
+      [
+        42,
+        49,
+        6,
+        7
+      ],
+      [
+        48,
+        49,
+        6,
+        7
+      ],
+      [
+        18,
+        56,
+        6,
+        7
+      ],
+      [
+        24,
+        56,
+        6,
+        7
+      ],
+      [
+        30,
+        56,
+        6,
+        7
+      ]
+    ]
+  },
+  "source": "acestudio-campfire-fire-test.gif"
+}
