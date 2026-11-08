@@ -1,0 +1,66 @@
+{
+ "frames": 5,
+ "size": [
+  63,
+  44
+ ],
+ "kind": "body",
+ "warnings": [
+  "top-most part (head/crest/wing tip, bbox [22, 2, 39, 9], 91 px in frame 0) loses >40% of its pixels in frames [2] (worst F2: 52% present): part squashed, hidden or lost"
+ ],
+ "area_cv": 0.013,
+ "centroid_jitter_px": 1.117,
+ "component_counts": [
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "palette_union": 32,
+ "palette_frame0": 32,
+ "consecutive_diff": [
+  0.907,
+  0.856,
+  0.507,
+  0.824
+ ],
+ "loop_seam_diff": 0.897,
+ "loop_seam_ratio": 1.05,
+ "static_regions": {
+  "occupied_cells": 58,
+  "static_cells": 0,
+  "static_frac": 0.0,
+  "static_cell_rects": []
+ },
+ "pingpong": {
+  "pairs_checked": 2,
+  "pairs_matched": [],
+  "matched_frac": 0.0,
+  "unique_poses": 5,
+  "is_pingpong": false
+ },
+ "top_region": {
+  "available": true,
+  "bbox": [
+   22,
+   2,
+   39,
+   9
+  ],
+  "area0": 91,
+  "presence": [
+   1.0,
+   0.714,
+   0.516,
+   0.604,
+   0.967
+  ],
+  "min_presence": 0.516,
+  "worst_frame": 2,
+  "frames_lost": [
+   2
+  ]
+ },
+ "source": "fish_reconstructed_dash.png"
+}

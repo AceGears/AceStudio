@@ -1,0 +1,71 @@
+{
+ "frames": 8,
+ "size": [
+  44,
+  61
+ ],
+ "kind": "body",
+ "warnings": [],
+ "area_cv": 0.0345,
+ "centroid_jitter_px": 0.618,
+ "component_counts": [
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "palette_union": 30,
+ "palette_frame0": 30,
+ "consecutive_diff": [
+  0.802,
+  0.816,
+  0.824,
+  0.826,
+  0.798,
+  0.819,
+  0.82
+ ],
+ "loop_seam_diff": 0.818,
+ "loop_seam_ratio": 1.0,
+ "static_regions": {
+  "occupied_cells": 65,
+  "static_cells": 0,
+  "static_frac": 0.0,
+  "static_cell_rects": []
+ },
+ "pingpong": {
+  "pairs_checked": 3,
+  "pairs_matched": [],
+  "matched_frac": 0.0,
+  "unique_poses": 8,
+  "is_pingpong": false
+ },
+ "top_region": {
+  "available": true,
+  "bbox": [
+   16,
+   1,
+   29,
+   12
+  ],
+  "area0": 125,
+  "presence": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "min_presence": 1.0,
+  "worst_frame": 0,
+  "frames_lost": []
+ },
+ "source": "original_rpg64_run.png"
+}

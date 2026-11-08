@@ -1,0 +1,81 @@
+{
+ "frames": 8,
+ "size": [
+  121,
+  123
+ ],
+ "kind": "body",
+ "warnings": [
+  "silhouette area varies 19.9% (> 8%): possible proportion drift / missing or growing parts",
+  "top-most part (head/crest/wing tip, bbox [60, 21, 107, 40], 557 px in frame 0) loses >40% of its pixels in frames [2, 3, 4, 5, 6, 7] (worst F5: 1% present): part squashed, hidden or lost"
+ ],
+ "area_cv": 0.1988,
+ "centroid_jitter_px": 4.019,
+ "component_counts": [
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "palette_union": 29,
+ "palette_frame0": 29,
+ "consecutive_diff": [
+  0.442,
+  0.916,
+  0.832,
+  0.292,
+  0.815,
+  0.88,
+  0.385
+ ],
+ "loop_seam_diff": 0.42,
+ "loop_seam_ratio": 0.52,
+ "static_regions": {
+  "occupied_cells": 46,
+  "static_cells": 0,
+  "static_frac": 0.0,
+  "static_cell_rects": []
+ },
+ "pingpong": {
+  "pairs_checked": 3,
+  "pairs_matched": [],
+  "matched_frac": 0.0,
+  "unique_poses": 8,
+  "is_pingpong": false
+ },
+ "top_region": {
+  "available": true,
+  "bbox": [
+   60,
+   21,
+   107,
+   40
+  ],
+  "area0": 557,
+  "presence": [
+   1.0,
+   0.637,
+   0.016,
+   0.018,
+   0.018,
+   0.009,
+   0.039,
+   0.228
+  ],
+  "min_presence": 0.009,
+  "worst_frame": 5,
+  "frames_lost": [
+   2,
+   3,
+   4,
+   5,
+   6,
+   7
+  ]
+ },
+ "source": "original_dragon128_flap.png"
+}

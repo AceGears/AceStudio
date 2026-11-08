@@ -1,0 +1,61 @@
+{
+ "frames": 4,
+ "size": [
+  121,
+  123
+ ],
+ "kind": "body",
+ "warnings": [
+  "loop seam jump 0.540 is 2.4x the typical frame change: visible pop when looping"
+ ],
+ "area_cv": 0.0164,
+ "centroid_jitter_px": 0.363,
+ "component_counts": [
+  1,
+  1,
+  1,
+  1
+ ],
+ "palette_union": 29,
+ "palette_frame0": 29,
+ "consecutive_diff": [
+  0.227,
+  0.558,
+  0.223
+ ],
+ "loop_seam_diff": 0.54,
+ "loop_seam_ratio": 2.38,
+ "static_regions": {
+  "occupied_cells": 46,
+  "static_cells": 0,
+  "static_frac": 0.0,
+  "static_cell_rects": []
+ },
+ "pingpong": {
+  "pairs_checked": 1,
+  "pairs_matched": [],
+  "matched_frac": 0.0,
+  "unique_poses": 4,
+  "is_pingpong": false
+ },
+ "top_region": {
+  "available": true,
+  "bbox": [
+   60,
+   13,
+   103,
+   33
+  ],
+  "area0": 492,
+  "presence": [
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "min_presence": 1.0,
+  "worst_frame": 0,
+  "frames_lost": []
+ },
+ "source": "original_dragon128_idle.png"
+}

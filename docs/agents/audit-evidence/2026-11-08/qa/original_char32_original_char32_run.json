@@ -1,0 +1,71 @@
+{
+ "frames": 8,
+ "size": [
+  20,
+  32
+ ],
+ "kind": "body",
+ "warnings": [],
+ "area_cv": 0.0602,
+ "centroid_jitter_px": 0.591,
+ "component_counts": [
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "palette_union": 26,
+ "palette_frame0": 26,
+ "consecutive_diff": [
+  0.89,
+  0.912,
+  0.917,
+  0.913,
+  0.873,
+  0.935,
+  0.943
+ ],
+ "loop_seam_diff": 0.913,
+ "loop_seam_ratio": 1.0,
+ "static_regions": {
+  "occupied_cells": 59,
+  "static_cells": 0,
+  "static_frac": 0.0,
+  "static_cell_rects": []
+ },
+ "pingpong": {
+  "pairs_checked": 3,
+  "pairs_matched": [],
+  "matched_frac": 0.0,
+  "unique_poses": 8,
+  "is_pingpong": false
+ },
+ "top_region": {
+  "available": true,
+  "bbox": [
+   7,
+   1,
+   12,
+   6
+  ],
+  "area0": 31,
+  "presence": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "min_presence": 1.0,
+  "worst_frame": 0,
+  "frames_lost": []
+ },
+ "source": "original_char32_run.png"
+}

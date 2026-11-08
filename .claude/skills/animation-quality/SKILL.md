@@ -30,6 +30,10 @@ Exit code 1 means warnings were raised. Metrics reported:
 | `static_frac` | parts that never move (e.g. a frozen far wing) |
 | identical area+palette with motion | whole-sprite warp/translation instead of articulation |
 | `diff_irregularity` (effects) | low value = mechanical, periodic flicker |
+| `pingpong` (frame i == frame n-i for every pair) | palindromic cycle that reverses instead of following through; reports unique poses |
+| `top_region` presence (body) | top-most part of frame 0 (head, crest, wing tip) losing >40% of its pixels: squashed, hidden or cut off |
+
+Self-tests: `python -I .claude/skills/animation-quality/scripts/test_anim_qa.py -v`.
 
 ## 3. Look at the frames
 Use the Read tool on the sheet and on enlarged crops (nearest-neighbor ×4). Check frame by frame:

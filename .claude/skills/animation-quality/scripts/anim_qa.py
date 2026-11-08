@@ -29,6 +29,9 @@ THRESHOLDS = {
     "semi_alpha_frac_max": 0.0,     # pixel art: alpha must be binary
     "static_region_frac_max": 0.35, # fraction of silhouette cells that never change
     "min_change_frac": 0.002,       # below this a frame is a duplicate / frozen
+    "pingpong_pair_frac_min": 1.0,  # share of (i, n-i) pairs that must match to call a cycle ping-pong
+    "top_region_loss_max": 0.40,    # top-most part may lose at most this share of its frame-0 area
+    "top_band_frac": 0.20,          # the top-most region is sought in this top share of the frame-0 bbox
 }
 
 
@@ -171,6 +174,101 @@ def static_regions(frames: list, cells: int = 8) -> dict:
             "static_frac": round(frac, 3), "static_cell_rects": static_cells[:32]}
 
 
+def pingpong(frames: list) -> dict:
+    """Ping-pong detector: in a palindromic cycle frame i equals frame n-i (i = 1 .. n-1).
+
+    A ping-pong flap or swim plays the same poses forwards and backwards, so the motion
+    reverses instead of following through (no arc, no overlap). Pairs are compared with
+    diff_frac; a pair below min_change_frac counts as equal.
+    """
+    n = len(frames)
+    pairs = [(i, n - i) for i in range(1, (n + 1) // 2) if i != n - i]
+    matched = [(i, j) for i, j in pairs if diff_frac(frames[i], frames[j]) < THRESHOLDS["min_change_frac"]]
+    unique = []
+    for f in frames:
+        if not any(diff_frac(f, u) < THRESHOLDS["min_change_frac"] for u in unique):
+            unique.append(f)
+    frac = len(matched) / len(pairs) if pairs else 0.0
+    return {"pairs_checked": len(pairs), "pairs_matched": matched, "matched_frac": round(frac, 3),
+            "unique_poses": len(unique),
+            "is_pingpong": bool(n >= 4 and pairs and frac >= THRESHOLDS["pingpong_pair_frac_min"])}
+
+
+def _components(mask: list, w: int, h: int) -> list:
+    """4-connected components of a boolean mask, as lists of flat indices."""
+    seen = bytearray(w * h)
+    comps = []
+    for i in range(w * h):
+        if not mask[i] or seen[i]:
+            continue
+        stack, comp = [i], []
+        seen[i] = 1
+        while stack:
+            j = stack.pop()
+            comp.append(j)
+            x, y = j % w, j // w
+            for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                if 0 <= nx < w and 0 <= ny < h:
+                    k = ny * w + nx
+                    if mask[k] and not seen[k]:
+                        seen[k] = 1
+                        stack.append(k)
+        comps.append(comp)
+    return comps
+
+
+def top_region_presence(frames: list) -> dict:
+    """Head/part-presence guard.
+
+    The top-most opaque region of frame 0 (the 4-connected piece of the silhouette that
+    holds the highest pixel, restricted to the top `top_band_frac` of the frame-0 bbox:
+    usually the head, crest, horns or a wing tip) is used as a template. In every frame the
+    template is searched within +-max(4, h/6) px; presence is the best share of its pixels
+    found with the same colour. A part that is squashed away, hidden under another part,
+    or cut off scores low, even when the whole silhouette area barely changes.
+    """
+    f0 = frames[0]
+    w, h = f0.w, f0.h
+    if not any(p[3] for p in f0.px):
+        return {"available": False}
+    x0, y0, x1, y1 = frame_metrics(f0)["bbox"]
+    band_h = max(2, round((y1 - y0 + 1) * THRESHOLDS["top_band_frac"]))
+    mask = [p[3] != 0 and y0 <= i // w < y0 + band_h for i, p in enumerate(f0.px)]
+    comps = [c for c in _components(mask, w, h) if len(c) >= 4] or _components(mask, w, h)
+    # The piece holding the highest pixel; ties go to the larger piece.
+    comps.sort(key=lambda c: (min(j // w for j in c), -len(c)))
+    region = comps[0]
+    tpl = [(j % w, j // w, f0.px[j]) for j in region]
+    rx0 = min(x for x, _, _ in tpl)
+    ry0 = min(y for _, y, _ in tpl)
+    rx1 = max(x for x, _, _ in tpl)
+    ry1 = max(y for _, y, _ in tpl)
+    reach = max(4, h // 6)
+    presence = []
+    for f in frames:
+        if (f.w, f.h) != (w, h):
+            presence.append(0.0)
+            continue
+        best = 0
+        for dy in range(-reach, reach + 1):
+            for dx in range(-reach, reach + 1):
+                hit = 0
+                for x, y, c in tpl:
+                    tx, ty = x + dx, y + dy
+                    if 0 <= tx < w and 0 <= ty < h and f.px[ty * w + tx] == c:
+                        hit += 1
+                best = max(best, hit)
+                if best == len(tpl):
+                    break
+            if best == len(tpl):
+                break
+        presence.append(round(best / len(tpl), 3))
+    worst = min(range(len(presence)), key=lambda i: presence[i])
+    lost = [i for i, p in enumerate(presence) if 1 - p > THRESHOLDS["top_region_loss_max"]]
+    return {"available": True, "bbox": [rx0, ry0, rx1, ry1], "area0": len(tpl), "presence": presence,
+            "min_presence": presence[worst], "worst_frame": worst, "frames_lost": lost}
+
+
 def analyze(frames: list, kind: str) -> dict:
     m = [frame_metrics(f) for f in frames]
     n = len(frames)
@@ -237,6 +335,20 @@ def analyze(frames: list, kind: str) -> dict:
                 and max(diffs) > 0.05:
             rep["warnings"].append("identical area and palette every frame with large motion: "
                                    "likely whole-sprite translation/warp rather than articulation")
+        pp = pingpong(frames)
+        rep["pingpong"] = pp
+        if pp["is_pingpong"]:
+            rep["warnings"].append(f"ping-pong cycle: frame i equals frame n-i for every pair {pp['pairs_matched']} "
+                                   f"({pp['unique_poses']} unique poses in {n} frames): the motion reverses "
+                                   "instead of following through")
+        if kind == "body":
+            tr = top_region_presence(frames)
+            rep["top_region"] = tr
+            if tr.get("available") and tr["frames_lost"]:
+                rep["warnings"].append(
+                    f"top-most part (head/crest/wing tip, bbox {tr['bbox']}, {tr['area0']} px in frame 0) "
+                    f"loses >{THRESHOLDS['top_region_loss_max']:.0%} of its pixels in frames {tr['frames_lost'][:12]} "
+                    f"(worst F{tr['worst_frame']}: {tr['min_presence']:.0%} present): part squashed, hidden or lost")
     return rep
 
 
@@ -260,7 +372,7 @@ def main() -> int:
             json.dump(rep, f, indent=2, default=list)
     summary = {}
     for k, v in rep.items():
-        if k in ("per_frame", "static_regions"):
+        if k in ("per_frame", "static_regions", "pingpong", "top_region"):
             continue
         if isinstance(v, list) and len(v) > 16 and k != "warnings":
             v = f"{v[:16]} ... ({len(v)} values; full list in --report)"
@@ -268,6 +380,13 @@ def main() -> int:
             v = str(v)
         summary[k] = v
     summary["static_frac"] = rep.get("static_regions", {}).get("static_frac")
+    if "pingpong" in rep:
+        pp = rep["pingpong"]
+        summary["pingpong"] = f"{pp['is_pingpong']} ({len(pp['pairs_matched'])}/{pp['pairs_checked']} pairs i=n-i, " \
+                              f"{pp['unique_poses']} unique poses)"
+    if rep.get("top_region", {}).get("available"):
+        tr = rep["top_region"]
+        summary["top_region_presence"] = str(tr["presence"])
     print(json.dumps(summary, indent=2, default=list))
     return 1 if rep["warnings"] else 0
 

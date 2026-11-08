@@ -1,0 +1,71 @@
+{
+ "frames": 8,
+ "size": [
+  17,
+  23
+ ],
+ "kind": "body",
+ "warnings": [],
+ "area_cv": 0.0297,
+ "centroid_jitter_px": 0.34,
+ "component_counts": [
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "palette_union": 5,
+ "palette_frame0": 5,
+ "consecutive_diff": [
+  0.512,
+  0.533,
+  0.557,
+  0.486,
+  0.5,
+  0.54,
+  0.57
+ ],
+ "loop_seam_diff": 0.497,
+ "loop_seam_ratio": 0.93,
+ "static_regions": {
+  "occupied_cells": 60,
+  "static_cells": 0,
+  "static_frac": 0.0,
+  "static_cell_rects": []
+ },
+ "pingpong": {
+  "pairs_checked": 3,
+  "pairs_matched": [],
+  "matched_frac": 0.0,
+  "unique_poses": 8,
+  "is_pingpong": false
+ },
+ "top_region": {
+  "available": true,
+  "bbox": [
+   6,
+   2,
+   11,
+   5
+  ],
+  "area0": 24,
+  "presence": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "min_presence": 1.0,
+  "worst_frame": 0,
+  "frames_lost": []
+ },
+ "source": "knight_char_walk.png"
+}

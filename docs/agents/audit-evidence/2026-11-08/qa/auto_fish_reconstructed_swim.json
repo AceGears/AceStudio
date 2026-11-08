@@ -1,0 +1,242 @@
+{
+ "frames": 12,
+ "size": [
+  63,
+  44
+ ],
+ "kind": "body",
+ "warnings": [
+  "48% of silhouette cells never change: large parts are frozen (e.g. a stationary wing or fin)"
+ ],
+ "area_cv": 0.0061,
+ "centroid_jitter_px": 0.074,
+ "component_counts": [
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "palette_union": 32,
+ "palette_frame0": 32,
+ "consecutive_diff": [
+  0.188,
+  0.12,
+  0.224,
+  0.194,
+  0.157,
+  0.139,
+  0.189,
+  0.124,
+  0.227,
+  0.195,
+  0.157
+ ],
+ "loop_seam_diff": 0.139,
+ "loop_seam_ratio": 0.74,
+ "static_regions": {
+  "occupied_cells": 54,
+  "static_cells": 26,
+  "static_frac": 0.481,
+  "static_cell_rects": [
+   [
+    28,
+    0,
+    7,
+    5
+   ],
+   [
+    28,
+    5,
+    7,
+    5
+   ],
+   [
+    35,
+    5,
+    7,
+    5
+   ],
+   [
+    28,
+    10,
+    7,
+    5
+   ],
+   [
+    35,
+    10,
+    7,
+    5
+   ],
+   [
+    42,
+    10,
+    7,
+    5
+   ],
+   [
+    28,
+    15,
+    7,
+    5
+   ],
+   [
+    35,
+    15,
+    7,
+    5
+   ],
+   [
+    42,
+    15,
+    7,
+    5
+   ],
+   [
+    49,
+    15,
+    7,
+    5
+   ],
+   [
+    28,
+    20,
+    7,
+    5
+   ],
+   [
+    35,
+    20,
+    7,
+    5
+   ],
+   [
+    42,
+    20,
+    7,
+    5
+   ],
+   [
+    49,
+    20,
+    7,
+    5
+   ],
+   [
+    56,
+    20,
+    7,
+    5
+   ],
+   [
+    28,
+    25,
+    7,
+    5
+   ],
+   [
+    35,
+    25,
+    7,
+    5
+   ],
+   [
+    42,
+    25,
+    7,
+    5
+   ],
+   [
+    49,
+    25,
+    7,
+    5
+   ],
+   [
+    56,
+    25,
+    7,
+    5
+   ],
+   [
+    28,
+    30,
+    7,
+    5
+   ],
+   [
+    35,
+    30,
+    7,
+    5
+   ],
+   [
+    42,
+    30,
+    7,
+    5
+   ],
+   [
+    28,
+    35,
+    7,
+    5
+   ],
+   [
+    35,
+    35,
+    7,
+    5
+   ],
+   [
+    28,
+    40,
+    7,
+    5
+   ]
+  ]
+ },
+ "pingpong": {
+  "pairs_checked": 5,
+  "pairs_matched": [],
+  "matched_frac": 0.0,
+  "unique_poses": 12,
+  "is_pingpong": false
+ },
+ "top_region": {
+  "available": true,
+  "bbox": [
+   21,
+   2,
+   39,
+   9
+  ],
+  "area0": 94,
+  "presence": [
+   1.0,
+   0.968,
+   0.968,
+   0.766,
+   0.766,
+   0.883,
+   0.968,
+   0.968,
+   0.968,
+   0.787,
+   0.798,
+   0.915
+  ],
+  "min_presence": 0.766,
+  "worst_frame": 3,
+  "frames_lost": []
+ },
+ "source": "fish_reconstructed_swim.png"
+}

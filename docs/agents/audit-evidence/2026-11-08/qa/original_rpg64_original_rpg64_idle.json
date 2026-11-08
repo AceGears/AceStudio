@@ -1,0 +1,86 @@
+{
+ "frames": 4,
+ "size": [
+  44,
+  61
+ ],
+ "kind": "body",
+ "warnings": [
+  "loop seam jump 0.491 is 3.7x the typical frame change: visible pop when looping"
+ ],
+ "area_cv": 0.0091,
+ "centroid_jitter_px": 0.128,
+ "component_counts": [
+  1,
+  1,
+  1,
+  1
+ ],
+ "palette_union": 30,
+ "palette_frame0": 30,
+ "consecutive_diff": [
+  0.131,
+  0.499,
+  0.132
+ ],
+ "loop_seam_diff": 0.491,
+ "loop_seam_ratio": 3.71,
+ "static_regions": {
+  "occupied_cells": 58,
+  "static_cells": 4,
+  "static_frac": 0.069,
+  "static_cell_rects": [
+   [
+    10,
+    56,
+    5,
+    7
+   ],
+   [
+    15,
+    56,
+    5,
+    7
+   ],
+   [
+    25,
+    56,
+    5,
+    7
+   ],
+   [
+    30,
+    56,
+    5,
+    7
+   ]
+  ]
+ },
+ "pingpong": {
+  "pairs_checked": 1,
+  "pairs_matched": [],
+  "matched_frac": 0.0,
+  "unique_poses": 4,
+  "is_pingpong": false
+ },
+ "top_region": {
+  "available": true,
+  "bbox": [
+   16,
+   2,
+   29,
+   13
+  ],
+  "area0": 125,
+  "presence": [
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "min_presence": 1.0,
+  "worst_frame": 0,
+  "frames_lost": []
+ },
+ "source": "original_rpg64_idle.png"
+}
