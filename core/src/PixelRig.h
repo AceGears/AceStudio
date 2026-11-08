@@ -40,6 +40,11 @@ struct WingSpec {
     const Mask* mask = nullptr;
 };
 
+// A footed body with no toe direction is seen from the front when the whole
+// sprite, or a biped's legs alone (the arms left out), are close to their
+// mirror image.
+bool seenFromFront(const Image& sprite, const Subject& subj, Body body);
+
 // Nullopt when the rig does not handle this body and action. Arms (and
 // whatever they hold) move as rigid blocks. A footed body with no toe
 // direction is seen from the front when the whole sprite, or a biped's legs

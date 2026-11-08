@@ -37,6 +37,7 @@ add_executable(acestudio_core_tests
     test_asset_gen.cpp
     test_sprite_motion.cpp
     test_pixel_rig.cpp
+    test_part_rig.cpp
     test_world_map.cpp
     test_style_profile.cpp
     test_app_bridge.cpp
@@ -48,6 +49,8 @@ target_compile_definitions(acestudio_core_tests PRIVATE
     ACESTUDIO_TEST_CHILD="$<TARGET_FILE:acestudio_test_child>"
     ACESTUDIO_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 target_link_libraries(acestudio_core_tests PRIVATE AceStudio::core miniz Catch2::Catch2WithMain)
+# The part rig is internal to the core (core/src); its tests reach it directly.
+target_include_directories(acestudio_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/core/src)
 acestudio_set_warnings(acestudio_core_tests)
 
 include(Catch)

@@ -158,7 +158,7 @@ TEST_CASE("an empty sprite is refused", "[motion]") {
     CHECK_FALSE(actionFromKey("moonwalk"));
 }
 
-TEST_CASE("a wing flap folds the part above the wing line", "[motion]") {
+TEST_CASE("a wing flap turns the part above the wing line about its root", "[motion]") {
     Image dragon(30, 30);
     dragon.fillRect({8, 16, 16, 10}, kShirt);   // body
     dragon.fillRect({10, 2, 8, 14}, kSkin);     // wing, above the line
@@ -169,37 +169,32 @@ TEST_CASE("a wing flap folds the part above the wing line", "[motion]") {
     REQUIRE(clip);
     const auto& fr = clip.value().frames;
     REQUIRE(fr.size() == 8);   // fast downstroke, slower recovery
-    // Frame 0: wing up (skin above the body). The wing lowers but never hangs
-    // below its root (the body's top, which rises with the downstroke).
-    auto skinBelowRow = [&](const Image& f, int row) {
-        for (int y = row; y < f.height(); ++y)
-            for (int x = 0; x < f.width(); ++x)
-                if (f.pixel(x, y) == kSkin) return true;
-        return false;
-    };
     auto skinTop = [&](const Image& f) {
         for (int y = 0; y < f.height(); ++y)
             for (int x = 0; x < f.width(); ++x)
                 if (f.pixel(x, y) == kSkin) return y;
         return f.height();
     };
-    // All frames share one canvas; in frame 0 the wing's top is the opaque top and the body starts 14 rows lower.
-    const int line = fr[0].opaqueBounds().y + 14;
-    bool folded = false;
+    auto count = [](const Image& f, Rgba8 c) {
+        int n = 0;
+        for (const Rgba8& p : f.pixels()) n += p == c ? 1 : 0;
+        return n;
+    };
+    // The wing (part rig, ADR-ANIM-001) turns down and back up: its top
+    // comes down, and it keeps its pixels (turned, not folded flat).
+    bool lowered = false;
+    const int wing0 = count(dragon, kSkin);
     for (const Image& f : fr) {
-        CHECK_FALSE(skinBelowRow(f, line));
-        folded = folded || skinTop(f) >= skinTop(fr[0]) + 4;
+        lowered = lowered || skinTop(f) >= skinTop(fr[0]) + 4;
+        CHECK(count(f, kSkin) * 10 >= wing0 * 7);
     }
-    CHECK(folded);
-    // The label-map flap still fails the animation standard on this fixture:
-    // lowering the wing (one mask for both wings, no foreshortening) makes the
-    // top part lose its pixels and swings the silhouette area beyond 8%. The QA used to exempt flaps (70% area change) and reported
-    // no issues; it now says so honestly. Expect "no issues" again only once
-    // the part rig (ADR-ANIM-001) draws real wings.
+    CHECK(lowered);
+    // With the rig the app's own checks pass: no area swing beyond the
+    // limit, no flicker, a clean loop.
     const ClipCheck chk = checkClip(clip.value());
     INFO(chk.maxAreaChange << " " << chk.minNeighbourIoU << " " << chk.loopIoU);
     for (const auto& i : chk.issues) UNSCOPED_INFO(i);
-    CHECK_FALSE(chk.issues.empty());
+    CHECK(chk.issues.empty());
 }
 
 TEST_CASE("a wing mask chooses exactly which pixels flap", "[motion]") {
@@ -534,8 +529,12 @@ int columnTravel(const std::vector<Image>& frames, double u) {
 }
 } // namespace
 
-TEST_CASE("A fish swims by moving whole columns, the tail most", "[motion][rig][swim]") {
+TEST_CASE("A fish swims with its body length kept, the tail most", "[motion][rig][swim]") {
+    // The part rig (ADR-ANIM-001 5c): the body bends by whole-pixel column
+    // moves without dropping columns (constant length, ADR fish test 1); the
+    // tail fin beats behind the stalk and narrows; the head is nearly still.
     for (auto [len, depth] : {std::pair{40, 16}, std::pair{60, 12}, std::pair{30, 22}}) {
+        INFO("fish " << len << "x" << depth);
         const Image src = fish(len, depth);
         Options o;
         o.action = Action::Swim;
@@ -546,38 +545,35 @@ TEST_CASE("A fish swims by moving whole columns, the tail most", "[motion][rig][
         const auto& fr = clip.value().frames;
         long srcCount = 0;
         for (const Rgba8& c : src.pixels()) srcCount += c.a ? 1 : 0;
+        const IntRect sb = src.opaqueBounds();
         std::set<int> widths;
+        int headX = -1;
         for (const Image& f : fr) {
-            // No pixel is redrawn: only the sprite's colours, and every
-            // column of a frame is a whole column of the sprite, moved.
+            // Only the sprite's colours; the pixel count stays close.
             CHECK(colours(f).size() <= colours(src).size());
             long n = 0;
             for (const Rgba8& c : f.pixels()) n += c.a ? 1 : 0;
-            // Foreshortening drops a few columns, never more.
-            CHECK(n <= srcCount);
+            CHECK(n * 10 <= srcCount * 11);
             CHECK(n * 10 >= srcCount * 8);
-            widths.insert(f.opaqueBounds().w);
             const IntRect fb = f.opaqueBounds();
-            for (int x = fb.x; x < fb.x + fb.w; ++x) {
-                bool matched = false;
-                for (int sx = 0; sx < src.width() && !matched; ++sx)
-                    for (int dy = -8; dy <= 8 + f.height() && !matched; ++dy) {
-                        bool ok = true;
-                        for (int y = 0; y < f.height() && ok; ++y) {
-                            const int yy = y - dy + (f.height() - src.height()) / 2 * 0;
-                            const Rgba8 a = f.pixel(x, y);
-                            const Rgba8 b = yy >= 0 && yy < src.height() ? src.pixel(sx, yy) : Rgba8{0, 0, 0, 0};
-                            if ((a.a != 0) != (b.a != 0) || (a.a && a != b)) ok = false;
-                        }
-                        matched = ok;
-                    }
-                CHECK(matched);
-            }
+            widths.insert(fb.w);
+            // The head end does not move along the body ...
+            const int hx = fb.x + fb.w - 1;
+            if (headX < 0) headX = hx;
+            CHECK(hx == headX);
+            // ... and the body is never shorter than the source minus what
+            // the tail fin's foreshortening takes (under a fifth).
+            CHECK(fb.w * 5 >= sb.w * 4);
+            CHECK(fb.w <= sb.w + 2);
         }
-        // The body swings towards the viewer: the length changes.
-        CHECK(widths.size() >= 2);
+        // The tail fin narrows and widens as it beats (an eel-like body,
+        // five times as long as deep, has no separate tail fin: it undulates).
+        if (len < depth * 4) CHECK(widths.size() >= 2);
         // The tail (left end) moves further than the head (right end).
         CHECK(columnTravel(fr, 0.05) > columnTravel(fr, 0.95));
         CHECK(columnTravel(fr, 0.05) >= 1);
+        const ClipCheck chk = checkClip(clip.value());
+        for (const auto& i : chk.issues) UNSCOPED_INFO(i);
+        CHECK(chk.issues.empty());
     }
 }
