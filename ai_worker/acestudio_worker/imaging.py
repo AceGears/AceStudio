@@ -83,12 +83,58 @@ def onnx_session(model_path, device="auto", provider=None, optimization="all"):
             ort.preload_dlls()
         except Exception:   # noqa: BLE001 - the session creation below reports it
             pass
-    # CUDA: grow the memory arena only by what is asked for (the default
-    # doubles it), so with arena shrinkage after each run a cached session
-    # holds little more than its weights between jobs.
-    providers = [(p, {"arena_extend_strategy": "kSameAsRequested"}) if p == "CUDAExecutionProvider" else p for p in providers]
+    providers = [(p, cuda_provider_options()) if p == "CUDAExecutionProvider" else p for p in providers]
     sess = ort.InferenceSession(model_path, sess_options=opts, providers=providers)
     return sess, sess.get_providers()[0]
+
+
+# ONNX Runtime CUDA arena cap. The cap is the free VRAM at session creation
+# minus a headroom for the CUDA context and other processes, clamped: a
+# BiRefNet run at 1024x1024 needs roughly 1-1.5 GB of working memory, and
+# more than 4 GB is never useful to the models this worker runs, while an
+# uncapped arena (the default) can claim the whole card and push the
+# diffusion model into shared system memory.
+ORT_GPU_MIN_BYTES = 1 * 2**30
+ORT_GPU_MAX_BYTES = 4 * 2**30
+ORT_GPU_HEADROOM_BYTES = 768 * 2**20
+
+
+def ort_gpu_mem_limit(free_bytes=None):
+    """Bytes the ONNX Runtime CUDA arena may grow to, or None for no cap.
+    ACESTUDIO_ORT_GPU_MEM_MB overrides it (0 = no cap); otherwise it is
+    sized from the free VRAM."""
+    env = os.environ.get("ACESTUDIO_ORT_GPU_MEM_MB")
+    if env is not None:
+        try:
+            mb = int(env)
+        except ValueError:
+            mb = -1
+        if mb == 0:
+            return None
+        if mb > 0:
+            return mb * 2**20
+    if free_bytes is None:
+        from .gpu import free_vram
+        free_bytes = free_vram()
+    if free_bytes is None:
+        return ORT_GPU_MAX_BYTES
+    return int(max(ORT_GPU_MIN_BYTES, min(ORT_GPU_MAX_BYTES, free_bytes - ORT_GPU_HEADROOM_BYTES)))
+
+
+def cuda_provider_options(free_bytes=None):
+    """CUDA execution provider options:
+    - kSameAsRequested: the arena grows only by what is asked for (the
+      default doubles it), so with arena shrinkage after each run (see
+      run_options) a cached session holds little more than its weights;
+    - gpu_mem_limit: the arena never grows past the free-VRAM budget;
+    - HEURISTIC cuDNN algorithm search: the default EXHAUSTIVE search
+      benchmarks every convolution on the first run and allocates large
+      workspaces while doing so (seconds, and a VRAM spike)."""
+    opts = {"arena_extend_strategy": "kSameAsRequested", "cudnn_conv_algo_search": "HEURISTIC"}
+    limit = ort_gpu_mem_limit(free_bytes)
+    if limit:
+        opts["gpu_mem_limit"] = str(int(limit))
+    return opts
 
 
 def run_options(provider):
@@ -105,11 +151,18 @@ def run_options(provider):
     return ro
 
 
+def cached_session_count():
+    return len(_sessions)
+
+
 def release_sessions():
-    """Drops the cached ONNX sessions (and the GPU memory they hold)."""
+    """Drops the cached ONNX sessions (and the GPU memory they hold).
+    Returns how many were released."""
+    n = len(_sessions)
     _sessions.clear()
     import gc
     gc.collect()
+    return n
 
 
 def _cached_session(model_path, device, provider, optimization):
