@@ -35,6 +35,7 @@ import random
 import threading
 import time
 
+from .. import residency
 from ..imaging import load_rgba, require, save_png
 from ..jobs import Cancelled, JobError
 from .generate import pixelate
@@ -43,6 +44,17 @@ NAME = "image.klein"
 
 _cache = {"key": None, "pipe": None, "inpaint": None}
 _cache_lock = threading.Lock()
+
+
+def unload():
+    """Drops the cached pipelines (idle policy). True if one was loaded."""
+    with _cache_lock:
+        had = _cache["pipe"] is not None
+        _cache.update(key=None, pipe=None, inpaint=None)
+    return had
+
+
+residency.register(NAME, unload)
 
 
 def available():

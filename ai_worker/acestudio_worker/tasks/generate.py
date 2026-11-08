@@ -36,6 +36,7 @@ import random
 import time
 import threading
 
+from .. import residency
 from ..imaging import load_rgba, require, save_png
 from ..jobs import Cancelled, JobError
 
@@ -43,6 +44,14 @@ NAME = "image.generate"
 
 _cache = {"key": None, "pipe": None, "img2img": None}
 _cache_lock = threading.Lock()
+
+
+def unload():
+    """Drops the cached SDXL pipelines (idle policy). True if one was loaded."""
+    with _cache_lock:
+        had = _cache["pipe"] is not None
+        _cache.update(key=None, pipe=None, img2img=None)
+    return had
 
 
 def available():
@@ -268,6 +277,16 @@ def subject_box(img, width, height, threshold=40, pad=0.08):
 
 
 _preview_cache = {"dir": None, "device": None, "model": None}
+
+
+def unload_preview():
+    had = _preview_cache["model"] is not None
+    _preview_cache.update(dir=None, device=None, model=None)
+    return had
+
+
+residency.register(NAME, unload)
+residency.register(NAME + ".preview", unload_preview)
 
 
 def _preview_decoder(folder, device):
