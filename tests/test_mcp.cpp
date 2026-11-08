@@ -1,6 +1,7 @@
 #include "TestSupport.h"
 
 #include "AceTools.h"
+#include "HttpSecurity.h"
 #include "McpProtocol.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -606,4 +607,66 @@ TEST_CASE("MCP tasks survive restarts and work across processes", "[mcp]") {
     CHECK((*n)["params"]["_meta"][meta::kSubscriptionId] == 13);
     Subscription plain;
     CHECK_FALSE(McpServer::taskUpdateFor(plain, {{"taskId", spin}}));
+}
+
+TEST_CASE("MCP HTTP: Host and Origin must be localhost (DNS rebinding)", "[mcp][security]") {
+    CHECK(isLocalHost("localhost"));
+    CHECK(isLocalHost("localhost:39200"));
+    CHECK(isLocalHost("LOCALHOST:39200"));
+    CHECK(isLocalHost("127.0.0.1:39200"));
+    CHECK(isLocalHost("[::1]:39200"));
+    CHECK(isLocalHost("[::1]"));
+    CHECK_FALSE(isLocalHost(""));
+    CHECK_FALSE(isLocalHost("evil.example:39200"));
+    CHECK_FALSE(isLocalHost("localhost.evil.example:39200"));
+    CHECK_FALSE(isLocalHost("127.0.0.1.nip.io:39200"));
+    CHECK_FALSE(isLocalHost("localhost@evil.example"));
+    CHECK_FALSE(isLocalHost("[::2]:39200"));
+    CHECK_FALSE(isLocalHost("0.0.0.0:39200"));
+
+    CHECK(isLocalOrigin("http://localhost:3000"));
+    CHECK(isLocalOrigin("https://127.0.0.1"));
+    CHECK(isLocalOrigin("http://[::1]:8080"));
+    CHECK_FALSE(isLocalOrigin("null"));
+    CHECK_FALSE(isLocalOrigin("http://evil.example"));
+    CHECK_FALSE(isLocalOrigin("http://localhost.evil.example"));
+    CHECK_FALSE(isLocalOrigin("file://localhost"));
+    CHECK_FALSE(isLocalOrigin("localhost:3000"));
+}
+
+TEST_CASE("MCP HTTP: bearer tokens", "[mcp][security]") {
+    CHECK(constantTimeEquals("Bearer abc", "Bearer abc"));
+    CHECK_FALSE(constantTimeEquals("Bearer abc", "Bearer abd"));
+    CHECK_FALSE(constantTimeEquals("Bearer abc", "Bearer ab"));
+    CHECK_FALSE(constantTimeEquals("", "Bearer abc"));
+
+    // Generated tokens: 256 bits as 64 hex characters, different every time.
+    const std::string a = generateHttpToken(), b = generateHttpToken();
+    CHECK(a.size() == 64);
+    CHECK(std::all_of(a.begin(), a.end(), [](char ch) { return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'); }));
+    CHECK(a != b);
+
+    TempDir dir;
+    const auto file = dir / "token";
+    REQUIRE(writeTokenFile(file, a));
+    auto read = readTokenFile(file);
+    REQUIRE(read);
+    CHECK(read.value() == a);   // the trailing newline is not part of the token
+#ifndef _WIN32
+    const auto perms = std::filesystem::status(file).permissions();
+    CHECK((perms & (std::filesystem::perms::group_all | std::filesystem::perms::others_all)) == std::filesystem::perms::none);
+#endif
+    {
+        std::ofstream out(dir / "spaced", std::ios::binary);
+        out << "  s3cret \r\nsecond line\n";
+    }
+    auto spaced = readTokenFile(dir / "spaced");
+    REQUIRE(spaced);
+    CHECK(spaced.value() == "s3cret");
+    {
+        std::ofstream out(dir / "empty", std::ios::binary);
+        out << "   \n";
+    }
+    CHECK_FALSE(readTokenFile(dir / "empty"));
+    CHECK_FALSE(readTokenFile(dir / "missing"));
 }

@@ -21,7 +21,7 @@ page the user visits.
 | Palettes (`.gpl`, `.pal`, `.hex`, `.txt`, `.ase`, `.act`) | anyone who sends a file | bounds-checked parser; fuzzed |
 | Lua scripts | anyone who sends a script the user runs | sandbox: no io/os/package/debug/native modules, text-only `load`, files only inside allowed folders, `require` only of `.lua` files there, memory limit covering images and documents, time limit and cancel that `pcall` cannot swallow; fuzzed |
 | MCP server, stdio | the AI client the user configured | file tools limited to `--root` folders; every request validated; malformed input returns JSON-RPC errors; fuzzed |
-| MCP server, HTTP (`--http`) | processes on this computer; web pages via DNS rebinding | loopback only; Host and Origin must be localhost (DNS rebinding); optional bearer token compared in constant time; header 64 KB and body 64 MB limits; strict Content-Length and chunk parsing |
+| MCP server, HTTP (`--http`) | processes on this computer; web pages via DNS rebinding | loopback only; Host and Origin must be localhost (DNS rebinding); bearer token always required (from `ACESTUDIO_MCP_TOKEN`, `--token-file`, or a random 256-bit token saved to a user-only file) and compared in constant time; header 64 KB and body 64 MB limits; strict Content-Length and chunk parsing |
 | App bridge (named pipe / local socket) | processes of the **same user** | the pipe is created for the current user only (`UserAccessOption`); off with Scripts › Allow AI Assistants |
 | MCP task files (`<data>/mcp-tasks`) | the same user | random 128-bit task ids; ids are validated before they become file names |
 | AI model downloads | network attacker, compromised host | HTTPS; every file's SHA-256 pinned in the catalogue; manifest paths checked for `..` and absolute paths; models load with `use_safetensors=True` / `torch.load(weights_only=True)`, never pickle |
@@ -76,6 +76,15 @@ Found and fixed:
    (plain `http://` only to 127.0.0.1/localhost/::1 for local mirrors and tests). Every
    redirect target is re-checked, and `Authorization`, `Cookie` and `Proxy-Authorization` are
    dropped when a redirect changes host. Tests: `ai_worker/tests/test_download_security.py`.
+8. **MCP HTTP ran without authentication by default** (SEC-006, audit 2026-11-07). Without
+   `--token`, any local process (or another user on the same computer) could call every tool
+   over `--http`, and a token given with `--token` showed in process listings. The server now
+   always requires a bearer token: from `ACESTUDIO_MCP_TOKEN`, from `--token-file FILE`, or,
+   if neither is given, a new random 256-bit token written to `<user data>/mcp-http-token`
+   (created 0600 on Linux; `%APPDATA%` is per-user on Windows). `--token` still works and
+   prints a warning. `--no-auth` exists for the conformance suite only and prints a warning.
+   The Host/Origin checks and the token helpers moved to `mcp/HttpSecurity.cpp` and are now
+   unit-tested (`tests/test_mcp.cpp`, tag `[security]`).
 
 Third-party notes: UBSan reports "applying zero offset to null pointer" inside miniz's
 inflate (`miniz.c:474`, `miniz_tinfl.c:202`) on APNG input. This is pointer arithmetic on a

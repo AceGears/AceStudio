@@ -179,8 +179,11 @@ claude mcp add --transport stdio --scope user acestudio -- "C:\path\to\AceStudio
   work with the documents open in a running AceStudio, and clients can subscribe to changes. Each change is one Edit › Undo step. Turn this off with
   **Scripts › Allow AI Assistants to Use the Open Document**.
 - **HTTP.** `acestudio-mcp --http 39200` serves Streamable HTTP at
-  `http://127.0.0.1:39200/mcp`, on loopback only. Add `--token SECRET` (or set
-  `ACESTUDIO_MCP_TOKEN`) to require `Authorization: Bearer SECRET`.
+  `http://127.0.0.1:39200/mcp`, on loopback only, and always requires
+  `Authorization: Bearer TOKEN`. Set the token in `ACESTUDIO_MCP_TOKEN` or a file passed with
+  `--token-file FILE`. Without one, the server generates a random 256-bit token and saves it
+  in `mcp-http-token` in the user data folder (`%APPDATA%\AceStudio` on Windows).
+  `--token SECRET` still works but other programs can read it from the process list.
 
 ## Portable mode
 

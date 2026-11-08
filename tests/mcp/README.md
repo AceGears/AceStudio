@@ -30,7 +30,7 @@ mkdir /tmp/mcproot
 # Conformance suite (Streamable HTTP, both eras). --conformance-fixtures adds
 # the suite's fixture tools, prompts and resources (test_simple_text, greet,
 # slow_compute, test://static-text, ...).
-acestudio-mcp --root /tmp/mcproot --http 39200 --conformance-fixtures &
+acestudio-mcp --root /tmp/mcproot --http 39200 --no-auth --conformance-fixtures &   # --no-auth: the suite sends no token
 npx conformance server --url http://127.0.0.1:39200/mcp --suite all
 npx conformance server --url http://127.0.0.1:39200/mcp --suite all --spec-version 2025-06-18   # and 2025-11-25, 2026-07-28
 
