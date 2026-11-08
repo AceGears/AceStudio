@@ -5,7 +5,7 @@ Owner: `cloud-gpu-engineer`. Reviewers: `cybersecurity-engineer` (has a veto), `
 Inputs: audit `AUDIT_2026-11-07.md` §cloud feasibility, `ai_worker/acestudio_worker/{server,jobs,netguard}.py`, `core/src/AiWorker.cpp`.
 
 ## 1. Goal and non-goals
-**Goal.** Let a user run the heavy AI jobs on a GPU they control: their own second PC, or a rented cloud GPU. Example jobs are `image.generate` and `image.klein`; FLUX.2 Klein which needs more than this laptop's 8 GB VRAM for full quality. Everything else stays local, and the app still works fully offline.
+**Goal.** Let a user run the heavy AI jobs on a GPU they control: their own second PC, or a rented cloud GPU. Example jobs are `image.generate` and `image.klein` (FLUX.2 Klein needs more than this laptop's 8 GB VRAM for full quality). Everything else stays local, and the app still works fully offline.
 
 **Non-goals:**
 - No AceStudio-run service.
