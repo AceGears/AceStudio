@@ -75,6 +75,48 @@ def unload_all(log=None):
     return released
 
 
+def is_oom(exc):
+    """True for a CUDA out-of-memory error (torch.cuda.OutOfMemoryError, or a
+    RuntimeError from a library that only says so in its message)."""
+    torch = sys.modules.get("torch")
+    oom_type = getattr(getattr(torch, "cuda", None), "OutOfMemoryError", None) if torch else None
+    if oom_type is not None and isinstance(exc, oom_type):
+        return True
+    return isinstance(exc, RuntimeError) and "out of memory" in str(exc).lower()
+
+
+def free_for_retry():
+    """After a CUDA out-of-memory error: drops the ONNX sessions (a cached
+    background-removal session may sit next to the diffusion model), collects
+    garbage (the failed step's tensors) and gives PyTorch's cache back."""
+    from .imaging import release_sessions
+    release_sessions()
+    gc.collect()
+    free_cuda_cache()
+
+
+def lower_memory(pipe, offload, tiling=True):
+    """Switches a Diffusers pipeline to a lower-memory configuration for one
+    retry after an out-of-memory error, and says what changed:
+    VAE tiling (unless the job needs a seamless decode) and slicing, and
+    model CPU offload when the pipeline was fully on the GPU. Output is the
+    same up to tiny VAE tile-seam differences."""
+    changes = []
+    vae = getattr(pipe, "vae", None)
+    if vae is not None:
+        if tiling and hasattr(vae, "enable_tiling"):
+            vae.enable_tiling()
+            changes.append("tiled VAE")
+        if hasattr(vae, "enable_slicing"):
+            vae.enable_slicing()
+            changes.append("sliced VAE")
+    if offload == "none" and hasattr(pipe, "enable_model_cpu_offload"):
+        pipe.enable_model_cpu_offload()
+        changes.append("model offload")
+    free_for_retry()
+    return changes
+
+
 def _seconds(value):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None

@@ -309,25 +309,46 @@ def run(ctx):
     peak = 0.0
     if device == "cuda":
         torch.cuda.reset_peak_memory_stats()
-    try:
-        for i in range(count):
-            ctx.check_cancel()
-            gen = torch.Generator(device="cpu").manual_seed(seed + i)
-            t1 = time.monotonic()
-            common = dict(prompt=prompt, num_inference_steps=steps, guidance_scale=guidance, generator=gen,
-                          width=width, height=height, callback_on_step_end=on_step)
+    reduced = None   # what the out-of-memory retry changed, once it was needed
+
+    def generate_one(i):
+        gen = torch.Generator(device="cpu").manual_seed(seed + i)   # same seed on a retry
+        common = dict(prompt=prompt, num_inference_steps=steps, guidance_scale=guidance, generator=gen,
+                      width=width, height=height, callback_on_step_end=on_step)
+        with ctx.stage("diffusion"):
             if init_path:
                 init = load_rgba(init_path).convert("RGB").resize((width, height))
                 mask = load_rgba(mask_path).convert("L").resize((width, height))
                 if ref_images:
                     common["image_reference"] = ref_images
-                with ctx.stage("diffusion"):
-                    result = runner(image=init, mask_image=mask, strength=strength, **common)
-            else:
-                if ref_images:
-                    common["image"] = ref_images
-                with ctx.stage("diffusion"):
-                    result = runner(**common)
+                return runner(image=init, mask_image=mask, strength=strength, **common)
+            if ref_images:
+                common["image"] = ref_images
+            return runner(**common)
+
+    try:
+        for i in range(count):
+            ctx.check_cancel()
+            t1 = time.monotonic()
+            oom = False
+            try:
+                result = generate_one(i)
+            except Cancelled:
+                raise
+            except Exception as e:
+                # OOM recovery: retry this image once with less memory; a
+                # second OOM fails the job below.
+                if device != "cuda" or reduced is not None or not residency.is_oom(e):
+                    raise
+                oom = True
+            if oom:
+                # Outside the except block, so the failed step's traceback (and
+                # the GPU tensors its frames hold) is gone before the retry.
+                reduced = residency.lower_memory(runner, offload) or ["caches freed"]
+                ctx.log("The GPU ran out of memory; retrying once with %s" % ", ".join(reduced), level="warning")
+                done[0] = i * steps
+                t1 = time.monotonic()
+                result = generate_one(i)
             step_times.append((time.monotonic() - t1) / steps)
             ctx.check_cancel()
             generated.append(result.images[0])
@@ -337,10 +358,15 @@ def run(ctx):
                                 bool((pixel or {}).get("crop", False)))
     except Cancelled:
         raise
-    except torch.cuda.OutOfMemoryError:
-        torch.cuda.empty_cache()
+    except Exception as e:
+        if device != "cuda" or not residency.is_oom(e):
+            raise
         with _cache_lock:
             _cache.update(key=None, pipe=None, inpaint=None)
+        residency.free_for_retry()
+        if reduced is not None:
+            raise JobError("The GPU ran out of memory, also after a retry with %s. Try a smaller size or fewer "
+                           "reference images, or close other programs that use the GPU." % ", ".join(reduced), kind="oom")
         raise JobError("The GPU ran out of memory. Try a smaller size or fewer reference images.", kind="oom")
     info = {"seed": seed, "device": device, "weights": weights, "offload": offload, "steps": steps,
             "width": width, "height": height, "references": len(ref_images), "inpaint": bool(init_path),
@@ -348,4 +374,6 @@ def run(ctx):
     if device == "cuda":
         info["vramGb"] = round(vram, 1)
         info["peakVramGb"] = round(peak, 2)   # during generation (the cutout runs afterwards)
+    if reduced is not None:
+        info["oomRetry"] = reduced
     return {"outputs": outputs, "info": info}

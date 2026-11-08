@@ -16,8 +16,9 @@ outputs:
 
 import os
 
+from .. import residency
 from ..imaging import load_rgba, require, run_onnx, save_png
-from ..jobs import JobError
+from ..jobs import Cancelled, JobError
 
 NAME = "upscale.esrgan"
 OVERLAP = 16
@@ -56,6 +57,27 @@ def upscale_rgb(ctx, rgb, infer, scale, tile, base=0.1, span=0.85, label=""):
         ctx.progress(base + span * (i + 1) / len(tiles), "%sTile %d of %d" % (label, i + 1, len(tiles)),
                      step=i + 1, steps=len(tiles))
     return np.clip(out, 0.0, 1.0)
+
+
+def upscale_with_retry(ctx, rgb, infer, scale, state, **kw):
+    """upscale_rgb with OOM recovery: on a CUDA out-of-memory error the caches
+    are freed and the image is redone once with half the tile size (at least
+    32 px), which later images keep. state: {"tile": n, "retried": None}."""
+    oom = False
+    try:
+        return upscale_rgb(ctx, rgb, infer, scale, state["tile"], **kw)
+    except Cancelled:
+        raise
+    except Exception as e:
+        if state["retried"] is not None or state["tile"] // 2 < 32 or not residency.is_oom(e):
+            raise
+        oom = True
+    if oom:   # outside the except block: the failed tile's tensors are released first
+        state["retried"] = state["tile"]
+        state["tile"] = max(32, state["tile"] // 2)
+        residency.free_for_retry()
+        ctx.log("The GPU ran out of memory; retrying once with %d px tiles" % state["tile"], level="warning")
+    return upscale_rgb(ctx, rgb, infer, scale, state["tile"], **kw)
 
 
 def run(ctx):
@@ -110,10 +132,20 @@ def run(ctx):
     ctx.progress(0.1, "Upscaling ×%d on %s" % (scale, device), force=True)
     outputs = {}
     n = len(images)
+    state = {"tile": tile, "retried": None}
     for k, img in enumerate(images):
         rgb = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
         label = "Frame %d of %d · " % (k + 1, n) if n > 1 else ""
-        up = upscale_rgb(ctx, rgb, infer, scale, tile, base=0.1 + 0.85 * k / n, span=0.85 / n, label=label)
+        try:
+            up = upscale_with_retry(ctx, rgb, infer, scale, state, base=0.1 + 0.85 * k / n, span=0.85 / n, label=label)
+        except Cancelled:
+            raise
+        except Exception as e:
+            if not residency.is_oom(e):
+                raise
+            residency.free_for_retry()
+            raise JobError("The GPU ran out of memory while upscaling, also with %d px tiles. Use a smaller "
+                           "image, or the CPU (device: cpu)." % state["tile"], kind="oom")
         alpha = img.getchannel("A").resize((img.width * scale, img.height * scale), Image.LANCZOS)
         out = Image.fromarray((up * 255.0 + 0.5).astype(np.uint8), mode="RGB")
         out.putalpha(alpha)
@@ -121,4 +153,7 @@ def run(ctx):
             outputs["image"] = save_png(out, ctx.path("image.png"))
         else:
             outputs["image%d" % k] = save_png(out, ctx.path("image%d.png" % k))
-    return {"outputs": outputs, "info": {"scale": scale, "device": str(device), "frames": n}}
+    info = {"scale": scale, "device": str(device), "frames": n}
+    if state["retried"] is not None:
+        info["oomRetry"] = ["tile %d -> %d" % (state["retried"], state["tile"])]
+    return {"outputs": outputs, "info": info}

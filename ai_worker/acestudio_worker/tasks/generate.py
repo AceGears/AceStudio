@@ -499,28 +499,49 @@ def run(ctx):
     outputs = {}
     pixel = ctx.param("pixel")
     generated = []
+    reduced = None   # what the out-of-memory retry changed, once it was needed
+    strength = float(ctx.param("strength", 0.6)) if init_path else None
+    if init_path and not 0.0 < strength <= 1.0:
+        raise JobError("strength must be in (0, 1]", kind="invalid_input")
+
+    def generate_one(i):
+        gen = torch.Generator(device="cpu").manual_seed(seed + i)   # same seed on a retry
+        common = dict(prompt=prompt, negative_prompt=ctx.param("negative_prompt") or None,
+                      num_inference_steps=steps, guidance_scale=guidance, generator=gen,
+                      callback_on_step_end=on_step)
+        if ip_images:
+            # One adapter; several references are combined.
+            common["ip_adapter_image"] = [ip_images] if len(ip_images) > 1 else ip_images
+        if cn_image is not None:
+            common.update(image=cn_image, controlnet_conditioning_scale=cn_scale)
+        with ctx.stage("diffusion"):
+            if init_path:
+                init = load_rgba(init_path).convert("RGB").resize((width, height))
+                return img2img(image=init, strength=strength, **common)
+            return pipe(width=width, height=height, **common)
+
     try:
         for i in range(count):
             ctx.check_cancel()
-            gen = torch.Generator(device="cpu").manual_seed(seed + i)
-            common = dict(prompt=prompt, negative_prompt=ctx.param("negative_prompt") or None,
-                          num_inference_steps=steps, guidance_scale=guidance, generator=gen,
-                          callback_on_step_end=on_step)
-            if ip_images:
-                # One adapter; several references are combined.
-                common["ip_adapter_image"] = [ip_images] if len(ip_images) > 1 else ip_images
-            if cn_image is not None:
-                common.update(image=cn_image, controlnet_conditioning_scale=cn_scale)
-            if init_path:
-                init = load_rgba(init_path).convert("RGB").resize((width, height))
-                strength = float(ctx.param("strength", 0.6))
-                if not 0.0 < strength <= 1.0:
-                    raise JobError("strength must be in (0, 1]", kind="invalid_input")
-                with ctx.stage("diffusion"):
-                    result = img2img(image=init, strength=strength, **common)
-            else:
-                with ctx.stage("diffusion"):
-                    result = pipe(width=width, height=height, **common)
+            oom = False
+            try:
+                result = generate_one(i)
+            except Cancelled:
+                raise
+            except Exception as e:
+                # OOM recovery: retry this image once with less memory; a
+                # second OOM fails the job below.
+                if device != "cuda" or reduced is not None or not residency.is_oom(e):
+                    raise
+                oom = True
+            if oom:
+                # Outside the except block, so the failed step's traceback (and
+                # the GPU tensors its frames hold) is gone before the retry.
+                reduced = residency.lower_memory(img2img if init_path else pipe, offload,
+                                                 tiling=tileable == "none") or ["caches freed"]
+                ctx.log("The GPU ran out of memory; retrying once with %s" % ", ".join(reduced), level="warning")
+                done_steps[0] = i * steps
+                result = generate_one(i)
             ctx.check_cancel()
             generated.append(result.images[0])
         from .postprocess import finish_images
@@ -528,10 +549,15 @@ def run(ctx):
                                      bool((pixel or {}).get("crop", False)) and tileable == "none"))
     except Cancelled:
         raise
-    except torch.cuda.OutOfMemoryError:
-        torch.cuda.empty_cache()
+    except Exception as e:
+        if device != "cuda" or not residency.is_oom(e):
+            raise
         with _cache_lock:
             _cache.update(key=None, pipe=None, img2img=None)
+        residency.free_for_retry()
+        if reduced is not None:
+            raise JobError("The GPU ran out of memory, also after a retry with %s. Try a smaller size or fewer "
+                           "images, or close other programs that use the GPU." % ", ".join(reduced), kind="oom")
         raise JobError("The GPU ran out of memory. Try a smaller size, fewer images, or Offload = model.",
                        kind="oom")
     return {"outputs": outputs,
@@ -539,4 +565,5 @@ def run(ctx):
                      "height": height, "img2img": bool(init_path), "controlnet": cn_image is not None,
                      "ip_adapter": bool(ip_images),
                      "tileable": tileable,
-                     "weights": "fp8-storage" if getattr(pipe, "_acestudio_fp8", False) else "fp16" if device == "cuda" else "fp32"}}
+                     "weights": "fp8-storage" if getattr(pipe, "_acestudio_fp8", False) else "fp16" if device == "cuda" else "fp32",
+                     **({"oomRetry": reduced} if reduced is not None else {})}}
