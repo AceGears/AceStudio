@@ -170,6 +170,7 @@ TEST_CASE("End to end: approved model downloads through the worker and installs"
     o.process = workerProcess(py.value().executable, ACESTUDIO_SOURCE_DIR "/ai_worker");
     o.process.args.insert(o.process.args.begin(), py.value().prefixArgs.begin(), py.value().prefixArgs.end());
     o.jobsRoot = dir.path() / "jobs";
+    o.allowedRoots = {dir.path() / "models"};   // dest_dir must be inside an allowed root (SEC-005)
     WorkerSupervisor sup(o);
     sup.start();
     auto id = sup.submit("model.download", params, "Download Tiny").value();

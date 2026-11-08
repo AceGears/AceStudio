@@ -24,6 +24,7 @@ page the user visits.
 | MCP server, HTTP (`--http`) | processes on this computer; web pages via DNS rebinding | loopback only; Host and Origin must be localhost (DNS rebinding); bearer token always required (from `ACESTUDIO_MCP_TOKEN`, `--token-file`, or a random 256-bit token saved to a user-only file) and compared in constant time; header 64 KB and body 64 MB limits; strict Content-Length and chunk parsing |
 | App bridge (named pipe / local socket) | processes of the **same user** | the pipe is created for the current user only (`UserAccessOption`); the app and acestudio-mcp each check that the process at the other end runs as the current user (pipe owner SID on Windows, `SO_PEERCRED`/`getpeereid` elsewhere); off with Scripts › Allow AI Assistants |
 | MCP task files (`<data>/mcp-tasks`) | the same user | random 128-bit task ids; ids are validated before they become file names |
+| AI worker jobs (paths in job parameters) | whoever can make the app, the CLI or acestudio-mcp submit a job | the host checks every path parameter is inside the AI data folders, the model folder or the job's own folder (inputs may also be files the user chose) before queuing it (`core/src/AiJobPaths.cpp`); the worker refuses relative and `..` paths again |
 | AI model downloads | network attacker, compromised host | HTTPS; every file's SHA-256 pinned in the catalogue; manifest paths checked for `..` and absolute paths; models load with `use_safetensors=True` / `torch.load(weights_only=True)`, never pickle |
 | AI Python packages (pip) | compromised PyPI package | versions pinned in `ai_worker/requirements`, installed into AceStudio's own environment; hashes are **not** pinned (see residual risks) |
 | Bundled Python | the installer | python.org's own SHA-256 checked at build time; pip wheel hash pinned |
@@ -96,6 +97,20 @@ Found and fixed:
    in depth). Windows uses `GetNamedPipeServerProcessId`/`GetNamedPipeClientProcessId` and
    compares token user SIDs; Linux uses `SO_PEERCRED`; macOS/BSD use `getpeereid`. Test:
    `tests/test_app_bridge.cpp`.
+10. **The AI worker trusted every path in a job** (SEC-005, audit 2026-11-07). Job parameters
+   name the model files and folders to load, input images and the download destination, and
+   the worker used them as given. A front end that passed a path through unchecked would let
+   a job read or write anywhere the user can. `WorkerSupervisor::submit()`, which the app, the
+   CLI and acestudio-mcp (through the CLI) all use, now calls `checkJobPaths()`. Every path
+   parameter (`input*`, `init_image`, `mask`, `reference*`, `references`, `model`,
+   `model_dir`, `vae_dir`, `dest_dir`, `lora.path`, `lora_preload.path`, `controlnet.dir` and
+   `.image`, `ip_adapter.dir` and `.images`, `preview.dir`, `cutout.model`) must be absolute
+   and resolve inside the AI data folders, the model folder, the jobs folder or the job's own
+   folder. An input may also be a file the user chose explicitly. Names relative to a folder
+   (`ip_adapter.weight` and `.encoder`, `files[].path`) may not contain `..`. The worker
+   checks again on `job.submit`: the job folder and every path must be absolute, with no
+   `..` component. Tests: `tests/test_ai_worker.cpp` (`[security]`) and
+   `ai_worker/tests/test_job_paths.py`.
 
 Third-party notes: UBSan reports "applying zero offset to null pointer" inside miniz's
 inflate (`miniz.c:474`, `miniz_tinfl.c:202`) on APNG input. This is pointer arithmetic on a

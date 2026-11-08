@@ -18,6 +18,9 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - The app bridge between AceStudio and acestudio-mcp checks that the process at the other end
   belongs to the same user, so another user who takes the bridge's name first cannot receive
   document requests or Lua code.
+- AI jobs are refused when a path in them points outside AceStudio's AI folders, the model
+  folder or the job's own folder (inputs may also be files you chose). The AI worker also
+  refuses relative paths and `..` in job paths.
 
 ### Added
 - Development: the AceStudio agent organization for Claude Code (`.claude/`, `CLAUDE.md`,

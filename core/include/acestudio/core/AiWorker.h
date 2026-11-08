@@ -69,6 +69,9 @@ struct Job {
 struct WorkerOptions {
     ProcessSpec process;                       // how to launch the worker
     std::filesystem::path jobsRoot;            // job directories are created here
+    // Every path a job names must be inside one of these, jobsRoot or its own
+    // job folder (SEC-005, see AiJobPaths.h). workerOptionsFor() fills it.
+    std::vector<std::filesystem::path> allowedRoots;
     std::chrono::milliseconds helloTimeout{std::chrono::seconds(90)};   // importing torch can be slow
     std::chrono::milliseconds cancelGrace{std::chrono::seconds(10)};    // then the worker is killed
     // While the job reports an uninterruptible stage (loading a model), a
@@ -105,9 +108,12 @@ public:
     void restart();
 
     // Queues a job. Each `images` entry is written to the job directory as
-    // a PNG and its path stored in params[name].
+    // a PNG and its path stored in params[name]. Every path parameter must
+    // lie inside the allowed roots or the job folder (checkJobPaths); an
+    // input may also be one of `userFiles`, files the user chose explicitly.
     Result<JobId> submit(const std::string& task, nlohmann::json params, std::string label = {},
-                         const std::vector<std::pair<std::string, const Image*>>& images = {});
+                         const std::vector<std::pair<std::string, const Image*>>& images = {},
+                         const std::vector<std::filesystem::path>& userFiles = {});
     Status cancel(const JobId& id);
 
     // Drives everything: reads worker output, handles exits and timeouts,

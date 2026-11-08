@@ -15,7 +15,7 @@ import time
 import traceback
 
 from . import PROTOCOL_VERSION, __version__
-from .jobs import Cancelled, Context, JobError
+from .jobs import Cancelled, Context, JobError, check_job_paths
 from . import tasks as _tasks
 
 # Error codes (JSON-RPC reserves -32768..-32000; these are implementation-defined).
@@ -126,6 +126,8 @@ class Server:
         job_dir = params.get("dir")
         if not isinstance(job_id, str) or not isinstance(task_name, str) or not isinstance(job_dir, str):
             raise JobError(ERR_PARAMS, "job.submit needs string 'job', 'task' and 'dir'")
+        # SEC-005: the host confines job paths; refuse traversal here as well.
+        check_job_paths(job_dir, params.get("params") or {})
         task = _tasks.registry.get(task_name)
         if task is None:
             raise JobError(ERR_UNKNOWN_TASK, "Unknown task: " + task_name)

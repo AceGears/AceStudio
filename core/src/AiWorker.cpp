@@ -1,4 +1,5 @@
 #include "acestudio/core/AiWorker.h"
+#include "acestudio/core/AiJobPaths.h"
 #include "acestudio/core/FileUtil.h"
 
 #include "acestudio/core/PngCodec.h"
@@ -171,7 +172,8 @@ Status WorkerSupervisor::send(const std::string& method, json params, Pending ki
 }
 
 Result<JobId> WorkerSupervisor::submit(const std::string& task, json params, std::string label,
-                                       const std::vector<std::pair<std::string, const Image*>>& images) {
+                                       const std::vector<std::pair<std::string, const Image*>>& images,
+                                       const std::vector<fs::path>& userFiles) {
     if (task.empty()) return Error{ErrorCode::InvalidArgument, "No task given"};
     if (!params.is_object()) params = json::object();
     Job job;
@@ -187,6 +189,17 @@ Result<JobId> WorkerSupervisor::submit(const std::string& task, json params, std
         const fs::path p = job.dir / ("in_" + name + ".png");
         if (auto st = writePng(*img, p); !st) return st.error();
         params[name] = utf8(p);
+    }
+    // SEC-005: the worker trusts job paths, so confine them here.
+    JobPathPolicy policy;
+    policy.roots = m_opt.allowedRoots;
+    policy.roots.push_back(m_opt.jobsRoot);
+    policy.jobDir = job.dir;
+    policy.userFiles = userFiles;
+    if (auto st = checkJobPaths(params, policy); !st) {
+        fs::remove_all(job.dir, ec);
+        ACE_LOG_WARN("ai", "Refused " + task + " job: " + st.error().message);
+        return st.error();
     }
     job.params = std::move(params);
     job.created = Clock::now();
@@ -858,6 +871,10 @@ Result<WorkerOptions> workerOptionsFor(const AiEnvironment& env, const fs::path&
     WorkerOptions o;
     o.process = workerProcess(py, env.workerDir);
     o.jobsRoot = env.jobsDir;
+    o.allowedRoots = {env.root, env.modelsDir, env.jobsDir};
+    // The app keeps some job inputs (animation poses, references) in the
+    // roaming data folder's ai/ folder.
+    if (auto roaming = userDataDir()) o.allowedRoots.push_back(roaming.value() / "ai");
     return o;
 }
 

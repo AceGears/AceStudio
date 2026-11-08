@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "TestSupport.h"
+#include "acestudio/core/AiJobPaths.h"
 #include "acestudio/core/AiWorker.h"
 #include "acestudio/core/PngCodec.h"
 
@@ -355,4 +356,109 @@ TEST_CASE("Pause All holds the running job and the queue; holding the queue lets
     f.sup->setHoldQueue(false);
     REQUIRE(f.finished(d));
     CHECK(f.sup->job(d)->state == JobState::Succeeded);
+}
+
+TEST_CASE("AI job paths are confined to the AI folders (SEC-005)", "[ai][security]") {
+    TempDir dir;
+    const auto u8 = [](const std::filesystem::path& p) {
+        const auto s = p.u8string();
+        return std::string(s.begin(), s.end());
+    };
+    const auto models = dir / "ai" / "models";
+    const auto jobs = dir / "ai" / "jobs";
+    const auto job = jobs / "j1-abc";
+    std::filesystem::create_directories(job);
+    const auto outside = dir / "elsewhere";
+    JobPathPolicy policy;
+    policy.roots = {dir / "ai", models, jobs};
+    policy.jobDir = job;
+
+    CHECK(pathIsInside(models / "sdxl" / "model.safetensors", models));
+    CHECK(pathIsInside(models, models));
+    CHECK_FALSE(pathIsInside(models / ".." / ".." / "elsewhere" / "x.png", models));
+    CHECK_FALSE(pathIsInside(dir / "ai" / "models-evil" / "x", models));   // a sibling with the same prefix
+    CHECK_FALSE(pathIsInside("relative/x.png", models));
+
+    // Everything a real job uses is accepted.
+    nlohmann::json ok = {
+        {"model_dir", u8(models / "sdxl")},
+        {"vae_dir", u8(models / "vae")},
+        {"input", u8(job / "in_input.png")},
+        {"input3", u8(job / "in_input3.png")},
+        {"reference0", u8(job / "ref.png")},
+        {"references", nlohmann::json::array({u8(dir / "ai" / "anim" / "ref0.png")})},
+        {"init_image", ""},
+        {"lora", {{"path", u8(models / "lora.safetensors")}, {"scale", 0.8}}},
+        {"lora_preload", {{"path", u8(models / "lora.safetensors")}}},
+        {"preview", {{"dir", u8(models / "taesd")}, {"every", 4}}},
+        {"cutout", {{"model", u8(models / "birefnet.onnx")}, {"threshold", 0.5}}},
+        {"controlnet", {{"dir", u8(models / "cn")}, {"image", u8(dir / "ai" / "anim" / "pose0.png")}}},
+        {"ip_adapter", {{"dir", u8(models / "ip")}, {"weight", "ip-adapter.safetensors"}, {"encoder", "models/image_encoder"},
+                        {"images", nlohmann::json::array({u8(job / "r0.png")})}}},
+        {"dest_dir", u8(models / "tiny")},
+        {"files", nlohmann::json::array({{{"path", "w/model.bin"}, {"url", "https://example.invalid/m"}}})},
+        {"prompt", "C:/Windows/not-a-path-parameter"}};
+    CHECK(checkJobPaths(ok, policy));
+
+    const auto refused = [&](nlohmann::json p) {
+        auto st = checkJobPaths(p, policy);
+        if (st) return false;
+        INFO(st.error().message);
+        return true;
+    };
+    CHECK(refused({{"input", u8(outside / "secret.png")}}));
+    CHECK(refused({{"input7", u8(outside / "secret.png")}}));
+    CHECK(refused({{"init_image", u8(job / ".." / ".." / ".." / "elsewhere" / "x.png")}}));
+    CHECK(refused({{"mask", "relative.png"}}));
+    CHECK(refused({{"references", nlohmann::json::array({u8(job / "ok.png"), u8(outside / "x.png")})}}));
+    CHECK(refused({{"model", u8(outside / "evil.onnx")}}));
+    CHECK(refused({{"model_dir", u8(outside)}}));
+    CHECK(refused({{"vae_dir", u8(outside)}}));
+    CHECK(refused({{"dest_dir", u8(outside / "drop")}}));
+    CHECK(refused({{"lora", {{"path", u8(outside / "l.safetensors")}}}}));
+    CHECK(refused({{"lora_preload", {{"path", u8(outside / "l.safetensors")}}}}));
+    CHECK(refused({{"preview", {{"dir", u8(outside)}}}}));
+    CHECK(refused({{"cutout", {{"model", u8(outside / "m.onnx")}}}}));
+    CHECK(refused({{"controlnet", {{"dir", u8(outside)}}}}));
+    CHECK(refused({{"controlnet", {{"dir", u8(models / "cn")}, {"image", u8(outside / "p.png")}}}}));
+    CHECK(refused({{"ip_adapter", {{"dir", u8(outside)}}}}));
+    CHECK(refused({{"ip_adapter", {{"dir", u8(models / "ip")}, {"images", nlohmann::json::array({u8(outside / "r.png")})}}}}));
+    CHECK(refused({{"ip_adapter", {{"dir", u8(models / "ip")}, {"weight", "../../escape.safetensors"}}}}));
+    CHECK(refused({{"ip_adapter", {{"dir", u8(models / "ip")}, {"encoder", u8(outside)}}}}));
+    CHECK(refused({{"files", nlohmann::json::array({{{"path", "../escape.bin"}}})}}));
+    CHECK(refused({{"files", nlohmann::json::array({{{"path", "w\\..\\..\\escape.bin"}}})}}));
+    CHECK(refused({{"input", 42}}));
+
+    // A file the user chose explicitly is allowed as an input, never as a model.
+    policy.userFiles = {outside / "chosen.png"};
+    CHECK(checkJobPaths({{"input", u8(outside / "chosen.png")}}, policy));
+    CHECK(refused({{"input", u8(outside / "other.png")}}));
+    CHECK(refused({{"model", u8(outside / "chosen.png")}}));
+}
+
+TEST_CASE("WorkerSupervisor::submit refuses jobs with paths outside the AI folders", "[ai][security]") {
+    TempDir dir;
+    WorkerOptions o;
+    o.jobsRoot = dir / "jobs";
+    o.allowedRoots = {dir / "models"};
+    WorkerSupervisor sup(o);   // not started: submit only queues
+    const auto u8 = [](const std::filesystem::path& p) {
+        const auto s = p.u8string();
+        return std::string(s.begin(), s.end());
+    };
+    auto bad = sup.submit("upscale.esrgan", {{"model", u8(dir / "elsewhere" / "x.pth")}});
+    REQUIRE_FALSE(bad);
+    CHECK(bad.error().code == ErrorCode::PermissionDenied);
+    CHECK(sup.jobs().empty());
+    // The refused job leaves no folder behind.
+    std::error_code ec;
+    CHECK(std::filesystem::is_empty(dir / "jobs", ec));
+
+    Image img(2, 2);
+    auto good = sup.submit("upscale.esrgan", {{"model", u8(dir / "models" / "x.pth")}}, "", {{"input", &img}});
+    REQUIRE(good);
+    const Job* j = sup.job(good.value());
+    REQUIRE(j);
+    const std::string input = j->params["input"].get<std::string>();
+    CHECK(pathIsInside(std::filesystem::path(std::u8string(input.begin(), input.end())), j->dir));
 }
