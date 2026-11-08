@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # main publishes the nightly; agents/* are specialist branches built and tested
+    # before they merge (this machine has no C++ toolchain). No release from them.
+    branches: [main, 'agents/**']
   pull_request:
 
 concurrency:
