@@ -119,30 +119,51 @@ struct FireParams {
     int sparks;          // rising sparks at a time
     double core;         // shifts the levels: > 0 gives a larger bright core
     int frames, frameMs;
+    int tongues;         // most separate tongues (fewer when the flame is narrow)
+    double gust;         // how much the whole fire breathes (turbulence swell)
 };
 
 FireParams fireParams(FireStyle s) {
     switch (s) {
-    case FireStyle::Torch: return {0.95, 2, 0.7, 0.7, 1.05, 1.1, 5.0, 1, 0.0, 10, 60};
-    case FireStyle::Furnace: return {1.2, 2, 1.0, 0.0, 1.3, 1.05, 6.0, 4, 0.12, 12, 70};
-    case FireStyle::Raging: return {1.45, 2, 1.6, 0.0, 1.45, 1.35, 6.0, 5, 0.04, 16, 70};
-    case FireStyle::Magic: return {0.9, 1, 2.2, 0.0, 1.2, 1.15, 9.0, 2, 0.0, 16, 90};
+    case FireStyle::Torch: return {0.95, 2, 0.7, 0.7, 1.05, 1.1, 5.0, 1, 0.0, 10, 60, 2, 0.3};
+    case FireStyle::Furnace: return {1.2, 2, 1.0, 0.0, 1.3, 1.05, 6.0, 4, 0.12, 12, 70, 4, 0.6};
+    case FireStyle::Raging: return {1.45, 2, 1.6, 0.0, 1.45, 1.35, 6.0, 5, 0.04, 16, 70, 4, 0.6};
+    case FireStyle::Magic: return {0.9, 1, 2.2, 0.0, 1.2, 1.15, 9.0, 2, 0.0, 16, 90, 3, 0.6};
     case FireStyle::Campfire: break;
     }
-    return {1.0, 1, 1.0, 0.0, 1.25, 1.15, 6.0, 2, 0.0, 12, 80};
+    return {1.0, 1, 1.0, 0.0, 1.25, 1.15, 6.0, 2, 0.0, 12, 80, 3, 0.6};
 }
+
+// One tongue of a fire: where it stands, how tall and wide it is, and how
+// the speed of its rising turbulence surges over the loop.
+struct FireTongue {
+    double centre = 0;     // x, px
+    double height = 1;     // share of the flame's height
+    double halfWidth = 1;  // px at the base
+    int surgeFreq = 2;     // the rising speed surges this many times per loop
+    double surgePhase = 0;
+};
 
 // Fire, generated rather than bent. The drawn flame is only used for its
 // place, size and colours; every frame a new flame is made:
-//  - a teardrop "fuel" shape over the logs, strongest at the base centre;
-//  - turbulence rising through it (tall noise cells make tongues), eating
-//    it away more towards the tips, so tongues lick, lean (a sideways warp
-//    that grows with height) and tear off as they rise;
+//  - a short, broad root over the logs plus several tongues side by side
+//    (each with its own height, place and rising speed), so the flame is
+//    one body at the base and splits into separate tongues at the top;
+//  - turbulence rising through it (tall noise cells), eating it away more
+//    towards the tips, so tongues lick, lean (a sideways warp that grows
+//    with height) and tear off as they rise. Each tongue's noise rises at a
+//    speed that surges and slows over the loop, and the whole fire breathes
+//    (gusts), so the rate of change is irregular, not mechanical;
 //  - the result quantised to a ramp of the sprite's own fire colours, from
-//    dark red at the edges to the pale yellow core;
+//    dark red at the edges to the pale yellow core. The rim takes the dark
+//    steps, and no pixel is more than one step brighter than its brightest
+//    neighbour (no lone pale pixels on a dark rim); lone flame pixels are
+//    dropped;
+//  - the flame is fitted below the top row of the canvas, so its tips are
+//    never cut off by the edge;
 //  - logs and stones stay in front; embers among the logs glow and fade.
-// The noise rises exactly one period per loop: seamless. Bending the drawn
-// flame (the earlier versions) could not make it look like fire.
+// The noise rises a whole number of periods per loop: seamless. Bending the
+// drawn flame (the earlier versions) could not make it look like fire.
 EffectClip fire(const Image& src, const Mask& flameColours, const EffectOptions& o) {
     EffectClip out;
     const int W = src.width(), H = src.height();
@@ -202,6 +223,11 @@ EffectClip fire(const Image& src, const Mask& flameColours, const EffectOptions&
             if ((v.h <= 20 || v.h >= 340) && v.s >= 0.5 && v.v >= 0.25 && lumaOf(c) < lumaOf(edge)) edge = c;
         }
     ramp.insert(ramp.begin(), edge);
+    // The brightest colour a spark may take: never the flame's palest (a
+    // lone pale pixel off the flame reads as speckle, not as a spark).
+    const int nr = static_cast<int>(ramp.size());
+    int sparkTop = nr - 1;
+    while (sparkTop > 0 && ramp[static_cast<std::size_t>(sparkTop)] == ramp.back()) --sparkTop;
     // The fuel shape.
     double sx = 0;
     std::vector<int> xs;
@@ -214,60 +240,157 @@ EffectClip fire(const Image& src, const Mask& flameColours, const EffectOptions&
     const int base = fb.y + fb.h - 1;
     const double flameH = fb.h;
     const double amount = std::clamp(o.amount, 0.25, 2.0);
-    // Noise: one period in y is what the flame rises per loop.
+    // Noise: one period in y is what the flame rises per loop. The cell
+    // height is fitted so a whole number of cells makes exactly one period.
     const int period = std::max(24, static_cast<int>(flameH * 1.5)) / 6 * 6;
     auto tile = [&](double cw, double ch, unsigned salt) {
-        return TileNoise{cw, ch, std::max(1, static_cast<int>(std::ceil(W / cw)) + 1), std::max(1, static_cast<int>(std::lround(period / ch))), o.seed * 977u + salt};
+        const int gy = std::max(1, static_cast<int>(std::lround(period / ch)));
+        return TileNoise{cw, static_cast<double>(period) / gy, std::max(1, static_cast<int>(std::ceil(W / cw)) + 1), gy, o.seed * 977u + salt};
     };
     const TileNoise n1 = tile(3.0, 7.5, 1), n2 = tile(1.8, 4.5, 2), n3 = tile(1.2, 3.0, 3), warp = tile(fp.warpCell, fp.warpCell * 2, 4);
     static const double kLevels[] = {0.06, 0.16, 0.30, 0.47, 0.66, 0.86};
+    // Tongues side by side over the root; the middle ones are taller. Each
+    // has its own seeded place, height and surge of its rising speed.
+    const double span = halfW * fp.width;
+    const int nT = std::max(1, std::min(fp.tongues, static_cast<int>(2 * span / 4.5)));
+    std::vector<FireTongue> tongues;
+    double maxH = 0;
+    for (int i = 0; i < nT; ++i) {
+        const unsigned ui = static_cast<unsigned>(i);
+        const double p = nT == 1 ? 0.0 : (i - (nT - 1) / 2.0) / ((nT - 1) / 2.0);
+        FireTongue tg;
+        tg.centre = cx + p * span * 0.55 + (hash01(ui, 20, o.seed) - 0.5) * 0.6;
+        tg.height = (1.0 - 0.28 * std::abs(p)) * (1.0 + (0.2 * hash01(ui, 21, o.seed) - 0.1));
+        tg.halfWidth = span * (nT == 1 ? 1.0 : nT == 2 ? 0.62 : 0.5);
+        tg.surgeFreq = 2 + (i + static_cast<int>(hash01(ui, 26, o.seed) * 2)) % 2;
+        tg.surgePhase = kTau * hash01(ui, 27, o.seed);
+        maxH = std::max(maxH, tg.height);
+        tongues.push_back(tg);
+    }
+    // Fit the flame under the top of the canvas: the tallest tip stays below
+    // row 1, so it is never cut off flat by the edge.
+    const double flameGen = flameH * 1.15 * fp.height;
+    const double flameFit = std::max(1.0, std::min(flameGen, (base - 0.5) / maxH));
+    constexpr double kRoot = 0.45;    // the root's height, as a share of the flame's
+    constexpr double kSurge = 0.85;   // the rising speed swings between 0.15x and 1.85x
+    const double gustPhase1 = kTau * hash01(7, 31, o.seed), gustPhase2 = kTau * hash01(7, 32, o.seed);
+    const std::size_t npx = static_cast<std::size_t>(W) * static_cast<std::size_t>(H);
+    auto at = [W](int x, int y) { return static_cast<std::size_t>(y) * static_cast<std::size_t>(W) + static_cast<std::size_t>(x); };
     for (int f = 0; f < frames; ++f) {
         const double t = static_cast<double>(f) / frames;
+        // The root rises steadily; each tongue surges and slows (always
+        // upwards), a whole number of periods per loop either way.
         const double rise = t * period * fp.risePeriods;
+        std::vector<double> tongueRise;
+        for (const FireTongue& tg : tongues)
+            tongueRise.push_back(period * fp.risePeriods *
+                                 (t + kSurge * std::sin(kTau * tg.surgeFreq * t + tg.surgePhase) / (kTau * tg.surgeFreq)));
+        // Gusts: the whole fire breathes at two loop frequencies.
+        const double gust = 1.0 + fp.gust * (0.22 * std::sin(kTau * 2 * t + gustPhase1) + 0.12 * std::sin(kTau * 5 * t + gustPhase2));
         Image img = src;
         for (int y = 0; y < H; ++y)
             for (int x = 0; x < W; ++x)
                 if (flame.get(x, y)) img.setPixel(x, y, {0, 0, 0, 0});
-        const int top = std::max(0, base - static_cast<int>(flameH * 1.3 * fp.height));
+        const int top = std::max(1, static_cast<int>(base - flameFit * maxH) - 1);
+        const int bottom = std::min(base + 1, H - 1);
         // Levels first, colours after: the rim of the flame is drawn darker
         // (as pixel artists do), so a small flame does not end in a flat
         // bright edge.
-        std::vector<int> lvl(static_cast<std::size_t>(W) * static_cast<std::size_t>(H), -1);
-        auto L = [&](int x, int y) -> int& { return lvl[static_cast<std::size_t>(y) * static_cast<std::size_t>(W) + static_cast<std::size_t>(x)]; };
-        for (int y = top; y <= base + 1 && y < H; ++y)
+        std::vector<int> lvl(npx, -1);
+        for (int y = top; y <= bottom; ++y)
             for (int x = 0; x < W; ++x) {
                 if (logs.get(x, y)) continue;   // logs and stones in front
-                const double u = std::clamp((base + 1.0 - y) / (flameH * 1.15 * fp.height), 0.0, 1.5);
-                const double wid = halfW * fp.width * (1.05 - 0.55 * std::min(u, 1.0));
-                const double d = std::abs(x - cx - fp.lean * u * u) / std::max(0.5, wid);
-                const double shape = std::max(0.0, 1 - d * d) * std::max(0.0, 1 - std::pow(std::min(u, 1.0), 1.6)) * 1.45;
-                if (shape <= 0) continue;
-                const double xw = x + (warp(x, y + rise) - 0.5) * 2 * fp.warp * (1.0 + 3.5 * u);
-                const double n = 0.55 * n1(xw, y + rise) + 0.3 * n2(xw, y + 2 * rise) + 0.15 * n3(xw, y + 3 * rise);
-                const double I = shape * (1.0 - (0.25 + 1.35 * u) * n * amount * fp.turbulence) + fp.core * std::max(0.0, 1 - 2 * u);
+                const double ug = std::clamp((base + 1.0 - y) / flameFit, 0.0, 1.5);
+                const double xw = x + (warp(x, y + rise) - 0.5) * 2 * fp.warp * (1.0 + 3.5 * ug);
+                double shape = 0, nsum = 0, wsum = 0;
+                // The root: one broad, short body over the logs.
+                const double ur = (base + 1.0 - y) / (flameFit * kRoot);
+                if (ur < 1.0) {
+                    const double uc = std::max(ur, 0.0);
+                    const double d = std::abs(x - cx) / std::max(0.5, span * (1.05 - 0.45 * uc));
+                    const double s = std::max(0.0, 1 - d * d) * std::max(0.0, 1 - std::pow(uc, 1.6)) * 1.45;
+                    if (s > 0) {
+                        const double nn = 0.55 * n1(xw, y + rise) + 0.3 * n2(xw, y + 2 * rise) + 0.15 * n3(xw, y + 3 * rise);
+                        shape = s;
+                        nsum += s * nn;
+                        wsum += s;
+                    }
+                }
+                // The tongues, each eaten by noise rising at its own speed.
+                for (std::size_t i = 0; i < tongues.size(); ++i) {
+                    const FireTongue& tg = tongues[i];
+                    const double u = (base + 1.0 - y) / (flameFit * tg.height);
+                    if (u >= 1.0) continue;
+                    const double uc = std::max(u, 0.0);
+                    const double wid = tg.halfWidth * (1.05 - 0.6 * uc);
+                    const double d = std::abs(x - tg.centre - fp.lean * uc * uc) / std::max(0.5, wid);
+                    const double s = std::max(0.0, 1 - d * d) * std::max(0.0, 1 - std::pow(uc, 1.6)) * 1.45;
+                    if (s <= 0) continue;
+                    const double r = tongueRise[i];
+                    const double nn = 0.55 * n1(xw, y + r) + 0.3 * n2(xw, y + 2 * r) + 0.15 * n3(xw, y + 3 * r);
+                    shape = std::max(shape, s);
+                    nsum += s * nn;
+                    wsum += s;
+                }
+                if (shape <= 0 || wsum <= 0) continue;
+                const double n = nsum / wsum;
+                const double I = shape * (1.0 - (0.25 + 1.35 * ug) * n * amount * fp.turbulence * gust) + fp.core * std::max(0.0, 1 - 2 * ug);
                 int level = -1;
                 for (int i = 0; i < 6; ++i)
                     if (I > kLevels[i]) level = i;
-                L(x, y) = level;
+                lvl[at(x, y)] = level;
             }
-        for (int y = top; y <= base + 1 && y < H; ++y)
+        auto L = [&](int x, int y) { return x < 0 || y < 0 || x >= W || y >= H ? -1 : lvl[at(x, y)]; };
+        // The rim takes the dark steps.
+        std::vector<int> shade = lvl;
+        for (int y = top; y <= bottom; ++y)
             for (int x = 0; x < W; ++x) {
-                int level = L(x, y);
+                const int level = L(x, y);
                 if (level < 0) continue;
                 const bool rim = x == 0 || x == W - 1 || y == 0 || L(x - 1, y) < 0 || L(x + 1, y) < 0 || L(x, y - 1) < 0;
-                if (rim) level = std::min(level, 2);
+                if (rim) shade[at(x, y)] = std::min(level, 2);
+            }
+        // A monotonic ramp: no pixel is more than one step brighter than its
+        // brightest neighbour, so a thin tongue cannot show a lone pale pixel
+        // between dark rim pixels.
+        for (int pass = 0; pass < 2; ++pass) {
+            std::vector<int> next = shade;
+            for (int y = top; y <= bottom; ++y)
+                for (int x = 0; x < W; ++x) {
+                    const int level = shade[at(x, y)];
+                    if (level < 3) continue;
+                    int m = -1;
+                    for (int dy = -1; dy <= 1; ++dy)
+                        for (int dx = -1; dx <= 1; ++dx)
+                            if ((dx || dy) && x + dx >= 0 && y + dy >= 0 && x + dx < W && y + dy < H) m = std::max(m, shade[at(x + dx, y + dy)]);
+                    next[at(x, y)] = std::min(level, m + 1);
+                }
+            shade = std::move(next);
+        }
+        auto S = [&](int x, int y) { return x < 0 || y < 0 || x >= W || y >= H ? -1 : shade[at(x, y)]; };
+        auto nextToLogs = [&](int x, int y) {
+            return (x > 0 && logs.get(x - 1, y)) || (x + 1 < W && logs.get(x + 1, y)) || (y > 0 && logs.get(x, y - 1)) || (y + 1 < H && logs.get(x, y + 1));
+        };
+        for (int y = top; y <= bottom; ++y)
+            for (int x = 0; x < W; ++x) {
+                const int level = S(x, y);
+                if (level < 0) continue;
+                // A lone flame pixel (torn off a tip) is speckle: drop it,
+                // unless it sits against the logs.
+                const bool lone = S(x - 1, y) < 0 && S(x + 1, y) < 0 && S(x, y - 1) < 0 && S(x, y + 1) < 0;
+                if (lone && !nextToLogs(x, y)) continue;
                 img.setPixel(x, y, ramp[static_cast<std::size_t>(level)]);
             }
         // Sparks: leave the tips, rise and drift, cooling through the ramp
-        // (brightest first) before they vanish. Each repeats once per loop.
+        // (bright first, never the palest) before they vanish. Each repeats
+        // once per loop. They stay below the top row too.
         for (int sp = 0; sp < fp.sparks; ++sp) {
             const double life = std::fmod(t * (1 + sp % 2) + hash01(static_cast<unsigned>(sp), 9, o.seed), 1.0);
             const double sx0 = cx + halfW * 0.8 * (hash01(static_cast<unsigned>(sp), 10, o.seed) * 2 - 1);
             const int px = static_cast<int>(std::lround(sx0 + fp.lean * life + 1.6 * std::sin(kTau * (life * 1.5 + sp * 0.37))));
-            const int py = static_cast<int>(std::lround(base - flameH * fp.height * (0.55 + 0.9 * life)));
-            if (px < 0 || py < 0 || px >= W || py >= H || img.pixel(px, py).a) continue;
-            const int nr = static_cast<int>(ramp.size());
-            const int idx = std::clamp(nr - 1 - static_cast<int>(life * nr), 0, nr - 1);
+            const int py = static_cast<int>(std::lround(base - flameFit * (0.55 + 0.9 * life)));
+            if (px < 0 || py < 1 || px >= W || py >= H || img.pixel(px, py).a) continue;
+            const int idx = std::clamp(sparkTop - static_cast<int>(life * nr), 0, sparkTop);
             img.setPixel(px, py, ramp[static_cast<std::size_t>(idx)]);
         }
         // Embers glow and fade.

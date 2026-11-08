@@ -182,10 +182,15 @@ TEST_CASE("a wing flap folds the part above the wing line", "[motion]") {
     bool folded = false;
     for (const Image& f : fr) folded = folded || skinBelowRow(f, line + 2);
     CHECK(folded);
+    // The row-fold flap fails the animation standard: the wing folds away
+    // (the top part loses its pixels) and the silhouette area swings far
+    // beyond 8%. The QA used to exempt flaps (70% area change) and reported
+    // no issues; it now says so honestly. Expect "no issues" again only once
+    // the part rig (ADR-ANIM-001) draws real wings.
     const ClipCheck chk = checkClip(clip.value());
     INFO(chk.maxAreaChange << " " << chk.minNeighbourIoU << " " << chk.loopIoU);
-    for (const auto& i : chk.issues) INFO(i);
-    CHECK(chk.issues.empty());
+    for (const auto& i : chk.issues) UNSCOPED_INFO(i);
+    CHECK_FALSE(chk.issues.empty());
 }
 
 TEST_CASE("a wing mask chooses exactly which pixels flap", "[motion]") {

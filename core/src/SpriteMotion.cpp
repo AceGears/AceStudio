@@ -1,5 +1,7 @@
 #include "acestudio/core/SpriteMotion.h"
 
+#include "acestudio/core/AnimationQA.h"
+
 #include "PixelRig.h"
 
 #include <algorithm>
@@ -976,11 +978,31 @@ ClipCheck checkClip(const Clip& clip) {
         if (i > 0) r.minNeighbourIoU = std::min(r.minNeighbourIoU, iou(clip.frames[i - 1], clip.frames[i]));
     }
     if (clip.loops && clip.frames.size() > 1) r.loopIoU = iou(clip.frames.back(), clip.frames.front());
-    // A flap foreshortens the wings on purpose; elsewhere a big change means parts were lost or doubled.
-    const double allowed = clip.name == "flap" ? 0.7 : 0.35;
+    // A big change means parts were lost or doubled. A flap has no exemption:
+    // a winged body keeps its silhouette area within 8% (ANIMATION_STANDARDS.md,
+    // universal rule 1; ADR-ANIM-001 step 0). Wings that fold away or cover the
+    // head are a defect, not foreshortening, until the part rig draws them.
+    const double allowed = clip.name == "flap" ? 0.08 : 0.35;
     if (r.maxAreaChange > allowed)
         r.issues.push_back("The sprite's size changes by " + std::to_string(static_cast<int>(r.maxAreaChange * 100)) +
                            "% between frames; parts may be stretched or hidden.");
+    // Temporal checks shared with anim_qa.py (ADR-ANIM-001 step 0): a cycle
+    // must not play its poses forwards then backwards, and the top part
+    // (head, horns, a wing tip) must not vanish. A roll turns the sprite on
+    // purpose, so its top part moves out of reach.
+    if (clip.loops) {
+        const PingPongCheck pp = detectPingPong(clip.frames);
+        if (pp.pingPong)
+            r.issues.push_back("The cycle plays the same " + std::to_string(pp.uniquePoses) +
+                               " poses forwards and then backwards (ping-pong); the motion reverses instead of following through.");
+        if (clip.name != "roll") {
+            const TopRegionCheck top = topRegionPresence(clip.frames);
+            if (!top.framesLost.empty())
+                r.issues.push_back("The top part of the sprite (head, horns or wing tip) loses " +
+                                   std::to_string(static_cast<int>(std::lround((1.0 - top.minPresence) * 100))) + "% of its pixels in frame " +
+                                   std::to_string(top.worstFrame) + "; it is hidden, squashed or cut off.");
+        }
+    }
     // Flicker: pixels that change in one frame and change straight back.
     // A smooth cycle moves edges steadily; single-frame blips read as noise.
     if (clip.frames.size() >= 3) {

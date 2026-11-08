@@ -487,4 +487,126 @@ std::vector<Image> correctFrames(const std::vector<Image>& frames, const QARepor
     return out;
 }
 
+double frameDifference(const Image& a, const Image& b) {
+    if (a.width() != b.width() || a.height() != b.height()) return 1.0;
+    const auto pa = a.pixels(), pb = b.pixels();
+    std::size_t changed = 0, either = 0;
+    for (std::size_t i = 0; i < pa.size() && i < pb.size(); ++i) {
+        if (!pa[i].a && !pb[i].a) continue;
+        ++either;
+        if (pa[i] != pb[i]) ++changed;
+    }
+    return either ? static_cast<double>(changed) / static_cast<double>(either) : 0.0;
+}
+
+PingPongCheck detectPingPong(const std::vector<Image>& frames, double sameBelow) {
+    PingPongCheck r;
+    const int n = static_cast<int>(frames.size());
+    auto same = [&](const Image& a, const Image& b) { return frameDifference(a, b) < sameBelow; };
+    for (int i = 1; i < (n + 1) / 2; ++i) {
+        const int j = n - i;
+        if (i == j) continue;
+        ++r.pairsChecked;
+        if (same(frames[static_cast<std::size_t>(i)], frames[static_cast<std::size_t>(j)])) ++r.pairsMatched;
+    }
+    std::vector<std::size_t> unique;
+    for (std::size_t i = 0; i < frames.size(); ++i) {
+        bool seen = false;
+        for (std::size_t u : unique) seen = seen || same(frames[i], frames[u]);
+        if (!seen) unique.push_back(i);
+    }
+    r.uniquePoses = static_cast<int>(unique.size());
+    // A clip whose frames are all the same is frozen, not ping-pong.
+    r.pingPong = n >= 4 && r.pairsChecked > 0 && r.pairsMatched == r.pairsChecked && r.uniquePoses >= 2;
+    return r;
+}
+
+TopRegionCheck topRegionPresence(const std::vector<Image>& frames, double maxLoss) {
+    TopRegionCheck r;
+    if (frames.empty()) return r;
+    const Image& f0 = frames.front();
+    const int w = f0.width(), h = f0.height();
+    const IntRect bb = f0.opaqueBounds();
+    if (bb.empty() || w <= 0 || h <= 0) return r;
+    r.available = true;
+    // The top band of the sprite, and its 4-connected pieces.
+    const int band = std::max(2, static_cast<int>(std::lround(bb.h * 0.2)));
+    auto idx = [w](int x, int y) { return static_cast<std::size_t>(y) * static_cast<std::size_t>(w) + static_cast<std::size_t>(x); };
+    auto inBand = [&](int x, int y) { return y >= bb.y && y < bb.y + band && f0.pixel(x, y).a != 0; };
+    std::vector<char> seen(static_cast<std::size_t>(w) * static_cast<std::size_t>(h), 0);
+    std::vector<std::vector<std::pair<int, int>>> pieces;
+    for (int y = bb.y; y < std::min(h, bb.y + band); ++y)
+        for (int x = 0; x < w; ++x) {
+            if (!inBand(x, y) || seen[idx(x, y)]) continue;
+            std::vector<std::pair<int, int>> piece;
+            std::vector<std::pair<int, int>> stack{{x, y}};
+            seen[idx(x, y)] = 1;
+            while (!stack.empty()) {
+                const auto [px, py] = stack.back();
+                stack.pop_back();
+                piece.emplace_back(px, py);
+                const int nx[4] = {px + 1, px - 1, px, px};
+                const int ny[4] = {py, py, py + 1, py - 1};
+                for (int k = 0; k < 4; ++k)
+                    if (nx[k] >= 0 && ny[k] >= 0 && nx[k] < w && ny[k] < h && inBand(nx[k], ny[k]) && !seen[idx(nx[k], ny[k])]) {
+                        seen[idx(nx[k], ny[k])] = 1;
+                        stack.emplace_back(nx[k], ny[k]);
+                    }
+            }
+            pieces.push_back(std::move(piece));
+        }
+    if (pieces.empty()) return r;
+    // Pieces of at least 4 px (a stray pixel is not a part), else any. The
+    // one holding the highest pixel; ties go to the larger piece.
+    bool anyBig = false;
+    for (const auto& pc : pieces) anyBig = anyBig || pc.size() >= 4;
+    const std::vector<std::pair<int, int>>* best = nullptr;
+    int bestTop = 0;
+    for (const auto& pc : pieces) {
+        if (anyBig && pc.size() < 4) continue;
+        int top = h;
+        for (const auto& [px, py] : pc) top = std::min(top, py);
+        if (!best || top < bestTop || (top == bestTop && pc.size() > best->size())) {
+            best = &pc;
+            bestTop = top;
+        }
+    }
+    const auto& region = *best;
+    int rx0 = w, ry0 = h, rx1 = -1, ry1 = -1;
+    for (const auto& [px, py] : region) {
+        rx0 = std::min(rx0, px); rx1 = std::max(rx1, px);
+        ry0 = std::min(ry0, py); ry1 = std::max(ry1, py);
+    }
+    r.region = {rx0, ry0, rx1 - rx0 + 1, ry1 - ry0 + 1};
+    r.area = static_cast<int>(region.size());
+    const int reach = std::max(4, h / 6);
+    for (const Image& f : frames) {
+        if (f.width() != w || f.height() != h) {
+            r.presence.push_back(0.0);
+            continue;
+        }
+        std::size_t bestHit = 0;
+        for (int dy = -reach; dy <= reach && bestHit < region.size(); ++dy)
+            for (int dx = -reach; dx <= reach && bestHit < region.size(); ++dx) {
+                std::size_t hit = 0, left = region.size();
+                for (const auto& [px, py] : region) {
+                    if (hit + left <= bestHit) break;   // cannot beat the best offset any more
+                    --left;
+                    const int tx = px + dx, ty = py + dy;
+                    if (tx >= 0 && ty >= 0 && tx < w && ty < h && f.pixel(tx, ty) == f0.pixel(px, py)) ++hit;
+                }
+                bestHit = std::max(bestHit, hit);
+            }
+        r.presence.push_back(static_cast<double>(bestHit) / static_cast<double>(region.size()));
+    }
+    for (std::size_t i = 0; i < r.presence.size(); ++i) {
+        if (r.presence[i] < r.minPresence) {
+            r.minPresence = r.presence[i];
+            r.worstFrame = static_cast<int>(i);
+        }
+        if (1.0 - r.presence[i] > maxLoss) r.framesLost.push_back(static_cast<int>(i));
+    }
+    return r;
+}
+
 } // namespace acestudio
