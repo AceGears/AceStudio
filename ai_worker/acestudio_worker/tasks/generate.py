@@ -119,7 +119,10 @@ def _pipelines(ctx, model_dir, vae_dir, lora, device, offload, controlnet=None, 
         if device == "cuda":
             torch.cuda.empty_cache()
     dtype = torch.float16 if device == "cuda" else torch.float32
-    kwargs = {"torch_dtype": dtype, "use_safetensors": True}
+    # low_cpu_mem_usage (the Diffusers default with accelerate, made explicit):
+    # weights stream from the safetensors files into empty modules instead of
+    # first being materialised at random init and then overwritten.
+    kwargs = {"torch_dtype": dtype, "use_safetensors": True, "low_cpu_mem_usage": True}
     if os.path.exists(os.path.join(model_dir, "unet", "diffusion_pytorch_model.fp16.safetensors")) and dtype == torch.float16:
         kwargs["variant"] = "fp16"
     if vae_dir:

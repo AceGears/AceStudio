@@ -29,6 +29,7 @@ outputs:
   raw0..rawN        full-size generations when `pixel` is given
 """
 
+import gc
 import os
 import random
 import threading
@@ -79,6 +80,38 @@ def _memory_plan(torch, device, weights, offload):
     return weights, offload, vram
 
 
+# Text-encoder modules kept in BF16 when its weights are stored in FP8.
+_TE_SKIP = ("embed", "norm", "lm_head", "rotary")
+
+
+def _load_text_encoder_fp8(model_dir, torch, dtype):
+    """Loads only the text encoder (class from model_index.json) and stores
+    its weights in FP8 at once, exactly as the pipeline-wide cast does.
+    Transformers 5 loads on the meta device and streams the safetensors
+    shards (always low-memory, `dtype=`); 4.x needs low_cpu_mem_usage."""
+    import importlib
+    import json
+    from diffusers.hooks import apply_layerwise_casting
+    with open(os.path.join(model_dir, "model_index.json"), encoding="utf-8") as f:
+        lib, cls_name = json.load(f)["text_encoder"]
+    module = importlib.import_module(lib)
+    cls = getattr(module, cls_name)
+    kwargs = {"use_safetensors": True}
+    major = 0
+    try:
+        major = int(str(getattr(module, "__version__", "0")).split(".")[0])
+    except ValueError:
+        pass
+    if lib == "transformers" and major >= 5:
+        kwargs["dtype"] = dtype
+    else:
+        kwargs.update(torch_dtype=dtype, low_cpu_mem_usage=True)
+    te = cls.from_pretrained(os.path.join(model_dir, "text_encoder"), **kwargs)
+    apply_layerwise_casting(te, storage_dtype=torch.float8_e4m3fn, compute_dtype=dtype, skip_modules_pattern=_TE_SKIP)
+    gc.collect()
+    return te
+
+
 def _switch_lora(pipe, lora):
     """Optimised path: the pipeline was built with the style LoRA as an
     adapter; turn it on (at this job's strength) or off without reloading.
@@ -120,7 +153,22 @@ def _pipelines(ctx, model_dir, lora, device, weights, offload, preload=None):
             torch.cuda.empty_cache()
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
     ctx.progress(0.02, "Loading FLUX.2 klein (the first run takes a few minutes)", force=True, uninterruptible=True)
-    pipe = Flux2KleinPipeline.from_pretrained(model_dir, torch_dtype=dtype, use_safetensors=True)
+    load_kwargs = {"torch_dtype": dtype, "use_safetensors": True, "low_cpu_mem_usage": True}
+    te_cast = False
+    if weights == "fp8" and device == "cuda":
+        # Low-RAM load: the text encoder is loaded and stored in FP8 before
+        # the transformer is read, so the two BF16 copies (8.0 + 7.75 GB)
+        # are never in memory together.
+        try:
+            load_kwargs["text_encoder"] = _load_text_encoder_fp8(model_dir, torch, dtype)
+            te_cast = True
+        except JobError:
+            raise
+        except Exception as e:   # noqa: BLE001 - the one-step load below still works
+            ctx.log("Staged text-encoder load failed (%s: %s); loading the whole pipeline at once"
+                    % (type(e).__name__, str(e).splitlines()[0][:200] if str(e) else ""), level="warning")
+            load_kwargs.pop("text_encoder", None)
+    pipe = Flux2KleinPipeline.from_pretrained(model_dir, **load_kwargs)
     pipe.set_progress_bar_config(disable=True)
     build_lora = dict(preload, scale=(lora or {}).get("scale", 1.0)) if preload else lora
     if build_lora:
@@ -145,8 +193,10 @@ def _pipelines(ctx, model_dir, lora, device, weights, offload, preload=None):
             "pos_embed", "patch_embed", "norm", "^proj_in$", "^proj_out$", "lora_")
         pipe.transformer.enable_layerwise_casting(storage_dtype=torch.float8_e4m3fn, compute_dtype=dtype,
                                                   skip_modules_pattern=skip)
-        apply_layerwise_casting(pipe.text_encoder, storage_dtype=torch.float8_e4m3fn, compute_dtype=dtype,
-                                skip_modules_pattern=("embed", "norm", "lm_head", "rotary"))
+        if not te_cast:
+            apply_layerwise_casting(pipe.text_encoder, storage_dtype=torch.float8_e4m3fn, compute_dtype=dtype,
+                                    skip_modules_pattern=_TE_SKIP)
+        gc.collect()   # the BF16 storage replaced by FP8 goes back to the OS now
     if device == "cuda":
         if offload == "model":
             pipe.enable_model_cpu_offload()
