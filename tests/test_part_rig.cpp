@@ -3,13 +3,16 @@
 
 #include "PartRig.h"
 
+#include "acestudio/core/Effects.h"
 #include "acestudio/core/PngCodec.h"
 #include "acestudio/core/SpriteMotion.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <map>
 #include <set>
 #include <string>
@@ -17,6 +20,7 @@
 
 using namespace acestudio;
 using namespace acestudio::motion;
+using namespace acestudio::fx;
 
 namespace {
 
@@ -244,33 +248,6 @@ TEST_CASE("A walking side view plants a foot that moves at the walk's speed", "[
 
 // ---- Golden sprites (ADR-ANIM-001 section 6) ---------------------------------
 
-TEST_CASE("Golden: the dragon flaps and flies with clean clips", "[rig][golden]") {
-    const Image img = load("dragon128.png");
-    for (Action a : {Action::Flap, Action::Fly}) {
-        INFO(actionInfo(a).key);
-        Options o;
-        o.action = a;
-        auto clip = animate(img, o);
-        REQUIRE(clip);
-        const auto& fr = clip.value().frames;
-        std::set<std::size_t> unique;
-        for (std::size_t i = 0; i < fr.size(); ++i) {
-            std::size_t first = i;
-            for (std::size_t j = 0; j < i; ++j)
-                if (fr[j] == fr[i]) {
-                    first = j;
-                    break;
-                }
-            unique.insert(first);
-            for (auto c : colours(fr[i])) CHECK(colours(img).count(c) == 1);
-        }
-        CHECK(unique.size() == fr.size());
-        const ClipCheck chk = checkClip(clip.value());
-        for (const auto& i : chk.issues) UNSCOPED_INFO(i);
-        CHECK(chk.issues.empty());
-    }
-}
-
 TEST_CASE("Golden: the fish keeps its length in idle, swim and dash", "[rig][golden]") {
     const Image img = load("fish57.png");
     const int w0 = img.opaqueBounds().w;
@@ -293,23 +270,243 @@ TEST_CASE("Golden: the fish keeps its length in idle, swim and dash", "[rig][gol
     }
 }
 
-TEST_CASE("Golden: the rogue and the knight walk, run and sprint with clean clips", "[rig][golden]") {
-    // The rogue is a three-quarter view (its feet stand a row apart); the
-    // knight is seen from the front. No foot leaves the ground, no shin pokes
-    // through it, and only the sprite's colours appear.
-    for (const char* name : {"rogue64.png", "knight32.png"}) {
-        const Image img = load(name);
-        for (Action a : {Action::Walk, Action::Run, Action::Sprint}) {
-            INFO(name << " " << actionInfo(a).key);
+TEST_CASE("Golden: every sprite's clips meet the expected results", "[rig][golden]") {
+    std::ifstream in(ACESTUDIO_SOURCE_DIR "/tests/data/anim/expected.json");
+    REQUIRE(in.good());
+    const nlohmann::json table = nlohmann::json::parse(in);
+    for (const auto& sprite : table.at("sprites")) {
+        const std::string file = sprite.at("file").get<std::string>();
+        const Image img = load(file.c_str());
+        const auto palette = colours(img);
+        for (const auto& want : sprite.at("clips")) {
+            const std::string key = want.at("action").get<std::string>();
+            INFO(file << " " << key);
+            const auto action = actionFromKey(key);
+            REQUIRE(action);
             Options o;
-            o.action = a;
+            o.action = *action;
+            if (sprite.contains("body")) o.body = bodyFromString(sprite.at("body").get<std::string>());
             auto clip = animate(img, o);
             REQUIRE(clip);
-            for (const Image& f : clip.value().frames)
-                for (auto c : colours(f)) CHECK(colours(img).count(c) == 1);
+            const auto& fr = clip.value().frames;
+            CHECK(static_cast<int>(fr.size()) == want.at("frames").get<int>());
+            for (const Image& f : fr)
+                for (auto c : colours(f)) CHECK(palette.count(c) == 1);
+            if (want.contains("uniqueFrames")) {
+                int unique = 0;
+                for (std::size_t i = 0; i < fr.size(); ++i) {
+                    bool seen = false;
+                    for (std::size_t j = 0; j < i && !seen; ++j) seen = fr[j] == fr[i];
+                    unique += seen ? 0 : 1;
+                }
+                CHECK(unique == want.at("uniqueFrames").get<int>());
+            }
             const ClipCheck chk = checkClip(clip.value());
             for (const auto& i : chk.issues) UNSCOPED_INFO(i);
             CHECK(chk.issues.empty());
+            CHECK(clip.value().depthPops == 0);
+            CHECK(chk.maxAreaChange <= want.at("maxAreaChange").get<double>());
+            CHECK(chk.minNeighbourIoU >= want.at("minNeighbourIoU").get<double>());
         }
     }
+}
+
+TEST_CASE("Golden: the campfire's flames move in its colours and stay on the canvas", "[rig][golden][fx]") {
+    std::ifstream in(ACESTUDIO_SOURCE_DIR "/tests/data/anim/expected.json");
+    REQUIRE(in.good());
+    const nlohmann::json table = nlohmann::json::parse(in);
+    for (const auto& want : table.at("fire")) {
+        const std::string style = want.at("style").get<std::string>();
+        INFO(style);
+        const Image img = load(want.at("file").get<std::string>().c_str());
+        const auto palette = colours(img);
+        EffectOptions o;
+        o.effect = Effect::Fire;
+        const auto parsed = fireStyleFromString(style);
+        REQUIRE(parsed);
+        o.fire = *parsed;
+        const EffectClip c = animateEffect(img, o);
+        REQUIRE(static_cast<int>(c.frames.size()) >= want.at("minFrames").get<int>());
+        for (std::size_t i = 0; i < c.frames.size(); ++i) {
+            const Image& f = c.frames[i];
+            for (auto col : colours(f)) CHECK(palette.count(col) == 1);
+            for (int x = 0; x < f.width(); ++x) CHECK(f.pixel(x, 0).a == 0);   // never cut off at the top
+            CHECK_FALSE(f == c.frames[(i + 1) % c.frames.size()]);              // never a held frame
+        }
+    }
+}
+
+// ---- Clip checks ---------------------------------------------------------------
+
+namespace {
+
+Image flipped(const Image& img) {
+    Image out(img.width(), img.height());
+    for (int y = 0; y < img.height(); ++y)
+        for (int x = 0; x < img.width(); ++x) out.setPixel(img.width() - 1 - x, y, img.pixel(x, y));
+    return out;
+}
+
+Clip clipOf(std::vector<Image> frames) {
+    Clip c;
+    c.name = "idle";
+    c.loops = true;
+    c.frames = std::move(frames);
+    c.durations.assign(c.frames.size(), 100);
+    return c;
+}
+
+} // namespace
+
+TEST_CASE("The clip checks report a frame that is the mirror of the one before", "[rig][qa]") {
+    const Image a = twoBlocks();
+    const ClipCheck flip = checkClip(clipOf({a, flipped(a), a, flipped(a)}));
+    CHECK(flip.mirrorFlips == 4);   // three pairs and the loop seam
+    CHECK_FALSE(flip.issues.empty());
+    // A held pose is not a flip, even on a symmetric sprite.
+    Image symmetric(16, 16);
+    symmetric.fillRect({4, 4, 8, 8}, kA);
+    CHECK(checkClip(clipOf({symmetric, symmetric, symmetric})).mirrorFlips == 0);
+    // A symmetric figure stepping in place: its two steps mirror each other,
+    // but only the feet differ, so it does not read as a flip.
+    Image left(24, 32), right(24, 32);
+    for (Image* f : {&left, &right}) {
+        f->fillRect({6, 2, 12, 18}, kCloth);
+        f->fillRect({7, 20, 4, 8}, kB);
+        f->fillRect({13, 20, 4, 8}, kB);
+    }
+    left.fillRect({7, 28, 4, 2}, kInk);
+    right.fillRect({13, 28, 4, 2}, kInk);
+    CHECK(checkClip(clipOf({left, right})).mirrorFlips == 0);
+}
+
+TEST_CASE("The clip checks report parts that pop through each other", "[rig][qa]") {
+    const Image a = twoBlocks();
+    Clip popped = clipOf({a, a});
+    popped.depthPops = 1;
+    CHECK_FALSE(checkClip(popped).issues.empty());
+    CHECK(checkClip(clipOf({a, a})).issues.empty());
+}
+
+// ---- Follow-through ------------------------------------------------------------
+
+TEST_CASE("A side-on walker's shoulders and pelvis shift against each other; the head does not", "[rig][gait]") {
+    Image img(28, 34);
+    img.fillRect({10, 2, 7, 7}, kSkin);    // head
+    img.fillRect({16, 5, 2, 2}, kSkin);    // nose: faces right
+    img.fillRect({9, 9, 9, 11}, kCloth);   // body
+    img.fillRect({9, 20, 3, 10}, kB);      // far leg
+    img.fillRect({15, 20, 3, 10}, kA);     // near leg
+    img.fillRect({9, 30, 5, 2}, kSole1);   // far foot, toes right
+    img.fillRect({15, 30, 5, 2}, kSole2);  // near foot
+    Options o;
+    o.action = Action::Walk;
+    o.body = Body::Biped;
+    o.frames = 8;
+    auto clip = animate(img, o);
+    REQUIRE(clip);
+    const auto leftOf = [](const Image& f, int row, Rgba8 c) {
+        for (int x = 0; x < f.width(); ++x)
+            if (f.pixel(x, row) == c) return x;
+        return -1;
+    };
+    int headLeft = -1;
+    std::set<int> pelvisMoves;
+    for (const Image& f : clip.value().frames) {
+        int headTop = -1;
+        for (int y = 0; y < f.height() && headTop < 0; ++y)
+            if (leftOf(f, y, kSkin) >= 0) headTop = y;
+        REQUIRE(headTop >= 0);
+        // The head only moves up and down.
+        const int hx = leftOf(f, headTop, kSkin);
+        if (headLeft < 0) headLeft = hx;
+        CHECK(hx == headLeft);
+        // Rows 11 (shoulders) and 18 (pelvis) of the source, relative to the head.
+        const int shoulder = leftOf(f, headTop + 9, kCloth) - (headLeft - 1);
+        const int pelvis = leftOf(f, headTop + 16, kCloth) - (headLeft - 1);
+        CHECK(shoulder == -pelvis);
+        pelvisMoves.insert(pelvis);
+    }
+    // Both ways over the cycle, by at least a pixel (ADR humanoid test 4).
+    CHECK(*pelvisMoves.begin() <= -1);
+    CHECK(*pelvisMoves.rbegin() >= 1);
+}
+
+TEST_CASE("A flapping dragon's tail tip lags behind the middle of its tail", "[rig][flap]") {
+    Image img(90, 60);
+    img.fillRect({30, 30, 30, 14}, kCloth);   // body
+    img.fillRect({60, 22, 10, 12}, kSkin);    // head, on the right
+    img.fillRect({34, 44, 5, 10}, kCloth);    // legs
+    img.fillRect({52, 44, 5, 10}, kCloth);
+    img.fillRect({36, 6, 14, 24}, kA);        // wing
+    img.fillRect({6, 34, 24, 4}, kB);         // tail, thin, on the left
+    Mask wing(90, 60);
+    wing.fillRect({36, 6, 14, 24}, true);
+    Options o;
+    o.action = Action::Flap;
+    o.wingMask = wing;
+    auto clip = animate(img, o);
+    REQUIRE(clip);
+    const auto& fr = clip.value().frames;
+    REQUIRE(fr.size() == 8);
+    // The tail's top row in a column, relative to the head (which only rides
+    // the body's heave).
+    int tipX = 1 << 20;
+    for (const Image& f : fr)
+        for (int y = 0; y < f.height(); ++y)
+            for (int x = 0; x < f.width(); ++x)
+                if (f.pixel(x, y) == kB) tipX = std::min(tipX, x);
+    const auto waveAt = [&](int column) {
+        std::vector<double> v;
+        for (const Image& f : fr) {
+            int headTop = -1, top = -1;
+            for (int y = 0; y < f.height(); ++y)
+                for (int x = 0; x < f.width(); ++x) {
+                    if (headTop < 0 && f.pixel(x, y) == kSkin) headTop = y;
+                    if (top < 0 && x == column && f.pixel(x, y) == kB) top = y;
+                }
+            REQUIRE(top >= 0);
+            v.push_back(top - headTop);
+        }
+        return v;
+    };
+    // Each column's timing: the phase of its once-per-cycle wave, in frames.
+    const auto phaseOf = [](const std::vector<double>& v) {
+        double c = 0, s = 0;
+        for (std::size_t i = 0; i < v.size(); ++i) {
+            const double a = 2 * 3.14159265358979 * static_cast<double>(i) / static_cast<double>(v.size());
+            c += v[i] * std::cos(a);
+            s += v[i] * std::sin(a);
+        }
+        return std::atan2(s, c) * static_cast<double>(v.size()) / (2 * 3.14159265358979);
+    };
+    const auto tip = waveAt(tipX), middle = waveAt(tipX + 12);
+    double lag = phaseOf(tip) - phaseOf(middle);
+    while (lag < -4) lag += 8;
+    while (lag > 4) lag -= 8;
+    INFO("lag " << lag);
+    CHECK(lag >= 1.0);   // ADR dragon test 6
+    // The tip moves further than the middle.
+    CHECK(*std::max_element(tip.begin(), tip.end()) - *std::min_element(tip.begin(), tip.end()) >
+          *std::max_element(middle.begin(), middle.end()) - *std::min_element(middle.begin(), middle.end()));
+    // The tail keeps its pixels (it only shifts by whole pixels), except where
+    // the near wing, sweeping towards the tail, is drawn over it.
+    int checked = 0;
+    for (const Image& f : fr) {
+        // Only wing pixels on the rows the tail can be on can cover it.
+        int tailTop = f.height(), tailBottom = -1;
+        for (int y = 0; y < f.height(); ++y)
+            for (int x = tipX; x < tipX + 24; ++x)
+                if (f.pixel(x, y) == kB) {
+                    tailTop = std::min(tailTop, y);
+                    tailBottom = std::max(tailBottom, y);
+                }
+        bool wingOverTail = false;
+        for (int y = tailTop - 1; y <= tailBottom + 1; ++y)
+            for (int x = tipX; x < tipX + 24; ++x) wingOverTail = wingOverTail || f.pixel(x, y) == kA;
+        if (wingOverTail) continue;
+        ++checked;
+        CHECK(countColour(f, kB) == countColour(img, kB));
+    }
+    CHECK(checked >= 4);
 }

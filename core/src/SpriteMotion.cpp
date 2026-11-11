@@ -372,6 +372,7 @@ struct Part {
 struct RenderedClip {
     std::vector<Image> frames;   // each `box` sized
     IntRect box;                 // in sprite coordinates (may extend outside the sprite)
+    int depthPops = 0;
 };
 
 RenderedClip render(const Image& sprite, const Subject& subj, Body body, Action action, int frames, bool loops, double amount,
@@ -915,7 +916,7 @@ Result<std::vector<Clip>> animatePack(const Image& sprite, const std::vector<Act
         // Walks, runs and idles of bodies with legs: whole-pixel moves only.
         const detail::WingSpec wing{base.wingLine, base.wingFrom, base.wingTo, base.wingMask.isNull() ? nullptr : &base.wingMask};
         if (auto rig = detail::rigRender(sprite, subj, body, a, frames, amount, wing, base.swim)) {
-            rendered.push_back({std::move(rig->frames), rig->box});
+            rendered.push_back({std::move(rig->frames), rig->box, rig->depthPops});
             continue;
         }
         rendered.push_back(render(sprite, subj, body, a, frames, info.loops, amount, base.custom, base.wingLine, base.wingFrom, base.wingTo, base.wingMask));
@@ -928,6 +929,7 @@ Result<std::vector<Clip>> animatePack(const Image& sprite, const std::vector<Act
         c.name = info.key;
         c.loops = info.loops;
         c.body = body;
+        c.depthPops = rendered[i].depthPops;
         if (!subj.footBottoms.empty())
             c.footStagger = *std::max_element(subj.footBottoms.begin(), subj.footBottoms.end()) -
                             *std::min_element(subj.footBottoms.begin(), subj.footBottoms.end());
@@ -941,6 +943,30 @@ Result<std::vector<Clip>> animatePack(const Image& sprite, const std::vector<Act
     }
     return out;
 }
+
+namespace {
+
+// Whether `b` is the left-right mirror of `a` and that mirroring is a visible
+// flip. Frames that are equal are held poses, not flips. A symmetric sprite
+// stepping in place can also mirror between frames, but then only a small
+// part (the legs) differs, so at most a quarter of the pixels may be the same
+// in both for the pair to count.
+bool isMirrorFlip(const Image& a, const Image& b) {
+    if (a.width() != b.width() || a.height() != b.height()) return false;
+    auto same = [](Rgba8 p, Rgba8 q) { return (p.a == 0 && q.a == 0) || p == q; };
+    const int w = a.width(), h = a.height();
+    int opaque = 0, different = 0;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const Rgba8 p = a.pixel(x, y), q = b.pixel(x, y);
+            if (!same(p, b.pixel(w - 1 - x, y))) return false;
+            if (p.a != 0 || q.a != 0) ++opaque;
+            if (!same(p, q)) ++different;
+        }
+    return different * 4 > opaque;
+}
+
+} // namespace
 
 ClipCheck checkClip(const Clip& clip) {
     ClipCheck r;
@@ -982,6 +1008,18 @@ ClipCheck checkClip(const Clip& clip) {
                                    std::to_string(top.worstFrame) + "; it is hidden, squashed or cut off.");
         }
     }
+    // A frame that is the mirror of the one before it reads as the sprite
+    // flipping (ADR-ANIM-001, universal rule; anim_qa.py has the same check).
+    {
+        const std::size_t n = clip.frames.size();
+        const std::size_t pairs = clip.loops && n > 2 ? n : n - 1;
+        for (std::size_t i = 0; i < pairs; ++i)
+            r.mirrorFlips += isMirrorFlip(clip.frames[i], clip.frames[(i + 1) % n]) ? 1 : 0;
+        if (r.mirrorFlips > 0)
+            r.issues.push_back(std::to_string(r.mirrorFlips) + " frame(s) are a left-right mirror of the frame before; the sprite flips instead of moving.");
+    }
+    if (clip.depthPops > 0)
+        r.issues.push_back("Two overlapping parts swap depth " + std::to_string(clip.depthPops) + " time(s); one pops through the other.");
     // Flicker: pixels that change in one frame and change straight back.
     // A smooth cycle moves edges steadily; single-frame blips read as noise.
     if (clip.frames.size() >= 3) {

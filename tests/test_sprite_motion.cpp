@@ -440,9 +440,13 @@ TEST_CASE("The walk moves pixels, it never redraws them", "[motion][rig]") {
         auto clip = animate(src, o);
         REQUIRE(clip);
         for (const Image& f : clip.value().frames) {
-            // The head and torso are a whole-pixel copy in every frame.
+            // The head and each part of the torso are a whole-pixel copy in
+            // every frame (the shoulders, waist and pelvis shift against each
+            // other, ADR-ANIM-001 humanoid tests 2 and 4).
             CHECK(foundIntact(src, {9, 2, 9, 10}, f));
-            CHECK(foundIntact(src, {8, 14, 12, 10}, f));
+            CHECK(foundIntact(src, {8, 14, 12, 4}, f));
+            CHECK(foundIntact(src, {8, 18, 12, 4}, f));
+            CHECK(foundIntact(src, {8, 22, 12, 2}, f));
             // Each boot keeps its exact shape.
             CHECK(foundIntact(src, {9, 40, 5, 3}, f));
             CHECK(foundIntact(src, {15, 40, 5, 3}, f));

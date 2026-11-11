@@ -149,7 +149,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   The far wing is drawn behind the body and trails the near one, and the head is never covered. A
   fish keeps its length while it bends. A planted foot stays on its row and moves back at one
   speed, and the knee comes from two-bone IK. Sprites the rig cannot read fall back to the
-  previous renderers. The flap no longer has its own area limit in the clip checks.
+  previous renderers. The flap no longer has its own area limit in the clip checks. A side-on
+  biped's shoulders and pelvis shift against each other, and a dragon's tail waves with its tip
+  trailing. The clip checks also report frames that mirror the one before and parts that pop
+  through each other.
 - **Personal use — no licence key, trial or activation.** Saving, exporting and every write
   command work from the first start, with no time limit. Removed: Help › Licence…, the
   status-bar licence button, `acestudio-cli licence`, the `acestudio-licence` key tool, the

@@ -1,0 +1,41 @@
+{
+  "note": "Expected results for the golden sprites (ADR-ANIM-001 step 0). Every clip must pass checkClip with no issues and use only the sprite's colours. Limits are the values measured on 2026-11-10 with a small margin: maxAreaChange +0.03, minNeighbourIoU -0.05.",
+  "sprites": [
+    {
+      "file": "dragon128.png",
+      "clips": [
+        { "action": "flap", "frames": 8, "uniqueFrames": 8, "maxAreaChange": 0.16, "minNeighbourIoU": 0.59 },
+        { "action": "fly", "frames": 6, "uniqueFrames": 6, "maxAreaChange": 0.12, "minNeighbourIoU": 0.58 }
+      ]
+    },
+    {
+      "file": "fish57.png",
+      "body": "swimmer",
+      "clips": [
+        { "action": "idle", "frames": 12, "maxAreaChange": 0.05, "minNeighbourIoU": 0.83 },
+        { "action": "swim", "frames": 12, "maxAreaChange": 0.09, "minNeighbourIoU": 0.85 },
+        { "action": "dash", "frames": 5, "maxAreaChange": 0.09, "minNeighbourIoU": 0.69 }
+      ]
+    },
+    {
+      "file": "rogue64.png",
+      "clips": [
+        { "action": "walk", "frames": 8, "maxAreaChange": 0.05, "minNeighbourIoU": 0.89 },
+        { "action": "run", "frames": 8, "maxAreaChange": 0.06, "minNeighbourIoU": 0.78 },
+        { "action": "sprint", "frames": 6, "maxAreaChange": 0.05, "minNeighbourIoU": 0.76 }
+      ]
+    },
+    {
+      "file": "knight32.png",
+      "clips": [
+        { "action": "walk", "frames": 8, "maxAreaChange": 0.09, "minNeighbourIoU": 0.76 },
+        { "action": "run", "frames": 8, "maxAreaChange": 0.09, "minNeighbourIoU": 0.68 },
+        { "action": "sprint", "frames": 6, "maxAreaChange": 0.09, "minNeighbourIoU": 0.76 }
+      ]
+    }
+  ],
+  "fire": [
+    { "file": "campfire64.png", "style": "campfire", "minFrames": 8 },
+    { "file": "campfire64.png", "style": "raging", "minFrames": 8 }
+  ]
+}

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Partly implemented (2026-11-08, branch `agents/part-rig`): steps 2–5 without the schema change. See section 8. Schema 4 (step 1) is still proposed and needs approval from `acestudio-chief-architect`. |
+| Status | Partly implemented (2026-11-08, on main): steps 2–5 without the schema change. See section 8. Schema 4 (step 1) is still proposed and needs approval from `acestudio-chief-architect`. |
 | Deciders | `animation-director` (12), `rigging-engineer` (13), `acestudio-chief-architect`, `asset-pipeline-engineer` (format) |
 | Evidence | `docs/agents/AUDIT_2026-11-08-animation.md`, `docs/agents/audit-evidence/2026-11-08/` |
 | Supersedes | Nothing. Builds on `a8f1b3b` (whole-pixel rig), `0f15b26` (AI key poses) and `fa23f09` (sideways swim). |
@@ -195,15 +195,15 @@ Built without a schema change. The rig is rebuilt from the sprite each time a cl
 
 | Step | State | Where |
 |---|---|---|
-| 0 | Partly. `checkClip` uses one area limit (35 %) for every clip; the 8 % flap rule is gone. The top-region check skips roll, flap and fly. Golden fixtures `dragon128`, `fish57`, `rogue64` and `knight32` are in `tests/data/anim/` and are checked by `tests/test_part_rig.cpp`. Not done: the mirror check, the expected-verdict JSON and `campfire64`. | `SpriteMotion.cpp::checkClip` |
+| 0 | Partly. `checkClip` uses one area limit (35 %) for every clip; the 8 % flap rule is gone. The top-region check skips roll, flap and fly. `checkClip` reports a frame that mirrors the one before. Golden fixtures `dragon128`, `fish57`, `rogue64`, `knight32` and `campfire64` are in `tests/data/anim/`, with expected results in `expected.json`, and are checked by `tests/test_part_rig.cpp`. The campfire's expected results cover only colours, the top row, held frames and frame count, not the other fire tests of section 6. | `SpriteMotion.cpp::checkClip` |
 | 1 | Not done (schema 4). | – |
 | 2 | Procedural segmentation per species module: wings (wing line, colour growth, two-wing split by components, then erosion watershed, then column valley), fish (tail stalk, fins by opening), legs (thigh, shin, foot per leg). No GUI hint mask beyond the existing wing selection. | `RigFlight.cpp`, `RigSwim.cpp`, `RigGait.cpp` |
 | 3 | `inpaintHidden`: row and column closure under front parts, filled ring by ring, outline colour on the edge. Procedural only. | `PartRig.cpp` |
 | 4 | `renderPose`: per-pose z, whole-pixel rigid moves, RotSprite turns from an 8× Scale2x copy, column bends (`colDy`), curl (`bend`), skinning to the body, and a per-part floor row (`maxY`). | `PartRig.cpp` |
-| 5a | Two-bone IK legs; the planted foot moves back exactly `speed` px a frame; the hip drops to keep planted feet reachable; front views step in place; arms are rigid at the shoulder. Walk, run and sprint (≥ 4 frames); idle keeps the older rig. Not done: pelvis and shoulder counter-rotation. | `RigGait.cpp` |
-| 5b | Near and far wings as separate parts: the far wing behind the body, trailing (lag 0.045) and smaller (0.8); the near wing skinned into the back; the head end of the body drawn over the near wing; the body heaves against the beat. Flap and fly. Not done: tail chain lag and the membrane mesh; `keypose::assemble` is not refitted. `flapRender` stays as the fallback. | `RigFlight.cpp` |
+| 5a | Two-bone IK legs; the planted foot moves back exactly `speed` px a frame; the hip drops to keep planted feet reachable; front views step in place; arms are rigid at the shoulder. Walk, run and sprint (≥ 4 frames); idle keeps the older rig. A side-on biped's shoulder and pelvis bands shift against each other by whole pixels (not in front views, and not for four-legged bodies). | `RigGait.cpp` |
+| 5b | Near and far wings as separate parts: the far wing behind the body, trailing (lag 0.045) and smaller (0.8); the near wing skinned into the back; the head end of the body drawn over the near wing; the body heaves against the beat. Flap and fly. The tail (the thin end of the body away from the head) waves in whole-pixel columns, the tip 0.3 of a beat late. Not done: the membrane mesh; `keypose::assemble` is not refitted. `flapRender` stays as the fallback. | `RigFlight.cpp` |
 | 5c | Body bend by whole-pixel columns (length kept), the tail fin turning and foreshortened behind the stalk, fins paddling on their own phases. Idle, swim and dash. Not done: the turn clip (it needs views). `swimRender` stays as the fallback. | `RigSwim.cpp` |
-| 6 | `zPops` reports a depth swap while two parts overlap; it is not yet wired into `checkClip`. | `PartRig.cpp` |
+| 6 | `zPops` runs on every flap, fly, swim and gait clip, and `checkClip` reports the result. No module swaps depth today, so this guards future work. | `PartRig.cpp` |
 | 7 | Not done: CLI, MCP and Lua options, and the GUI part painter. They reach the rig through `animate()` already, with no rig options. | – |
 | 8 | This section, KNOWN_ISSUES and CHANGELOG. No re-audit on the PC yet. | – |
 
@@ -213,9 +213,9 @@ Measured with a local build (zig c++ and a Catch2 stand-in) on 2026-11-08. CI is
 - rogue64 and knight32: walk, run and sprint have no issues. The rogue run had 2 floating frames, from a turned shin poking below its foot; `maxY` fixed it.
 
 Acceptance tests of section 6 that tests now cover:
-- Dragon 2 (head in every frame), 3 (the far wing moves every frame and goes behind the body), 5 (the wing keeps ≥ 70 % of its pixels and ≥ 3 rows) and 7 (8 unique frames).
+- Dragon 6, tail lag only (the tip trails the middle of the tail by ≥ 1 frame), 2 (head in every frame), 3 (the far wing moves every frame and goes behind the body), 5 (the wing keeps ≥ 70 % of its pixels and ≥ 3 rows) and 7 (8 unique frames).
 - Fish 1 in a weaker form (bounding width, not spine arc length) and fish 2 in part (the tail moves more than the head).
-- Humanoid 1 (the planted foot stays on its row at one speed), 2 (bone lengths, through the IK test) and 6 (front view).
+- Humanoid 1 (the planted foot stays on its row at one speed), 2 (bone lengths through the IK test, and the head and torso parts copied whole), 4 (side views only) and 6 (front view).
 
 The rest are not tested yet.
 

@@ -180,12 +180,11 @@ EULA are no longer needed since 0.10.0.)
 - Remote GPU design.
 
 Next steps:
-- ADR-ANIM-001 part rig. Built on branch `agents/part-rig` and tested locally: segmentation, hidden-pixel fill, the part renderer, and the flight, swim and gait modules. Still to do:
+- ADR-ANIM-001 part rig. Built, on main and CI-verified: segmentation, hidden-pixel fill, the part renderer, and the flight, swim and gait modules. Still to do:
   - schema 4;
   - the GUI part painter;
   - CLI, MCP and Lua options;
   - the fish turn clip;
-  - pelvis counter-rotation and tail lag;
   - a re-audit on the PC.
 - The remote GPU gateway prototype, local only and free.
 - The GPU benchmark on the test PC.

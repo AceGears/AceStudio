@@ -12,6 +12,9 @@
 //  - The body is lowest just after contact and highest at the up pose; it
 //    also sinks whenever a planted leg could not reach the ground otherwise,
 //    so a straight-legged sprite still plants both feet in the contact pose.
+//  - Seen from the side, a biped's pelvis and shoulders shift against each
+//    other by whole pixels, the pelvis towards the near leg's stride; the
+//    head only moves with the body.
 //  - Arms (and anything they hold) are rigid parts that swing from the
 //    shoulder against the legs; a shield or sword is turned, never sheared.
 //  - Seen from the front, the legs step in place: the foot lifts, the thigh
@@ -46,6 +49,7 @@ struct LegRig {
     double phase = 0;
     int ground = 0;              // the row its foot stands on (lowest row of the foot)
     bool hind = false;           // a four-legged animal's hind leg: the hock bends back
+    bool nearLeg = false;
 };
 
 } // namespace
@@ -99,6 +103,27 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
     rig::Rig rig;
     if (hasGround) rig::addPart(rig, sprite, "ground", ground, {bb.x + bb.w / 2.0, static_cast<double>(subj.groundTop)}, -10);
     const int bodyPart = rig::addPart(rig, sprite, "body", bodyMask, {bb.x + bb.w / 2.0, static_cast<double>(subj.legTop)}, 0);
+    // A side-on biped's torso twists: the shoulder band and the pelvis band
+    // are parts of their own (the head and waist stay in "body").
+    const int bodyRows = subj.legTop - bb.y;
+    const bool twist = body == Body::Biped && !front && bodyRows >= 8;
+    int shoulderPart = -1, pelvisPart = -1;
+    if (twist) {
+        const int shoulderTop = bb.y + iround(bodyRows * 0.45);
+        const int span = subj.legTop - shoulderTop;
+        const int shoulderEnd = shoulderTop + std::max(1, iround(span * 0.4));
+        const int pelvisTop = subj.legTop - std::max(1, iround(span * 0.3));
+        Mask shoulders(sw, sh), pelvis(sw, sh);
+        for (int y = shoulderTop; y < subj.legTop; ++y)
+            for (int x = bb.x; x < bb.x + bb.w; ++x) {
+                if (!bodyMask.get(x, y)) continue;
+                if (y < shoulderEnd) shoulders.set(x, y, true);
+                else if (y >= pelvisTop) pelvis.set(x, y, true);
+            }
+        const rig::Vec pivot{bb.x + bb.w / 2.0, static_cast<double>(subj.legTop)};
+        shoulderPart = rig::addPart(rig, sprite, "shoulders", shoulders, pivot, 0);
+        pelvisPart = rig::addPart(rig, sprite, "pelvis", pelvis, pivot, 0);
+    }
     // The near leg (more of it drawn) in front of the far one.
     std::vector<int> legArea(nLegs);
     for (std::size_t i = 0; i < nLegs; ++i) legArea[i] = rig::count(legMask[i]);
@@ -123,6 +148,7 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
         int nearer = 0;
         for (std::size_t j = 0; j < nLegs; ++j) nearer += legArea[j] > legArea[i] || (legArea[j] == legArea[i] && j > i) ? 1 : 0;
         const bool nearLeg = nearer < static_cast<int>(nLegs) / 2;
+        L.nearLeg = nearLeg;
         const int z = nearLeg ? -2 : -4;
         Mask thigh(sw, sh), shin(sw, sh), foot(sw, sh);
         for (int y = hip; y <= bottom; ++y)
@@ -154,6 +180,7 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
     const int liftMax = std::max(1, iround(legLen * (run ? 0.35 : 0.22) * amount));
     const int bob = std::max(1, iround(bb.h / 48.0 * amount));
     const double armSwing = (run ? 0.5 : 0.3) * amount;
+    const int twistAmp = twist && stride > 0 ? std::max(1, iround(bb.h / 48.0 * amount)) : 0;
 
     struct LegPose {
         double fx = 0;   // foot offset from under the hip, px (+ = forward)
@@ -180,6 +207,7 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
     const int m = stride + liftMax + bob + legLen + 6;
     const IntRect big{bb.x - m, bb.y - m, bb.w + 2 * m, bb.h + 2 * m};
     std::vector<Image> frameImgs;
+    std::vector<std::vector<rig::PartPose>> allPoses;
     for (int f = 0; f < frames; ++f) {
         const double t = static_cast<double>(f) / frames;
         std::vector<rig::PartPose> pose = rig.rest();
@@ -190,20 +218,37 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
         // ... and low enough for every planted foot to reach the ground.
         std::vector<LegPose> lp;
         for (const LegRig& L : legs) lp.push_back(legPose(L, f));
+        // The pelvis goes with the near leg's stride, the shoulders against it.
+        int pelvisDx = 0;
+        if (twistAmp > 0)
+            for (std::size_t i = 0; i < legs.size(); ++i)
+                if (legs[i].nearLeg) {
+                    pelvisDx = dir * iround(twistAmp * std::clamp(lp[i].fx * dir / (stride / 2.0), -1.0, 1.0));
+                    break;
+                }
+        const int shoulderDx = -pelvisDx;
         for (std::size_t i = 0; i < legs.size(); ++i) {
             if (!lp[i].planted || front) continue;
             const LegRig& L = legs[i];
             const double reach = 0.97 * (L.l1 + L.l2);
-            const double dx = L.ankle.x + lp[i].fx - L.hip.x;
+            const double dx = L.ankle.x + lp[i].fx - (L.hip.x + pelvisDx);
             const double vertical = std::sqrt(std::max(0.0, reach * reach - dx * dx));
             const double need = (L.ankle.y - L.hip.y) - vertical;
             dy = std::max(dy, static_cast<int>(std::ceil(need - 1e-9)));
         }
         pose[static_cast<std::size_t>(bodyPart)].dy = dy;
+        if (shoulderPart >= 0) {
+            pose[static_cast<std::size_t>(shoulderPart)].dy = dy;
+            pose[static_cast<std::size_t>(shoulderPart)].dx = shoulderDx;
+        }
+        if (pelvisPart >= 0) {
+            pose[static_cast<std::size_t>(pelvisPart)].dy = dy;
+            pose[static_cast<std::size_t>(pelvisPart)].dx = pelvisDx;
+        }
         for (std::size_t i = 0; i < legs.size(); ++i) {
             const LegRig& L = legs[i];
             const LegPose& p = lp[i];
-            const rig::Vec hip{L.hip.x, L.hip.y + dy};
+            const rig::Vec hip{L.hip.x + pelvisDx, L.hip.y + dy};
             rig::PartPose& thigh = pose[static_cast<std::size_t>(L.thigh)];
             rig::PartPose& shin = pose[static_cast<std::size_t>(L.shin)];
             rig::PartPose& foot = pose[static_cast<std::size_t>(L.foot)];
@@ -251,9 +296,11 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
                 q.dy = dy - iround(0.5 * lp[opposite].lift);
                 continue;
             }
+            q.dx = shoulderDx;
             const double forward = stride > 0 ? lp[opposite].fx * dir / (stride / 2.0) : 0.0;
             q.angle = -dir * armSwing * std::clamp(forward, -1.0, 1.0);
         }
+        allPoses.push_back(pose);
         frameImgs.push_back(rig::renderPose(rig, pose, big));
     }
     int x0 = big.w, y0 = big.h, x1 = -1, y1 = -1;
@@ -267,6 +314,7 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
     }
     if (x1 < 0) return std::nullopt;
     RigClip out;
+    out.depthPops = static_cast<int>(rig::zPops(rig, allPoses, big).size());
     out.box = {big.x + x0, big.y + y0, x1 - x0, y1 - y0};
     for (const Image& im : frameImgs) out.frames.push_back(im.copy({x0, y0, x1 - x0, y1 - y0}));
     return out;

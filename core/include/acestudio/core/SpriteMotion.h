@@ -120,6 +120,9 @@ struct Clip {
     // Rows between the lowest and the highest standing foot (three-quarter
     // views): the ground check allows the lowest row to rise by this much.
     int footStagger = 0;
+    // Part rig: times two overlapping parts swapped depth from one frame to
+    // the next (one pops through the other). 0 for clips not made by the rig.
+    int depthPops = 0;
 };
 
 // Animates a sprite (transparent background expected). Errors when the
@@ -143,8 +146,9 @@ bool spriteFacesLeft(const Image& sprite);
 Image rotateSprite(const Image& sprite, double radians);
 
 // Automatic checks of a clip: pixel-count drift (parts lost or doubled),
-// frame-to-frame jumps, the loop seam, one-frame flicker, and feet that
-// leave the ground during a walk.
+// frame-to-frame jumps, the loop seam, one-frame flicker, mirrored frames,
+// parts popping through each other, and feet that leave the ground during a
+// walk.
 struct ClipCheck {
     double maxAreaChange = 0;   // largest relative change of opaque area vs frame 0
     double minNeighbourIoU = 1; // lowest silhouette overlap of consecutive frames
@@ -155,6 +159,9 @@ struct ClipCheck {
     // Walk, run and idle cycles of bodies with feet: frames in which no foot
     // touches the ground line.
     int floatingFrames = 0;
+    // Consecutive frames that are left-right mirrors of each other: the
+    // sprite flips instead of moving.
+    int mirrorFlips = 0;
     std::vector<std::string> issues;
 };
 ClipCheck checkClip(const Clip& clip);
