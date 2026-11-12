@@ -72,6 +72,11 @@ const char* kUsageText =
     "          [--body biped|quadruped|blob|flyer|object|swimmer] [--face left] [--wing-line 0.45] [--wing-span 0-1]\n"
     "          [--swim auto|anguilliform|subcarangiform|carangiform|thunniform] (water creatures are also told by name)\n"
     "                                  Animate a sprite without AI: one strip PNG + JSON per action\n"
+    "  cycle <pose1.png> <pose2.png> [...] --out <folder> [--name walk] [--view auto|front|side]\n"
+    "        [--order 1,2,1,3] [--master N] [--ms 150] [--no-bob]\n"
+    "                                  A walk from drawn poses of one character facing one way: one pose's head\n"
+    "                                  and body in every frame, each pose's legs under it, in step order.\n"
+    "                                  Strip PNG + GIF + JSON\n"
     "  effect <sprite.png> --out <folder> [--effect auto|fire|water|sway|flag|smoke|pulse] [--style campfire|torch|furnace|raging|magic] [--frames 8]\n"
     "         [--ms 90] [--amount 1] [--seed 1]\n"
     "                                  Procedural looping effect (palette kept): strip PNG + GIF\n"
@@ -114,7 +119,7 @@ std::optional<Args> parseArgs(int argc, char** argv, std::string& err) {
         if (s == "--json") a.json = true;
         else if (s == "--force") a.force = true;
         else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot" || s == "--yes" || s == "--cpu" || s == "--rotate" ||
-                 s == "--no-outline" || s == "--no-merge" || s == "--square" || s == "--keep-empty" ||
+                 s == "--no-outline" || s == "--no-merge" || s == "--square" || s == "--keep-empty" || s == "--no-bob" ||
                  s == "--remove" || s == "--dry-run" || s == "--global" || s == "--lighting" || s == "--collision" || s == "--show-grid")
             a.flags.insert(s.substr(2));
         else if (s == "-h" || s == "--help") { a.positional = {"help"}; return a; }
@@ -332,6 +337,7 @@ int main(int argc, char** argv) {
         if (cmd == "slice") return acestudio::cli::cmdSlice(*args, out);
         if (cmd == "uikit") return acestudio::cli::cmdUiKit(*args, out);
         if (cmd == "animate") return acestudio::cli::cmdAnimate(*args, out);
+        if (cmd == "cycle") return acestudio::cli::cmdCycle(*args, out);
         if (cmd == "effect") return acestudio::cli::cmdEffect(*args, out);
         if (cmd == "connect") return acestudio::cli::cmdConnect(*args, out);
         if (cmd == "map") return acestudio::cli::cmdMap(*args, out);

@@ -58,6 +58,14 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   rig lands (ADR-ANIM-001).
 
 ### Added
+- **A walk from drawn poses** (`acestudio-cli cycle pose1.png pose2.png ... --out folder`). A sheet of
+  drawn walk poses usually cannot be played as it is: every pose is a drawing of its own. `cycle`
+  uses one pose's head and upper body in every frame, puts each pose's drawn legs under it on one
+  ground line, and orders the poses into stand, step, stand, other step. It writes a strip PNG, a
+  GIF and a JSON file. Front and side views are told apart; `--view`, `--order` and `--master`
+  override what it works out. Not yet in the app's dialogs.
+- The clip checks report a walk whose legs only slide (each foot the same drawing in every frame,
+  on figures of 96 px and more) and a front-view walk that steps with the same leg twice.
 - Development: the AceStudio agent organization for Claude Code (`.claude/`, `CLAUDE.md`,
   `docs/agents/`): 28 specialist agents, 8 skills, a secret-blocking write hook.
 

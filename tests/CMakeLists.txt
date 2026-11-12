@@ -38,6 +38,7 @@ add_executable(acestudio_core_tests
     test_sprite_motion.cpp
     test_pixel_rig.cpp
     test_part_rig.cpp
+    test_cycle.cpp
     test_world_map.cpp
     test_style_profile.cpp
     test_app_bridge.cpp
