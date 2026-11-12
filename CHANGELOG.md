@@ -5,6 +5,11 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 ## [0.10.0] — 2026-11-01 — Premium AI game asset studio (unreleased)
 
 ### Fixed
+- Animate Sprite: a big-headed side-view character with short legs was read as an object and its
+  walk floated. Its legs are now found (the split between the legs may start above a staggered or
+  treaded sole, and a figure taller than wide needs it for a ninth of its height, not a sixth).
+  Legs shorter than a quarter of the height walk with each boot as one rigid piece that slides and
+  lifts, instead of being cut at a knee, which tore the boot.
 - Scrolling a page no longer changes a drop-down, number box or slider under the pointer.
 - Clean 32 px sprites were scored 0 as "noise".
 - Model downloads refuse non-HTTPS URLs (except to this machine) and no longer send an access

@@ -510,3 +510,93 @@ TEST_CASE("A flapping dragon's tail tip lags behind the middle of its tail", "[r
     }
     CHECK(checked >= 4);
 }
+
+// ---- Short legs ----------------------------------------------------------------
+
+namespace {
+
+// A big-headed side-view character facing left, as a generated hero on the
+// test PC: the head is half the height, the legs are a seventh of it and
+// mostly boot, the back foot stands 3 rows higher, and the front sole has a
+// two-bump tread in its lowest row.
+Image chibiSide() {
+    Image img(64, 100);
+    img.fillRect({10, 2, 44, 46}, kSkin);     // head
+    img.fillRect({16, 48, 34, 32}, kCloth);   // body, down to the hem at row 80
+    img.fillRect({14, 80, 16, 8}, kInk);      // front leg: trousers
+    img.fillRect({10, 88, 20, 8}, kSole1);    // front boot, toes to the left
+    img.fillRect({36, 80, 14, 8}, kInk);      // back leg: trousers
+    img.fillRect({32, 88, 18, 5}, kSole2);    // back boot, ends 3 rows higher
+    img.fillRect({12, 96, 4, 1}, kSole1);     // tread: two bumps under the front sole
+    img.fillRect({22, 96, 4, 1}, kSole1);
+    return img;
+}
+
+} // namespace
+
+TEST_CASE("A big-headed side view with short legs is a biped", "[rig][gait]") {
+    const Subject s = analyzeSubject(chibiSide());
+    CHECK(s.body == Body::Biped);
+    REQUIRE(s.feet.size() == 2);
+    CHECK_FALSE(s.frontView);
+    CHECK(s.legTop >= 76);
+    CHECK(s.legTop <= 82);
+    CHECK(s.facing == -1);
+    // A fish's belly and tail fins still are not legs (split for 2 rows).
+    Image fish(60, 24);
+    fish.fillRect({4, 2, 52, 18}, kB);
+    fish.fillRect({10, 20, 8, 2}, kB);
+    fish.fillRect({40, 20, 8, 2}, kB);
+    CHECK(analyzeSubject(fish).feet.size() < 2);
+}
+
+TEST_CASE("Short legs walk with each boot in one piece", "[rig][gait]") {
+    const Image img = chibiSide();
+    Options o;
+    o.action = Action::Walk;
+    o.frames = 8;
+    auto clip = animate(img, o);
+    REQUIRE(clip);
+    const auto& fr = clip.value().frames;
+    REQUIRE(fr.size() == 8);
+    // Each boot's box in a frame: every pixel of it is still there (the back
+    // boot can be partly behind the front one), and it keeps its shape.
+    const auto box = [](const Image& f, Rgba8 c) {
+        int x0 = 1 << 20, y0 = 1 << 20, x1 = -1, y1 = -1;
+        for (int y = 0; y < f.height(); ++y)
+            for (int x = 0; x < f.width(); ++x)
+                if (f.pixel(x, y) == c) {
+                    x0 = std::min(x0, x);
+                    y0 = std::min(y0, y);
+                    x1 = std::max(x1, x);
+                    y1 = std::max(y1, y);
+                }
+        return IntRect{x0, y0, x1 - x0 + 1, y1 - y0 + 1};
+    };
+    std::set<int> frontX;
+    int lifted = 0;
+    int ground = 0;
+    for (const Image& f : fr) ground = std::max(ground, box(f, kSole1).y + box(f, kSole1).h);
+    for (std::size_t i = 0; i < fr.size(); ++i) {
+        INFO("frame " << i);
+        // The front boot keeps its shape: 20 wide, at most its 9 rows, and
+        // nearly all its pixels (the sinking hem may cover its top rows).
+        CHECK(countColour(fr[i], kSole1) * 10 >= countColour(img, kSole1) * 7);
+        const IntRect b = box(fr[i], kSole1);
+        UNSCOPED_INFO("front boot " << b.x << "," << b.y << " " << b.w << "x" << b.h);
+        CHECK(b.w == 20);
+        CHECK(b.h <= 9);
+        frontX.insert(b.x);
+        lifted += b.y + b.h < ground ? 1 : 0;
+        // The back boot is not stretched or turned either.
+        const IntRect k = box(fr[i], kSole2);
+        CHECK(k.w <= 18);
+        CHECK(k.h <= 5);
+        for (auto c : colours(fr[i])) CHECK(colours(img).count(c) == 1);
+    }
+    CHECK(frontX.size() >= 4);   // it travels
+    CHECK(lifted >= 2);          // and lifts on the way forward
+    const ClipCheck chk = checkClip(clip.value());
+    for (const auto& i : chk.issues) UNSCOPED_INFO(i);
+    CHECK(chk.issues.empty());
+}
