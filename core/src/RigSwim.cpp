@@ -186,6 +186,7 @@ std::optional<RigClip> swimRigRender(const Image& sprite, const Subject& subj, A
     const rig::Part& bodyP = rig.parts[static_cast<std::size_t>(body)];
     const IntRect pb{bodyP.hiBox.x + 1, bodyP.hiBox.y + 1, bodyP.hiBox.w - 2, bodyP.hiBox.h - 2};
     std::vector<Image> frameImgs;
+    std::vector<std::vector<rig::PartPose>> allPoses;
     for (int f = 0; f < frames; ++f) {
         const double t = static_cast<double>(f) / frames;
         std::vector<rig::PartPose> pose = rig.rest();
@@ -240,6 +241,7 @@ std::optional<RigClip> swimRigRender(const Image& sprite, const Subject& subj, A
             const double finAmp = (fn.top ? 0.08 : 0.16) * amount * (idle ? 1.2 : 1.0);
             fq.angle = finAmp * std::sin(finPhase) * (fn.top ? -dir : dir);
         }
+        allPoses.push_back(pose);
         frameImgs.push_back(rig::renderPose(rig, pose, big));
     }
     int x0 = big.w, y0 = big.h, x1 = -1, y1 = -1;
@@ -253,6 +255,7 @@ std::optional<RigClip> swimRigRender(const Image& sprite, const Subject& subj, A
     }
     if (x1 < 0) return std::nullopt;
     RigClip out;
+    out.depthPops = static_cast<int>(rig::zPops(rig, allPoses, big).size());
     out.box = {big.x + x0, big.y + y0, x1 - x0, y1 - y0};
     for (const Image& im : frameImgs) out.frames.push_back(im.copy({x0, y0, x1 - x0, y1 - y0}));
     return out;

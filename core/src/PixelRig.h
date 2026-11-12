@@ -31,6 +31,7 @@ namespace acestudio::motion::detail {
 struct RigClip {
     std::vector<Image> frames;   // each `box` sized
     IntRect box;                 // in sprite coordinates
+    int depthPops = 0;           // see Clip::depthPops
 };
 
 // The wings for a flap (see Options): above `line` (fraction of the height)

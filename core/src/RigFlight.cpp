@@ -12,7 +12,9 @@
 //    than the arm, trailing it on the downstroke and folding in on the
 //    recovery, so the tip draws a loop instead of a rigid paddle. The curl is
 //    one smooth deformation of the wing part, so no seam opens at the wrist;
-//  - fast downstroke, slow recovery; the body rises as the wings push down.
+//  - fast downstroke, slow recovery; the body rises as the wings push down;
+//  - the tail (the thin end of the body away from the head) waves in whole
+//    pixels, each column later than the one before it, so the tip lags the root.
 // Pixels are only moved or turned with RotSprite sampling (PartRig.h).
 
 #include "RigModules.h"
@@ -402,7 +404,37 @@ std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Ac
     for (const WingCut& c : cuts) reach = std::max(reach, c.reach);
     const int m = static_cast<int>(std::ceil(reach)) + lift + 4;
     const IntRect big{bb.x - m, bb.y - m, bb.w + 2 * m, bb.h + 2 * m};
+    // The tail: columns of the body at the end away from the head, from its
+    // tip until the body gets thick (half its greatest depth). Listed root
+    // first. None when the head side is unknown or the end is too short.
+    std::vector<int> tailColumns;
+    if (headSide != 0) {
+        const Mask& own = rig.parts[static_cast<std::size_t>(bodyPart)].own;
+        const IntRect ob = rig::bounds(own);
+        std::map<int, int> depth;
+        for (int x = ob.x; x < ob.x + ob.w; ++x) {
+            int n = 0;
+            for (int y = ob.y; y < ob.y + ob.h; ++y) n += own.get(x, y) ? 1 : 0;
+            depth[x] = n;
+        }
+        // Measured on the whole body: the head end is a part of its own, so
+        // this part alone may be little more than the tail.
+        int deepest = 0;
+        for (int x = bb.x; x < bb.x + bb.w; ++x) {
+            int n = 0;
+            for (int y = bb.y; y < bb.y + bb.h; ++y) n += bodyOnly.get(x, y) ? 1 : 0;
+            deepest = std::max(deepest, n);
+        }
+        const int tip = headSide > 0 ? ob.x : ob.x + ob.w - 1;
+        for (int x = tip; x >= ob.x && x < ob.x + ob.w && (x + 0.5 - bodyCx) * headSide < 0; x += headSide) {
+            if (depth[x] * 2 >= deepest) break;
+            tailColumns.insert(tailColumns.begin(), x);
+        }
+        if (tailColumns.size() < 4) tailColumns.clear();
+    }
+    const int tailAmp = std::max(1, iround(static_cast<double>(tailColumns.size()) * 0.15 * amount));
     std::vector<Image> frameImgs;
+    std::vector<std::vector<rig::PartPose>> allPoses;
     for (int f = 0; f < frames; ++f) {
         const double t = static_cast<double>(f) / frames;
         std::vector<rig::PartPose> pose = rig.rest();
@@ -412,6 +444,23 @@ std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Ac
         const int dy = -iround(lift * smoothstep((low - 0.2) / 0.6)) + iround(bob * lift);
         pose[static_cast<std::size_t>(bodyPart)].dy = dy;
         if (chestPart >= 0) pose[static_cast<std::size_t>(chestPart)].dy = dy;
+        if (!tailColumns.empty()) {
+            // A wave running from the root to the tip, 0.3 of a beat late at
+            // the tip, growing along the tail; neighbours differ by at most a
+            // pixel so the tail stays one piece.
+            const rig::Part& bp = rig.parts[static_cast<std::size_t>(bodyPart)];
+            const int left = bp.hiBox.x + 1;
+            std::vector<int> column(static_cast<std::size_t>(std::max(0, bp.hiBox.w - 2)), 0);
+            int previous = 0;
+            for (std::size_t i = 0; i < tailColumns.size(); ++i) {
+                const double u = static_cast<double>(i + 1) / static_cast<double>(tailColumns.size());
+                const int wanted = iround(tailAmp * u * std::sin(2 * kPi * (t - 0.3 * u)));
+                previous = std::clamp(wanted, previous - 1, previous + 1);
+                const int k = tailColumns[i] - left;
+                if (k >= 0 && k < static_cast<int>(column.size())) column[static_cast<std::size_t>(k)] = previous;
+            }
+            pose[static_cast<std::size_t>(bodyPart)].colDy = std::move(column);
+        }
         for (const WingParts& w : wp) {
             const double lag = w.nearWing ? 0.0 : farLag;
             const double scale = w.nearWing ? 1.0 : 0.8;
@@ -434,6 +483,7 @@ std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Ac
             // The far wing is foreshortened across the stroke (seen at an angle).
             if (!w.nearWing) q.sx = 1.0 - 0.15 * down;
         }
+        allPoses.push_back(pose);
         frameImgs.push_back(rig::renderPose(rig, pose, big));
     }
     // Crop to the area used by any frame.
@@ -448,6 +498,7 @@ std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Ac
     }
     if (x1 < 0) return std::nullopt;
     RigClip out;
+    out.depthPops = static_cast<int>(rig::zPops(rig, allPoses, big).size());
     out.box = {big.x + x0, big.y + y0, x1 - x0, y1 - y0};
     for (const Image& im : frameImgs) out.frames.push_back(im.copy({x0, y0, x1 - x0, y1 - y0}));
     return out;

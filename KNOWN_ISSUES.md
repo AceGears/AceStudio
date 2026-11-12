@@ -228,7 +228,7 @@ or is a case that has not been run yet.
   - A three-quarter stance (the far foot a row or two higher) is a biped; each foot keeps its
     own ground line. First seen on a generated 64 px rogue (benchmark run 1), which had
     rocked as an object. Under a long cloak a few hem pixels move with the legs.
-  - **Part rig (ADR-ANIM-001, branch `agents/part-rig`):** flap, fly, swim, dash, walk, run and
+  - **Part rig (ADR-ANIM-001):** flap, fly, swim, dash, walk, run and
     sprint now cut the sprite into parts that move and turn on their own. Implemented and tested
     with a local build on synthetic sprites and four golden sprites (dragon, fish, rogue, knight).
     Not yet seen in the app on the PC.
@@ -239,8 +239,8 @@ or is a case that has not been run yet.
     - Fish: the body bends without losing length, the tail fin beats and foreshortens, and the
       fins paddle. There is still no turn clip (it needs other views).
     - Legs: each leg has a thigh, shin and foot, with the knee placed by IK. The planted foot
-      stays on its row and moves back at one speed. There is no pelvis or shoulder
-      counter-rotation yet, and idle uses the older rig.
+      stays on its row and moves back at one speed. Side-on bipeds twist at the shoulders and pelvis by a pixel or
+      so (front views and four-legged bodies do not), and idle uses the older rig.
     - Nothing of the rig is saved in the project (no schema change), and there is no part painter yet.
     - Older note, from before the part rig: on a generated HD dragon (test PC), the old default
       span folded the head and neck in with the wings.
