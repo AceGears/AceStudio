@@ -1,5 +1,5 @@
 {
-  "note": "Expected results for the golden sprites (ADR-ANIM-001 step 0). Every clip must pass checkClip with no issues and use only the sprite's colours. Limits are the values measured on 2026-11-10 with a small margin: maxAreaChange +0.03, minNeighbourIoU -0.05.",
+  "note": "Expected results for the golden sprites (ADR-ANIM-001 step 0). Every clip must pass checkClip with no issues and use only the sprite's colours. Limits are the values measured on 2026-11-10 (the rogue on 2026-11-11, with the short-leg walk) with a small margin: maxAreaChange +0.03, minNeighbourIoU -0.05.",
   "sprites": [
     {
       "file": "dragon128.png",
@@ -20,9 +20,9 @@
     {
       "file": "rogue64.png",
       "clips": [
-        { "action": "walk", "frames": 8, "maxAreaChange": 0.05, "minNeighbourIoU": 0.89 },
-        { "action": "run", "frames": 8, "maxAreaChange": 0.06, "minNeighbourIoU": 0.78 },
-        { "action": "sprint", "frames": 6, "maxAreaChange": 0.05, "minNeighbourIoU": 0.76 }
+        { "action": "walk", "frames": 8, "maxAreaChange": 0.05, "minNeighbourIoU": 0.84 },
+        { "action": "run", "frames": 8, "maxAreaChange": 0.07, "minNeighbourIoU": 0.76 },
+        { "action": "sprint", "frames": 6, "maxAreaChange": 0.06, "minNeighbourIoU": 0.74 }
       ]
     },
     {

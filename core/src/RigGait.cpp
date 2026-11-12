@@ -17,6 +17,10 @@
 //    head only moves with the body.
 //  - Arms (and anything they hold) are rigid parts that swing from the
 //    shoulder against the legs; a shield or sword is turned, never sheared.
+//  - Short legs (under a quarter of the height: a big-headed character whose
+//    legs are mostly boot) have no room for a knee. Each boot is one rigid
+//    piece that slides and lifts; the short piece above it stretches between
+//    the hip and the boot. Cutting such a leg at a knee tears the boot.
 //  - Seen from the front, the legs step in place: the foot lifts, the thigh
 //    foreshortens as the knee comes towards the viewer; nothing crosses.
 // The legs are drawn behind the body (a coat or cloak hangs over them), the
@@ -128,13 +132,16 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
     std::vector<int> legArea(nLegs);
     for (std::size_t i = 0; i < nLegs; ++i) legArea[i] = rig::count(legMask[i]);
     std::vector<LegRig> legs(nLegs);
+    const bool stubby = !front && body == Body::Biped && (subj.footRow - subj.legTop + 1) * 4 < bb.h;
     for (std::size_t i = 0; i < nLegs; ++i) {
         LegRig& L = legs[i];
         const int hip = subj.legTop;
         const int bottom = i < subj.footBottoms.size() ? subj.footBottoms[i] : subj.footRow;
         const int len = bottom - hip + 1;
-        const int footTop = bottom - std::max(1, iround(len * 0.22)) + 1;
-        const int knee = hip + std::max(1, (footTop - hip) / 2);
+        // Short legs: the boot is everything below the top third, and there
+        // is no shin part.
+        const int footTop = stubby ? hip + std::max(1, iround(len * 0.3)) : bottom - std::max(1, iround(len * 0.22)) + 1;
+        const int knee = stubby ? footTop : hip + std::max(1, (footTop - hip) / 2);
         const double fx = (subj.feet[i].first + subj.feet[i].second + 1) / 2.0;
         L.hip = {midX(legMask[i], hip, fx), static_cast<double>(hip)};
         L.knee = {midX(legMask[i], knee, fx), static_cast<double>(knee)};
@@ -228,7 +235,7 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
                 }
         const int shoulderDx = -pelvisDx;
         for (std::size_t i = 0; i < legs.size(); ++i) {
-            if (!lp[i].planted || front) continue;
+            if (!lp[i].planted || front || stubby) continue;
             const LegRig& L = legs[i];
             const double reach = 0.97 * (L.l1 + L.l2);
             const double dx = L.ankle.x + lp[i].fx - (L.hip.x + pelvisDx);
@@ -262,6 +269,19 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
                 thigh.sy = std::max(0.35, (thighRows - dy - lift) / thighRows);
                 shin.dy = -lift;
                 foot.dy = -lift;
+                continue;
+            }
+            if (stubby) {
+                // The boot slides and lifts as one piece; the piece above it
+                // follows halfway and stretches from the hip to the boot.
+                const double rows = std::max(1.0, L.ankle.y - L.hip.y);
+                const int footDy = p.planted ? 0 : -p.lift;
+                foot.dx = p.fx;
+                foot.dy = footDy;
+                thigh.dx = iround(p.fx / 2.0);
+                thigh.dy = dy;
+                thigh.sy = std::clamp((rows + footDy - dy) / rows, 0.35, 2.0);
+                thigh.maxY = L.ground;
                 continue;
             }
             // The foot: where it is drawn plus the cycle's offset; planted

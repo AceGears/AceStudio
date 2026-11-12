@@ -674,30 +674,34 @@ Subject analyzeSubject(const Image& sprite) {
         for (int x = 0; x < bb.w; ++x)
             if (sprite.pixel(bb.x + x, y).a > 0) cols[static_cast<std::size_t>(x)] = 1;
     for (auto [x0, x1] : columnRuns(cols, std::max(2, bb.w / 12))) s.feet.push_back({bb.x + x0, bb.x + x1});
+    int splitTop = -1;
     if (s.feet.size() >= 2) {
         // Legs go up as long as the rows stay split. Fins (a fish's belly and
         // tail fins on the test PC) split for only a row or two from the
         // bottom; they are not legs.
+        // The split may start anywhere in the foot band, not only in the
+        // lowest row: in a three-quarter or side stance the back foot ends
+        // some rows higher (a generated 64 px rogue on the test PC), and the
+        // lowest rows of one sole can be split by its own tread. So the
+        // longest run of split rows that starts in the band counts.
         const int x0 = s.feet.front().first, x1 = s.feet.back().second;
-        int top = s.footRow;
-        while (top - 1 >= bb.y && rowRuns(sprite, top - 1, x0, x1) >= 2) --top;
-        // The legs must be apart in some row of the foot band, not only in
-        // the lowest one: in a three-quarter stance the back foot ends a row or
-        // two higher (a generated 64 px rogue on the test PC).
-        int split = -1;
-        for (int y = s.footRow; y > s.footRow - band && y >= bb.y; --y)
-            if (rowRuns(sprite, y, x0, x1) >= 2) { split = y; break; }
-        if (split >= 0) {
-            top = split;
+        int best = 0;
+        for (int y = s.footRow; y > s.footRow - band && y >= bb.y; --y) {
+            if (rowRuns(sprite, y, x0, x1) < 2) continue;
+            int top = y;
             while (top - 1 >= bb.y && rowRuns(sprite, top - 1, x0, x1) >= 2) --top;
+            if (y + 1 - top > best) { best = y + 1 - top; splitTop = top; }
+            y = top;
         }
-        if (split < 0 || split + 1 - top < std::max(2, bb.h / 6)) s.feet.clear();
+        // A sixth of the height, or a ninth for a figure taller than wide: a
+        // big-headed character's legs are short (a generated 247 px chibi
+        // hero in side view: split for 28 to 38 rows). Fish are wider than
+        // tall, so their fins still need the sixth.
+        const int needed = bb.h > bb.w ? std::max(2, std::min(bb.h / 6, std::max(3, bb.h / 9))) : std::max(2, bb.h / 6);
+        if (best < needed) s.feet.clear();
     }
     if (s.feet.size() >= 2) {
-        const int x0 = s.feet.front().first, x1 = s.feet.back().second;
-        int top = s.footRow;
-        while (top > s.footRow - band && top > bb.y && rowRuns(sprite, top, x0, x1) < 2) --top;   // staggered feet
-        while (top - 1 >= bb.y && rowRuns(sprite, top - 1, x0, x1) >= 2) --top;
+        int top = splitTop;
         const int minLeg = std::max(2, bb.h / 5);
         top = std::min(top, s.footRow + 1 - minLeg);
         top = std::max(top, bb.y + (bb.h * 2) / 5);
