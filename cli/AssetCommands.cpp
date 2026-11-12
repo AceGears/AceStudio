@@ -18,6 +18,7 @@
 #include "acestudio/core/Transform.h"
 
 #include <filesystem>
+#include <map>
 #include <sstream>
 
 namespace acestudio::cli {
@@ -273,8 +274,11 @@ int cmdSlice(const Args& a, Output& out) {
         fs::create_directories(dir, ec);
         const std::string stem = fs::path(a.positional[1]).stem().string();
         json files = json::array(), rects = json::array();
+        std::map<std::string, int> used;
         for (const auto& c : grid) {
-            const std::string name = stem + "_r" + std::to_string(c.row + 1) + "c" + std::to_string(c.column + 1);
+            // A cell can hold more than one subject: each gets its own file.
+            std::string name = stem + "_r" + std::to_string(c.row + 1) + "c" + std::to_string(c.column + 1);
+            if (const int n = ++used[name]; n > 1) name += "_" + std::to_string(n);
             const fs::path p = dir / (name + ".png");
             if (!a.force && fs::exists(p, ec)) return out.fail(kIo, p.string() + " already exists (use --force)");
             if (auto st = writePng(c.image, p); !st) return out.fail(st.error());

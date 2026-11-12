@@ -451,6 +451,41 @@ std::string bestiaryKinds(const std::string& subject, int index, int count) {
     return out;
 }
 
+namespace {
+
+// How far (max channel difference) pixels may be from the border colour and
+// still count as background when a sheet is cut: what the sheet's own border
+// shows, plus a little. A clean flat background gets a tight limit, so dark
+// trousers on a black sheet or a pale robe on a white one are kept; a noisy
+// one (JPEG speckle, a soft gradient) gets up to the old fixed 28.
+int backgroundTolerance(const Image& sheet) {
+    const int w = sheet.width(), h = sheet.height();
+    std::vector<Rgba8> edge;
+    for (int x = 0; x < w; ++x)
+        for (int y : {0, h - 1}) edge.push_back(sheet.pixel(x, y));
+    for (int y = 1; y < h - 1; ++y)
+        for (int x : {0, w - 1}) edge.push_back(sheet.pixel(x, y));
+    if (edge.empty()) return 28;
+    auto median = [&](auto channel) {
+        std::vector<int> v;
+        for (const Rgba8& c : edge) v.push_back(channel(c));
+        std::nth_element(v.begin(), v.begin() + static_cast<std::ptrdiff_t>(v.size() / 2), v.end());
+        return v[v.size() / 2];
+    };
+    const int r = median([](const Rgba8& c) { return int{c.r}; });
+    const int g = median([](const Rgba8& c) { return int{c.g}; });
+    const int b = median([](const Rgba8& c) { return int{c.b}; });
+    std::vector<int> diff;
+    for (const Rgba8& c : edge) diff.push_back(std::max({std::abs(c.r - r), std::abs(c.g - g), std::abs(c.b - b)}));
+    // The spread of 98 % of the border (a subject touching the edge is not background).
+    const std::size_t at = diff.size() * 98 / 100;
+    std::nth_element(diff.begin(), diff.begin() + static_cast<std::ptrdiff_t>(std::min(at, diff.size() - 1)), diff.end());
+    const int spread = diff[std::min(at, diff.size() - 1)];
+    return std::clamp(spread * 2 + 6, 8, 28);
+}
+
+} // namespace
+
 std::vector<GridCell> extractGrid(const Image& sheet, int cols, int rows, int minPixels) {
     std::vector<GridCell> out;
     if (sheet.isNull() || cols < 1 || rows < 1 || cols > 16 || rows > 16) return out;
@@ -458,7 +493,7 @@ std::vector<GridCell> extractGrid(const Image& sheet, int cols, int rows, int mi
     bool transparent = false;
     for (const Rgba8& c : sheet.pixels())
         if (c.a < 255) { transparent = true; break; }
-    const Image clean = transparent ? sheet : removeBorderBackground(sheet, 28);
+    const Image clean = transparent ? sheet : removeBorderBackground(sheet, backgroundTolerance(sheet));
     const int W = clean.width(), H = clean.height();
     std::vector<int> colInk(static_cast<std::size_t>(W), 0), rowInk(static_cast<std::size_t>(H), 0);
     for (int y = 0; y < H; ++y)
@@ -588,6 +623,33 @@ std::vector<GridCell> extractGrid(const Image& sheet, int cols, int rows, int mi
                 const int ay0 = tall ? std::max(ext.y, ys[static_cast<std::size_t>(r)]) : ext.y;
                 const int ay1 = tall ? std::min(ext.y + ext.h, ys[static_cast<std::size_t>(r) + 1]) : ext.y + ext.h;
                 if (ax1 > ax0 && ay1 > ay0) emit(static_cast<int>(k), {ax0, ay0, ax1 - ax0, ay1 - ay0});
+            }
+    }
+    // Pieces of one cell that touch or overlap are one subject that the
+    // background removal cut in two (a dark belt on a dark sheet). Pieces
+    // that are clearly apart stay separate subjects.
+    const int touch = std::max(2, static_cast<int>(std::max(cellW, cellH) * 0.02));
+    for (bool merged = true; merged;) {
+        merged = false;
+        for (std::size_t i = 0; i < pieces.size() && !merged; ++i)
+            for (std::size_t j = i + 1; j < pieces.size() && !merged; ++j) {
+                Piece& a = pieces[i];
+                const Piece& b = pieces[j];
+                if (a.col != b.col || a.row != b.row) continue;
+                const int dx = std::max({0, b.rect.x - (a.rect.x + a.rect.w), a.rect.x - (b.rect.x + b.rect.w)});
+                const int dy = std::max({0, b.rect.y - (a.rect.y + a.rect.h), a.rect.y - (b.rect.y + b.rect.h)});
+                if (dx > touch || dy > touch) continue;
+                const int x0 = std::min(a.rect.x, b.rect.x), y0 = std::min(a.rect.y, b.rect.y);
+                const int x1 = std::max(a.rect.x + a.rect.w, b.rect.x + b.rect.w), y1 = std::max(a.rect.y + a.rect.h, b.rect.y + b.rect.h);
+                Image both(x1 - x0, y1 - y0);
+                for (const Piece* p : {static_cast<const Piece*>(&a), &b})
+                    for (int y = 0; y < p->rect.h; ++y)
+                        for (int x = 0; x < p->rect.w; ++x)
+                            if (const Rgba8 c = p->image.pixel(x, y); c.a > 0) both.setPixel(p->rect.x - x0 + x, p->rect.y - y0 + y, c);
+                a.rect = {x0, y0, x1 - x0, y1 - y0};
+                a.image = std::move(both);
+                pieces.erase(pieces.begin() + static_cast<std::ptrdiff_t>(j));
+                merged = true;
             }
     }
     // Reading order: by row, then left to right.
