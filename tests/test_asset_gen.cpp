@@ -253,3 +253,69 @@ TEST_CASE("generic bestiaries get different creature kinds per sheet", "[gen]") 
     CHECK(std::count(a.begin(), a.end(), ',') == 8);
     CHECK(gen::bestiaryKinds("blue slimes", 0, 9).empty());   // a specific subject is left as asked
 }
+
+TEST_CASE("dark clothes on a black sheet are not cut away with the background", "[gen]") {
+    // As on a generated walk sheet: a flat black background (0 or 1 per
+    // channel) and characters whose trousers are a dark grey that the old
+    // fixed tolerance took for background, leaving the boots as a separate
+    // piece under the jacket.
+    Image sheet(240, 120, Rgba8{0, 0, 0, 255});
+    for (int y = 0; y < 120; ++y)
+        for (int x = (y * 7) % 5; x < 240; x += 5) sheet.setPixel(x, y, Rgba8{1, 0, 1, 255});   // faint noise
+    const Rgba8 jacket{170, 30, 30, 255}, trousers{22, 22, 26, 255}, boots{200, 200, 210, 255};
+    for (int c = 0; c < 2; ++c) {
+        const int x = 30 + c * 120;
+        sheet.fillRect({x, 10, 60, 50}, jacket);
+        sheet.fillRect({x + 10, 60, 40, 30}, trousers);
+        sheet.fillRect({x + 5, 90, 50, 14}, boots);
+    }
+    const auto cells = gen::extractGrid(sheet, 2, 1);
+    REQUIRE(cells.size() == 2);
+    for (const auto& c : cells) {
+        CHECK(c.rect.w == 60);
+        CHECK(c.rect.h == 94);   // jacket, trousers and boots in one piece
+        int kept = 0;
+        for (const Rgba8& p : c.image.pixels()) kept += p == trousers ? 1 : 0;
+        CHECK(kept == 40 * 30);
+    }
+    CHECK(cells[0].column == 0);
+    CHECK(cells[1].column == 1);
+}
+
+TEST_CASE("a noisy background is still removed", "[gen]") {
+    // Speckle of up to 9 per channel around a mid grey: the tolerance follows it.
+    Image sheet(200, 100, Rgba8{128, 128, 128, 255});
+    unsigned seed = 7;
+    for (int y = 0; y < 100; ++y)
+        for (int x = 0; x < 200; ++x) {
+            seed = seed * 1664525u + 1013904223u;
+            const auto v = static_cast<std::uint8_t>(119 + (seed >> 24) % 19);
+            sheet.setPixel(x, y, Rgba8{v, v, v, 255});
+        }
+    const Rgba8 body{40, 120, 60, 255};
+    sheet.fillRect({20, 20, 60, 60}, body);
+    sheet.fillRect({120, 20, 60, 60}, body);
+    const auto cells = gen::extractGrid(sheet, 2, 1);
+    REQUIRE(cells.size() == 2);
+    CHECK(cells[0].rect.w == 60);
+    CHECK(cells[0].rect.h == 60);
+}
+
+TEST_CASE("pieces of one cell that touch are one subject", "[gen]") {
+    // A belt the colour of the background cuts the figure in two; the halves
+    // are 2 px apart, so they are one subject. (Two creatures 15 px apart in
+    // one cell stay two: see the test above.)
+    Image sheet(200, 100, Rgba8{250, 250, 250, 255});
+    const Rgba8 body{40, 120, 60, 255};
+    sheet.fillRect({20, 10, 60, 38}, body);
+    sheet.fillRect({24, 50, 52, 40}, body);    // 2 px gap at rows 48 and 49
+    sheet.fillRect({120, 20, 60, 60}, body);
+    const auto cells = gen::extractGrid(sheet, 2, 1);
+    REQUIRE(cells.size() == 2);
+    CHECK(cells[0].rect.x == 20);
+    CHECK(cells[0].rect.y == 10);
+    CHECK(cells[0].rect.w == 60);
+    CHECK(cells[0].rect.h == 80);
+    CHECK(cells[0].image.pixel(30, 39).a == 0);    // the gap stays empty
+    CHECK(cells[0].image.pixel(30, 45) == body);
+}

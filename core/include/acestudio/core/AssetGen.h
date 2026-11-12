@@ -131,9 +131,11 @@ struct GridCell {
     Image image;                  // cropped to its content, background removed
 };
 // Cuts a generated sheet into its subjects. The background is removed
-// (when the sheet is opaque) and every separate piece covering at least 3 %
-// of a cell is a subject; smaller pieces join a nearby subject or are
-// dropped. Models often ignore the grid, so the grid only places the result
+// (when the sheet is opaque; how close a colour must be to the border colour
+// is measured from the border itself, so dark clothes on a black sheet stay)
+// and every separate piece covering at least 3 % of a cell is a subject;
+// smaller pieces join a nearby subject or are dropped, and pieces of one
+// cell that touch are one subject. Models often ignore the grid, so the grid only places the result
 // (column/row of its centre) and splits a subject spanning more than about
 // 1.6 cells along the cut lines, which sit in the emptiest column/row near
 // each expected line. Results are in reading order.
