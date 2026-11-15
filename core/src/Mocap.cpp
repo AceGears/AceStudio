@@ -1094,11 +1094,13 @@ Result<RetargetResult> retarget(const Image& sprite, const Motion& m, const Reta
             if (g.stubby) {
                 const double rows = std::max(1.0, L.ankle.y - L.hip.y);
                 const double fx = t.x - L.ankle.x;
+                // The piece above the boot stays on the hip and leans over
+                // to the boot, so its lower edge goes where the boot goes.
                 foot.dx = fx;
                 foot.dy = -liftNow;
-                thigh.dx = iround(fx / 2.0);
                 thigh.dy = dy;
                 thigh.sy = std::clamp((rows - liftNow - dy) / rows, 0.35, 2.0);
+                thigh.shear = fx / (rows * thigh.sy);
                 thigh.maxY = L.ground;
                 continue;
             }

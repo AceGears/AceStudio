@@ -67,6 +67,10 @@ struct PartPose {
     double dx = 0, dy = 0;   // the pivot moves by this (rounded to whole pixels)
     double angle = 0;        // radians, clockwise on screen, about the pivot
     double sx = 1, sy = 1;   // foreshortening about the pivot, before turning
+    // A lean: each row moves sideways by shear x its (foreshortened) rows
+    // below the pivot, before turning. The pivot row stays put, so a leg
+    // can stay on its hip while its lower end follows the foot.
+    double shear = 0;
     int z = 0;               // depth this frame
     bool visible = true;
     // A part bent along its length: column k of the part (from its box's left

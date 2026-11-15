@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace acestudio::motion::detail {
 
@@ -83,6 +84,34 @@ std::optional<GaitRig> buildGaitRig(const Image& sprite, const Subject& subj, Bo
             if (best >= 0) legMask[static_cast<std::size_t>(best)].set(x, y, true);
             else bodyMask.set(x, y, true);
         }
+    // Below the hips, a narrow run of body pixels between the legs (the
+    // shadow of the crotch, an outline) goes with the nearest leg: left on the
+    // body it hangs there as a sliver once the legs step apart. Wide runs (a
+    // coat, a skirt) stay with the body.
+    if (subj.legTop >= 0 && nLegs > 0) {
+        const int narrow = std::max(3, bb.w / 20);
+        for (int y = std::max(bb.y, subj.legTop); y < bb.y + bb.h; ++y)
+            for (int x = bb.x; x < bb.x + bb.w;) {
+                if (!bodyMask.get(x, y)) {
+                    ++x;
+                    continue;
+                }
+                int e = x;
+                while (e < bb.x + bb.w && bodyMask.get(e, y)) ++e;
+                if (e - x <= narrow)
+                    for (int k = x; k < e; ++k) {
+                        std::size_t best = 0;
+                        int bestD = std::numeric_limits<int>::max();
+                        for (std::size_t i = 0; i < nLegs; ++i) {
+                            const int d = k < subj.feet[i].first ? subj.feet[i].first - k : k > subj.feet[i].second ? k - subj.feet[i].second : 0;
+                            if (d < bestD) { bestD = d; best = i; }
+                        }
+                        bodyMask.set(k, y, false);
+                        legMask[best].set(k, y, true);
+                    }
+                x = e;
+            }
+    }
 
     // Leg joints: the middle of the leg's pixels on the hip, knee and ankle rows.
     auto midX = [&](const Mask& m, int y, double fallback) {
@@ -287,14 +316,15 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
             }
             if (stubby) {
                 // The boot slides and lifts as one piece; the piece above it
-                // follows halfway and stretches from the hip to the boot.
+                // stays on the hip, stretches down to the boot and leans over
+                // to it, so its lower edge goes where the boot goes.
                 const double rows = std::max(1.0, L.ankle.y - L.hip.y);
                 const int footDy = p.planted ? 0 : -p.lift;
                 foot.dx = p.fx;
                 foot.dy = footDy;
-                thigh.dx = iround(p.fx / 2.0);
                 thigh.dy = dy;
                 thigh.sy = std::clamp((rows + footDy - dy) / rows, 0.35, 2.0);
+                thigh.shear = p.fx / (rows * thigh.sy);
                 thigh.maxY = L.ground;
                 continue;
             }
