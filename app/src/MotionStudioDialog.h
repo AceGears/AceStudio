@@ -39,7 +39,7 @@ public:
     void setTime(double seconds, bool inPlace);
     QSize sizeHint() const override { return {320, 320}; }
 
-signals:
+Q_SIGNALS:
     // Dragging turns (sideways) and tilts (up and down) the camera.
     void cameraDragged(double turn, double tilt);
 

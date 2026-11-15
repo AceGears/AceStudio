@@ -144,7 +144,7 @@ void SkeletonView::mouseMoveEvent(QMouseEvent* e) {
     while (turn > 180) turn -= 360;
     while (turn < -180) turn += 360;
     const double tilt = std::clamp(m_dragTilt + d.y() * 0.4, -90.0, 90.0);
-    emit cameraDragged(turn, tilt);
+    Q_EMIT cameraDragged(turn, tilt);
 }
 
 void SkeletonView::wheelEvent(QWheelEvent* e) {
@@ -163,7 +163,7 @@ void SkeletonView::keyPressEvent(QKeyEvent* e) {
     }
     while (turn > 180) turn -= 360;
     while (turn < -180) turn += 360;
-    emit cameraDragged(turn, tilt);
+    Q_EMIT cameraDragged(turn, tilt);
 }
 
 // ---- MotionStudioDialog ----------------------------------------------------------------
