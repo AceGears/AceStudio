@@ -934,6 +934,7 @@ Result<std::vector<Clip>> animatePack(const Image& sprite, const std::vector<Act
         c.loops = info.loops;
         c.body = body;
         c.depthPops = rendered[i].depthPops;
+        c.frontView = body == Body::Biped && subj.frontView;
         if (!subj.footBottoms.empty())
             c.footStagger = *std::max_element(subj.footBottoms.begin(), subj.footBottoms.end()) -
                             *std::min_element(subj.footBottoms.begin(), subj.footBottoms.end());
@@ -968,6 +969,133 @@ bool isMirrorFlip(const Image& a, const Image& b) {
             if (!same(p, q)) ++different;
         }
     return different * 4 > opaque;
+}
+
+// The legs of a walk, for the checks below: the lowest fifth of the figure
+// in each frame (the ground is the lowest opaque row of any frame).
+struct LegBand {
+    int ground = -1, top = 0, height = 0;   // rows, and the figure's height
+};
+
+LegBand legBand(const Clip& clip) {
+    LegBand b;
+    int highest = 1 << 20;
+    for (const Image& f : clip.frames) {
+        const IntRect r = f.opaqueBounds();
+        if (r.empty()) continue;
+        b.ground = std::max(b.ground, r.y + r.h - 1);
+        highest = std::min(highest, r.y);
+    }
+    if (b.ground < 0) return b;
+    b.height = b.ground - highest + 1;
+    b.top = b.ground - std::max(2, b.height / 5) + 1;
+    return b;
+}
+
+// Whether the feet of every frame are the feet of the first frame, only
+// moved: each connected piece of the first frame's leg band is found again,
+// pixel for pixel, somewhere near in most other frames.
+bool legsOnlySlide(const Clip& clip, const LegBand& band) {
+    const Image& first = clip.frames.front();
+    const int w = first.width(), h = first.height();
+    // Pieces of the band in the first frame.
+    std::vector<int> label(static_cast<std::size_t>(w) * static_cast<std::size_t>(h), -1);
+    std::vector<std::vector<std::pair<int, int>>> pieces;
+    int bandPixels = 0;
+    for (int y = band.top; y <= band.ground; ++y)
+        for (int x = 0; x < w; ++x) {
+            if (first.pixel(x, y).a == 0) continue;
+            ++bandPixels;
+            const std::size_t i = static_cast<std::size_t>(y) * static_cast<std::size_t>(w) + static_cast<std::size_t>(x);
+            if (label[i] >= 0) continue;
+            const int id = static_cast<int>(pieces.size());
+            pieces.emplace_back();
+            std::vector<std::pair<int, int>> stack{{x, y}};
+            label[i] = id;
+            while (!stack.empty()) {
+                const auto [px, py] = stack.back();
+                stack.pop_back();
+                pieces.back().push_back({px, py});
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int nx = px + dx, ny = py + dy;
+                        if (nx < 0 || nx >= w || ny < band.top || ny > band.ground || first.pixel(nx, ny).a == 0) continue;
+                        const std::size_t j = static_cast<std::size_t>(ny) * static_cast<std::size_t>(w) + static_cast<std::size_t>(nx);
+                        if (label[j] < 0) { label[j] = id; stack.push_back({nx, ny}); }
+                    }
+            }
+        }
+    if (bandPixels == 0) return false;
+    // Only pieces big enough to be a foot; a sample of their pixels is enough.
+    std::vector<std::vector<std::pair<int, int>>> feet;
+    for (auto& p : pieces) {
+        if (static_cast<int>(p.size()) * 8 < bandPixels) continue;
+        std::vector<std::pair<int, int>> sample;
+        const std::size_t step = std::max<std::size_t>(1, p.size() / 400);
+        for (std::size_t i = 0; i < p.size(); i += step) sample.push_back(p[i]);
+        feet.push_back(std::move(sample));
+    }
+    if (feet.empty()) return false;
+    const int rangeX = std::max(2, w / 3), rangeY = band.ground - band.top + 1;
+    int rigidFrames = 0, judged = 0;
+    for (std::size_t f = 1; f < clip.frames.size(); ++f) {
+        const Image& img = clip.frames[f];
+        if (img.width() != w || img.height() != h) return false;
+        ++judged;
+        long found = 0, total = 0;
+        for (const auto& foot : feet) {
+            long best = 0;
+            for (int dy = -rangeY; dy <= 2; ++dy)
+                for (int dx = -rangeX; dx <= rangeX; ++dx) {
+                    long same = 0;
+                    for (const auto& [x, y] : foot) same += img.pixel(x + dx, y + dy) == first.pixel(x, y) ? 1 : 0;
+                    best = std::max(best, same);
+                }
+            found += best;
+            total += static_cast<long>(foot.size());
+        }
+        // A foot passing behind the other is partly hidden for a frame or two.
+        rigidFrames += found * 100 >= total * 85 ? 1 : 0;
+    }
+    return judged > 0 && rigidFrames * 3 >= judged * 2;
+}
+
+// Front views: frames half a cycle apart in which the same leg steps. The
+// leg band of one should be the mirror of the other's.
+int sameLegSteps(const Clip& clip, const LegBand& band) {
+    const std::size_t n = clip.frames.size();
+    if (n < 4 || n % 2 != 0) return 0;
+    const int w = clip.frames.front().width();
+    // The mirror line: twice the middle column of the head (the top third).
+    auto axis2 = [&](const Image& f) {
+        const IntRect r = f.opaqueBounds();
+        int x0 = w, x1 = -1;
+        for (int y = r.y; y < r.y + std::max(1, r.h / 3); ++y)
+            for (int x = r.x; x < r.x + r.w; ++x)
+                if (f.pixel(x, y).a > 0) { x0 = std::min(x0, x); x1 = std::max(x1, x); }
+        return x0 + x1;
+    };
+    auto overlap = [&](const Image& a, const Image& b, int mirrorB) {
+        long inter = 0, uni = 0;
+        for (int y = band.top; y <= band.ground; ++y)
+            for (int x = 0; x < w; ++x) {
+                const bool p = a.pixel(x, y).a > 0;
+                const bool q = b.pixel(mirrorB >= 0 ? mirrorB - x : x, y).a > 0;
+                inter += p && q;
+                uni += p || q;
+            }
+        return uni ? static_cast<double>(inter) / static_cast<double>(uni) : 1.0;
+    };
+    int count = 0;
+    for (std::size_t i = 0; i < n / 2; ++i) {
+        const Image& a = clip.frames[i];
+        const Image& b = clip.frames[i + n / 2];
+        if (a.width() != w || b.width() != w || a.opaqueBounds().empty() || b.opaqueBounds().empty()) return 0;
+        // A step: the legs are not their own mirror image.
+        if (overlap(a, a, axis2(a)) > 0.88) continue;
+        if (overlap(a, b, -1) > overlap(a, b, axis2(b)) + 0.05) ++count;
+    }
+    return count;
 }
 
 } // namespace
@@ -1087,6 +1215,22 @@ ClipCheck checkClip(const Clip& clip) {
         for (int row : rows) r.floatingFrames += row < ground - clip.footStagger ? 1 : 0;
         if (r.floatingFrames > 0)
             r.issues.push_back("The feet leave the ground in " + std::to_string(r.floatingFrames) + " frame(s); the character will float.");
+    }
+    // Walks of two-legged figures (ADR-ANIM-001 and docs/research/
+    // walk-animation-failure-2026-11.md): a walk is a set of leg poses.
+    if (clip.body == Body::Biped && clip.frames.size() >= 2 && (clip.name == "walk" || clip.name == "run" || clip.name == "sprint")) {
+        const LegBand band = legBand(clip);
+        if (band.ground >= 0 && band.height >= 96 && legsOnlySlide(clip, band)) {
+            r.legsOnlySlide = true;
+            r.issues.push_back("The legs only slide: each foot is the same drawing in every frame, moved but never redrawn. "
+                               "At this size a walk needs drawn leg poses.");
+        }
+        if (band.ground >= 0 && clip.frontView && clip.loops) {
+            r.sameLegSteps = sameLegSteps(clip, band);
+            if (r.sameLegSteps > 0)
+                r.issues.push_back("The same leg steps in frames half a cycle apart (" + std::to_string(r.sameLegSteps) +
+                                   " pair(s)); the walk limps.");
+        }
     }
     // A loop seam is a problem when it jumps more than any step inside the clip.
     if (clip.loops && clip.frames.size() > 2 && r.loopIoU < std::min(0.5, r.minNeighbourIoU - 0.1))

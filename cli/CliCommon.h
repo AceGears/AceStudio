@@ -106,6 +106,7 @@ int cmdAtlas(const Args& a, Output& out);
 int cmdSlice(const Args& a, Output& out);
 int cmdUiKit(const Args& a, Output& out);
 int cmdAnimate(const Args& a, Output& out);
+int cmdCycle(const Args& a, Output& out);
 int cmdEffect(const Args& a, Output& out);
 int cmdConnect(const Args& a, Output& out);
 int cmdMap(const Args& a, Output& out);

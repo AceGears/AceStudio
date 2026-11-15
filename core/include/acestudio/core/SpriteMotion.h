@@ -123,6 +123,8 @@ struct Clip {
     // Part rig: times two overlapping parts swapped depth from one frame to
     // the next (one pops through the other). 0 for clips not made by the rig.
     int depthPops = 0;
+    // A biped seen from the front or back: its two steps mirror each other.
+    bool frontView = false;
 };
 
 // Animates a sprite (transparent background expected). Errors when the
@@ -147,8 +149,8 @@ Image rotateSprite(const Image& sprite, double radians);
 
 // Automatic checks of a clip: pixel-count drift (parts lost or doubled),
 // frame-to-frame jumps, the loop seam, one-frame flicker, mirrored frames,
-// parts popping through each other, and feet that leave the ground during a
-// walk.
+// parts popping through each other, feet that leave the ground during a
+// walk, legs that only slide, and a walk that steps with one leg twice.
 struct ClipCheck {
     double maxAreaChange = 0;   // largest relative change of opaque area vs frame 0
     double minNeighbourIoU = 1; // lowest silhouette overlap of consecutive frames
@@ -162,6 +164,13 @@ struct ClipCheck {
     // Consecutive frames that are left-right mirrors of each other: the
     // sprite flips instead of moving.
     int mirrorFlips = 0;
+    // Walk, run and sprint of a biped at least 96 px tall: every foot is the
+    // same drawing in every frame, only moved (no step poses). Smaller
+    // sprites are not judged: a few pixels of leg cannot show a pose.
+    bool legsOnlySlide = false;
+    // Front views: pairs of frames half a cycle apart in which the same leg
+    // steps (the walk limps).
+    int sameLegSteps = 0;
     std::vector<std::string> issues;
 };
 ClipCheck checkClip(const Clip& clip);

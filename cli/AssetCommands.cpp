@@ -5,6 +5,7 @@
 
 #include "acestudio/core/AssetGen.h"
 #include "acestudio/core/SpriteMotion.h"
+#include "acestudio/core/CycleStabilize.h"
 #include "acestudio/core/FileUtil.h"
 #include "acestudio/core/AnimRouter.h"
 #include "acestudio/core/Effects.h"
@@ -487,6 +488,79 @@ int cmdAnimate(const Args& a, Output& out) {
     }
     return out.success({{"files", files}, {"clips", clips}},
                        "Wrote " + std::to_string(pack.value().size()) + " animation(s) to " + dir.string() + "\n");
+}
+
+// cycle <pose1.png> <pose2.png> [...] --out <folder> [--name walk] [--view auto|front|side]
+//       [--order 1,2,1,3] [--master N] [--ms 150] [--no-bob]
+int cmdCycle(const Args& a, Output& out) {
+    if (a.positional.size() < 3) return out.fail(kUsage, "cycle: expected two or more pose PNGs");
+    const auto outDir = a.opt("out");
+    if (!outDir) return out.fail(kUsage, "cycle: --out (a folder) is required");
+    std::vector<Image> poses;
+    for (std::size_t i = 1; i < a.positional.size(); ++i) {
+        auto img = readPng(a.positional[i]);
+        if (!img) return out.fail(img.error());
+        poses.push_back(std::move(img).value());
+    }
+    motion::CycleOptions o;
+    const std::string view = a.opt("view").value_or("auto");
+    if (view == "front") o.view = motion::CycleView::Front;
+    else if (view == "side") o.view = motion::CycleView::Side;
+    else if (view != "auto") return out.fail(kUsage, "cycle: --view expects auto, front or side");
+    if (auto m = a.opt("master")) {
+        const auto v = parseInt(*m);
+        if (!v || *v < 1 || *v > static_cast<int>(poses.size())) return out.fail(kUsage, "cycle: --master expects a pose number, from 1");
+        o.master = *v - 1;
+    }
+    if (auto spec = a.opt("order")) {
+        std::size_t start = 0;
+        while (start <= spec->size()) {
+            const std::size_t comma = spec->find(',', start);
+            const auto v = parseInt(spec->substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+            if (!v || *v < 1 || *v > static_cast<int>(poses.size())) return out.fail(kUsage, "cycle: --order expects pose numbers from 1, as 1,2,1,3");
+            o.order.push_back(*v - 1);
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+    }
+    if (auto ms = optInt(a, "ms")) o.frameMs = *ms;
+    o.bob = a.flags.count("no-bob") == 0;
+    auto res = motion::stabilizeCycle(poses, o);
+    if (!res) return out.fail(res.error());
+    motion::Clip& c = res.value().clip;
+    c.name = a.opt("name").value_or("walk");
+    const fs::path dir = *outDir;
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    const std::string stem = fs::path(a.positional[1]).stem().string() + "_" + c.name;
+    const fs::path png = dir / (stem + ".png"), gif = dir / (stem + ".gif"), js = dir / (stem + ".json");
+    if (!a.force && (fs::exists(png, ec) || fs::exists(gif, ec) || fs::exists(js, ec)))
+        return out.fail(kIo, png.string() + " already exists (use --force)");
+    const int fw = c.frames[0].width(), fh = c.frames[0].height();
+    Image strip(fw * static_cast<int>(c.frames.size()), fh);
+    std::vector<AnimFrame> anim;
+    for (std::size_t i = 0; i < c.frames.size(); ++i) {
+        strip.blit(c.frames[i], static_cast<int>(i) * fw, 0);
+        anim.push_back({c.frames[i], c.durations[i]});
+    }
+    if (auto st = writePng(strip, png); !st) return out.fail(st.error());
+    auto bytes = encodeGif(anim, 0);
+    if (!bytes) return out.fail(bytes.error());
+    if (auto st = writeFileAtomic(gif, bytes.value()); !st) return out.fail(st.error());
+    const motion::ClipCheck chk = motion::checkClip(c);
+    json order = json::array();
+    for (int i : res.value().order) order.push_back(i + 1);
+    json j{{"action", c.name}, {"frameWidth", fw}, {"frameHeight", fh}, {"frames", c.frames.size()}, {"durations", c.durations},
+           {"loop", c.loops}, {"image", png.filename().string()}, {"view", res.value().frontView ? "front" : "side"},
+           {"master", res.value().master + 1}, {"order", order}, {"notes", res.value().notes},
+           {"check", {{"maxAreaChange", chk.maxAreaChange}, {"minNeighbourIoU", chk.minNeighbourIoU}, {"loopIoU", chk.loopIoU},
+                      {"flicker", chk.flicker}, {"floatingFrames", chk.floatingFrames}, {"issues", chk.issues}}}};
+    if (auto st = writeTextFile(js, j.dump(2)); !st) return out.fail(st.error());
+    j["files"] = {png.string(), gif.string(), js.string()};
+    std::string human = "Wrote " + png.string() + " and " + gif.string() + " (" + std::to_string(c.frames.size()) + " frames)\n";
+    for (const auto& note : res.value().notes) human += "note: " + note + "\n";
+    for (const auto& issue : chk.issues) human += "check: " + issue + "\n";
+    return out.success(j, human);
 }
 
 // map info|render|export <file.acemap> [--out file] [--lighting] [--collision] [--show-grid]
