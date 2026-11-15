@@ -149,7 +149,7 @@ int runUiAudit(MainWindow& window, const QString& reportPath, const QString& pro
     for (QAction* top : window.menuBar()->actions()) collectActions(top->menu(), actions, visited);
     // Commands that need the audit project open run first, before other
     // commands can close or replace it.
-    for (const char* first : {"anim.sprite", "anim.motionStudio"})
+    for (const char* first : {"anim.sprite", "anim.motionStudio", "anim.inbetween"})
         for (qsizetype i = 0; i < actions.size(); ++i)
             if (actions[i]->objectName() == QLatin1String(first)) {
                 actions.move(i, 0);
