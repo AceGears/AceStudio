@@ -80,6 +80,11 @@ const char* kUsageText =
     "  effect <sprite.png> --out <folder> [--effect auto|fire|water|sway|flag|smoke|pulse] [--style campfire|torch|furnace|raging|magic] [--frames 8]\n"
     "         [--ms 90] [--amount 1] [--seed 1]\n"
     "                                  Procedural looping effect (palette kept): strip PNG + GIF\n"
+    "  retarget <sprite.png> <motion.bvh> --out <folder> [--view auto|front|back|right|left|front-right|...]\n"
+    "           [--turn DEG --tilt DEG --roll DEG [--perspective --fov 35]] [--start S --length S] [--fps 12 | --frames N]\n"
+    "           [--amount 1] [--travel] [--no-loop] [--map Bone=joint,...] [--name walk]\n"
+    "                                  3D skeletal motion (BVH) onto a two-legged sprite's part rig: strip PNG + GIF,\n"
+    "                                  and the projected source skeleton beside it (<name>_source.png/.gif)\n"
     "  slice <sheet.png> --out <folder> [--grid WxH|auto [--offset X,Y] [--spacing X,Y] [--keep-empty]]\n"
     "        [--background #rrggbb] [--tolerance 8] [--merge 2] [--min-pixels 4]\n"
     "                                  Cut a sheet into sprites (PNGs + .slices.json)\n"
@@ -120,7 +125,8 @@ std::optional<Args> parseArgs(int argc, char** argv, std::string& err) {
         else if (s == "--force") a.force = true;
         else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot" || s == "--yes" || s == "--cpu" || s == "--rotate" ||
                  s == "--no-outline" || s == "--no-merge" || s == "--square" || s == "--keep-empty" || s == "--no-bob" ||
-                 s == "--remove" || s == "--dry-run" || s == "--global" || s == "--lighting" || s == "--collision" || s == "--show-grid")
+                 s == "--remove" || s == "--dry-run" || s == "--global" || s == "--lighting" || s == "--collision" || s == "--show-grid" ||
+                 s == "--perspective" || s == "--travel" || s == "--no-loop")
             a.flags.insert(s.substr(2));
         else if (s == "-h" || s == "--help") { a.positional = {"help"}; return a; }
         else if (s.rfind("--", 0) == 0) {
@@ -339,6 +345,7 @@ int main(int argc, char** argv) {
         if (cmd == "animate") return acestudio::cli::cmdAnimate(*args, out);
         if (cmd == "cycle") return acestudio::cli::cmdCycle(*args, out);
         if (cmd == "effect") return acestudio::cli::cmdEffect(*args, out);
+        if (cmd == "retarget") return acestudio::cli::cmdRetarget(*args, out);
         if (cmd == "connect") return acestudio::cli::cmdConnect(*args, out);
         if (cmd == "map") return acestudio::cli::cmdMap(*args, out);
         if (cmd == "run") return acestudio::cli::cmdRun(*args, out);

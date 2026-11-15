@@ -46,28 +46,16 @@ double smoothstep(double q) {
     return q * q * (3 - 2 * q);
 }
 
-struct LegRig {
-    int thigh = -1, shin = -1, foot = -1;
-    rig::Vec hip, knee, ankle;   // rest joints
-    double l1 = 1, l2 = 1;
-    double phase = 0;
-    int ground = 0;              // the row its foot stands on (lowest row of the foot)
-    bool hind = false;           // a four-legged animal's hind leg: the hock bends back
-    bool nearLeg = false;
-};
-
 } // namespace
 
-std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body body, Action action, int frames, double amount) {
+std::optional<GaitRig> buildGaitRig(const Image& sprite, const Subject& subj, Body body) {
     const bool footed = (body == Body::Biped || body == Body::Quadruped) && subj.legTop >= 0 && subj.feet.size() >= 2;
-    const bool locomotion = action == Action::Walk || action == Action::Run || action == Action::Sprint;
-    if (!footed || !locomotion || frames < 4) return std::nullopt;
+    if (!footed) return std::nullopt;
+    GaitRig out;
     const IntRect bb = subj.bounds;
-    amount = std::clamp(amount, 0.25, 2.0);
     const int sw = sprite.width(), sh = sprite.height();
     const int dir = subj.facing < 0 ? -1 : 1;
     const bool front = seenFromFront(sprite, subj, body);
-    const bool run = action != Action::Walk;
 
     // Which part each pixel belongs to: ground, arm a, leg i, or the body.
     const bool hasGround = subj.groundTop >= 0;
@@ -104,7 +92,7 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
             if (m.get(x, y)) { s += x + 0.5; ++n; }
         return n ? s / n : fallback;
     };
-    rig::Rig rig;
+    rig::Rig& rig = out.rig;
     if (hasGround) rig::addPart(rig, sprite, "ground", ground, {bb.x + bb.w / 2.0, static_cast<double>(subj.groundTop)}, -10);
     const int bodyPart = rig::addPart(rig, sprite, "body", bodyMask, {bb.x + bb.w / 2.0, static_cast<double>(subj.legTop)}, 0);
     // A side-on biped's torso twists: the shoulder band and the pelvis band
@@ -131,10 +119,11 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
     // The near leg (more of it drawn) in front of the far one.
     std::vector<int> legArea(nLegs);
     for (std::size_t i = 0; i < nLegs; ++i) legArea[i] = rig::count(legMask[i]);
-    std::vector<LegRig> legs(nLegs);
+    std::vector<GaitLeg>& legs = out.legs;
+    legs.resize(nLegs);
     const bool stubby = !front && body == Body::Biped && (subj.footRow - subj.legTop + 1) * 4 < bb.h;
     for (std::size_t i = 0; i < nLegs; ++i) {
-        LegRig& L = legs[i];
+        GaitLeg& L = legs[i];
         const int hip = subj.legTop;
         const int bottom = i < subj.footBottoms.size() ? subj.footBottoms[i] : subj.footRow;
         const int len = bottom - hip + 1;
@@ -170,13 +159,38 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
     // A biped starts from its drawn pose: the foot drawn further forward is
     // forward in the first frame.
     if (nLegs == 2 && dir > 0) std::swap(legs[0].phase, legs[1].phase);
-    std::vector<int> armParts;
+    std::vector<int>& armParts = out.armParts;
     for (std::size_t a = 0; a < subj.arms.size(); ++a) {
         const IntRect& r = subj.arms[a];
         armParts.push_back(rig::addPart(rig, sprite, "arm" + std::to_string(a), armMask[a], {r.x + r.w / 2.0, r.y + 0.5}, 2));
     }
     rig::inpaintHidden(rig, std::max(3, bb.h / 10));
     rig::prepare(rig);
+
+    out.bodyPart = bodyPart;
+    out.shoulderPart = shoulderPart;
+    out.pelvisPart = pelvisPart;
+    out.front = front;
+    out.stubby = stubby;
+    out.twist = twist;
+    out.dir = dir;
+    return out;
+}
+
+std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body body, Action action, int frames, double amount) {
+    const bool locomotion = action == Action::Walk || action == Action::Run || action == Action::Sprint;
+    if (!locomotion || frames < 4) return std::nullopt;
+    auto built = buildGaitRig(sprite, subj, body);
+    if (!built) return std::nullopt;
+    const rig::Rig& rig = built->rig;
+    const std::vector<GaitLeg>& legs = built->legs;
+    const std::vector<int>& armParts = built->armParts;
+    const int bodyPart = built->bodyPart, shoulderPart = built->shoulderPart, pelvisPart = built->pelvisPart;
+    const bool front = built->front, stubby = built->stubby, twist = built->twist;
+    const int dir = built->dir;
+    const IntRect bb = subj.bounds;
+    amount = std::clamp(amount, 0.25, 2.0);
+    const bool run = action != Action::Walk;
 
     // Amplitudes in whole pixels. The planted foot moves back `speed` pixels
     // a frame: the stride is a whole number of pixels per frame.
@@ -194,7 +208,7 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
         int lift = 0;
         bool planted = true;
     };
-    auto legPose = [&](const LegRig& L, int f) {
+    auto legPose = [&](const GaitLeg& L, int f) {
         LegPose p;
         const double q = std::fmod(static_cast<double>(f) / frames + L.phase, 1.0);
         if (q < 0.5) {
@@ -224,7 +238,7 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
         if (front) dy = std::max(0, dy);
         // ... and low enough for every planted foot to reach the ground.
         std::vector<LegPose> lp;
-        for (const LegRig& L : legs) lp.push_back(legPose(L, f));
+        for (const GaitLeg& L : legs) lp.push_back(legPose(L, f));
         // The pelvis goes with the near leg's stride, the shoulders against it.
         int pelvisDx = 0;
         if (twistAmp > 0)
@@ -236,7 +250,7 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
         const int shoulderDx = -pelvisDx;
         for (std::size_t i = 0; i < legs.size(); ++i) {
             if (!lp[i].planted || front || stubby) continue;
-            const LegRig& L = legs[i];
+            const GaitLeg& L = legs[i];
             const double reach = 0.97 * (L.l1 + L.l2);
             const double dx = L.ankle.x + lp[i].fx - (L.hip.x + pelvisDx);
             const double vertical = std::sqrt(std::max(0.0, reach * reach - dx * dx));
@@ -253,7 +267,7 @@ std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body
             pose[static_cast<std::size_t>(pelvisPart)].dx = pelvisDx;
         }
         for (std::size_t i = 0; i < legs.size(); ++i) {
-            const LegRig& L = legs[i];
+            const GaitLeg& L = legs[i];
             const LegPose& p = lp[i];
             const rig::Vec hip{L.hip.x + pelvisDx, L.hip.y + dy};
             rig::PartPose& thigh = pose[static_cast<std::size_t>(L.thigh)];

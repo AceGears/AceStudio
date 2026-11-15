@@ -21,6 +21,7 @@
 #include "panels/PalettePanel.h"
 #include "panels/PreviewPanel.h"
 #include "AnimationDialogs.h"
+#include "MotionStudioDialog.h"
 #include "SpriteAnimateDialog.h"
 #include "pages/WorldBuilderPage.h"
 #include "ExportDialog.h"
@@ -664,6 +665,20 @@ void MainWindow::buildMenus() {
         }
         animateSprite(b.empty() ? img : img.copy(b), v->baseName(), wings);
     }))->setObjectName(QStringLiteral("anim.sprite"));
+    (anim->addAction(tr("&Motion Studio (3D Motion)…"), this, [this] {
+        DocumentView* v = currentView();
+        if (!v) return void(QMessageBox::information(this, tr("Motion Studio"), tr("Open a sprite first.")));
+        const Image img = v->document().composite(v->currentFrame());
+        const IntRect b = img.opaqueBounds();
+        if (b.empty()) return void(QMessageBox::information(this, tr("Motion Studio"), tr("The current frame is empty.")));
+        MotionStudioDialog dlg(img.copy(b), v->baseName(),
+                               [this](const std::vector<Image>& frames, const std::vector<int>& durations,
+                                      const std::vector<AnimationTag>& tags, const QString& n) {
+                                   if (openAnimationAsDocument(frames, durations, n, tags)) showWorkspace(Workspace::Animation);
+                               },
+                               this);
+        dlg.exec();
+    }))->setObjectName(QStringLiteral("anim.motionStudio"));
 
     QMenu* aiMenu = menuBar()->addMenu(tr("AI &Studio"));
     auto showAi = [this](int tab) { m_aiDock->show(); m_aiDock->raise(); m_aiPanel->focusTab(tab); };

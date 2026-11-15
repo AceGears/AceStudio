@@ -10,6 +10,7 @@ add_library(acestudio_core STATIC
     src/Effects.cpp
     src/AnimRouter.cpp
     src/PixelRig.cpp
+    src/Mocap.cpp
     src/PartRig.cpp
     src/RigFlight.cpp
     src/RigSwim.cpp
