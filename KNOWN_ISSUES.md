@@ -26,8 +26,10 @@ not been run.
 - **Real-display frame rate** on Windows is not measured, only compositing times (see below).
 
 ## Limits of third-party components and formats
-- **Motion import:** only BVH is read. FBX (proprietary SDK) is not planned; glTF/GLB is planned.
-  Export either to BVH from Blender. Humanoid motion goes onto two-legged sprites only.
+- **Motion import:** BVH and glTF/GLB animations are read. FBX (proprietary SDK) is not planned:
+  export it to glTF or BVH from Blender. glTF files that require an extension (Draco, mesh
+  quantization, ...) and sparse accessors are refused; morph-target weights are ignored. A glTF
+  animation is sampled at 30 fps by default. Humanoid motion goes onto two-legged sprites only.
 - **Motion Studio** has not been opened on a PC yet (built by CI, opened by the UI audit). It
   retargets on the UI thread: about 50 ms for a 250 px sprite, so very large sprites will lag
   while dragging the camera. A camera far from the drawn view only changes the motion, not the art.

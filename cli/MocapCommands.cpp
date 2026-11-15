@@ -1,4 +1,4 @@
-// acestudio-cli retarget: 3D skeletal motion (BVH) onto a 2D sprite.
+// acestudio-cli retarget: 3D skeletal motion (BVH, glTF/GLB) onto a 2D sprite.
 
 #include "CliCommon.h"
 
@@ -49,19 +49,24 @@ Status writeClip(const motion::Clip& c, const fs::path& png, const fs::path& gif
 } // namespace
 
 int cmdRetarget(const Args& a, Output& out) {
-    if (a.positional.size() != 3) return out.fail(kUsage, "retarget: expected a sprite PNG and a motion file (.bvh)");
+    if (a.positional.size() != 3) return out.fail(kUsage, "retarget: expected a sprite PNG and a motion file (.bvh, .glb or .gltf)");
     const auto outDir = a.opt("out");
     if (!outDir) return out.fail(kUsage, "retarget: --out (a folder) is required");
     const fs::path spritePath = a.positional[1], motionPath = a.positional[2];
     std::string ext = motionPath.extension().string();
     for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    if (ext != ".bvh") {
-        return out.fail(kUnsupported, "retarget: only BVH motion is read. Convert FBX or glTF/GLB to BVH first "
-                                      "(Blender: File > Import, then File > Export > Motion Capture (.bvh)).");
+    if (ext != ".bvh" && ext != ".glb" && ext != ".gltf") {
+        return out.fail(kUnsupported, "retarget: motion is read from BVH, glTF or GLB. Convert FBX first "
+                                      "(Blender: File > Import > FBX, then File > Export > glTF 2.0 (.glb)).");
+    }
+    mocap::GltfOptions gopt;
+    if (auto anim = a.opt("animation")) {
+        if (ext == ".bvh") return out.fail(kUsage, "retarget: --animation is for glTF/GLB files (a BVH holds one motion)");
+        gopt.animation = *anim;   // a name, or an index
     }
     auto sprite = readPng(spritePath);
     if (!sprite) return out.fail(sprite.error());
-    auto motion = mocap::loadBvh(motionPath);
+    auto motion = mocap::loadMotion(motionPath, gopt);
     if (!motion) return out.fail(motion.error());
 
     mocap::RetargetOptions o;

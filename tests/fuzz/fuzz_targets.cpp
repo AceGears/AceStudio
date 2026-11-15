@@ -4,6 +4,7 @@
 // One executable per target (FUZZ_TARGET picks the function).
 
 #include "acestudio/core/AnimCodec.h"
+#include "acestudio/core/Mocap.h"
 #include "acestudio/core/PaletteIO.h"
 #include "acestudio/core/PngCodec.h"
 #include "acestudio/core/ProjectIO.h"
@@ -43,6 +44,10 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     o.limits.memoryBytes = 32u << 20;
     o.limits.seconds = 0.5;
     (void)runScript(std::string(text), "fuzz.lua", o);
+#elif defined(FUZZ_GLTF)
+    // No base folder: external buffers are refused, so no file is opened.
+    (void)mocap::parseGltf(bytes, {});
+    (void)mocap::gltfAnimationNames(bytes);
 #elif defined(FUZZ_MCP)
     static mcp::McpServer server({}, {});
     const auto msg = nlohmann::json::parse(text, nullptr, false);
