@@ -4,6 +4,7 @@
 // frame by frame and bakes the frames. Nullopt means the module cannot rig
 // this sprite; the caller then falls back to the older renderers.
 
+#include "PartRig.h"
 #include "PixelRig.h"
 
 #include <optional>
@@ -26,5 +27,27 @@ std::optional<RigClip> swimRigRender(const Image& sprite, const Subject& subj, A
 // bones keep their length, a planted foot locked to the ground, rigid arms
 // and held items that turn at the shoulder.
 std::optional<RigClip> gaitRender(const Image& sprite, const Subject& subj, Body body, Action action, int frames, double amount);
+
+// The legged rig that gaitRender poses, built on its own so other motion
+// sources (retargeted 3D motion) can pose it too. Nullopt when the body has
+// no legs.
+struct GaitLeg {
+    int thigh = -1, shin = -1, foot = -1;
+    rig::Vec hip, knee, ankle;   // rest joints
+    double l1 = 1, l2 = 1;
+    double phase = 0;
+    int ground = 0;              // the row its foot stands on (lowest row of the foot)
+    bool hind = false;           // a four-legged animal's hind leg: the hock bends back
+    bool nearLeg = false;
+};
+struct GaitRig {
+    rig::Rig rig;                // segmented, inpainted and prepared
+    std::vector<GaitLeg> legs;
+    std::vector<int> armParts;   // same order as Subject::arms
+    int bodyPart = -1, shoulderPart = -1, pelvisPart = -1;
+    bool front = false, stubby = false, twist = false;
+    int dir = 1;                 // +1 faces right, -1 left
+};
+std::optional<GaitRig> buildGaitRig(const Image& sprite, const Subject& subj, Body body);
 
 } // namespace acestudio::motion::detail

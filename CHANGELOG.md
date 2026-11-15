@@ -58,6 +58,15 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   rig lands (ADR-ANIM-001).
 
 ### Added
+- Motion Studio (Animation > Motion Studio): load a BVH motion and see it in 3D (drag to turn and tilt,
+  wheel to zoom) beside the sprite it drives. Turn, tilt, roll, view presets and perspective set how the
+  motion is seen; the art is never turned, and a camera far from the drawn view is flagged.
+  Retargeting moves positions, not rotations: the feet follow the projected ankles (scaled to the
+  sprite's own leg length), knees come from IK, planted feet stay on their own ground row, the body
+  leans with the spine and the arms point where the source arms point. Bones are found by name (CMU,
+  Mixamo, 3ds Max, Daz, Unreal, Blender) or by the skeleton's shape. `acestudio-cli retarget` does the
+  same headless and writes the source skeleton beside the result. Two-legged sprites only for now;
+  FBX and glTF must be exported to BVH first. See docs/agents/ADR-ANIM-002-motion-studio.md.
 - Development: the AceStudio agent organization for Claude Code (`.claude/`, `CLAUDE.md`,
   `docs/agents/`): 28 specialist agents, 8 skills, a secret-blocking write hook.
 
