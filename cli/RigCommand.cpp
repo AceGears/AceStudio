@@ -109,12 +109,14 @@ int rigAuto(const Args& a, Output& out) {
     const auto layerKey = a.opt("layer");
     if (!outPath || !layerKey) return out.fail(kUsage, "rig auto: --layer and --out are required");
     const int frame = optInt(a, "frame").value_or(0);
+    const auto kind = rigs::autoRigBodyFromString(a.opt("as").value_or("auto"));
+    if (!kind) return out.fail(kUsage, "rig auto: --as wants auto, legs, wings or fins");
     auto doc = loadProject(a.positional[2]);
     if (!doc) return out.fail(doc.error());
     std::string err;
     const auto layer = findLayer(doc.value(), *layerKey, err);
     if (!layer) return out.fail(kUsage, "rig auto: " + err);
-    auto r = rigs::autoRig(doc.value(), *layer, frame);
+    auto r = rigs::autoRig(doc.value(), *layer, frame, *kind);
     if (!r) return out.fail(r.error());
     if (int code = writeProject(a, out, r.value().document, *outPath); code != kOk) return code;
     std::string human = "Rigged '" + layerName(doc.value(), *layer) + "' into " + *outPath + "\n";

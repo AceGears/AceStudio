@@ -33,6 +33,21 @@ motion::rig::Vec farthest(const Mask& m, double x, double y) {
     return best;
 }
 
+// The centre of a mask's pixels.
+motion::rig::Vec centroid(const Mask& m) {
+    double sx = 0, sy = 0;
+    long n = 0;
+    const IntRect b = m.bounds();
+    for (int y = b.y; y < b.y + b.h; ++y)
+        for (int x = b.x; x < b.x + b.w; ++x)
+            if (m.get(x, y)) {
+                sx += x + 0.5;
+                sy += y + 0.5;
+                ++n;
+            }
+    return n ? motion::rig::Vec{sx / n, sy / n} : motion::rig::Vec{b.x + b.w / 2.0, b.y + b.h / 2.0};
+}
+
 Bone boneFrom(std::string name, BoneId parent, motion::rig::Vec head, motion::rig::Vec tail) {
     Bone b;
     b.name = std::move(name);
@@ -46,7 +61,23 @@ Bone boneFrom(std::string name, BoneId parent, motion::rig::Vec head, motion::ri
 
 } // namespace
 
-Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame) {
+const char* toString(AutoRigBody b) {
+    switch (b) {
+    case AutoRigBody::Auto: return "auto";
+    case AutoRigBody::Legs: return "legs";
+    case AutoRigBody::Wings: return "wings";
+    case AutoRigBody::Fins: return "fins";
+    }
+    return "auto";
+}
+
+std::optional<AutoRigBody> autoRigBodyFromString(const std::string& s) {
+    for (AutoRigBody b : {AutoRigBody::Auto, AutoRigBody::Legs, AutoRigBody::Wings, AutoRigBody::Fins})
+        if (s == toString(b)) return b;
+    return std::nullopt;
+}
+
+Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, AutoRigBody kind) {
     if (doc.rig()) return bad("This document already has a rig. Remove it first to rig again.");
     const Layer* src = doc.layer(layer);
     if (!src || src->kind != LayerKind::Raster) return bad("Choose a raster layer to rig");
@@ -62,11 +93,28 @@ Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame) {
     for (int y = 0; y < box.h; ++y)
         for (int x = 0; x < box.w; ++x) sprite.setPixel(x, y, whole.pixel(box.x + x, box.y + y));
     const motion::Subject subj = motion::analyzeSubject(sprite);
-    auto built = motion::detail::buildGaitRig(sprite, subj, subj.body);
-    if (!built)
-        return bad(std::string("Auto-rig needs a body with legs; this sprite reads as ") + motion::toString(subj.body) +
-                   ". Add bones by hand instead.");
-    const motion::rig::Rig& parts = built->rig;
+    // Legs first (the gait rig); else wings for a flyer, fins for a swimmer:
+    // the same cuts the animator's part rig uses (ADR-ANIM-001).
+    std::optional<motion::detail::GaitRig> built;
+    std::optional<motion::detail::FlightRig> flight;
+    std::optional<motion::detail::SwimRig> swim;
+    const bool any = kind == AutoRigBody::Auto;
+    if (any || kind == AutoRigBody::Legs) built = motion::detail::buildGaitRig(sprite, subj, subj.body);
+    if (!built && (kind == AutoRigBody::Wings || (any && subj.body == motion::Body::Flyer)))
+        flight = motion::detail::buildFlightRig(sprite, subj, motion::detail::WingSpec{}, false);
+    if (!built && !flight && (kind == AutoRigBody::Fins || (any && subj.body == motion::Body::Swimmer)))
+        swim = motion::detail::buildSwimRig(sprite, subj, motion::SwimStyle::Auto);
+    if (!built && !flight && !swim) {
+        const std::string reads = std::string("this sprite reads as ") + motion::toString(subj.body);
+        switch (kind) {
+        case AutoRigBody::Legs: return bad("No legs were found; " + reads + ". Add bones by hand instead.");
+        case AutoRigBody::Wings: return bad("No wings were found above the wing line. Add bones by hand instead.");
+        case AutoRigBody::Fins: return bad("The sprite is too small to cut into fins. Add bones by hand instead.");
+        case AutoRigBody::Auto: break;
+        }
+        return bad("Auto-rig needs a body with legs, wings or fins; " + reads + ". Choose wings or fins, or add bones by hand.");
+    }
+    const motion::rig::Rig& parts = built ? built->rig : flight ? flight->rig : swim->rig;
     const double ox = box.x, oy = box.y;
     auto canvas = [&](motion::rig::Vec v) { return motion::rig::Vec{v.x + ox, v.y + oy}; };
 
@@ -96,68 +144,109 @@ Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame) {
     }
     d.layer(layer)->visible = false;
 
-    // Bones. The root runs from the hips up through the body.
     Rig rig;
-    const IntRect bb = subj.bounds;
-    const double hipY = subj.legTop >= 0 ? subj.legTop : bb.y + bb.h;
-    auto root = addBone(rig, boneFrom("body", kNoBone, canvas({bb.x + bb.w / 2.0, hipY}), canvas({bb.x + bb.w / 2.0, static_cast<double>(bb.y)})));
-    if (!root) return root.error();
     auto bind = [&](int part, BoneId bone) -> Status {
         if (part < 0 || partLayer[static_cast<std::size_t>(part)] == kNoLayer) return {};
         return bindLayer(rig, partLayer[static_cast<std::size_t>(part)], bone);
     };
-    for (int part : {built->bodyPart, built->shoulderPart, built->pelvisPart})
-        if (auto st = bind(part, root.value()); !st) return st.error();
+    // A bone from a part's pivot to its farthest pixel, bound to the part.
+    auto limbBone = [&](const std::string& name, int part, BoneId parent) -> Status {
+        if (part < 0) return {};
+        const motion::rig::Part& p = parts.parts[static_cast<std::size_t>(part)];
+        auto id = addBone(rig, boneFrom(name, parent, canvas(p.pivot), canvas(farthest(p.own, p.pivot.x, p.pivot.y))));
+        if (!id) return id.error();
+        return bind(part, id.value());
+    };
+    std::string summary;
+    if (built) {
+        // The root runs from the hips up through the body.
+        const IntRect bb = subj.bounds;
+        const double hipY = subj.legTop >= 0 ? subj.legTop : bb.y + bb.h;
+        auto root = addBone(rig, boneFrom("body", kNoBone, canvas({bb.x + bb.w / 2.0, hipY}), canvas({bb.x + bb.w / 2.0, static_cast<double>(bb.y)})));
+        if (!root) return root.error();
+        for (int part : {built->bodyPart, built->shoulderPart, built->pelvisPart})
+            if (auto st = bind(part, root.value()); !st) return st.error();
 
-    const int dir = built->dir;
-    for (std::size_t i = 0; i < built->legs.size(); ++i) {
-        const motion::detail::GaitLeg& L = built->legs[i];
-        const std::string nm = "leg" + std::to_string(i);
-        const bool hasShin = L.shin >= 0 && partLayer[static_cast<std::size_t>(L.shin)] != kNoLayer && !built->stubby;
-        auto thigh = addBone(rig, boneFrom(nm + " thigh", root.value(), canvas(L.hip), canvas(L.knee)));
-        if (!thigh) return thigh.error();
-        if (auto st = bind(L.thigh, thigh.value()); !st) return st.error();
-        BoneId lower = thigh.value();
-        if (hasShin) {
-            auto shin = addBone(rig, boneFrom(nm + " shin", thigh.value(), canvas(L.knee), canvas(L.ankle)));
-            if (!shin) return shin.error();
-            if (auto st = bind(L.shin, shin.value()); !st) return st.error();
-            lower = shin.value();
+        const int dir = built->dir;
+        for (std::size_t i = 0; i < built->legs.size(); ++i) {
+            const motion::detail::GaitLeg& L = built->legs[i];
+            const std::string nm = "leg" + std::to_string(i);
+            const bool hasShin = L.shin >= 0 && partLayer[static_cast<std::size_t>(L.shin)] != kNoLayer && !built->stubby;
+            auto thigh = addBone(rig, boneFrom(nm + " thigh", root.value(), canvas(L.hip), canvas(L.knee)));
+            if (!thigh) return thigh.error();
+            if (auto st = bind(L.thigh, thigh.value()); !st) return st.error();
+            BoneId lower = thigh.value();
+            if (hasShin) {
+                auto shin = addBone(rig, boneFrom(nm + " shin", thigh.value(), canvas(L.knee), canvas(L.ankle)));
+                if (!shin) return shin.error();
+                if (auto st = bind(L.shin, shin.value()); !st) return st.error();
+                lower = shin.value();
+            }
+            // The foot runs from the ankle to its farthest pixel (the toe).
+            if (L.foot >= 0) {
+                const motion::rig::Part& fp = parts.parts[static_cast<std::size_t>(L.foot)];
+                const motion::rig::Vec toe = farthest(fp.own, L.ankle.x, L.ankle.y);
+                auto foot = addBone(rig, boneFrom(nm + " foot", lower, canvas(L.ankle), canvas(toe)));
+                if (!foot) return foot.error();
+                if (auto st = bind(L.foot, foot.value()); !st) return st.error();
+                if (!hasShin) lower = foot.value();
+            }
+            // The knee bends to the side it is drawn on (straight legs: forward).
+            if (lower != thigh.value()) {
+                const Bone* tip = rig.bone(lower);
+                const double ax = tip->tailX() - (L.hip.x + ox), ay = tip->tailY() - (L.hip.y + oy);
+                const double kx = L.knee.x - L.hip.x, ky = L.knee.y - L.hip.y;
+                const double cross = ax * ky - ay * kx;
+                const int bend = std::abs(cross) > 1e-6 ? (cross > 0 ? 1 : -1) : -dir;
+                if (auto st = addChain(rig, IkChain{nm + " IK", lower, bend}); !st) return st.error();
+            }
         }
-        // The foot runs from the ankle to its farthest pixel (the toe).
-        if (L.foot >= 0) {
-            const motion::rig::Part& fp = parts.parts[static_cast<std::size_t>(L.foot)];
-            const motion::rig::Vec toe = farthest(fp.own, L.ankle.x, L.ankle.y);
-            auto foot = addBone(rig, boneFrom(nm + " foot", lower, canvas(L.ankle), canvas(toe)));
-            if (!foot) return foot.error();
-            if (auto st = bind(L.foot, foot.value()); !st) return st.error();
-            if (!hasShin) lower = foot.value();
+        for (std::size_t a = 0; a < built->armParts.size() && a < subj.arms.size(); ++a)
+            if (auto st = limbBone("arm" + std::to_string(a), built->armParts[a], root.value()); !st) return st.error();
+        summary = std::string("Body: ") + motion::toString(subj.body) + (built->front ? " seen from the front" : "") + ", " +
+                  std::to_string(built->legs.size()) + " legs, " + std::to_string(built->armParts.size()) + " arms";
+    } else if (flight) {
+        // The root runs from the body's middle towards the head (up when the
+        // head side is unknown); the wings turn about their shoulders.
+        const motion::rig::Vec mid = centroid(flight->bodyOnly);
+        const IntRect bb = subj.bounds;
+        const motion::rig::Vec toward = flight->headSide > 0   ? motion::rig::Vec{static_cast<double>(bb.x + bb.w), mid.y}
+                                        : flight->headSide < 0 ? motion::rig::Vec{static_cast<double>(bb.x), mid.y}
+                                                               : motion::rig::Vec{mid.x, static_cast<double>(bb.y)};
+        auto root = addBone(rig, boneFrom("body", kNoBone, canvas(mid), canvas(toward)));
+        if (!root) return root.error();
+        for (int part : {flight->bodyPart, flight->chestPart})
+            if (auto st = bind(part, root.value()); !st) return st.error();
+        for (const motion::detail::FlightWing& w : flight->wings)
+            if (auto st = limbBone(flight->wings.size() == 1 ? std::string("wing") : w.nearWing ? "near wing" : "far wing", w.part, root.value()); !st)
+                return st.error();
+        summary = "Body: flyer, " + std::to_string(flight->wings.size()) + (flight->wings.size() == 1 ? " wing" : " wings");
+    } else {
+        // The root runs from the tail stalk to the head; the tail fin turns
+        // at the stalk, every other fin at its root.
+        const IntRect bb = subj.bounds;
+        const motion::rig::Vec mid = centroid(parts.parts[static_cast<std::size_t>(swim->bodyPart)].own);
+        const motion::rig::Vec head{swim->dir > 0 ? static_cast<double>(bb.x) : static_cast<double>(bb.x + bb.w), mid.y};
+        const motion::rig::Vec back = swim->tailPart >= 0 ? swim->stalkPt : motion::rig::Vec{swim->dir > 0 ? static_cast<double>(bb.x + bb.w) : static_cast<double>(bb.x), mid.y};
+        auto root = addBone(rig, boneFrom("body", kNoBone, canvas(back), canvas(head)));
+        if (!root) return root.error();
+        if (auto st = bind(swim->bodyPart, root.value()); !st) return st.error();
+        if (auto st = limbBone("tail fin", swim->tailPart, root.value()); !st) return st.error();
+        int top = 0, bottom = 0;
+        for (const motion::detail::SwimFin& f : swim->fins) {
+            const int n = f.top ? ++top : ++bottom;
+            const std::string name = std::string(f.top ? "dorsal fin" : "ventral fin") + (n > 1 ? " " + std::to_string(n) : std::string());
+            if (auto st = limbBone(name, f.part, root.value()); !st) return st.error();
         }
-        // The knee bends to the side it is drawn on (straight legs: forward).
-        if (lower != thigh.value()) {
-            const Bone* tip = rig.bone(lower);
-            const double ax = tip->tailX() - (L.hip.x + ox), ay = tip->tailY() - (L.hip.y + oy);
-            const double kx = L.knee.x - L.hip.x, ky = L.knee.y - L.hip.y;
-            const double cross = ax * ky - ay * kx;
-            const int bend = std::abs(cross) > 1e-6 ? (cross > 0 ? 1 : -1) : -dir;
-            if (auto st = addChain(rig, IkChain{nm + " IK", lower, bend}); !st) return st.error();
-        }
-    }
-    for (std::size_t a = 0; a < built->armParts.size() && a < subj.arms.size(); ++a) {
-        const int part = built->armParts[a];
-        const motion::rig::Part& ap = parts.parts[static_cast<std::size_t>(part)];
-        const motion::rig::Vec tip = farthest(ap.own, ap.pivot.x, ap.pivot.y);
-        auto arm = addBone(rig, boneFrom("arm" + std::to_string(a), root.value(), canvas(ap.pivot), canvas(tip)));
-        if (!arm) return arm.error();
-        if (auto st = bind(part, arm.value()); !st) return st.error();
+        summary = std::string("Body: swimmer, ") + (swim->tailPart >= 0 ? "a tail fin, " : "no tail fin, ") + std::to_string(swim->fins.size()) +
+                  " other fins (the body is one rigid part)";
     }
     rig.restFrame = frame;
     if (auto st = validate(rig, &d); !st) return st.error();
     d.setRig(std::move(rig));
     if (auto st = d.validate(); !st) return st.error();
 
-    out.notes.push_back(std::string("Body: ") + motion::toString(subj.body) + (built->front ? " seen from the front" : "") +
-                        ", " + std::to_string(built->legs.size()) + " legs, " + std::to_string(built->armParts.size()) + " arms");
+    out.notes.push_back(summary);
     out.notes.push_back(std::to_string(d.rig()->bones.size()) + " bones, " + std::to_string(d.rig()->bindings.size()) +
                         " part layers, " + std::to_string(d.rig()->chains.size()) + " IK chains");
     out.notes.push_back("Parts were cut on frame " + std::to_string(frame) + " only; '" + src->name + "' is hidden, not deleted");

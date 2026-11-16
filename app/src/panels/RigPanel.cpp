@@ -72,7 +72,15 @@ RigPanel::RigPanel(QWidget* parent) : QWidget(parent) {
     m_autoRig = button(tr("Auto-Rig"), tr("Cut the current layer into part layers with bones and leg IK"));
     m_addBone = button(tr("Add Bone"), tr("Add a bone under the selected one (or a new root)"));
     m_removeBone = button(tr("Remove"), tr("Remove the selected bone; its children and parts go to its parent"));
+    m_rigAs = new QComboBox;
+    m_rigAs->setAccessibleName(tr("Auto-rig cuts"));
+    m_rigAs->setToolTip(tr("What Auto-Rig cuts: legs, wings or fins (Auto picks from the sprite; a winged creature with legs needs Wings)"));
+    m_rigAs->addItem(tr("Auto"), static_cast<int>(rigs::AutoRigBody::Auto));
+    m_rigAs->addItem(tr("Legs"), static_cast<int>(rigs::AutoRigBody::Legs));
+    m_rigAs->addItem(tr("Wings"), static_cast<int>(rigs::AutoRigBody::Wings));
+    m_rigAs->addItem(tr("Fins"), static_cast<int>(rigs::AutoRigBody::Fins));
     top->addWidget(m_autoRig);
+    top->addWidget(m_rigAs);
     top->addWidget(m_addBone);
     top->addWidget(m_removeBone);
     root->addLayout(top);
@@ -173,6 +181,11 @@ RigPanel::RigPanel(QWidget* parent) : QWidget(parent) {
     m_showBones = new QCheckBox(tr("Show bones on the canvas"));
     m_showBones->setChecked(true);
     pose->addRow(QString(), m_showBones);
+    m_dragBones = new QCheckBox(tr("Drag bones on the canvas"));
+    m_dragBones->setChecked(true);
+    m_dragBones->setToolTip(tr("Drag a bone's tip to turn it (IK chains reach), a root's joint to move the figure; "
+                               "Ctrl+drag edits the rest bones"));
+    pose->addRow(QString(), m_dragBones);
     m_restFrame = new QSpinBox;
     m_restFrame->setRange(1, 1);
     m_restFrame->setKeyboardTracking(false);
@@ -313,6 +326,7 @@ RigPanel::RigPanel(QWidget* parent) : QWidget(parent) {
             updateOverlay();
         });
     connect(m_showBones, &QCheckBox::toggled, this, &RigPanel::updateOverlay);
+    connect(m_dragBones, &QCheckBox::toggled, this, &RigPanel::updateOverlay);
     connect(m_resetPose, &QPushButton::clicked, this, [this] {
         m_pose = {};
         showBone();
@@ -356,11 +370,17 @@ RigPanel::RigPanel(QWidget* parent) : QWidget(parent) {
 void RigPanel::setView(DocumentView* view) {
     if (m_view) {
         disconnect(m_view, nullptr, this, nullptr);
+        disconnect(m_view->canvas(), nullptr, this, nullptr);
+        m_view->canvas()->setBonesInteractive(false);
         m_view->canvas()->setBones({});
     }
     m_view = view;
     m_pose = {};
+    m_dragging = false;
     if (m_view) {
+        connect(m_view->canvas(), &CanvasWidget::boneHandlePressed, this, &RigPanel::boneGrabbed);
+        connect(m_view->canvas(), &CanvasWidget::boneHandleDragged, this, [this](QPointF at) { boneDragged(at); });
+        connect(m_view->canvas(), &CanvasWidget::boneHandleReleased, this, &RigPanel::boneReleased);
         connect(m_view, &DocumentView::documentChanged, this, &RigPanel::rebuild);
         connect(m_view, &DocumentView::currentLayerChanged, this, &RigPanel::rebuild);
         connect(m_view, &DocumentView::currentFrameChanged, this, [this] {
@@ -433,6 +453,7 @@ void RigPanel::rebuild() {
     else if (m_chains->count() > 0) m_chains->setCurrentRow(0);
 
     m_autoRig->setEnabled(open && !rig);
+    m_rigAs->setEnabled(open && !rig);
     m_addBone->setEnabled(open);
     m_removeBone->setEnabled(rig && selectedBone());
     m_removeRig->setEnabled(rig != nullptr);
@@ -441,6 +462,7 @@ void RigPanel::rebuild() {
     m_moveX->setEnabled(rig != nullptr);
     m_moveY->setEnabled(rig != nullptr);
     m_showBones->setEnabled(rig != nullptr);
+    m_dragBones->setEnabled(rig != nullptr);
     m_restFrame->setEnabled(rig != nullptr);
     {
         const QSignalBlocker b(m_restFrame);
@@ -627,6 +649,7 @@ void RigPanel::bakeKeys() {
 void RigPanel::updateOverlay() {
     if (!m_view) return;
     const Rig* rig = m_view->document().rig() ? &*m_view->document().rig() : nullptr;
+    m_view->canvas()->setBonesInteractive(rig && m_showBones->isChecked() && m_dragBones->isChecked());
     if (!rig || !m_showBones->isChecked()) return m_view->canvas()->setBones({});
     const auto world = rigs::solve(*rig, m_pose);
     const BoneId sel = selectedBone();
@@ -635,6 +658,89 @@ void RigPanel::updateOverlay() {
     for (std::size_t i = 0; i < world.size(); ++i)
         marks.push_back({QPointF(world[i].headX, world[i].headY), QPointF(world[i].tailX, world[i].tailY), rig->bones[i].id == sel});
     m_view->canvas()->setBones(std::move(marks));
+}
+
+void RigPanel::boneGrabbed(int index, bool tail, QPointF at, Qt::KeyboardModifiers mods) {
+    const Rig* rig = m_view && m_view->document().rig() ? &*m_view->document().rig() : nullptr;
+    m_dragging = false;
+    if (!rig || index < 0 || index >= static_cast<int>(rig->bones.size())) return;
+    const Bone& b = rig->bones[static_cast<std::size_t>(index)];
+    m_dragBone = b.id;
+    m_dragTail = tail;
+    m_dragStart = at;
+    m_dragPose = m_pose;
+    m_dragRest = mods.testFlag(Qt::ControlModifier);
+    selectBone(b.id);
+    if (m_dragRest) {
+        bool atRest = m_pose.dx == 0 && m_pose.dy == 0;
+        for (const auto& kv : m_pose.turn) atRest = atRest && kv.second == 0;
+        if (!atRest) {
+            report(tr("Edit Bone"), Error{ErrorCode::InvalidArgument, tr("press Rest Pose before Ctrl+dragging the rest bones").toStdString()});
+            return;
+        }
+    }
+    m_dragging = true;
+}
+
+void RigPanel::boneDragged(QPointF at) {
+    const Rig* rig = m_view && m_view->document().rig() ? &*m_view->document().rig() : nullptr;
+    const Bone* b = rig && m_dragging ? rig->bone(m_dragBone) : nullptr;
+    if (!b) return;
+    const BoneId id = b->id;
+    if (m_dragRest) {
+        // Rest geometry, snapped to half pixels; one undo step per bone and field.
+        auto snap = [](double v) { return std::round(v * 2) / 2; };
+        double x = b->x, y = b->y, length = b->length, angle = b->angle;
+        if (m_dragTail) {
+            const double dx = snap(at.x()) - x, dy = snap(at.y()) - y;
+            length = std::hypot(dx, dy);
+            if (length > 0) angle = std::atan2(dy, dx);
+        } else {
+            x = snap(at.x());
+            y = snap(at.y());
+        }
+        const bool children = m_moveChildren->isChecked();
+        edit(tr("Edit Bone"), [&](Rig& r) { return rigs::setBoneGeometry(r, id, x, y, length, angle, children); }, kGeometryKey + id);
+        return;
+    }
+    if (!m_dragTail) {
+        // A root's joint moves the whole figure, by whole pixels as baking does.
+        if (b->parent != kNoBone) return;
+        m_pose.dx = m_dragPose.dx + std::round(at.x() - m_dragStart.x());
+        m_pose.dy = m_dragPose.dy + std::round(at.y() - m_dragStart.y());
+    } else {
+        std::optional<std::size_t> chain;
+        for (std::size_t c = 0; c < rig->chains.size(); ++c)
+            if (rig->chains[c].tip == id) chain = c;
+        if (chain) {
+            if (auto st = rigs::reach(*rig, m_pose, *chain, at.x(), at.y()); !st) return report(tr("Reach"), st.error());
+        } else {
+            // Turn the bone so its tip points at the pointer.
+            const auto world = rigs::solve(*rig, m_pose);
+            std::size_t i = 0, p = rig->bones.size();
+            for (std::size_t k = 0; k < rig->bones.size(); ++k) {
+                if (rig->bones[k].id == id) i = k;
+                if (rig->bones[k].id == b->parent) p = k;
+            }
+            const double want = std::atan2(at.y() - world[i].headY, at.x() - world[i].headX);
+            const double parentTurn = p < world.size() ? world[p].turn : 0.0;
+            const auto cur = m_pose.turn.find(id);
+            const double now = cur == m_pose.turn.end() ? 0.0 : cur->second;
+            const double turn = now + std::remainder(want - b->angle - parentTurn - now, 2 * kPi);
+            m_pose.turn[id] = rigs::clampTurn(*b, turn);
+        }
+    }
+    showBone();
+    showChain();
+    updateOverlay();
+}
+
+void RigPanel::boneReleased() {
+    if (m_dragging && !m_dragRest) {
+        m_status->setStyleSheet(QString());
+        m_status->setText(tr("Posed. Set a key or bake to keep the pose."));
+    }
+    m_dragging = false;
 }
 
 bool RigPanel::edit(const QString& label, const std::function<Status(Rig&)>& fn, long long mergeKey) {
@@ -723,7 +829,8 @@ void RigPanel::autoRigCurrentLayer() {
         return;
     }
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    auto r = rigs::autoRig(m_view->document(), m_view->currentLayer(), m_view->currentFrame());
+    auto r = rigs::autoRig(m_view->document(), m_view->currentLayer(), m_view->currentFrame(),
+                           static_cast<rigs::AutoRigBody>(m_rigAs->currentData().toInt()));
     QApplication::restoreOverrideCursor();
     if (!r) {
         report(tr("Auto-Rig"), r.error());

@@ -36,12 +36,9 @@ int iround(double v) { return static_cast<int>(std::lround(v)); }
 
 } // namespace
 
-std::optional<RigClip> swimRigRender(const Image& sprite, const Subject& subj, Action action, int frames, double amount,
-                                     SwimStyle style) {
-    if (action != Action::Idle && action != Action::Swim && action != Action::Dash) return std::nullopt;
+std::optional<SwimRig> buildSwimRig(const Image& sprite, const Subject& subj, SwimStyle style) {
     const IntRect bb = subj.bounds;
-    if (bb.empty() || frames < 2 || bb.w < 8 || bb.h < 4) return std::nullopt;
-    amount = std::clamp(amount, 0.25, 2.0);
+    if (bb.empty() || bb.w < 8 || bb.h < 4) return std::nullopt;
     const int sw = sprite.width(), sh = sprite.height();
     const Mask opaque = rig::opaqueMask(sprite);
     const bool headLeft = subj.headLeft;
@@ -115,13 +112,7 @@ std::optional<RigClip> swimRigRender(const Image& sprite, const Subject& subj, A
         if (y0 >= 0) stalkPt = {sx + 0.5 + dir * 0.5, (y0 + y1 + 1) / 2.0};
         tailPart = rig::addPart(rig, sprite, "tail_fin", tail, stalkPt, -1);
     }
-    struct Fin {
-        int part = -1;
-        rig::Vec root;
-        double u = 0;      // along the body, 0 head .. 1 tail
-        bool top = false;
-    };
-    std::vector<Fin> finParts;
+    std::vector<SwimFin> finParts;
     double bodyMidY = 0;
     {
         int n = 0;
@@ -149,7 +140,7 @@ std::optional<RigClip> swimRigRender(const Image& sprite, const Subject& subj, A
             sy = fb.y + fb.h / 2.0;
             n = 1;
         }
-        Fin f;
+        SwimFin f;
         f.root = {sx / n, sy / n};
         f.top = f.root.y < bodyMidY;
         f.u = std::clamp(along(iround(f.root.x)) / std::max(1.0, bb.w - 1.0), 0.0, 1.0);
@@ -158,6 +149,34 @@ std::optional<RigClip> swimRigRender(const Image& sprite, const Subject& subj, A
     }
     rig::inpaintHidden(rig, std::max(3, deepest / 6));
     rig::prepare(rig);
+
+    SwimRig out;
+    out.rig = std::move(rig);
+    out.bodyPart = body;
+    out.tailPart = tailPart;
+    out.stalk = stalk;
+    out.stalkPt = stalkPt;
+    out.fins = std::move(finParts);
+    out.mode = mode;
+    out.dir = dir;
+    out.headX = headX;
+    return out;
+}
+
+std::optional<RigClip> swimRigRender(const Image& sprite, const Subject& subj, Action action, int frames, double amount,
+                                     SwimStyle style) {
+    if (action != Action::Idle && action != Action::Swim && action != Action::Dash) return std::nullopt;
+    const IntRect bb = subj.bounds;
+    if (bb.empty() || frames < 2 || bb.w < 8 || bb.h < 4) return std::nullopt;
+    amount = std::clamp(amount, 0.25, 2.0);
+    auto built = buildSwimRig(sprite, subj, style);
+    if (!built) return std::nullopt;
+    rig::Rig& rig = built->rig;
+    const int body = built->bodyPart, tailPart = built->tailPart, stalk = built->stalk, dir = built->dir, headX = built->headX;
+    const rig::Vec stalkPt = built->stalkPt;
+    const std::vector<SwimFin>& finParts = built->fins;
+    const SwimStyle mode = built->mode;
+    auto along = [&](int x) { return (x - headX) * dir; };   // 0 at the head
 
     // Motion.
     const bool dash = action == Action::Dash, idle = action == Action::Idle;
@@ -231,7 +250,7 @@ std::optional<RigClip> swimRigRender(const Image& sprite, const Subject& subj, A
             tq.sx = 1.0 - (idle ? 0.15 : 0.4) * std::abs(std::cos(ph));
         }
         for (std::size_t i = 0; i < finParts.size(); ++i) {
-            const Fin& fn = finParts[i];
+            const SwimFin& fn = finParts[i];
             rig::PartPose& fq = pose[static_cast<std::size_t>(fn.part)];
             fq.dy = hover + dyAt(fn.root.x);
             fq.dx = surge;

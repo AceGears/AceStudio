@@ -78,6 +78,11 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   Bake Keys draws them all from the rest frame in one undo step. Keys and the rest frame are saved
   in the rig (rig version 2; a rig without keys is still written as version 1) and follow frames
   that are inserted, moved or deleted.
+- **Auto-rig wings and fins:** flyers get a body bone and a bone per wing, fish a body bone, a tail
+  fin and fin bones (the cuts the animator already uses). Choose Legs, Wings or Fins in the Rig
+  panel or with `rig auto --as`.
+- **Drag bones on the canvas:** a bone's tip turns it, an IK chain's tip reaches, a root's joint
+  moves the figure, and Ctrl+drag edits the rest bones.
 - **In-betweens for pixel art** (Animation › Generate In-betweens…, and `acestudio-cli inbetween
   key1.png key2.png ... --out folder`). New frames between drawn key frames: each pixel of a key
   finds where it went in the next and is moved part of the way, so colours are never blended, the

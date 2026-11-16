@@ -81,15 +81,19 @@ Add, Subtract, Difference), visibility and locks.
   close poses and separate parts are on separate layers.
 - **Rigs:** open **Window › Rig**. **Auto-Rig** (also **Animation › Auto-Rig Current Layer**)
   cuts the current layer, as drawn on the current frame, into part layers in a new group (the
-  original is hidden, not deleted) with bones and leg IK; it works on characters and animals with
-  legs. Or build a rig yourself: **Add Bone** adds a bone under the selected one, then set its
+  original is hidden, not deleted) with bones: legs with IK for characters and animals with legs,
+  wings for flyers, and the tail fin and fins for fish. The combo beside **Auto-Rig** chooses what
+  is cut (**Auto** picks from the sprite; a winged creature that also has legs needs **Wings**). Or build a rig yourself: **Add Bone** adds a bone under the selected one, then set its
   name, parent, head, length and angle, optional turn limits and lock, and **Bind Layer** to make
   the current layer move with it. To pose, select a bone and set its **Turn**, move the whole
   figure with **Move**, or pick an IK chain, set a **Target** and press **Reach**. The canvas shows
   the posed bones (the selected one in amber). Go to the frame you want and press **Bake to
   Frame**: the parts of the **Rest frame** are drawn there in the pose, in one undo step, with no
   new colours. Baking reads the rest frame every time, so it never piles up. **Rest Pose** puts
-  the bones back. The rest frame is saved with the rig. Projects with a rig are saved as schema 4.
+  the bones back. With **Drag bones on the canvas** on, drag a bone's tip to turn it (the tip of
+  an IK chain reaches instead), drag a root's joint to move the figure, and Ctrl+drag a joint or
+  tip to edit the rest bones (only at the rest pose). Presses away from the bones still paint.
+  The rest frame is saved with the rig. Projects with a rig are saved as schema 4.
 - **Rig keys:** pose the bones on a frame and press **Set Key on N**; choose a **Curve** (linear,
   ease in, ease out, ease in and out, stepped, Bezier) for how the frames after the key move to the
   next key. Moving to another frame loads the keyed pose of that frame (in between two keys, the

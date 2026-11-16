@@ -11,6 +11,7 @@
 #include "acestudio/core/Document.h"
 #include "acestudio/core/Rig.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -22,19 +23,31 @@ struct AutoRigResult {
     std::vector<std::string> notes;    // what was found, for the user
 };
 
-// Rigs the raster layer `layer` as drawn on `frame`:
-//  - its pixels become part layers (body, legs as thigh/shin/foot, arms, a
-//    ground shadow) in a new group above it, with the pixels each part hides
-//    filled in so parts can move apart; the source layer is hidden, not
-//    deleted;
-//  - bones: "body" (the root, from the hips up), per leg "legN thigh",
-//    "legN shin" and "legN foot", per arm "armN"; a ground shadow stays
-//    unbound (it never moves);
-//  - an IK chain per leg ("legN IK") whose tip is the shin, so the ankle
-//    reaches (short legs drawn as thigh and boot: the foot, so the toe does).
-// Fails if the document already has a rig, or the sprite has no legs the
-// analysis can find (a blob, a flyer, an object): rig those by hand.
-Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame);
+// What auto-rig cuts. Auto: legs when the analysis finds them, else wings
+// for a sprite it reads as a flyer and fins for a swimmer. The others force
+// one cut (a winged creature that also has legs reads as legged: ask for
+// Wings to rig its wings).
+enum class AutoRigBody { Auto, Legs, Wings, Fins };
+const char* toString(AutoRigBody b);
+std::optional<AutoRigBody> autoRigBodyFromString(const std::string& s);
+
+// Rigs the raster layer `layer` as drawn on `frame`. Its pixels become part
+// layers in a new group above it, with the pixels each part hides filled in
+// so parts can move apart; the source layer is hidden, not deleted. Then:
+//  - legs: parts body, thigh/shin/foot per leg, arms, a ground shadow; bones
+//    "body" (the root, from the hips up), per leg "legN thigh", "legN shin"
+//    and "legN foot", per arm "armN" (a shadow stays unbound); an IK chain
+//    per leg ("legN IK") whose tip is the shin, so the ankle reaches (short
+//    legs drawn as thigh and boot: the foot, so the toe does);
+//  - wings (the flap animator's cut below the wing line): "body" from the
+//    body's middle towards the head, "near wing" and "far wing" (or "wing")
+//    from each shoulder to the wing tip; legs, head and tail stay in the body;
+//  - fins (the swim animator's cut): "body" from the tail stalk to the head,
+//    "tail fin" past the stalk (an eel has none), and "dorsal fin" /
+//    "ventral fin" per other fin. The body is one rigid part.
+// Fails if the document already has a rig, or the cut finds nothing (no
+// legs, wings or fins): rig those by hand.
+Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, AutoRigBody body = AutoRigBody::Auto);
 
 // Draws every bound part layer's cel of `restFrame` (the parts as drawn at
 // rest) under `pose` into its cel on `frame` (which may be the same frame).

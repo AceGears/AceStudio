@@ -312,6 +312,63 @@ TEST_CASE("Editor rig changes undo, redo and merge", "[rig][editor]") {
     CHECK_FALSE(ed.document().rig());
 }
 
+TEST_CASE("Auto-rig cuts flyers into wings and swimmers into fins", "[rig]") {
+    struct Case {
+        const char* file;
+        rigs::AutoRigBody as;
+        const char* limb;   // a bone the rig must have, bound to a part
+    };
+    // The dragon also has legs, so auto rigs those: its wings need Wings.
+    for (const Case& c : {Case{"dragon128.png", rigs::AutoRigBody::Wings, "wing"}, Case{"fish57.png", rigs::AutoRigBody::Auto, "tail fin"},
+                          Case{"fish57.png", rigs::AutoRigBody::Fins, "tail fin"}}) {
+        INFO(c.file);
+        auto sprite = readPng(fixture(c.file));
+        REQUIRE(sprite);
+        auto doc = Document::create(sprite.value().width() + 8, sprite.value().height() + 8).value();
+        const LayerId src = doc.addLayer("Creature").value();
+        REQUIRE(doc.setCel(src, 0, Cel{sprite.value(), 4, 4}));
+        const Image before = doc.composite(0);
+        auto r = rigs::autoRig(doc, src, 0, c.as);
+        REQUIRE(r);
+        for (const auto& n : r.value().notes) UNSCOPED_INFO(n);
+        const Document& d = r.value().document;
+        REQUIRE(d.rig());
+        const Rig& rig = *d.rig();
+        CHECK(d.composite(0) == before);   // the parts put back together are the sprite
+        CHECK(d.validate());
+        const Bone* body = rig.bone("body");
+        REQUIRE(body);
+        CHECK_FALSE(rig.parts(body->id).empty());
+        // The limb: by name, or for wings any bone whose name has "wing".
+        const Bone* limb = nullptr;
+        for (const Bone& b : rig.bones)
+            if (b.name == c.limb || (std::string(c.limb) == "wing" && b.name.find("wing") != std::string::npos)) limb = &b;
+        REQUIRE(limb);
+        CHECK(limb->parent == body->id);
+        CHECK(limb->length > 2);
+        REQUIRE(rig.parts(limb->id).size() == 1);
+        // Turning the limb redraws its part only; the body stays.
+        RigPose pose;
+        pose.turn[limb->id] = 0.5;
+        auto baked = rigs::bakePose(d, 0, 0, pose);
+        REQUIRE(baked);
+        CHECK_FALSE(baked.value().composite(0) == before);
+        const LayerId bodyLayer = rig.parts(body->id).front();
+        CHECK(d.cel(bodyLayer, 0)->image == baked.value().cel(bodyLayer, 0)->image);
+    }
+    // Forced cuts that find nothing are refused with a reason.
+    auto fire = readPng(fixture("campfire64.png"));
+    REQUIRE(fire);
+    auto doc = Document::create(72, 72).value();
+    const LayerId l = doc.addLayer("Fire").value();
+    REQUIRE(doc.setCel(l, 0, Cel{fire.value(), 4, 4}));
+    auto legs = rigs::autoRig(doc, l, 0, rigs::AutoRigBody::Legs);
+    REQUIRE_FALSE(legs);
+    CHECK(legs.error().message.find("No legs") != std::string::npos);
+    CHECK(rigs::autoRigBodyFromString("wings") == rigs::AutoRigBody::Wings);
+    CHECK_FALSE(rigs::autoRigBodyFromString("tentacles"));
+}
+
 TEST_CASE("Auto-rig cuts a sprite into bound part layers", "[rig]") {
     auto sprite = readPng(fixture("rogue64.png"));
     REQUIRE(sprite);

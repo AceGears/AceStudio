@@ -17,11 +17,61 @@ namespace acestudio::motion::detail {
 std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Action action, int frames, double amount,
                                     const WingSpec& wing);
 
+// The flight rig that flightRender poses, built on its own so a saved rig
+// (rigs::autoRig) can use the same cut. `needPair`: refuse a single wing
+// unless the wings were painted. Nullopt when no wings are found.
+struct WingCut {
+    Mask mask;
+    rig::Vec shoulder;
+    double reach = 0;     // shoulder to the farthest pixel
+    int sign = 1;         // +1: the tip sweeps clockwise on the downstroke
+    int area = 0;
+};
+struct FlightWing {
+    int part = -1;
+    bool nearWing = true;
+    WingCut cut;
+};
+struct FlightRig {
+    rig::Rig rig;
+    int bodyPart = -1, chestPart = -1;   // chestPart: the head end drawn over the near wing, or -1
+    std::vector<WingCut> cuts;
+    std::vector<FlightWing> wings;
+    std::size_t nearIdx = 0;
+    int headSide = 0;                    // +1 head to the right, -1 left, 0 unknown
+    int rootRow = 0, skinDepth = 0;
+    double skinX0 = 0, skinX1 = 0, bodyCx = 0;
+    bool painted = false;
+    Mask bodyOnly;
+};
+std::optional<FlightRig> buildFlightRig(const Image& sprite, const Subject& subj, const WingSpec& spec, bool needPair);
+
 // Swimming (5c): the body bends as a chain of columns (whole pixels, length
 // kept), the tail fin beats behind the tail stalk and foreshortens, the
 // other fins paddle on their own phases.
 std::optional<RigClip> swimRigRender(const Image& sprite, const Subject& subj, Action action, int frames, double amount,
                                      SwimStyle style);
+
+// The swim rig that swimRigRender poses, built on its own so a saved rig
+// (rigs::autoRig) can use the same cut: the trunk, the tail fin past the
+// tail stalk (none for an eel) and the fins. Nullopt for tiny sprites.
+struct SwimFin {
+    int part = -1;
+    rig::Vec root;
+    double u = 0;      // along the body, 0 head .. 1 tail
+    bool top = false;
+};
+struct SwimRig {
+    rig::Rig rig;
+    int bodyPart = -1, tailPart = -1;
+    int stalk = -1;             // columns from the head to the tail stalk, or -1
+    rig::Vec stalkPt;           // where the tail fin turns
+    std::vector<SwimFin> fins;
+    SwimStyle mode = SwimStyle::Auto;
+    int dir = 1;                // +1: the head is on the left
+    int headX = 0;
+};
+std::optional<SwimRig> buildSwimRig(const Image& sprite, const Subject& subj, SwimStyle style);
 
 // Walk, run, sprint and idle of bodies with legs (5a): two-bone legs whose
 // bones keep their length, a planted foot locked to the ground, rigid arms

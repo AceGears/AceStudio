@@ -180,6 +180,7 @@ endif()
 run(1 rig auto "${RP}" --out "${RR}")                         # no --layer
 run(1 rig auto "${RP}" --layer nope --out "${RR}")            # no such layer
 run(1 rig frobnicate "${RP}")
+run(1 rig auto "${RP}" --layer 1 --as tentacles --out "${RR}")
 run(0 --json rig auto "${RP}" --layer 1 --out "${RR}")
 string(JSON rig_bones GET "${LAST_OUT}" bones)
 if(rig_bones LESS 5)

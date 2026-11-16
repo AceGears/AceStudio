@@ -2,6 +2,7 @@
 
 #include "acestudio/core/Rig.h"
 
+#include <QPointF>
 #include <QPointer>
 #include <QWidget>
 
@@ -28,7 +29,9 @@ class DocumentView;
 // undo step (drags of a value merge); the working pose is not part of the
 // document until it is keyed or baked. On a frame change with keys, the
 // working pose becomes the keyed pose of that frame. The canvas shows the
-// bones of the working pose.
+// bones of the working pose; with "Drag bones" on, dragging a bone's tip turns
+// it (or reaches with its IK chain), dragging a root's joint moves the
+// figure, and Ctrl+drag edits the rest bones (at the rest pose only).
 class RigPanel : public QWidget {
     Q_OBJECT
 public:
@@ -68,13 +71,24 @@ private:
     void deleteKey();
     void loadKeyedPose();
     int selectedKeyFrame() const;
+    void boneGrabbed(int index, bool tail, QPointF at, Qt::KeyboardModifiers mods);
+    void boneDragged(QPointF at);
+    void boneReleased();
 
     QPointer<DocumentView> m_view;
     RigPose m_pose;
     bool m_filling = false;
+    // The bone handle drag in progress on the canvas.
+    bool m_dragging = false;
+    bool m_dragTail = false;
+    bool m_dragRest = false;
+    BoneId m_dragBone = kNoBone;
+    QPointF m_dragStart;
+    RigPose m_dragPose;
 
     QTreeWidget* m_tree = nullptr;
     QPushButton* m_autoRig = nullptr;
+    QComboBox* m_rigAs = nullptr;
     QPushButton* m_addBone = nullptr;
     QPushButton* m_removeBone = nullptr;
     QPushButton* m_removeRig = nullptr;
@@ -104,6 +118,7 @@ private:
     QDoubleSpinBox* m_moveX = nullptr;
     QDoubleSpinBox* m_moveY = nullptr;
     QCheckBox* m_showBones = nullptr;
+    QCheckBox* m_dragBones = nullptr;
     QSpinBox* m_restFrame = nullptr;
     QPushButton* m_resetPose = nullptr;
     QPushButton* m_bake = nullptr;

@@ -48,14 +48,6 @@ double openness(double t) {
     return k[i] + (k[i + 1] - k[i]) * u;
 }
 
-struct WingCut {
-    Mask mask;
-    rig::Vec shoulder;
-    double reach = 0;     // shoulder to the farthest pixel
-    int sign = 1;         // +1: the tip sweeps clockwise on the downstroke
-    int area = 0;
-};
-
 WingCut cutWing(const Mask& wing, rig::Vec shoulder) {
     WingCut c;
     c.mask = wing;
@@ -125,12 +117,9 @@ std::vector<Mask> splitByErosion(const Mask& wings) {
 
 } // namespace
 
-std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Action action, int frames, double amount,
-                                    const WingSpec& spec) {
-    if (action != Action::Flap && action != Action::Fly) return std::nullopt;
+std::optional<FlightRig> buildFlightRig(const Image& sprite, const Subject& subj, const WingSpec& spec, bool needPair) {
     const IntRect bb = subj.bounds;
-    if (bb.empty() || frames < 2) return std::nullopt;
-    amount = std::clamp(amount, 0.25, 2.0);
+    if (bb.empty()) return std::nullopt;
     const int sw = sprite.width(), sh = sprite.height();
     const Mask opaque = rig::opaqueMask(sprite);
 
@@ -288,7 +277,7 @@ std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Ac
         cuts.push_back(cutWing(w, sh2));
     }
     // Flight of a sprite that is not known to have wings needs a clear pair.
-    if (action == Action::Fly && cuts.size() < 2 && !painted) return std::nullopt;
+    if (needPair && cuts.size() < 2 && !painted) return std::nullopt;
     // Where the head is: the side the creature faces, else the side of the
     // body's highest pixels (head, horns, ears) away from the body's middle.
     int headSide = subj.facing;
@@ -377,14 +366,9 @@ std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Ac
     }
     const int bodyPart = rig::addPart(rig, sprite, "body", rig::minusMask(bodyOnly, chest), {bodyCx, static_cast<double>(rootRow)}, 0);
     const int chestPart = rig::count(chest) > 0 ? rig::addPart(rig, sprite, "head_end", chest, {bodyCx, static_cast<double>(rootRow)}, 5) : -1;
-    struct WingParts {
-        int part = -1;
-        bool nearWing = true;
-        WingCut cut;
-    };
-    std::vector<WingParts> wp;
+    std::vector<FlightWing> wp;
     for (std::size_t i = 0; i < cuts.size(); ++i) {
-        WingParts p;
+        FlightWing p;
         p.cut = cuts[i];
         p.nearWing = i == nearIdx;
         p.part = rig::addPart(rig, sprite, p.nearWing ? "near_wing" : "far_wing", cuts[i].mask, cuts[i].shoulder, p.nearWing ? 2 : -2,
@@ -393,6 +377,42 @@ std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Ac
     }
     rig::inpaintHidden(rig, std::max(4, bb.h / 6));
     rig::prepare(rig);
+
+    FlightRig out;
+    out.rig = std::move(rig);
+    out.bodyPart = bodyPart;
+    out.chestPart = chestPart;
+    out.cuts = std::move(cuts);
+    out.wings = std::move(wp);
+    out.nearIdx = nearIdx;
+    out.headSide = headSide;
+    out.rootRow = rootRow;
+    out.skinDepth = skinDepth;
+    out.skinX0 = skinX0;
+    out.skinX1 = skinX1;
+    out.painted = painted;
+    out.bodyOnly = std::move(bodyOnly);
+    out.bodyCx = bodyCx;
+    return out;
+}
+
+std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Action action, int frames, double amount,
+                                    const WingSpec& spec) {
+    if (action != Action::Flap && action != Action::Fly) return std::nullopt;
+    const IntRect bb = subj.bounds;
+    if (bb.empty() || frames < 2) return std::nullopt;
+    amount = std::clamp(amount, 0.25, 2.0);
+    auto built = buildFlightRig(sprite, subj, spec, action == Action::Fly);
+    if (!built) return std::nullopt;
+    rig::Rig& rig = built->rig;
+    const int bodyPart = built->bodyPart, chestPart = built->chestPart;
+    const std::vector<WingCut>& cuts = built->cuts;
+    const std::vector<FlightWing>& wp = built->wings;
+    const std::size_t nearIdx = built->nearIdx;
+    const int headSide = built->headSide, rootRow = built->rootRow, skinDepth = built->skinDepth;
+    const double skinX0 = built->skinX0, skinX1 = built->skinX1, bodyCx = built->bodyCx;
+    const bool painted = built->painted;
+    const Mask& bodyOnly = built->bodyOnly;
 
     // Motion.
     const bool fly = action == Action::Fly;
@@ -461,7 +481,7 @@ std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Ac
             }
             pose[static_cast<std::size_t>(bodyPart)].colDy = std::move(column);
         }
-        for (const WingParts& w : wp) {
+        for (const FlightWing& w : wp) {
             const double lag = w.nearWing ? 0.0 : farLag;
             const double scale = w.nearWing ? 1.0 : 0.8;
             const double down = 1.0 - openness(t - lag);

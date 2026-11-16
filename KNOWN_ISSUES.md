@@ -40,10 +40,11 @@ not been run.
   separate parts on separate layers. The work holds a second copy of the document while it runs.
 - **Rigs** (Rig panel, Animation › Auto-Rig Current Layer, `acestudio-cli rig`): the core and CLI
   are tested; the panel and the bone overlay are built by CI and opened by the UI audit but have not
-  been used on a PC. Bones are edited with the panel's fields: they cannot yet be dragged on the
-  canvas. Auto-rig handles bodies with legs (two or four); blobs, flyers, swimmers and objects are
-  refused and must be rigged by hand, and arms are only rigged where the silhouette analysis finds
-  them. Every part is rigid on one bone (no bending across a joint). Pose keys with curves are saved
+  been used on a PC, and bone dragging on the canvas has not been tried by hand. While dragging is
+  on, a paint stroke that starts within 7 screen pixels of a joint or tip grabs the bone instead
+  (turn **Drag bones on the canvas** off to paint there). Auto-rig handles bodies with legs (two or four), wings (cut below the wing line, so legs stay in
+  the body) and fish (the body stays one rigid part); blobs and objects are refused and must be
+  rigged by hand, and arms are only rigged where the silhouette analysis finds them. Every part is rigid on one bone (no bending across a joint). Pose keys with curves are saved
   in the rig, but an unkeyed working pose lives in the panel until it is keyed or baked, and moving
   to another frame of a keyed rig replaces it with that frame's keyed pose. There is no curve editor
   (custom Bezier points only through `rig key --curve bezier:…`), and keys are not drawn on the
