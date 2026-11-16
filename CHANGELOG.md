@@ -5,6 +5,9 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 ## [0.10.0] — 2026-11-01 — Premium AI game asset studio (unreleased)
 
 ### Fixed
+- In-betweens of a bobbing figure (a run) no longer have holes inside the shape (dark specks in
+  hair or clothes): enclosed gaps that neither key has are filled with the colour their pixels
+  voted for. Gaps drawn in the keys stay open.
 - Short-legged characters (walk, run and BVH retargets) no longer show thin slivers of leg left
   behind between the boots: a boot now leans with its stride (each row slides a little more than
   the one above) instead of jumping sideways, and a narrow strip of shadow between the legs moves
