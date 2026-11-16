@@ -261,7 +261,7 @@ string(JSON vec_schema GET "${LAST_OUT}" schemaVersion)
 if(NOT vec_schema EQUAL 5)
     message(FATAL_ERROR "a project with vector shapes saved as schema ${vec_schema}")
 endif()
-run(0 vector add "${VD}1.acestudio" --layer 1 --path "14,2;30,2;22,20" --closed --stroke dashed --fill linear
+run(0 vector add "${VD}1.acestudio" --layer 1 --path "14,2 30,2 22,20" --closed --stroke dashed --fill linear
     --fill-color "#00ff00" --fill-color2 "#0000ff" --axis 14,2,30,2 --out "${VD}2.acestudio")
 run(0 --json vector show "${VD}2.acestudio")
 string(JSON vec_shapes LENGTH "${LAST_OUT}" cels 0 shapes)

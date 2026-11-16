@@ -312,7 +312,7 @@ nlohmann::json luaToJson(const sol::object& o, int depth = 0) {
                                          [](const auto& kv) { return kv.first.get_type() == sol::type::number; });
         if (numeric && entries.size() == n) {
             nlohmann::json a = nlohmann::json::array();
-            for (std::size_t i = 1; i <= n; ++i) a.push_back(luaToJson(t[i], depth + 1));
+            for (std::size_t i = 1; i <= n; ++i) a.push_back(luaToJson(t.get<sol::object>(i), depth + 1));
             return a;
         }
         nlohmann::json obj = nlohmann::json::object();

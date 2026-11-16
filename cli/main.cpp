@@ -108,7 +108,7 @@ const char* kUsageText =
     "                                  Draw every keyed frame (default: first key to last) from the rest frame\n"
     "  vector show <project>           Every cel's vector shapes (schema 5)\n"
     "  vector add <project> --layer <name|id> --out <project> [--frame N]\n"
-    "             (--rect x0,y0,x1,y1 | --ellipse x0,y0,x1,y1 | --path \"x,y[,inX,inY,outX,outY];...\" [--closed])\n"
+    "             (--rect x0,y0,x1,y1 | --ellipse x0,y0,x1,y1 | --path \"x,y[,inX,inY,outX,outY];...\" (';' or spaces) [--closed])\n"
     "             [--stroke solid|dashed|dotted|none] [--stroke-color #rrggbb] [--width N] [--dash on,off]\n"
     "             [--fill none|solid|linear|radial] [--fill-color #rrggbb] [--fill-color2 #rrggbb]\n"
     "             [--axis x0,y0,x1,y1] [--smooth]\n"

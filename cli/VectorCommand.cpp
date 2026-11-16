@@ -7,6 +7,8 @@
 #include "acestudio/core/Editor.h"
 #include "acestudio/core/Vector.h"
 
+#include <algorithm>
+
 namespace acestudio::cli {
 
 namespace {
@@ -85,7 +87,11 @@ int vectorAdd(const Args& a, Output& out) {
         s.kind = rect ? ShapeKind::Rectangle : ShapeKind::Ellipse;
         s.points = {VectorPoint{(*v)[0], (*v)[1]}, VectorPoint{(*v)[2], (*v)[3]}};
     } else {
-        for (const std::string& item : splitOn(*path, ';')) {
+        // Anchors are separated by ';' or spaces (CMake and some shells split on ';').
+        std::string anchors = *path;
+        std::replace(anchors.begin(), anchors.end(), ' ', ';');
+        for (const std::string& item : splitOn(anchors, ';')) {
+            if (item.empty()) continue;
             const auto two = numbers(item, 2);
             const auto six = two ? std::nullopt : numbers(item, 6);
             if (!two && !six) return out.fail(kUsage, "vector add: --path anchors are x,y or x,y,inX,inY,outX,outY; got '" + item + "'");
