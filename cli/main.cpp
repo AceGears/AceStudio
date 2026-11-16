@@ -106,6 +106,16 @@ const char* kUsageText =
     "  rig rest <project> --out <project> --frame N    Make frame N the rig's rest frame\n"
     "  rig bake <project> --out <project> [--from F --to L]\n"
     "                                  Draw every keyed frame (default: first key to last) from the rest frame\n"
+    "  vector show <project>           Every cel's vector shapes (schema 5)\n"
+    "  vector add <project> --layer <name|id> --out <project> [--frame N]\n"
+    "             (--rect x0,y0,x1,y1 | --ellipse x0,y0,x1,y1 | --path \"x,y[,inX,inY,outX,outY];...\" [--closed])\n"
+    "             [--stroke solid|dashed|dotted|none] [--stroke-color #rrggbb] [--width N] [--dash on,off]\n"
+    "             [--fill none|solid|linear|radial] [--fill-color #rrggbb] [--fill-color2 #rrggbb]\n"
+    "             [--axis x0,y0,x1,y1] [--smooth]\n"
+    "                                  Add a shape to a cel and redraw it pixel-perfectly (gradients are\n"
+    "                                  ordered-dithered unless --smooth)\n"
+    "  vector clear|rasterize <project> --layer <name|id> --out <project> [--frame N]\n"
+    "                                  Remove the shapes and their pixels / keep the pixels, drop the shapes\n"
     "  slice <sheet.png> --out <folder> [--grid WxH|auto [--offset X,Y] [--spacing X,Y] [--keep-empty]]\n"
     "        [--background #rrggbb] [--tolerance 8] [--merge 2] [--min-pixels 4]\n"
     "                                  Cut a sheet into sprites (PNGs + .slices.json)\n"
@@ -147,7 +157,8 @@ std::optional<Args> parseArgs(int argc, char** argv, std::string& err) {
         else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot" || s == "--yes" || s == "--cpu" || s == "--rotate" ||
                  s == "--no-outline" || s == "--no-merge" || s == "--square" || s == "--keep-empty" || s == "--no-bob" ||
                  s == "--remove" || s == "--dry-run" || s == "--global" || s == "--lighting" || s == "--collision" || s == "--show-grid" ||
-                 s == "--perspective" || s == "--travel" || s == "--no-loop" || s == "--loop-back")
+                 s == "--perspective" || s == "--travel" || s == "--no-loop" || s == "--loop-back" || s == "--closed" ||
+                 s == "--smooth")
             a.flags.insert(s.substr(2));
         else if (s == "-h" || s == "--help") { a.positional = {"help"}; return a; }
         else if (s.rfind("--", 0) == 0) {
@@ -372,6 +383,7 @@ int main(int argc, char** argv) {
         if (cmd == "map") return acestudio::cli::cmdMap(*args, out);
         if (cmd == "run") return acestudio::cli::cmdRun(*args, out);
         if (cmd == "rig") return acestudio::cli::cmdRig(*args, out);
+        if (cmd == "vector") return acestudio::cli::cmdVector(*args, out);
         return out.fail(kUsage, "Unknown command '" + cmd + "'. Run with --help.");
     } catch (const std::exception& e) {
         return out.fail(kInternal, std::string("Unexpected error: ") + e.what());

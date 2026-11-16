@@ -89,6 +89,7 @@ struct LayerSnapshot {
     std::vector<SavedCel> masks;
     std::vector<std::pair<CelKey, std::uint32_t>> links;
     std::vector<std::pair<LayerId, BoneId>> bindings;   // rig parts among the layers
+    std::vector<std::pair<CelKey, std::vector<VectorShape>>> vectors;
     std::size_t bytes = 0;
 
     static LayerSnapshot capture(const Document& d, LayerId root) {
@@ -109,6 +110,8 @@ struct LayerSnapshot {
                 if (k.layer == id) s.links.emplace_back(k, g);
             if (d.rig())
                 if (auto it = d.rig()->bindings.find(id); it != d.rig()->bindings.end()) s.bindings.emplace_back(id, it->second);
+            for (const auto& [k, shapes] : d.vectorCels())
+                if (k.layer == id) s.vectors.emplace_back(k, shapes);
         }
         std::sort(s.layers.begin(), s.layers.end(), [](auto& a, auto& b) { return a.index < b.index; });
         return s;
@@ -118,6 +121,7 @@ struct LayerSnapshot {
         for (const auto& sl : layers) (void)d.insertLayerAt(sl.layer, sl.index);
         for (const auto& sc : cels) (void)d.setCel(sc.layer, sc.frame, sc.cel);
         for (const auto& sc : masks) (void)d.setMaskCel(sc.layer, sc.frame, sc.cel);
+        for (const auto& [k, shapes] : vectors) d.setVectorShapes(k.layer, k.frame, shapes);
         if (!links.empty()) {
             auto all = d.links();
             for (const auto& [k, g] : links) all[k] = g;
@@ -728,6 +732,7 @@ Status Editor::removeFrame(int frame) {
     const int duration = m_doc.frames()[static_cast<std::size_t>(frame)].durationMs;
     auto links = std::make_shared<std::map<CelKey, std::uint32_t>>(m_doc.links());
     auto rig = std::make_shared<std::optional<Rig>>(m_doc.rig());   // keys on the frame go with it
+    auto vecs = std::make_shared<std::map<CelKey, std::vector<VectorShape>>>(m_doc.vectorCels());
     return apply(std::make_unique<FnCommand>(
         "Delete Frame", [=](Document& d) { return d.removeFrame(frame); },
         [=](Document& d) {
@@ -737,6 +742,8 @@ Status Editor::removeFrame(int frame) {
             (void)d.replaceTags(*tags);
             d.restoreLinks(*links);   // frame keys are back where they were
             d.setRig(*rig);
+            for (const auto& [k, shapes] : *vecs)
+                if (k.frame == frame) d.setVectorShapes(k.layer, k.frame, shapes);
         },
         bytes));
 }
@@ -1198,6 +1205,57 @@ private:
     long long m_key;
 };
 } // namespace
+
+Status Editor::setVectorShapes(LayerId layer, int frame, std::vector<VectorShape> shapes, const std::string& label) {
+    const Layer* l = m_doc.layer(layer);
+    if (!l || l->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Vector shapes go on a raster layer"};
+    if (!m_doc.isLayerEditable(layer)) return Error{ErrorCode::PermissionDenied, "The layer is locked"};
+    if (frame < 0 || frame >= m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
+    if (m_doc.celLink(layer, frame) != 0) return Error{ErrorCode::InvalidArgument, "The cel is linked to other frames: unlink it to draw vector shapes"};
+    if (auto st = vectors::validate(shapes); !st) return st;
+    std::optional<Cel> before;
+    if (const Cel* c = m_doc.cel(layer, frame)) before = *c;
+    std::vector<VectorShape> oldShapes;
+    if (const auto* v = m_doc.vectorShapes(layer, frame)) oldShapes = *v;
+    // The cel becomes the shapes' pixels, trimmed to what they cover.
+    std::optional<Cel> after;
+    {
+        const Image full = vectors::rasterize(shapes, m_doc.width(), m_doc.height());
+        const IntRect b = full.opaqueBounds();
+        if (!b.empty()) after = Cel{full.copy(b), b.x, b.y};
+    }
+    const std::size_t bytes = (before ? celBytes(*before) : 0) + (after ? celBytes(*after) : 0);
+    return apply(std::make_unique<FnCommand>(
+        label,
+        [=](Document& d) -> Status {
+            if (after) {
+                if (auto st = d.setCel(layer, frame, *after); !st) return st;
+            } else {
+                d.clearCel(layer, frame);
+            }
+            d.setVectorShapes(layer, frame, shapes);
+            return {};
+        },
+        [=](Document& d) {
+            if (before) (void)d.setCel(layer, frame, *before);
+            else d.clearCel(layer, frame);
+            d.setVectorShapes(layer, frame, oldShapes);
+        },
+        bytes));
+}
+
+Status Editor::rasterizeVectorShapes(LayerId layer, int frame) {
+    const auto* v = m_doc.vectorShapes(layer, frame);
+    if (!v) return Error{ErrorCode::InvalidArgument, "This cel has no vector shapes"};
+    const std::vector<VectorShape> old = *v;
+    return apply(std::make_unique<FnCommand>(
+        "Rasterize Vector Shapes",
+        [=](Document& d) -> Status {
+            d.setVectorShapes(layer, frame, {});
+            return {};
+        },
+        [=](Document& d) { d.setVectorShapes(layer, frame, old); }, 0));
+}
 
 Status Editor::setRig(std::optional<Rig> rig, const std::string& label, long long mergeKey) {
     if (rig)

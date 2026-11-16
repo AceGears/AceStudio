@@ -150,6 +150,12 @@ template <typename Fn> void Document::remapFrames(Fn fn) {
     m_links = std::move(links);
     dropSingletonLinks();
     if (m_rig) rigs::remapFrames(*m_rig, fn);
+    std::map<CelKey, std::vector<VectorShape>> vectors;
+    for (auto& [k, shapes] : m_vectors) {
+        const int f = fn(k.frame);
+        if (f >= 0) vectors.emplace(CelKey{k.layer, f}, std::move(shapes));
+    }
+    m_vectors = std::move(vectors);
 }
 
 Status Document::setPixelAspect(double x, double y) {
@@ -214,7 +220,18 @@ Status Document::removeLayer(LayerId id) {
     std::erase_if(m_maskCels, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
     std::erase_if(m_links, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
     if (m_rig) std::erase_if(m_rig->bindings, [&](const auto& kv) { return doomed.count(kv.first) > 0; });
+    std::erase_if(m_vectors, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
     return {};
+}
+
+const std::vector<VectorShape>* Document::vectorShapes(LayerId l, int frame) const noexcept {
+    auto it = m_vectors.find(CelKey{l, frame});
+    return it == m_vectors.end() ? nullptr : &it->second;
+}
+
+void Document::setVectorShapes(LayerId l, int frame, std::vector<VectorShape> shapes) {
+    if (shapes.empty()) m_vectors.erase(CelKey{l, frame});
+    else m_vectors[CelKey{l, frame}] = std::move(shapes);
 }
 
 Status Document::moveLayer(LayerId id, std::size_t newIndex) {
@@ -725,6 +742,13 @@ Status Document::validate() const {
     }
     if (m_rig)
         if (auto st = rigs::validate(*m_rig, this); !st) return corrupt(st.error().message);
+    for (const auto& [k, shapes] : m_vectors) {
+        const Layer* l = layer(k.layer);
+        if (!l || l->kind != LayerKind::Raster) return corrupt("Vector shapes on a missing or non-raster layer");
+        if (k.frame < 0 || k.frame >= frameCount()) return corrupt("Vector shapes on a missing frame");
+        if (shapes.empty()) return corrupt("An empty vector shape list");
+        if (auto st = vectors::validate(shapes); !st) return corrupt(st.error().message);
+    }
     for (const auto& t : m_tags)
         if (t.fromFrame < 0 || t.toFrame >= frameCount() || t.fromFrame > t.toFrame || t.repeat < 0)
             return corrupt("Animation tag '" + t.name + "' has an invalid range");

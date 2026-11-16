@@ -65,7 +65,7 @@ struct SwimRig {
     rig::Rig rig;
     int bodyPart = -1, tailPart = -1;
     int stalk = -1;             // columns from the head to the tail stalk, or -1
-    rig::Vec stalkPt;           // where the tail fin turns
+    motion::rig::Vec stalkPt;   // where the tail fin turns (qualified: `rig` is the member above)
     std::vector<SwimFin> fins;
     SwimStyle mode = SwimStyle::Auto;
     int dir = 1;                // +1: the head is on the left

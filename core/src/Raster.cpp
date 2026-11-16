@@ -170,6 +170,20 @@ void combineMask(Mask& dst, const Mask& src, SelectionOp op) {
         }
 }
 
+double gradientT(double ax, double ay, double bx, double by, bool radial, int x, int y) noexcept {
+    const double dx = bx - ax, dy = by - ay;
+    const double len2 = dx * dx + dy * dy;
+    if (len2 <= 0) return 0.0;
+    const double t = radial ? std::sqrt((x - ax) * (x - ax) + (y - ay) * (y - ay)) / std::sqrt(len2) : ((x - ax) * dx + (y - ay) * dy) / len2;
+    return std::clamp(t, 0.0, 1.0);
+}
+
+Rgba8 gradientColor(Rgba8 c0, Rgba8 c1, double t, bool ordered, int x, int y) noexcept {
+    if (ordered) return t * 16.0 > bayer4(x, y) + 0.5 ? c1 : c0;
+    auto lerp = [t](std::uint8_t p, std::uint8_t q) { return static_cast<std::uint8_t>(std::lround(p + (q - p) * t)); };
+    return {lerp(c0.r, c1.r), lerp(c0.g, c1.g), lerp(c0.b, c1.b), lerp(c0.a, c1.a)};
+}
+
 Mask polygonMask(int width, int height, const std::vector<Point>& poly) {
     Mask m(width, height);
     if (poly.empty() || m.isNull()) return m;

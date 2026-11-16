@@ -1,4 +1,4 @@
-add_executable(acestudio-cli main.cpp CliCommon.h AiCommands.cpp AssetCommands.cpp MocapCommands.cpp ScriptCommand.cpp ConnectCommand.cpp RigCommand.cpp)
+add_executable(acestudio-cli main.cpp CliCommon.h AiCommands.cpp AssetCommands.cpp MocapCommands.cpp ScriptCommand.cpp ConnectCommand.cpp RigCommand.cpp VectorCommand.cpp ProjectArgs.h)
 target_link_libraries(acestudio-cli PRIVATE AceStudio::core)
 acestudio_set_warnings(acestudio-cli)
 if(WIN32)

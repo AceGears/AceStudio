@@ -50,6 +50,7 @@ add_library(acestudio_core STATIC
     src/Raster.cpp
     src/Rig.cpp
     src/RigTools.cpp
+    src/Vector.cpp
     src/Recovery.cpp
     src/Settings.cpp
     src/StbImageImpl.cpp

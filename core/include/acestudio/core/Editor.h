@@ -149,6 +149,14 @@ public:
     // consecutive calls with the same key merge into one step (a drag).
     Status setRig(std::optional<Rig> rig, const std::string& label, long long mergeKey = -1);
 
+    // ---- Vector shapes ----
+    // Replaces a cel's shapes and redraws the cel as their rasterisation
+    // (an empty list removes the shapes and clears the cel); one undo step.
+    // Refused on a linked cel.
+    Status setVectorShapes(LayerId layer, int frame, std::vector<VectorShape> shapes, const std::string& label);
+    // Keeps the cel's pixels and drops its shapes (painting stays from then on).
+    Status rasterizeVectorShapes(LayerId layer, int frame);
+
     // ---- Colour mode ----
     // Converts every cel. Indexed: pixels snap to the nearest opaque palette
     // colour (alpha < 128 becomes transparent, else opaque); with `dither`
