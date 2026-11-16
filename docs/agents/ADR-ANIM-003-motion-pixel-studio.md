@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted as a staged plan on 2026-11-15. One stage is built in this change (pixel-art in-betweens). glTF/GLB motion import is being built on its own branch. Everything else in section 3 is **planned, not built**. |
+| Status | Accepted as a staged plan on 2026-11-15. Two stages are built: pixel-art in-betweens (this change) and glTF/GLB motion import (its own change; see ADR-ANIM-002). Everything else in section 3 is **planned, not built**. |
 | Builds on | ADR-ANIM-001 (part rig), ADR-ANIM-002 (Motion Studio, BVH retargeting) |
 | Input | The "Advanced Animation, Intelligent Sprite Generation & Professional Pixel Art Editor" brief (12 phases), with four reference videos: 3D-to-2D retargeting in a Bonebase-style Aseprite extension; the same tool's chibi template → import → camera turn → fewer frames → draw over workflow; a RIFE-based in-betweener for Aseprite (intermediates 1/3/7, K-centroid downscale, palette quantize, split/fixed timing, area check); and a vector pixel editor (pen with anchors, shapes, dithered gradients, blend modes). The videos were used for concepts only. No code, models or assets were taken from them. |
 
@@ -31,7 +31,7 @@ Every colour comes from a key, so the palette is kept and alpha stays 0 or 255. 
 | 1 | Unified workspace | Workspace rail with Draw / Animation / AI Studio / Assets pages; Motion Studio is a dialog | — | Motion Studio as a dockable page (ADR-ANIM-002 stage 8) |
 | 2 | Professional pixel editor | Raster layers, masks, adjustment layers, blend modes, selection, symmetry, palettes, onion skin, tags, linked cels | — | Vector shape layers (pen with anchors, rectangle, ellipse, auto-close) rasterised pixel-perfectly; dithered gradient fill (ordered Bayer); stroke styles |
 | 3 | Auto and manual rigging | Automatic part rig per clip (ADR-ANIM-001), not saved or editable | — | Saved, editable rigs: bone tree, overlay on canvas, IK chains, joint limits (needs the schema bump in ADR-ANIM-001) |
-| 4 | Retargeting, glTF/FBX | BVH import and retarget (ADR-ANIM-002) | glTF/GLB animation import on branch `agents/gltf-import` (being built; reviewed before merge) | Motion library presets. FBX stays unsupported: the SDK is proprietary and reverse-engineered parsers are a large attack surface; convert with Blender |
+| 4 | Retargeting, glTF/FBX | BVH import and retarget (ADR-ANIM-002) | **Built**: glTF/GLB animation import (Motion Studio and `retarget --animation`; CI-verified, not yet used on a PC) | Motion library presets. FBX stays unsupported: the SDK is proprietary and reverse-engineered parsers are a large attack surface; convert with Blender |
 | 5 | 2.5D | Camera turn/tilt/roll on retargets, flagged "approximate view" beyond 30° | — | Direction sets (drawn views chosen by camera turn), the honest form of 2.5D for pixel art |
 | 6 | AI sprite generator | Local SDXL + pose ControlNet, characters, background removal, upscale | — | Hidden-part inpainting for rigs, view generation; local or approved cloud only |
 | 7 | Frame interpolation | — | **Built**: in-betweens (core, CLI `inbetween`, Animation › Generate In-betweens…) | Optional neural interpolator as an AI-worker step, followed by the same palette-safe clean-up |
