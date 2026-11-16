@@ -564,7 +564,7 @@ int cmdCycle(const Args& a, Output& out) {
     return out.success(j, human);
 }
 
-// inbetween <key1.png> <key2.png> [...] | <strip.png> --strip N  --out <folder> [--n 1] [--loop]
+// inbetween <key1.png> <key2.png> [...] | <strip.png> --strip N  --out <folder> [--n 1] [--loop-back]
 //           [--ms 125 | --fixed MS] [--tolerance 25] [--name inbetween]
 int cmdInbetween(const Args& a, Output& out) {
     const auto outDir = a.opt("out");
@@ -611,7 +611,7 @@ int cmdInbetween(const Args& a, Output& out) {
         timing = inbetween::Timing::Fixed;
         fixedMs = *v;
     }
-    const bool loop = a.flags.count("loop") != 0;
+    const bool loop = a.flags.count("loop-back") != 0;
     auto res = inbetween::inbetweenSequence(keys, std::vector<int>(keys.size(), keyMs), loop, timing, fixedMs, o);
     if (!res) return out.fail(res.error());
     const auto& r = res.value();

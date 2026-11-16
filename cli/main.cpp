@@ -77,7 +77,7 @@ const char* kUsageText =
     "                                  A walk from drawn poses of one character facing one way: one pose's head\n"
     "                                  and body in every frame, each pose's legs under it, in step order.\n"
     "                                  Strip PNG + GIF + JSON\n"
-    "  inbetween <key1.png> <key2.png> [...] | <strip.png> --strip N  --out <folder> [--n 1..7] [--loop]\n"
+    "  inbetween <key1.png> <key2.png> [...] | <strip.png> --strip N  --out <folder> [--n 1..7] [--loop-back]\n"
     "            [--ms 125 | --fixed MS] [--tolerance 25] [--name inbetween]\n"
     "                                  In-betweens for pixel art: pixels move between the keys, never blend\n"
     "                                  (palette and binary alpha kept). Strip PNG + GIF + JSON; frames the\n"
@@ -131,7 +131,7 @@ std::optional<Args> parseArgs(int argc, char** argv, std::string& err) {
         else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot" || s == "--yes" || s == "--cpu" || s == "--rotate" ||
                  s == "--no-outline" || s == "--no-merge" || s == "--square" || s == "--keep-empty" || s == "--no-bob" ||
                  s == "--remove" || s == "--dry-run" || s == "--global" || s == "--lighting" || s == "--collision" || s == "--show-grid" ||
-                 s == "--perspective" || s == "--travel" || s == "--no-loop" || s == "--loop")
+                 s == "--perspective" || s == "--travel" || s == "--no-loop" || s == "--loop-back")
             a.flags.insert(s.substr(2));
         else if (s == "-h" || s == "--help") { a.positional = {"help"}; return a; }
         else if (s.rfind("--", 0) == 0) {
