@@ -305,7 +305,7 @@ void prepare(Rig& rig) {
 
 namespace {
 
-bool rigid(const PartPose& q) { return q.angle == 0 && q.sx == 1 && q.sy == 1 && q.bend == 0; }
+bool rigid(const PartPose& q) { return q.angle == 0 && q.sx == 1 && q.sy == 1 && q.shear == 0 && q.bend == 0; }
 
 double smooth01(double k) {
     k = std::clamp(k, 0.0, 1.0);
@@ -343,7 +343,7 @@ void drawPart(const Part& p, const PartPose& q, Put&& put) {
     double x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (int k = 0; k < 4; ++k) {
         const double px = (k & 1 ? b.x + b.w : b.x) - p.pivot.x, py = (k & 2 ? b.y + b.h + maxCol : b.y + minCol) - p.pivot.y;
-        const double ux = px * q.sx, uy = py * q.sy;
+        const double uy = py * q.sy, ux = px * q.sx + q.shear * uy;
         const double ox = c * ux - s * uy + piv.x, oy = s * ux + c * uy + piv.y;
         x0 = std::min(x0, ox);
         y0 = std::min(y0, oy);
@@ -375,8 +375,9 @@ void drawPart(const Part& p, const PartPose& q, Put&& put) {
             auto sourceAt = [&](double m) {
                 cc = std::cos(a * m);
                 ss = std::sin(a * m);
-                u = (cc * qx + ss * qy) * isx;
-                v = (-ss * qx + cc * qy) * isy;
+                const double U = cc * qx + ss * qy, V = -ss * qx + cc * qy;
+                u = (U - q.shear * V) * isx;
+                v = V * isy;
             };
             if (q.skinDepth > 0) {
                 // A skinned root turns less the deeper its source point lies
@@ -480,7 +481,7 @@ Image renderPose(const Rig& rig, const std::vector<PartPose>& pose, IntRect box)
 Vec transformPoint(const Rig& rig, int i, const PartPose& q, Vec pt) {
     const Part& p = rig.parts[static_cast<std::size_t>(i)];
     const double c = std::cos(q.angle), s = std::sin(q.angle);
-    const double ux = (pt.x - p.pivot.x) * q.sx, uy = (pt.y - p.pivot.y) * q.sy;
+    const double uy = (pt.y - p.pivot.y) * q.sy, ux = (pt.x - p.pivot.x) * q.sx + q.shear * uy;
     return {c * ux - s * uy + p.pivot.x + iround(q.dx), s * ux + c * uy + p.pivot.y + iround(q.dy)};
 }
 

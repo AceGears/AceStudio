@@ -2,6 +2,7 @@
 // species modules on real sprites (golden fixtures in tests/data/anim).
 
 #include "PartRig.h"
+#include "RigModules.h"
 
 #include "acestudio/core/Effects.h"
 #include "acestudio/core/PngCodec.h"
@@ -601,4 +602,71 @@ TEST_CASE("Short legs walk with each boot in one piece", "[rig][gait]") {
     const ClipCheck chk = checkClip(clip.value());
     for (const auto& i : chk.issues) UNSCOPED_INFO(i);
     CHECK(chk.issues.size() == (chk.legsOnlySlide ? 1u : 0u));
+}
+
+TEST_CASE("A sheared part keeps its pivot row and moves each row below it sideways", "[rig]") {
+    const Image img = twoBlocks();
+    rig::Rig r;
+    r.width = img.width();
+    r.height = img.height();
+    rig::addPart(r, img, "bar", rectMask(32, 24, {4, 4, 8, 16}), {8, 4}, 0);
+    rig::prepare(r);
+    auto pose = r.rest();
+    pose[0].shear = 0.4;   // 16 rows down: 6.4 px across
+    const Image out = rig::renderPose(r, pose, {0, 0, 32, 24});
+    // The top row stays where it is drawn.
+    for (int x = 4; x < 12; ++x) CHECK(out.pixel(x, 4) == img.pixel(x, 4));
+    // The bottom row is 6 px further right, the same width.
+    int x0 = 99, x1 = -1;
+    for (int x = 0; x < 32; ++x)
+        if (out.pixel(x, 19).a) {
+            x0 = std::min(x0, x);
+            x1 = std::max(x1, x);
+        }
+    CHECK(std::abs(x0 - 10) <= 1);
+    CHECK(std::abs((x1 - x0 + 1) - 8) <= 1);
+    for (auto c : colours(out)) CHECK(colours(img).count(c) == 1);
+    // transformPoint agrees with what is drawn.
+    const rig::Vec p = rig::transformPoint(r, 0, pose[0], {4, 20});
+    CHECK(std::abs(p.x - (4 + 0.4 * 16)) < 1e-9);
+    CHECK(std::abs(p.y - 20) < 1e-9);
+}
+
+TEST_CASE("A narrow shadow between short legs goes with a leg, not the body", "[rig][gait]") {
+    // chibiSide with the back leg further back, and a 2 px crotch shadow in
+    // the gap: left on the body it would hang there as a sliver mid-stride.
+    const Rgba8 kShadow{60, 30, 30, 255};
+    Image img(64, 100);
+    img.fillRect({10, 2, 44, 46}, kSkin);
+    img.fillRect({16, 48, 34, 32}, kCloth);
+    img.fillRect({14, 80, 16, 8}, kInk);
+    img.fillRect({10, 88, 20, 8}, kSole1);
+    img.fillRect({40, 80, 14, 8}, kInk);
+    img.fillRect({38, 88, 18, 5}, kSole2);
+    img.fillRect({33, 80, 2, 6}, kShadow);
+    const Subject s = analyzeSubject(img);
+    REQUIRE(s.body == Body::Biped);
+    REQUIRE(s.feet.size() == 2);
+    auto built = motion::detail::buildGaitRig(img, s, Body::Biped);
+    REQUIRE(built);
+    CHECK(built->stubby);
+    const auto& parts = built->rig.parts;
+    for (int y = 80; y < 86; ++y)
+        for (int x = 33; x < 35; ++x) {
+            INFO(x << "," << y);
+            int owner = -1;
+            for (std::size_t i = 0; i < parts.size(); ++i)
+                if (parts[i].own.get(x, y)) owner = static_cast<int>(i);
+            REQUIRE(owner >= 0);
+            CHECK(parts[static_cast<std::size_t>(owner)].name.rfind("leg", 0) == 0);
+        }
+    // A wide skirt between the legs stays with the body.
+    Image skirt = img;
+    skirt.fillRect({30, 80, 10, 3}, kCloth);
+    const Subject s2 = analyzeSubject(skirt);
+    REQUIRE(s2.feet.size() == 2);
+    REQUIRE(s2.legTop <= 80);
+    auto b2 = motion::detail::buildGaitRig(skirt, s2, Body::Biped);
+    REQUIRE(b2);
+    CHECK(b2->rig.parts[static_cast<std::size_t>(b2->bodyPart)].own.get(35, 82));
 }

@@ -5,6 +5,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 ## [0.10.0] — 2026-11-01 — Premium AI game asset studio (unreleased)
 
 ### Fixed
+- Short-legged characters (walk, run and BVH retargets) no longer show thin slivers of leg left
+  behind between the boots: a boot now leans with its stride (each row slides a little more than
+  the one above) instead of jumping sideways, and a narrow strip of shadow between the legs moves
+  with the nearest leg rather than staying with the body.
 - Cutting a generated sheet (`slice --cells`, and sheets in the generator) no longer removes dark
   clothes with a black background or pale ones with a white background: how close a colour must be
   to the background is now measured from the sheet's border instead of being fixed. Pieces of one
