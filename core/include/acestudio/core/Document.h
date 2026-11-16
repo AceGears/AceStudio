@@ -5,6 +5,7 @@
 #include "acestudio/core/Palette.h"
 #include "acestudio/core/Raster.h"
 #include "acestudio/core/Result.h"
+#include "acestudio/core/Rig.h"
 
 #include <nlohmann/json.hpp>
 
@@ -224,6 +225,11 @@ public:
     Status removeTag(std::size_t index);
     Status replaceTags(std::vector<AnimationTag> tags);   // validated as a whole
 
+    // ---- Rig (schema 4; ADR-ANIM-004) ----
+    // Bones and the raster layers they move. Removing a layer unbinds it.
+    const std::optional<Rig>& rig() const noexcept { return m_rig; }
+    void setRig(std::optional<Rig> rig) { m_rig = std::move(rig); }
+
     // Free-form, namespaced extension data preserved on save: AI
     // generation settings, model provenance, export presets, tileset
     // metadata, per-project preferences.
@@ -272,6 +278,7 @@ private:
     TileMode m_tileMode = TileMode::None;
     Mask m_selection;
     std::vector<AnimationTag> m_tags;
+    std::optional<Rig> m_rig;
     nlohmann::json m_extensions = nlohmann::json::object();
 };
 

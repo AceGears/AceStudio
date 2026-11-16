@@ -1,4 +1,14 @@
-# .acestudio project format — schema version 1
+# .acestudio project format — schema versions 1–4
+
+A file is written with the lowest schema that can hold it, so a project that uses no newer
+feature stays readable by older builds:
+
+| Schema | Needed when the document has |
+|---|---|
+| 1 | Raster and group layers, frames, cels, tags, palette, extensions |
+| 2 | Tile mode, layer masks, clipping masks or adjustment layers |
+| 3 | Levels or Curves adjustment layers, or linked cels |
+| 4 | A rig (`"rig"` in `document.json`, below) |
 
 A project file is a standard ZIP archive. Any ZIP tool can open it for inspection.
 
@@ -53,6 +63,38 @@ Rules:
 - Blend modes: normal, multiply, screen, overlay, darken, lighten, add, subtract, difference.
 - `extensions` is a free-form object with namespaced keys (e.g. `ai`, `export`, `tileset`).
   Readers must preserve unknown keys.
+
+## rig (schema 4)
+
+Present only in documents that have a rig (ADR-ANIM-004). Parts are the document's own raster
+layers; the rig stores no pixels.
+
+```json
+"rig": {
+  "version": 1,
+  "nextId": 6,
+  "bones": [
+    { "id": 1, "parent": 0, "name": "body", "x": 36.0, "y": 53.0, "length": 46.0, "angle": -1.5708 },
+    { "id": 2, "parent": 1, "name": "leg0 thigh", "x": 31.5, "y": 53.0, "length": 3.0, "angle": 1.73,
+      "limits": [-0.8, 0.8], "locked": true }
+  ],
+  "bindings": [ { "layer": 7, "bone": 2 } ],
+  "chains": [ { "name": "leg0 IK", "tip": 3, "bend": -1 } ]
+}
+```
+
+Rules:
+- `version` greater than the reader supports is refused ("update AceStudio").
+- Bones are listed parents first. Ids are unique, non-zero and below `nextId`; `parent` 0 is a
+  root. Names are unique, 1–128 characters.
+- `x`, `y` are the head (the joint the bone turns about) at rest, in canvas pixels, y down;
+  `length` ≥ 0; `angle` is the rest direction in radians, clockwise on screen from +x.
+- `limits` (optional): the smallest and largest turn from rest relative to the parent, radians,
+  ordered, within a full turn either way. `locked` (optional): posing leaves the bone at rest.
+- Each binding names a raster layer of the document and a bone; a layer is bound at most once.
+- A chain's `tip` is a bone that has a parent; `bend` is 1 or -1; one chain per tip.
+- At most 256 bones and 64 chains. Anything else invalid makes the file unreadable
+  (`Rig: ...`), it is never partly read.
 
 ## Limits enforced on read
 

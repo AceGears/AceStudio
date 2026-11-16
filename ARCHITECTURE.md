@@ -107,6 +107,10 @@ duplicate implementation of document logic, file formats or export in any front 
 - **Project schema 2** adds masks (`masks/L<id>_F<n>.png`), clipping and adjustment fields
   and the tile mode. `requiredSchemaVersion()` still writes schema 1 when none of these is
   used, so older builds keep opening such files.
+- **Project schema 4** adds an optional `rig` (`Rig.h`): bones, layer → bone bindings and IK
+  chains; the parts are ordinary raster layers. Written only when a document has a rig.
+  `RigTools.h` auto-rigs a layer and bakes poses into cels with the part-rig renderer
+  (ADR-ANIM-004).
 - **Recovery**: `RecoveryStore` writes `<id>.acestudio` + `<id>.json` (writer pid, original
   path) into `<data dir>/recovery`. Files whose writer process is no longer running are
   offered for recovery at startup. Saving or closing a document removes its files.

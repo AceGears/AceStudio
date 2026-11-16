@@ -65,6 +65,14 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   rig lands (ADR-ANIM-001).
 
 ### Added
+- **Editable rigs saved with the project** (Rig panel; Animation › Auto-Rig Current Layer;
+  `acestudio-cli rig show|auto|pose`). A rig is a tree of bones, the layers each bone moves, and
+  two-bone IK chains, with joint limits and locks; every edit is one undo step. Auto-rig cuts a
+  sprite with legs into part layers (body, thigh, shin, foot, arms) in a new group, with bones and
+  leg IK, and hides the original layer. Pose the bones (turns, root move, IK reach), see them on the
+  canvas, and bake the pose into a frame: the parts of a chosen rest frame are moved and turned
+  pixel-art safe (whole pixels, RotSprite, no new colours), so baking again never compounds. Saved
+  as schema 4 only when a document has a rig (ADR-ANIM-004, `docs/project-format.md`).
 - **In-betweens for pixel art** (Animation › Generate In-betweens…, and `acestudio-cli inbetween
   key1.png key2.png ... --out folder`). New frames between drawn key frames: each pixel of a key
   finds where it went in the next and is moved part of the way, so colours are never blended, the

@@ -88,6 +88,7 @@ struct LayerSnapshot {
     std::vector<SavedCel> cels;
     std::vector<SavedCel> masks;
     std::vector<std::pair<CelKey, std::uint32_t>> links;
+    std::vector<std::pair<LayerId, BoneId>> bindings;   // rig parts among the layers
     std::size_t bytes = 0;
 
     static LayerSnapshot capture(const Document& d, LayerId root) {
@@ -106,6 +107,8 @@ struct LayerSnapshot {
                 }
             for (const auto& [k, g] : d.links())
                 if (k.layer == id) s.links.emplace_back(k, g);
+            if (d.rig())
+                if (auto it = d.rig()->bindings.find(id); it != d.rig()->bindings.end()) s.bindings.emplace_back(id, it->second);
         }
         std::sort(s.layers.begin(), s.layers.end(), [](auto& a, auto& b) { return a.index < b.index; });
         return s;
@@ -119,6 +122,13 @@ struct LayerSnapshot {
             auto all = d.links();
             for (const auto& [k, g] : links) all[k] = g;
             d.restoreLinks(std::move(all));
+        }
+        // Removing a layer unbinds it from the rig; bind it again if its bone is still there.
+        if (!bindings.empty() && d.rig()) {
+            Rig rig = *d.rig();
+            for (const auto& [layer, bone] : bindings)
+                if (rig.bone(bone)) rig.bindings[layer] = bone;
+            d.setRig(std::move(rig));
         }
     }
 };
@@ -1158,6 +1168,40 @@ Status Editor::replaceDocument(Document next, const std::string& label) {
         for (const auto& [key, cel] : d->cels()) bytes += cel.image.byteSize();
     return apply(std::make_unique<FnCommand>(
         label, [after](Document& d) { d = *after; return Status{}; }, [before](Document& d) { d = *before; }, bytes));
+}
+
+namespace {
+// Replaces the rig; consecutive commands with the same merge key become one.
+class SetRigCommand final : public Command {
+public:
+    SetRigCommand(std::string label, std::optional<Rig> before, std::optional<Rig> after, long long key)
+        : m_label(std::move(label)), m_before(std::move(before)), m_after(std::move(after)), m_key(key) {}
+    std::string label() const override { return m_label; }
+    Status redo(Document& d) override {
+        d.setRig(m_after);
+        return {};
+    }
+    void undo(Document& d) override { d.setRig(m_before); }
+    long long mergeKey() const override { return m_key; }
+    bool mergeWith(const Command& next) override {
+        const auto* o = dynamic_cast<const SetRigCommand*>(&next);
+        if (!o || m_key < 0 || o->m_key != m_key) return false;
+        m_after = o->m_after;
+        return true;
+    }
+
+private:
+    std::string m_label;
+    std::optional<Rig> m_before, m_after;
+    long long m_key;
+};
+} // namespace
+
+Status Editor::setRig(std::optional<Rig> rig, const std::string& label, long long mergeKey) {
+    if (rig)
+        if (auto st = rigs::validate(*rig, &m_doc); !st) return st;
+    if (rig == m_doc.rig()) return {};
+    return apply(std::make_unique<SetRigCommand>(label, m_doc.rig(), std::move(rig), mergeKey), mergeKey >= 0);
 }
 
 namespace {

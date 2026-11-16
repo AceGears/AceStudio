@@ -38,6 +38,15 @@ not been run.
   key shows, so big pose changes tear; the area check flags many such frames but not all (a limb
   can move without changing the area). Touching parts of the same colour can swap pixels; keep
   separate parts on separate layers. The work holds a second copy of the document while it runs.
+- **Rigs** (Rig panel, Animation › Auto-Rig Current Layer, `acestudio-cli rig`): the core and CLI
+  are tested; the panel and the bone overlay are built by CI and opened by the UI audit but have not
+  been used on a PC. Bones are edited with the panel's fields: they cannot yet be dragged on the
+  canvas. Auto-rig handles bodies with legs (two or four); blobs, flyers, swimmers and objects are
+  refused and must be rigged by hand, and arms are only rigged where the silhouette analysis finds
+  them. Every part is rigid on one bone (no bending across a joint). A pose lives in the panel until
+  it is baked into a frame; poses and bone keyframes are not saved. Auto-rig runs on the UI thread
+  (fast for sprites; a very large layer pauses the window briefly). Projects with a rig need
+  schema 4 (this version or later).
 - **ONNX Runtime DirectML:** onnxruntime-directml 1.24.4 fails inside a fused node when running
   BiRefNet on the test PC. AceStudio falls back to fewer fusions, then to the CPU (~16 s per
   image). NVIDIA GPUs with driver R580+ use CUDA instead.

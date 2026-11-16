@@ -102,6 +102,8 @@ add_executable(AceStudio WIN32
     src/panels/PalettePanel.cpp
     src/panels/PropertiesPanel.h
     src/panels/PropertiesPanel.cpp
+    src/panels/RigPanel.h
+    src/panels/RigPanel.cpp
     src/panels/TimelinePanel.h
     src/panels/TimelinePanel.cpp
     src/panels/LogPanel.h

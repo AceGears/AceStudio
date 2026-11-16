@@ -1,8 +1,10 @@
 #include "CanvasWidget.h"
 
 #include <QKeyEvent>
+#include <QLineF>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPolygonF>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -236,6 +238,33 @@ void CanvasWidget::paintEvent(QPaintEvent*) {
         p.drawPath(m_overlay);
         p.restore();
     }
+    // Bones: a tapered line from head to tail with a ring at the joint, in
+    // screen pixels at any zoom, outlined so they read on any colour.
+    if (!m_bones.empty()) {
+        p.save();
+        p.setRenderHint(QPainter::Antialiasing, true);
+        auto toWidget = [this](QPointF q) { return m_offset + q * m_zoom; };
+        for (const BoneMark& b : m_bones) {
+            const QPointF h = toWidget(b.head), t = toWidget(b.tail);
+            const QColor c = b.selected ? QColor(255, 196, 64) : QColor(110, 210, 255);
+            const QLineF axis(h, t);
+            QPolygonF shape;
+            if (axis.length() > 1) {
+                const QPointF n = QPointF(-(t.y() - h.y()), t.x() - h.x()) / axis.length() * 3.5;
+                shape << h + n << t << h - n;
+            }
+            p.setPen(QPen(QColor(0, 0, 0, 200), 3));
+            p.setBrush(Qt::NoBrush);
+            if (!shape.isEmpty()) p.drawPolygon(shape);
+            p.drawEllipse(h, 4.5, 4.5);
+            p.setPen(QPen(c, 1.5));
+            p.setBrush(QColor(c.red(), c.green(), c.blue(), b.selected ? 110 : 60));
+            if (!shape.isEmpty()) p.drawPolygon(shape);
+            p.setBrush(Qt::NoBrush);
+            p.drawEllipse(h, 4.5, 4.5);
+        }
+        p.restore();
+    }
     // Brush footprint preview (hidden while panning).
     if (!m_brushOutline.isEmpty() && !m_panning && !m_handMode && !m_spaceHeld) {
         const QRectF r = imageToWidget(m_brushOutline).adjusted(0, 0, -1, -1);
@@ -330,6 +359,11 @@ void CanvasWidget::mouseDoubleClickEvent(QMouseEvent* e) {
 
 void CanvasWidget::setOverlay(const QPainterPath& path) {
     m_overlay = path;
+    update();
+}
+
+void CanvasWidget::setBones(std::vector<BoneMark> bones) {
+    m_bones = std::move(bones);
     update();
 }
 

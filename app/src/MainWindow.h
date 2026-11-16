@@ -37,6 +37,7 @@ class PreviewPanel;
 class AiPanel;
 class AiService;
 class PropertiesPanel;
+class RigPanel;
 class TimelinePanel;
 class ToolState;
 class ToolsPanel;
@@ -145,6 +146,7 @@ private:
     QAction* m_redoAction = nullptr;
     QDockWidget* m_layersDock = nullptr;
     QDockWidget* m_propsDock = nullptr;
+    QDockWidget* m_rigDock = nullptr;
     QDockWidget* m_paletteDock = nullptr;
     QDockWidget* m_timelineDock = nullptr;
     QDockWidget* m_logDock = nullptr;
@@ -159,6 +161,7 @@ private:
     QAction* m_onionAction = nullptr;
     LayersPanel* m_layers = nullptr;
     PropertiesPanel* m_props = nullptr;
+    RigPanel* m_rigPanel = nullptr;
     PalettePanel* m_palette = nullptr;
     TimelinePanel* m_timeline = nullptr;
     LogPanel* m_log = nullptr;
