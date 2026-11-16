@@ -231,13 +231,13 @@ TEST_CASE("Editor: vector shapes redraw the cel, undo, follow frames and layers"
     REQUIRE(ed.setVectorShapes(l, 0, {moved}, "Move Rectangle"));
     CHECK(ed.document().composite(0).pixel(6, 6).a == 0);
     CHECK(ed.document().composite(0).pixel(16, 6) == kRed);
-    ed.undo();
+    REQUIRE(ed.undo());
     CHECK(ed.document().composite(0) == drawn);
     CHECK(*ed.document().vectorShapes(l, 0) == std::vector<VectorShape>{r});
-    ed.undo();
+    REQUIRE(ed.undo());
     CHECK_FALSE(ed.document().vectorShapes(l, 0));
     CHECK(ed.document().composite(0).pixel(6, 6).a == 0);
-    ed.redo();
+    REQUIRE(ed.redo());
     CHECK(ed.document().composite(0) == drawn);
 
     // Shapes move with their frame, and a deleted frame's shapes come back on undo.
@@ -246,13 +246,13 @@ TEST_CASE("Editor: vector shapes redraw the cel, undo, follow frames and layers"
     REQUIRE(ed.document().vectorShapes(l, 1));
     REQUIRE(ed.removeFrame(1));
     CHECK(ed.document().vectorCels().empty());
-    ed.undo();
+    REQUIRE(ed.undo());
     CHECK(ed.document().vectorShapes(l, 1));
 
     // Deleting the layer drops them; undo brings them back.
     REQUIRE(ed.removeLayer(l));
     CHECK(ed.document().vectorCels().empty());
-    ed.undo();
+    REQUIRE(ed.undo());
     CHECK(ed.document().vectorShapes(l, 1));
     CHECK(ed.document().validate());
 
@@ -262,7 +262,7 @@ TEST_CASE("Editor: vector shapes redraw the cel, undo, follow frames and layers"
     CHECK_FALSE(ed.document().vectorShapes(l, 1));
     CHECK(ed.document().composite(1) == before);
     CHECK_FALSE(ed.rasterizeVectorShapes(l, 1));
-    ed.undo();
+    REQUIRE(ed.undo());
     CHECK(ed.document().vectorShapes(l, 1));
 
     // Refused: bad shapes, a group layer, a linked cel.

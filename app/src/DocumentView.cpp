@@ -276,6 +276,11 @@ bool DocumentView::beginSession(const QString& label, Qt::MouseButton button, bo
     }
     m_session = std::move(s).value();
     m_session->setBrush(m_tools->brush());
+    if (!m_vectorWarned && !vectorTool() && document().vectorShapes(m_layer, m_frame)) {
+        m_vectorWarned = true;
+        Q_EMIT statusMessage(tr("This cel has vector shapes: editing them redraws it and drops hand painting. "
+                                "Layer › Rasterize Vector Shapes keeps the paint."));
+    }
     if (useSelection && hasSelection()) m_session->setSelection(&document().selection());
     if (m_tools->brush().ink == Ink::Shading) {
         // Ramp: palette entries from the primary to the secondary colour
@@ -314,13 +319,91 @@ void DocumentView::endSession(bool commit) {
     m_canvas->setOverlay({});
 }
 
+bool DocumentView::vectorTool() const {
+    if (!m_tools || !m_tools->vectorShapes() || m_editMask) return false;
+    const Tool t = m_tools->tool();
+    return t == Tool::Line || t == Tool::Rectangle || t == Tool::Ellipse || t == Tool::Polygon || t == Tool::Curve;
+}
+
+VectorShape DocumentView::styledShape(ShapeKind kind) const {
+    VectorShape s;
+    s.kind = kind;
+    s.stroke = m_tools->strokeStyle();
+    s.strokeColor = m_strokeColor;
+    s.width = std::clamp(m_tools->brush().size, 1, vectors::kMaxWidth);
+    s.fill = m_tools->vectorFill();
+    // The fill uses the other colour (solid) or runs from primary to secondary.
+    const Rgba8 primary = toRgba(m_tools->primary()), secondary = toRgba(m_tools->secondary());
+    s.fillColor = s.fill == FillStyle::Solid ? (m_strokeColor == primary ? secondary : primary) : primary;
+    s.fillColor2 = secondary;
+    s.dither = m_tools->gradientDither() == GradientDither::Ordered;
+    return s;
+}
+
+void DocumentView::commitVectorShape(VectorShape shape, const QString& label) {
+    endSession(false);   // the preview was painted; the shape is drawn from the vector instead
+    // Gradient axis: across the shape's box (linear: left to right; radial:
+    // centre to a corner).
+    if (shape.fill == FillStyle::Linear || shape.fill == FillStyle::Radial) {
+        double x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18;
+        for (const Point& p : vectors::outline(shape)) {
+            x0 = std::min(x0, double(p.x));
+            y0 = std::min(y0, double(p.y));
+            x1 = std::max(x1, double(p.x));
+            y1 = std::max(y1, double(p.y));
+        }
+        if (x1 >= x0) {
+            const bool radial = shape.fill == FillStyle::Radial;
+            shape.fromX = radial ? (x0 + x1) / 2 : x0;
+            shape.fromY = (y0 + y1) / 2;
+            shape.toX = x1;
+            shape.toY = radial ? y1 : (y0 + y1) / 2;
+        }
+    }
+    std::vector<VectorShape> shapes;
+    if (const auto* now = document().vectorShapes(m_layer, m_frame)) shapes = *now;
+    shapes.push_back(std::move(shape));
+    if (auto st = m_editor.setVectorShapes(m_layer, m_frame, std::move(shapes), label.toStdString()); !st)
+        Q_EMIT statusMessage(qs(st.error().message));
+    else
+        Q_EMIT statusMessage(tr("Vector shape added (%1 on this cel). Layer › Rasterize Vector Shapes keeps the pixels for painting.")
+                                 .arg(document().vectorShapes(m_layer, m_frame) ? int(document().vectorShapes(m_layer, m_frame)->size()) : 0));
+}
+
+void DocumentView::finishCurve(bool commit) {
+    if (m_curveStage == 0) {   // still the straight line: no handles yet
+        m_curveC1 = m_curveA;
+        m_curveC2 = m_curveB;
+    }
+    m_curveStage = -1;
+    if (commit && m_session && vectorTool()) {
+        VectorShape s = styledShape(ShapeKind::Path);
+        VectorPoint a{double(m_curveA.x), double(m_curveA.y)}, b{double(m_curveB.x), double(m_curveB.y)};
+        a.outX = m_curveC1.x - m_curveA.x;
+        a.outY = m_curveC1.y - m_curveA.y;
+        b.inX = m_curveC2.x - m_curveB.x;
+        b.inY = m_curveC2.y - m_curveB.y;
+        s.points = {a, b};
+        commitVectorShape(std::move(s), tr("Add Vector Curve"));
+        return;
+    }
+    endSession(commit);
+}
+
 void DocumentView::finishGesture(bool commit) {
     if (m_curveStage >= 0) {
-        m_curveStage = -1;
-        endSession(commit);
+        finishCurve(commit);
         return;
     }
     if (!m_polygon.empty()) {
+        if (commit && m_session && m_polygon.size() >= 2 && vectorTool()) {
+            VectorShape s = styledShape(ShapeKind::Path);
+            for (const Point& p : m_polygon) s.points.push_back(VectorPoint{double(p.x), double(p.y)});
+            s.closed = m_polygon.size() >= 3;
+            m_polygon.clear();
+            commitVectorShape(std::move(s), tr("Add Vector Polygon"));
+            return;
+        }
         if (commit && m_session && m_polygon.size() >= 2) {
             m_session->revertAll();
             drawPolygon(*m_session, m_polygon, m_tools && m_tools->fillShapes(), m_strokeColor);
@@ -772,6 +855,7 @@ void DocumentView::onToolPressed(QPoint px, Qt::MouseButton button, Qt::Keyboard
 
 void DocumentView::applyToolTo(PaintSession& s, Point from, Point to, bool first) {
     if (!first) s.revertAll();
+    m_shapeEnd = to;
     switch (m_tools->tool()) {
     case Tool::Line: drawLine(s, from, to, m_strokeColor); break;
     case Tool::Rectangle: drawRectangle(s, from, to, m_tools->fillShapes(), m_strokeColor); break;
@@ -870,7 +954,7 @@ void DocumentView::onToolReleased(QPoint px, Qt::MouseButton, Qt::KeyboardModifi
     }
     if (m_moving) { finishMove(true); return; }
     if (m_curveStage >= 0) {
-        if (m_curveStage == 0 && m_curveA == m_curveB) { m_curveStage = -1; endSession(true); return; }   // a dot
+        if (m_curveStage == 0 && m_curveA == m_curveB) { m_curveStage = -1; endSession(!vectorTool()); return; }   // a dot (no vector shape)
         if (m_curveStage < 2) {
             if (m_curveStage == 0) { m_curveC1 = m_curveA; m_curveC2 = m_curveB; }
             ++m_curveStage;
@@ -879,11 +963,22 @@ void DocumentView::onToolReleased(QPoint px, Qt::MouseButton, Qt::KeyboardModifi
             redrawCurve();
             return;
         }
-        m_curveStage = -1;
-        endSession(true);
+        finishCurve(true);
         return;
     }
     if (!m_polygon.empty()) return;   // polygons finish on close / double-click / Enter
+    if (m_session && vectorTool()) {
+        const Tool t = m_tools->tool();
+        VectorShape s = styledShape(t == Tool::Line ? ShapeKind::Path : t == Tool::Rectangle ? ShapeKind::Rectangle : ShapeKind::Ellipse);
+        s.points = {VectorPoint{double(m_anchor.x), double(m_anchor.y)}, VectorPoint{double(m_shapeEnd.x), double(m_shapeEnd.y)}};
+        if (t == Tool::Line && m_anchor == m_shapeEnd) {
+            endSession(false);   // a click is not a line
+            return;
+        }
+        if (t == Tool::Line) s.fill = FillStyle::None;
+        commitVectorShape(std::move(s), t == Tool::Line ? tr("Add Vector Line") : t == Tool::Rectangle ? tr("Add Vector Rectangle") : tr("Add Vector Ellipse"));
+        return;
+    }
     endSession(true);
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "acestudio/core/Paint.h"
+#include "acestudio/core/Vector.h"
 
 #include <QColor>
 #include <QObject>
@@ -46,6 +47,11 @@ public:
     SelectionOp selectionOp() const { return m_selectionOp; }
     GradientShape gradientShape() const { return m_gradientShape; }
     GradientDither gradientDither() const { return m_gradientDither; }
+    // Line, Rectangle, Ellipse, Polygon and Curve add editable vector shapes
+    // to the cel (Vector.h) instead of painting pixels.
+    bool vectorShapes() const { return m_vectorShapes; }
+    StrokeStyle strokeStyle() const { return m_strokeStyle; }
+    FillStyle vectorFill() const { return m_vectorFill; }
 
     // Custom brush tips (shape = Custom uses the current one).
     struct BrushTip {
@@ -105,6 +111,9 @@ public Q_SLOTS:
     void setSelectionOp(SelectionOp op) { m_selectionOp = op; Q_EMIT changed(); }
     void setGradientShape(GradientShape s) { m_gradientShape = s; Q_EMIT changed(); }
     void setGradientDither(GradientDither d) { m_gradientDither = d; Q_EMIT changed(); }
+    void setVectorShapes(bool on) { m_vectorShapes = on; Q_EMIT changed(); }
+    void setStrokeStyle(StrokeStyle s) { m_strokeStyle = s; Q_EMIT changed(); }
+    void setVectorFill(FillStyle f) { m_vectorFill = f; Q_EMIT changed(); }
 
 Q_SIGNALS:
     void changed();
@@ -126,6 +135,9 @@ private:
     bool m_sampleMerged = true;
     SelectionOp m_selectionOp = SelectionOp::Replace;
     GradientShape m_gradientShape = GradientShape::Linear;
+    bool m_vectorShapes = false;
+    StrokeStyle m_strokeStyle = StrokeStyle::Solid;
+    FillStyle m_vectorFill = FillStyle::None;
     GradientDither m_gradientDither = GradientDither::Ordered;
     std::vector<BrushTip> m_tips;
     int m_currentTip = -1;

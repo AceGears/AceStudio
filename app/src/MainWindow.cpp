@@ -547,6 +547,10 @@ void MainWindow::buildMenus() {
     m_mergeDownAction = docAction(layer, tr("&Merge Down"), QKeySequence(Qt::CTRL | Qt::Key_E), [this] {
         report(currentView()->editor().mergeDown(currentView()->currentLayer()));
     });
+    docAction(layer, tr("&Rasterize Vector Shapes"), QKeySequence(), [this] {
+        auto* v = currentView();
+        report(v->editor().rasterizeVectorShapes(v->currentLayer(), v->currentFrame()));
+    })->setObjectName(QStringLiteral("layer.rasterizeVectors"));
     layer->addSeparator();
     QMenu* maskMenu = layer->addMenu(tr("Layer &Mask"));
     m_addMaskAction = docAction(maskMenu, tr("&Add Mask (Reveal All)"), QKeySequence(), [this] {

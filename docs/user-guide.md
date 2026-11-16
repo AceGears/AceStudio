@@ -94,6 +94,16 @@ Add, Subtract, Difference), visibility and locks.
   an IK chain reaches instead), drag a root's joint to move the figure, and Ctrl+drag a joint or
   tip to edit the rest bones (only at the rest pose). Presses away from the bones still paint.
   The rest frame is saved with the rig. Projects with a rig are saved as schema 4.
+- **Vector shapes:** with Line, Rectangle, Ellipse, Polygon or Curve, tick **Keep as vector
+  shape** in the Tools panel. What you draw is kept as an editable shape on the cel and drawn
+  pixel-perfectly: choose the **Stroke** (solid, dashed, dotted or none; the brush size is its
+  width) and the **Fill** (none, solid in the other colour, or a linear or radial gradient from the
+  primary to the secondary colour, dithered or smooth as set for the Gradient tool). Polygons close
+  themselves; a curve's control points become the shape's handles. Drawing another shape redraws
+  the cel from all its shapes, so paint by hand only after **Layer › Rasterize Vector Shapes**,
+  which keeps the pixels and drops the shapes. Shapes cannot yet be selected and edited on the
+  canvas; `acestudio-cli vector show|add|clear|rasterize` works with them from the command line.
+  Projects with shapes are saved as schema 5.
 - **Rig keys:** pose the bones on a frame and press **Set Key on N**; choose a **Curve** (linear,
   ease in, ease out, ease in and out, stepped, Bezier) for how the frames after the key move to the
   next key. Moving to another frame loads the keyed pose of that frame (in between two keys, the

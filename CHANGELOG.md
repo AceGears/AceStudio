@@ -78,6 +78,11 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   Bake Keys draws them all from the rest frame in one undo step. Keys and the rest frame are saved
   in the rig (rig version 2; a rig without keys is still written as version 1) and follow frames
   that are inserted, moved or deleted.
+- **Vector shapes** (ADR-ANIM-005; Tools panel › Keep as vector shape; `acestudio-cli vector`).
+  Lines, rectangles, ellipses, auto-closed polygons and Bezier curves can be kept as shapes on the
+  cel with solid, dashed or dotted strokes of any width and solid or gradient fills (ordered-dithered
+  by default), drawn pixel-perfectly. Shapes follow frames and layers and undo as one step; Layer ›
+  Rasterize Vector Shapes keeps the pixels. Saved as schema 5 only when a document has shapes.
 - **Auto-rig wings and fins:** flyers get a body bone and a bone per wing, fish a body bone, a tail
   fin and fin bones (the cuts the animator already uses). Choose Legs, Wings or Fins in the Rig
   panel or with `rig auto --as`.

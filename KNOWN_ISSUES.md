@@ -38,6 +38,11 @@ not been run.
   key shows, so big pose changes tear; the area check flags many such frames but not all (a limb
   can move without changing the area). Touching parts of the same colour can swap pixels; keep
   separate parts on separate layers. The work holds a second copy of the document while it runs.
+- **Vector shapes** (ADR-ANIM-005): the core and CLI are tested; the tool options are built by CI
+  and opened by the UI audit but have not been drawn with on a PC. A shape cannot be selected or
+  edited after it is drawn (undo, `vector clear` or rasterise instead), the Curve tool makes one
+  Bezier segment per shape (no multi-anchor pen yet), and painting by hand on a cel with shapes is
+  lost at the next shape added unless the cel is rasterised first. Linked cels cannot hold shapes.
 - **Rigs** (Rig panel, Animation › Auto-Rig Current Layer, `acestudio-cli rig`): the core and CLI
   are tested; the panel and the bone overlay are built by CI and opened by the UI audit but have not
   been used on a PC, and bone dragging on the canvas has not been tried by hand. While dragging is

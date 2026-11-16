@@ -121,6 +121,15 @@ private:
     void onHover(int x, int y, bool inside);
     void endSession(bool commit);
     void redrawCurve();
+    // Vector shapes (ToolState::vectorShapes): true when the current shape
+    // tool adds a shape instead of painting.
+    bool vectorTool() const;
+    // A shape with the tool's stroke and fill settings.
+    VectorShape styledShape(ShapeKind kind) const;
+    // Drops the raster preview and adds `shape` to the cel (one undo step).
+    void commitVectorShape(VectorShape shape, const QString& label);
+    // Ends the curve gesture: a vector path or the painted curve.
+    void finishCurve(bool commit);
     void redrawPolygonPreview(std::optional<Point> cursor);
     void beginMove(Point at, bool copy);
     enum class XGrab { None, Move, Rotate, N, S, E, W, NE, NW, SE, SW };
@@ -174,6 +183,8 @@ private:
     SelectionOp m_gestureOp = SelectionOp::Replace;
     std::vector<Point> m_lasso;
     Rgba8 m_gradientEnd;
+    Point m_shapeEnd;            // where the Line/Rectangle/Ellipse drag is now
+    bool m_vectorWarned = false; // told once that hand painting a vector cel is temporary
     // Curve: 0 = dragging the line, 1 = first control point, 2 = second.
     int m_curveStage = -1;
     Point m_curveA, m_curveB, m_curveC1, m_curveC2;

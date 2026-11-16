@@ -9,6 +9,7 @@ feature stays readable by older builds:
 | 2 | Tile mode, layer masks, clipping masks or adjustment layers |
 | 3 | Levels or Curves adjustment layers, or linked cels |
 | 4 | A rig (`"rig"` in `document.json`, below) |
+| 5 | Vector shapes on cels (`"vectors"` in `document.json`, below) |
 
 A project file is a standard ZIP archive. Any ZIP tool can open it for inspection.
 
@@ -120,6 +121,37 @@ fields (a rig without either is still written as version 1, so older readers kee
   (a CSS-style cubic easing curve). The last key's curve is unused.
 - Inserting, moving or deleting frames moves keys with their frames; a key on a deleted frame goes,
   and a deleted rest frame falls back to frame 0.
+
+## vectors (schema 5)
+
+Present only in documents that have vector shapes (ADR-ANIM-005). The cel's pixels are stored as
+usual; the shapes are what they were drawn from.
+
+```json
+"vectors": [
+  { "layer": 3, "frame": 0, "shapes": [
+    { "kind": "path", "closed": true,
+      "points": [ { "x": 4, "y": 20, "out": [6, -16] }, { "x": 28, "y": 20, "in": [-6, -16] }, { "x": 16, "y": 30 } ],
+      "stroke": { "style": "dashed", "color": "#141414ff", "width": 1, "dash": 4, "gap": 2 },
+      "fill": { "style": "linear", "color": "#dc2828ff", "color2": "#283cdcff", "dither": true, "from": [4, 20], "to": [28, 20] } },
+    { "kind": "rectangle", "points": [ { "x": 2, "y": 2 }, { "x": 12, "y": 10 } ],
+      "stroke": { "style": "solid", "color": "#000000ff", "width": 2, "dash": 4, "gap": 2 }, "fill": { "style": "none" } }
+  ] }
+]
+```
+
+Rules:
+- `layer` is a raster layer and `frame` a frame of the document; each (layer, frame) appears once
+  and has at least one shape (at most 1,000).
+- `kind`: `path` (2 or more anchors, at most 4,096), `rectangle` or `ellipse` (exactly two opposite
+  corners, inclusive pixels). Anchor `in` / `out` are Bezier handle offsets; omitted = 0 (a corner).
+  `closed` joins the last anchor to the first; a path's fill always closes it.
+- `stroke.style`: `none`, `solid`, `dashed` or `dotted`; `width` 1–32 (a square pen); `dash` and
+  `gap` 1–256 pixels along the outline.
+- `fill.style`: `none`, `solid`, `linear` or `radial`; gradients run from `color` at `from` to
+  `color2` at `to` (radial: centre and a point on the edge), ordered-dithered when `dither`.
+- Colours are `#rrggbb` or `#rrggbbaa`. Anything invalid makes the file unreadable
+  (`Vector shapes: ...`), it is never partly read.
 
 ## Limits enforced on read
 
