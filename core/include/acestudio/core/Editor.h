@@ -147,6 +147,9 @@ public:
     // Snaps every cel to the palette in one undo step; the number of pixels
     // changed (0 = nothing to do, no undo step).
     Result<std::size_t> conformToPalette();
+    // Locks the palette and snaps every cel to it, as one undo step; the
+    // number of pixels changed.
+    Result<std::size_t> lockAndConformPalette();
 
     // Replaces the whole document in one undo step (used by scripts, which
     // edit a copy on a worker thread).

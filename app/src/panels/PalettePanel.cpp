@@ -243,12 +243,11 @@ void PalettePanel::toggleLock(bool locked) {
             if (answer == QMessageBox::Cancel) { rebuild(); return; }
             conformToo = answer == QMessageBox::Yes;
         }
-        st = ed.grouped("Lock Palette", [&]() -> Status {
-            if (auto s = ed.setPaletteLocked(true); !s) return s;
-            if (conformToo)
-                if (auto r = ed.conformToPalette(); !r) return r.error();
-            return {};
-        });
+        if (conformToo) {
+            if (auto r = ed.lockAndConformPalette(); !r) st = r.error();
+        } else {
+            st = ed.setPaletteLocked(true);
+        }
     } else {
         st = ed.setPaletteLocked(false);
     }

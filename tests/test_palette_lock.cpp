@@ -146,6 +146,33 @@ TEST_CASE("Conform to palette snaps every cel in one undo step", "[palette][lock
     CHECK(ed.document().cel(l, 0)->image == img);
 }
 
+TEST_CASE("Lock and conform is one undo step", "[palette][lock]") {
+    auto doc = Document::create(8, 8).value();
+    doc.palette() = threeColours();
+    const LayerId l = doc.addLayer("Art").value();
+    Image img(8, 8, Rgba8{205, 45, 35, 255});
+    REQUIRE(doc.setCel(l, 0, Cel{img, 0, 0}));
+    Editor ed(std::move(doc));
+
+    auto n = ed.lockAndConformPalette();
+    REQUIRE(n);
+    CHECK(n.value() == 64);
+    CHECK(ed.document().paletteLocked());
+    CHECK(ed.document().offPalettePixels() == 0);
+
+    REQUIRE(ed.undo());   // both the lock and the snapping
+    CHECK_FALSE(ed.document().paletteLocked());
+    CHECK(ed.document().cel(l, 0)->image == img);
+
+    // Refused as a whole: nothing changes when the palette has no opaque colour.
+    auto clear = Document::create(4, 4).value();
+    clear.palette() = Palette{};
+    Editor bare(std::move(clear));
+    auto refused = bare.lockAndConformPalette();
+    CHECK_FALSE(refused);
+    CHECK_FALSE(bare.document().paletteLocked());
+}
+
 // LOCAL-SKIP-BEGIN (needs Paint/PngCodec and ProjectIO/miniz)
 TEST_CASE("Painting on a locked RGBA document uses only palette colours", "[palette][lock][paint]") {
     LayerId l = kNoLayer;

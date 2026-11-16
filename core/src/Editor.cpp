@@ -649,6 +649,19 @@ Status Editor::grouped(const std::string& label, const std::function<Status()>& 
     return st;
 }
 
+Result<std::size_t> Editor::lockAndConformPalette() {
+    std::size_t changed = 0;
+    auto st = grouped("Lock Palette", [&]() -> Status {
+        if (auto s = setPaletteLocked(true); !s) return s;
+        auto r = conformToPalette();
+        if (!r) return r.error();
+        changed = r.value();
+        return {};
+    });
+    if (!st) return st.error();
+    return changed;
+}
+
 Status Editor::removeFrames(int first, int last) {
     if (auto st = checkRange(m_doc, first, last); !st) return st;
     if (last - first + 1 >= m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "A document must keep at least one frame"};

@@ -20,17 +20,21 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DACESTUDIO_BUILD_APP=OFF -DACESTUDIO_WARNINGS_AS_ERRORS=ON
       - name: Build
-        run: cmake --build build -j
+        run: |
+          set -o pipefail
+          cmake --build build -j 2>&1 | tee build.log
       - name: Test
         run: |
           set -o pipefail
           ctest --test-dir build --output-on-failure 2>&1 | tee test.log
       - name: Failure details
-        # Script tests (cli_smoke) stop at a CMake Error: show it as an
-        # annotation, so it can be read without the log.
+        # Compiler errors and script-test failures (cli_smoke stops at a CMake
+        # Error) as annotations, so they can be read without the log.
         if: failure()
         run: |
-          grep -n -A8 -E 'CMake Error|FAILED:|expected exit' test.log | head -60 | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' |
+          grep -h -B2 -A6 -E 'error:' build.log 2>/dev/null | head -40 | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' |
+            while IFS= read -r block; do echo "::warning::$block"; done || true
+          grep -n -A8 -E 'CMake Error|FAILED:|expected exit' test.log 2>/dev/null | head -60 | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g' |
             while IFS= read -r block; do echo "::warning::$block"; done || true
       - name: Benchmark results (perf_budget)
         if: always()
