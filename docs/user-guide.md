@@ -71,6 +71,14 @@ Add, Subtract, Difference), visibility and locks.
   every linked frame follows.
 - **Onion skin** (F3) shows earlier frames in red and later frames in blue; **View › Onion
   Skin Settings…** sets how many and how strong.
+- **In-betweens:** draw the key poses on frames next to each other, select them in the Timeline
+  (or select one frame to use every frame) and choose **Animation › Generate In-betweens…**. Pick
+  how many new frames go between each pair (1–7), whether the last key leads back to the first
+  (loop), and whether each key's time is split with its in-betweens or every frame gets the same
+  duration. Only the current layer moves; Edit › Undo removes the new frames in one step.
+  Pixels are moved, never mixed, so no new colours appear. Frames listed under "Check frame(s)"
+  change too much for an in-between: draw a key there instead. Works best when the keys are
+  close poses and separate parts are on separate layers.
 
 ## 6. Export
 

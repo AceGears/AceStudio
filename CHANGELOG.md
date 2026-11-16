@@ -62,6 +62,13 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   rig lands (ADR-ANIM-001).
 
 ### Added
+- **In-betweens for pixel art** (Animation › Generate In-betweens…, and `acestudio-cli inbetween
+  key1.png key2.png ... --out folder`). New frames between drawn key frames: each pixel of a key
+  finds where it went in the next and is moved part of the way, so colours are never blended, the
+  palette is kept and edges stay hard. 1 to 7 in-betweens per pair, optional loop, durations split
+  from each key or fixed, and an area check that flags in-betweens whose pose changes too much
+  (ADR-ANIM-003). In the app it works on the current layer across the selected frames as one undo
+  step; other layers hold their key's picture.
 - **A walk from drawn poses** (`acestudio-cli cycle pose1.png pose2.png ... --out folder`). A sheet of
   drawn walk poses usually cannot be played as it is: every pose is a drawing of its own. `cycle`
   uses one pose's head and upper body in every frame, puts each pose's drawn legs under it on one

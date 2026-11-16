@@ -31,6 +31,11 @@ not been run.
 - **Motion Studio** has not been opened on a PC yet (built by CI, opened by the UI audit). It
   retargets on the UI thread: about 50 ms for a 250 px sprite, so very large sprites will lag
   while dragging the camera. A camera far from the drawn view only changes the motion, not the art.
+- **In-betweens** (Animation › Generate In-betweens…): the core is tested; the dialog has not been
+  opened on a PC yet (built by CI, opened by the UI audit). In-betweens cannot show what neither
+  key shows, so big pose changes tear; the area check flags many such frames but not all (a limb
+  can move without changing the area). Touching parts of the same colour can swap pixels; keep
+  separate parts on separate layers. The work holds a second copy of the document while it runs.
 - **ONNX Runtime DirectML:** onnxruntime-directml 1.24.4 fails inside a fused node when running
   BiRefNet on the test PC. AceStudio falls back to fewer fusions, then to the CPU (~16 s per
   image). NVIDIA GPUs with driver R580+ use CUDA instead.

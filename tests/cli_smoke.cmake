@@ -109,6 +109,23 @@ if(NOT EXISTS "${WORKDIR}/ui_panel.tres" OR NOT EXISTS "${WORKDIR}/ui.png.meta")
     message(FATAL_ERROR "uikit did not write Godot / Unity files")
 endif()
 run(1 uikit --out "${WORKDIR}/ui2.png" --colors "#fff")
+
+# In-betweens: two keys and one in-between; with --loop-back and 3 per pair,
+# each key gets 3 after it (8 frames). --loop-back is a switch of its own:
+# export's --loop N (above) must keep taking a number.
+run(0 --json inbetween "${T}/water.png" "${T}/sand.png" --out "${WORKDIR}/ib")
+string(JSON ib_frames GET "${LAST_OUT}" frames)
+if(NOT ib_frames EQUAL 3 OR NOT EXISTS "${WORKDIR}/ib/inbetween.png" OR NOT EXISTS "${WORKDIR}/ib/inbetween.gif")
+    message(FATAL_ERROR "inbetween wrote ${ib_frames} frames: ${LAST_OUT}")
+endif()
+run(2 inbetween "${T}/water.png" "${T}/sand.png" --out "${WORKDIR}/ib")          # refuses to overwrite
+run(0 --json inbetween "${T}/water.png" "${T}/sand.png" --out "${WORKDIR}/ib" --n 3 --loop-back --name loop)
+string(JSON ib_frames GET "${LAST_OUT}" frames)
+if(NOT ib_frames EQUAL 8)
+    message(FATAL_ERROR "inbetween --loop-back --n 3 wrote ${ib_frames} frames: ${LAST_OUT}")
+endif()
+run(1 inbetween "${T}/water.png" --out "${WORKDIR}/ib1")                         # one key
+run(1 inbetween "${T}/water.png" "${T}/sand.png" --out "${WORKDIR}/ib2" --n 9)   # too many
 run(0 export "${P}" --format sheet --out "${WORKDIR}/eng" --engines godot,unity)
 if(NOT EXISTS "${WORKDIR}/eng.tres" OR NOT EXISTS "${WORKDIR}/eng.png.meta" OR NOT EXISTS "${WORKDIR}/eng_default.anim")
     message(FATAL_ERROR "export --engines did not write the engine files")

@@ -30,6 +30,10 @@ public:
     // Adds a toolbar button bound to an action owned elsewhere (onion skin).
     void addActionButton(QAction* action);
     bool isPlaying() const;
+    // The selection as a block [first, last]; the current frame alone when the
+    // selection has gaps (callers that need a block check isBlock()).
+    std::pair<int, int> selectedRange() const;
+    bool isBlock() const;
 
 public Q_SLOTS:
     void togglePlayback();
@@ -56,10 +60,6 @@ private:
     void editSelectedDurations();
     // Selected frames, sorted; always contains the current frame.
     std::vector<int> selectedFrames() const;
-    // The selection as a block [first, last]; the current frame alone when the
-    // selection has gaps (callers that need a block check isBlock()).
-    std::pair<int, int> selectedRange() const;
-    bool isBlock() const;
     void setRange(int first, int last, int current);
     void setSelectedFrames(std::vector<int> frames, int current);
     void onSelectionChanged();

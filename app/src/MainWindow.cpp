@@ -9,6 +9,7 @@
 #include "pages/GeneratorPage.h"
 #include "pages/HomePage.h"
 #include "scripting/ScriptDialog.h"
+#include "InbetweenDialog.h"
 
 #include "AppContext.h"
 #include "CanvasWidget.h"
@@ -679,6 +680,26 @@ void MainWindow::buildMenus() {
                                this);
         dlg.exec();
     }))->setObjectName(QStringLiteral("anim.motionStudio"));
+    (anim->addAction(tr("Generate &In-betweens…"), this, [this] {
+        DocumentView* v = currentView();
+        if (!v) return void(QMessageBox::information(this, tr("Generate In-betweens"), tr("Open a sprite first.")));
+        const int frames = v->document().frameCount();
+        // The selected block of frames are the keys; a single frame (or a
+        // selection with gaps) means every frame.
+        auto [first, last] = m_timeline->selectedRange();
+        if (!m_timeline->isBlock() || last <= first) {
+            first = 0;
+            last = frames - 1;
+        }
+        if (last <= first)
+            return void(QMessageBox::information(this, tr("Generate In-betweens"),
+                                                 tr("In-betweens need at least two key frames. Add a frame and draw the next pose first.")));
+        // Not modal: the canvas stays usable; edits made meanwhile cancel the apply.
+        auto* dlg = new InbetweenDialog(v, v->currentLayer(), first, last, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->setModal(false);
+        dlg->show();
+    }))->setObjectName(QStringLiteral("anim.inbetween"));
 
     QMenu* aiMenu = menuBar()->addMenu(tr("AI &Studio"));
     auto showAi = [this](int tab) { m_aiDock->show(); m_aiDock->raise(); m_aiPanel->focusTab(tab); };

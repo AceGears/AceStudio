@@ -74,6 +74,8 @@ add_executable(AceStudio WIN32
     src/assets/TilesetDialog.cpp
     src/assets/AssetDialogs.h
     src/assets/AssetDialogs.cpp
+    src/InbetweenDialog.h
+    src/InbetweenDialog.cpp
     src/scripting/ScriptDialog.h
     src/scripting/ScriptDialog.cpp
     src/scripting/AppBridgeServer.h

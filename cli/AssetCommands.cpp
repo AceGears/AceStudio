@@ -7,6 +7,7 @@
 #include "acestudio/core/SpriteMotion.h"
 #include "acestudio/core/CycleStabilize.h"
 #include "acestudio/core/FileUtil.h"
+#include "acestudio/core/Inbetween.h"
 #include "acestudio/core/AnimRouter.h"
 #include "acestudio/core/Effects.h"
 #include "acestudio/core/AnimCodec.h"
@@ -560,6 +561,87 @@ int cmdCycle(const Args& a, Output& out) {
     std::string human = "Wrote " + png.string() + " and " + gif.string() + " (" + std::to_string(c.frames.size()) + " frames)\n";
     for (const auto& note : res.value().notes) human += "note: " + note + "\n";
     for (const auto& issue : chk.issues) human += "check: " + issue + "\n";
+    return out.success(j, human);
+}
+
+// inbetween <key1.png> <key2.png> [...] | <strip.png> --strip N  --out <folder> [--n 1] [--loop-back]
+//           [--ms 125 | --fixed MS] [--tolerance 25] [--name inbetween]
+int cmdInbetween(const Args& a, Output& out) {
+    const auto outDir = a.opt("out");
+    if (!outDir) return out.fail(kUsage, "inbetween: --out (a folder) is required");
+    std::vector<Image> keys;
+    if (auto strip = a.opt("strip")) {
+        const auto n = parseInt(*strip);
+        if (a.positional.size() != 2 || !n || *n < 2) return out.fail(kUsage, "inbetween: --strip N expects one strip PNG of N frames (N >= 2)");
+        auto img = readPng(a.positional[1]);
+        if (!img) return out.fail(img.error());
+        if (img.value().width() % *n != 0) return out.fail(kUsage, "inbetween: the strip's width is not a multiple of " + std::to_string(*n));
+        const int fw = img.value().width() / *n;
+        for (int i = 0; i < *n; ++i) keys.push_back(img.value().copy({i * fw, 0, fw, img.value().height()}));
+    } else {
+        if (a.positional.size() < 3) return out.fail(kUsage, "inbetween: expected two or more key PNGs (or one strip with --strip N)");
+        for (std::size_t i = 1; i < a.positional.size(); ++i) {
+            auto img = readPng(a.positional[i]);
+            if (!img) return out.fail(img.error());
+            keys.push_back(std::move(img).value());
+        }
+    }
+    inbetween::Options o;
+    if (auto n = a.opt("n")) {
+        const auto v = parseInt(*n);
+        if (!v || *v < 1 || *v > 7) return out.fail(kUsage, "inbetween: --n expects 1 to 7");
+        o.intermediates = *v;
+    }
+    if (auto t = a.opt("tolerance")) {
+        const auto v = parseInt(*t);
+        if (!v || *v < 1 || *v > 100) return out.fail(kUsage, "inbetween: --tolerance expects a percentage, 1 to 100");
+        o.areaTolerance = *v / 100.0;
+    }
+    int keyMs = 125;
+    if (auto ms = a.opt("ms")) {
+        const auto v = parseInt(*ms);
+        if (!v || *v < 1) return out.fail(kUsage, "inbetween: --ms expects a key duration in ms");
+        keyMs = *v;
+    }
+    inbetween::Timing timing = inbetween::Timing::Split;
+    int fixedMs = 0;
+    if (auto fx = a.opt("fixed")) {
+        const auto v = parseInt(*fx);
+        if (!v || *v < 1) return out.fail(kUsage, "inbetween: --fixed expects a frame duration in ms");
+        timing = inbetween::Timing::Fixed;
+        fixedMs = *v;
+    }
+    const bool loop = a.flags.count("loop-back") != 0;
+    auto res = inbetween::inbetweenSequence(keys, std::vector<int>(keys.size(), keyMs), loop, timing, fixedMs, o);
+    if (!res) return out.fail(res.error());
+    const auto& r = res.value();
+    const std::string name = a.opt("name").value_or("inbetween");
+    const fs::path dir = *outDir;
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    const fs::path png = dir / (name + ".png"), gif = dir / (name + ".gif"), js = dir / (name + ".json");
+    if (!a.force && (fs::exists(png, ec) || fs::exists(gif, ec) || fs::exists(js, ec)))
+        return out.fail(kIo, png.string() + " already exists (use --force)");
+    const int fw = r.frames[0].width(), fh = r.frames[0].height();
+    Image stripOut(fw * static_cast<int>(r.frames.size()), fh);
+    std::vector<AnimFrame> anim;
+    for (std::size_t i = 0; i < r.frames.size(); ++i) {
+        stripOut.blit(r.frames[i], static_cast<int>(i) * fw, 0);
+        anim.push_back({r.frames[i], r.durations[i]});
+    }
+    if (auto st = writePng(stripOut, png); !st) return out.fail(st.error());
+    auto bytes = encodeGif(anim, 0);
+    if (!bytes) return out.fail(bytes.error());
+    if (auto st = writeFileAtomic(gif, bytes.value()); !st) return out.fail(st.error());
+    json flagged = json::array();
+    for (int f : r.flagged) flagged.push_back(f + 1);
+    json j{{"frameWidth", fw}, {"frameHeight", fh}, {"frames", r.frames.size()}, {"durations", r.durations}, {"keys", r.key},
+           {"loop", loop}, {"image", png.filename().string()}, {"flagged", flagged}, {"notes", r.notes}};
+    if (auto st = writeTextFile(js, j.dump(2)); !st) return out.fail(st.error());
+    j["files"] = {png.string(), gif.string(), js.string()};
+    std::string human = "Wrote " + png.string() + " and " + gif.string() + " (" + std::to_string(r.frames.size()) + " frames from " +
+                        std::to_string(keys.size()) + " keys)\n";
+    for (const auto& note : r.notes) human += "check: " + note + "\n";
     return out.success(j, human);
 }
 
