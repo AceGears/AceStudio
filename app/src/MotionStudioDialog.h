@@ -1,5 +1,5 @@
 #pragma once
-// Motion Studio: 3D skeletal motion (BVH) onto a 2D sprite (acestudio::mocap).
+// Motion Studio: 3D skeletal motion (BVH, glTF/GLB) onto a 2D sprite (acestudio::mocap).
 //
 // Left: the source skeleton in 3D (drag to turn the camera, wheel to zoom).
 // Right: the sprite posed by the retargeted motion, on the same clock. The

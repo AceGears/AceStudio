@@ -12,6 +12,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMessageBox>
@@ -28,6 +29,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 
 namespace acestudio::ui {
 
@@ -66,7 +68,7 @@ void SkeletonView::paintEvent(QPaintEvent*) {
     p.setPen(QColor("#8A8A96"));
     p.drawText(rect().adjusted(8, 6, -8, -6), Qt::AlignTop | Qt::AlignLeft, tr("3D: drag to turn, wheel to zoom"));
     if (!m_motion || !m_map || m_motion->joints.empty()) {
-        p.drawText(rect(), Qt::AlignCenter, tr("Load a BVH motion"));
+        p.drawText(rect(), Qt::AlignCenter, tr("Load a motion (BVH, glTF or GLB)"));
         return;
     }
     const mc::Motion& m = *m_motion;
@@ -191,9 +193,10 @@ MotionStudioDialog::MotionStudioDialog(const Image& sprite, const QString& name,
     root->addLayout(top);
     auto* motionBox = new QGroupBox(tr("Motion"), this);
     auto* mf = new QFormLayout(motionBox);
-    auto* load = new QPushButton(tr("&Load BVH…"), motionBox);
+    auto* load = new QPushButton(tr("&Load Motion…"), motionBox);
     load->setAutoDefault(false);
-    load->setToolTip(tr("A BVH motion file (Blender, Mixamo via Blender, CMU mocap, Rokoko). FBX and glTF: export to BVH from Blender first."));
+    load->setToolTip(tr("A BVH motion (Blender, CMU mocap, Rokoko) or a glTF/GLB animation (Mixamo via Blender, Unity, Unreal, most 3D tools). "
+                        "FBX: import it into Blender and export glTF first."));
     m_motionLabel = new QLabel(tr("No motion loaded"), motionBox);
     m_motionLabel->setWordWrap(true);
     mf->addRow(load, m_motionLabel);
@@ -395,12 +398,33 @@ void MotionStudioDialog::scheduleRetarget() {
 }
 
 void MotionStudioDialog::loadMotion() {
-    const QString path = QFileDialog::getOpenFileName(this, tr("Load Motion"), QString(), tr("BVH motion (*.bvh);;All files (*)"));
+    const QString path = QFileDialog::getOpenFileName(this, tr("Load Motion"), QString(), tr("Motion (*.bvh *.glb *.gltf);;BVH motion (*.bvh);;glTF animation (*.glb *.gltf);;All files (*)"));
     if (!path.isEmpty()) loadMotionFile(path);
 }
 
 void MotionStudioDialog::loadMotionFile(const QString& path) {
-    auto m = mc::loadBvh(path.toStdWString());
+    const std::filesystem::path file = path.toStdWString();
+    // A glTF file can hold several animations: let the user pick one.
+    mc::GltfOptions gopt;
+    QString animName;
+    auto names = mc::motionAnimationNames(file);
+    if (!names) {
+        QMessageBox::warning(this, tr("Load Motion"), tr("This motion could not be read:\n%1").arg(QString::fromStdString(names.error().message)));
+        return;
+    }
+    if (names.value().size() > 1) {
+        QStringList items;
+        for (std::size_t i = 0; i < names.value().size(); ++i)
+            items << QStringLiteral("%1: %2").arg(i).arg(QString::fromStdString(names.value()[i]));
+        bool ok = false;
+        const QString chosen = QInputDialog::getItem(this, tr("Load Motion"), tr("This file holds several animations. Which one?"), items, 0, false, &ok);
+        if (!ok) return;
+        const qsizetype index = items.indexOf(chosen);
+        if (index < 0) return;
+        gopt.animationIndex = static_cast<int>(index);
+        animName = QString::fromStdString(names.value()[static_cast<std::size_t>(index)]);
+    }
+    auto m = mc::loadMotion(file, gopt);
     if (!m) {
         QMessageBox::warning(this, tr("Load Motion"), tr("This motion could not be read:\n%1").arg(QString::fromStdString(m.error().message)));
         return;
@@ -408,6 +432,7 @@ void MotionStudioDialog::loadMotionFile(const QString& path) {
     m_motion = std::move(m).value();
     m_map = mc::autoMap(*m_motion);
     m_motionName = QFileInfo(path).completeBaseName();
+    if (!animName.isEmpty()) m_motionName += QStringLiteral(" (%1)").arg(animName);
     m_motionLabel->setText(tr("%1: %2 joints, %3 frames, %4 s")
                                .arg(m_motionName)
                                .arg(m_motion->joints.size())

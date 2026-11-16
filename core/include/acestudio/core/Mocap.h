@@ -3,7 +3,8 @@
 //
 // A BVH file (the plain-text motion capture format that Blender, Mixamo
 // exports via Blender, the CMU library, Rokoko and most mocap tools write)
-// is read into a skeleton and its per-frame channels. Forward kinematics
+// or one animation of a glTF/GLB file is read into a skeleton and its
+// per-frame channels. Forward kinematics
 // gives every joint's position in 3D; a camera (turn, tilt, roll; orthographic
 // or perspective) projects them onto the screen.
 //
@@ -29,7 +30,10 @@
 #include "acestudio/core/SpriteMotion.h"
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
+#include <span>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -75,6 +79,48 @@ struct BvhLimits {
 // executed; only HIERARCHY / MOTION with the standard six channel names is read.
 Result<Motion> parseBvh(std::string_view text, const BvhLimits& limits = {});
 Result<Motion> loadBvh(const std::filesystem::path& path, const BvhLimits& limits = {});
+
+// ---- glTF 2.0 / GLB (MocapGltf.cpp) ---------------------------------------------
+//
+// One animation of a .gltf (JSON) or .glb (binary) file becomes a Motion:
+//  - the skeleton is the first skin that the animation moves (else the first
+//    skin); with no skin, the node subtree under the animated nodes. Parents
+//    come before children; node names are the joint names;
+//  - every translation/rotation/scale channel (LINEAR with slerp, STEP,
+//    CUBICSPLINE Hermite) is sampled at `fps` over the animation's time range
+//    (time 0 of the Motion = the first keyframe). Unanimated nodes keep their
+//    rest TRS. Morph weights are ignored;
+//  - the result is BVH-like: offsets are the rest pose in world axes (so
+//    restPositions() is the glTF rest pose), the root has 3 position + 3
+//    rotation channels (Z, X, Y), other joints 3 rotation channels, plus 3
+//    position channels only where translation or scale animation moves them.
+//    jointPositions() reproduces the glTF world positions, including the
+//    transforms of nodes above the skeleton (an Armature's rotation and scale).
+// Only what the motion needs is read (no meshes or images). No extension is
+// followed; a file that requires one is refused. External buffers must be
+// relative file names inside `baseDir` (no "..", no absolute paths, no URL
+// schemes); data: URIs must be base64. Sparse accessors are refused. Errors
+// (CorruptData / UnsupportedVersion) name the accessor or channel at fault.
+struct GltfOptions {
+    int animationIndex = -1;        // >= 0: this animation (wins over `animation`)
+    std::string animation;          // a name, or an index as text; empty = the first
+    double fps = 30;                // sampling rate, 1..240
+    std::size_t maxBytes = 64u << 20;   // the file plus external buffers it loads
+    int maxJoints = 512;
+    int maxNodes = 16384;
+    int maxChannels = 4096;         // per animation
+    std::size_t maxKeyframes = 1u << 20;   // per channel
+    int maxFrames = 200000;         // sampled frames
+};
+
+Result<Motion> parseGltf(std::span<const std::uint8_t> bytes, const std::filesystem::path& baseDir, const GltfOptions& opt = {});
+// The animations' names, in file order (an unnamed one is "Animation <i>").
+Result<std::vector<std::string>> gltfAnimationNames(std::span<const std::uint8_t> bytes, const GltfOptions& opt = {});
+
+// By extension: .bvh, .glb or .gltf (anything else is refused with a hint).
+Result<Motion> loadMotion(const std::filesystem::path& path, const GltfOptions& opt = {});
+// The animations a motion file holds: glTF names; a BVH holds one (empty list).
+Result<std::vector<std::string>> motionAnimationNames(const std::filesystem::path& path, const GltfOptions& opt = {});
 
 // World positions of every joint (same order as Motion::joints) at a time in
 // seconds; between two frames the positions are blended linearly. Times
