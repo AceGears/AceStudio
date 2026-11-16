@@ -96,6 +96,31 @@ Rules:
 - At most 256 bones and 64 chains. Anything else invalid makes the file unreadable
   (`Rig: ...`), it is never partly read.
 
+### Rig version 2: rest frame and pose keys
+
+A rig with a rest frame other than 0, or with keys, is written as `"version": 2` with two more
+fields (a rig without either is still written as version 1, so older readers keep opening it):
+
+```json
+"restFrame": 0,
+"keys": [
+  { "frame": 0, "pose": { "turn": [], "dx": 0, "dy": 0 }, "curve": { "type": "ease-in-out" } },
+  { "frame": 6, "pose": { "turn": [ { "bone": 2, "angle": 0.61 } ], "dx": 0, "dy": -2 },
+    "curve": { "type": "bezier", "points": [0.42, 0, 0.58, 1] } }
+]
+```
+
+- `restFrame`: the frame whose part cels are the parts at rest; every pose and key is drawn from
+  it. It must be a frame of the document.
+- `keys`: in frame order, at most one per frame, at most 10,000, each on a frame of the document.
+  `turn` angles are radians relative to the bone's rest turn (a missing bone means 0); `dx`, `dy`
+  move the whole rig in pixels.
+- `curve.type`: `linear`, `ease-in`, `ease-out`, `ease-in-out`, `stepped` or `bezier`; it shapes
+  the frames from this key to the next. `bezier` carries `points` [x1, y1, x2, y2] with x in 0..1
+  (a CSS-style cubic easing curve). The last key's curve is unused.
+- Inserting, moving or deleting frames moves keys with their frames; a key on a deleted frame goes,
+  and a deleted rest frame falls back to frame 0.
+
 ## Limits enforced on read
 
 - Image dimensions ≤ 16384 per side; frames ≤ 10000; layers ≤ 1000; palette ≤ 256 colors.

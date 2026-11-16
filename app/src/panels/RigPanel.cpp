@@ -175,8 +175,9 @@ RigPanel::RigPanel(QWidget* parent) : QWidget(parent) {
     pose->addRow(QString(), m_showBones);
     m_restFrame = new QSpinBox;
     m_restFrame->setRange(1, 1);
+    m_restFrame->setKeyboardTracking(false);
     m_restFrame->setAccessibleName(tr("Rest frame"));
-    m_restFrame->setToolTip(tr("The frame whose parts are drawn at rest; baking poses them into the current frame"));
+    m_restFrame->setToolTip(tr("The frame whose parts are drawn at rest (saved with the rig); poses and keys are drawn from it"));
     pose->addRow(tr("Rest frame"), m_restFrame);
     auto* poseRow = new QHBoxLayout;
     m_resetPose = button(tr("Rest Pose"), tr("Back to the rest pose (nothing is drawn until you bake)"));
@@ -187,6 +188,34 @@ RigPanel::RigPanel(QWidget* parent) : QWidget(parent) {
     m_removeRig = button(tr("Remove Rig"), tr("Remove the bones and IK; the part layers stay"));
     pose->addRow(m_removeRig);
     root->addWidget(poseGroup);
+
+    // ---- Keys
+    auto* keyGroup = new QGroupBox(tr("Keys"));
+    auto* keys = new QFormLayout(keyGroup);
+    m_keys = new QListWidget;
+    m_keys->setAccessibleName(tr("Pose keys"));
+    m_keys->setToolTip(tr("Keyed frames; activate one to go to its frame"));
+    m_keys->setMaximumHeight(80);
+    keys->addRow(m_keys);
+    m_curve = new QComboBox;
+    m_curve->setAccessibleName(tr("Key curve"));
+    m_curve->setToolTip(tr("How the frames after a key move toward the next key"));
+    m_curve->addItem(tr("Linear"), static_cast<int>(CurveType::Linear));
+    m_curve->addItem(tr("Ease in"), static_cast<int>(CurveType::EaseIn));
+    m_curve->addItem(tr("Ease out"), static_cast<int>(CurveType::EaseOut));
+    m_curve->addItem(tr("Ease in and out"), static_cast<int>(CurveType::EaseInOut));
+    m_curve->addItem(tr("Stepped (hold)"), static_cast<int>(CurveType::Stepped));
+    m_curve->addItem(tr("Bezier"), static_cast<int>(CurveType::Bezier));
+    keys->addRow(tr("Curve"), m_curve);
+    auto* keyRow = new QHBoxLayout;
+    m_setKey = button(tr("Set Key"), tr("Key the working pose on the current frame"));
+    m_deleteKey = button(tr("Delete Key"), tr("Remove the selected key"));
+    m_bakeKeys = button(tr("Bake Keys"), tr("Draw every frame from the first key to the last from the rest frame (one undo step)"));
+    keyRow->addWidget(m_setKey);
+    keyRow->addWidget(m_deleteKey);
+    keyRow->addWidget(m_bakeKeys);
+    keys->addRow(keyRow);
+    root->addWidget(keyGroup);
 
     m_status = new QLabel;
     m_status->setWordWrap(true);
@@ -290,6 +319,29 @@ RigPanel::RigPanel(QWidget* parent) : QWidget(parent) {
         updateOverlay();
     });
     connect(m_bake, &QPushButton::clicked, this, &RigPanel::bakePose);
+    connect(m_restFrame, &QSpinBox::valueChanged, this, [this](int v) {
+        if (m_filling || !m_view || !m_view->document().rig() || m_view->document().rig()->restFrame == v - 1) return;
+        edit(tr("Set Rest Frame"), [&](Rig& r) { return rigs::setRestFrame(r, v - 1); });
+    });
+    connect(m_setKey, &QPushButton::clicked, this, &RigPanel::setKey);
+    connect(m_deleteKey, &QPushButton::clicked, this, &RigPanel::deleteKey);
+    connect(m_bakeKeys, &QPushButton::clicked, this, &RigPanel::bakeKeys);
+    connect(m_keys, &QListWidget::currentRowChanged, this, [this] {
+        if (!m_filling) showKeys();
+    });
+    connect(m_keys, &QListWidget::itemActivated, this, [this](QListWidgetItem* it) {
+        if (m_view) m_view->setCurrentFrame(it->data(Qt::UserRole).toInt());
+    });
+    connect(m_curve, &QComboBox::activated, this, [this] {
+        const int frame = selectedKeyFrame();
+        if (m_filling || frame < 0) return;
+        const auto type = static_cast<CurveType>(m_curve->currentData().toInt());
+        edit(tr("Change Key Curve"), [&](Rig& r) -> Status {
+            for (RigKey& k : r.keys)
+                if (k.frame == frame) k.curve.type = type;
+            return rigs::validate(r);
+        });
+    });
     connect(m_removeRig, &QPushButton::clicked, this, [this] {
         if (!m_view || !m_view->document().rig()) return;
         if (QMessageBox::question(this, tr("Remove Rig"), tr("Remove every bone and IK chain? The part layers stay. You can undo this.")) !=
@@ -313,6 +365,7 @@ void RigPanel::setView(DocumentView* view) {
         connect(m_view, &DocumentView::currentLayerChanged, this, &RigPanel::rebuild);
         connect(m_view, &DocumentView::currentFrameChanged, this, [this] {
             m_bake->setText(tr("Bake to Frame %1").arg(m_view ? m_view->currentFrame() + 1 : 1));
+            loadKeyedPose();
         });
     }
     m_status->clear();
@@ -389,8 +442,13 @@ void RigPanel::rebuild() {
     m_moveY->setEnabled(rig != nullptr);
     m_showBones->setEnabled(rig != nullptr);
     m_restFrame->setEnabled(rig != nullptr);
-    if (open) m_restFrame->setRange(1, m_view->document().frameCount());
+    {
+        const QSignalBlocker b(m_restFrame);
+        m_restFrame->setRange(1, open ? m_view->document().frameCount() : 1);
+        m_restFrame->setValue(rig ? rig->restFrame + 1 : 1);
+    }
     if (open) m_bake->setText(tr("Bake to Frame %1").arg(m_view->currentFrame() + 1));
+    showKeys();
     showBone();
     showChain();
     updateOverlay();
@@ -459,6 +517,111 @@ void RigPanel::showChain() {
             m_targetY->setValue(world[i].tailY);
         }
     m_filling = false;
+}
+
+int RigPanel::selectedKeyFrame() const {
+    const QListWidgetItem* it = m_keys->currentItem();
+    return it ? it->data(Qt::UserRole).toInt() : -1;
+}
+
+void RigPanel::showKeys() {
+    const Rig* rig = m_view && m_view->document().rig() ? &*m_view->document().rig() : nullptr;
+    const int frame = m_view ? m_view->currentFrame() : -1;
+    int keep = selectedKeyFrame();
+    m_filling = true;
+    {
+        const QSignalBlocker b(m_keys);
+        // Rebuild only when the keys changed, so the selection survives.
+        bool same = rig && m_keys->count() == static_cast<int>(rig->keys.size());
+        for (int i = 0; same && i < m_keys->count(); ++i) {
+            const RigKey& k = rig->keys[static_cast<std::size_t>(i)];
+            same = m_keys->item(i)->data(Qt::UserRole).toInt() == k.frame &&
+                   m_keys->item(i)->data(Qt::UserRole + 1).toInt() == static_cast<int>(k.curve.type) &&
+                   m_keys->item(i)->data(Qt::UserRole + 2).toInt() == rig->restFrame;
+        }
+        if (!same) {
+            m_keys->clear();
+            if (rig)
+                for (const RigKey& k : rig->keys) {
+                    QString text = tr("Frame %1 · %2").arg(k.frame + 1).arg(m_curve->itemText(m_curve->findData(static_cast<int>(k.curve.type))));
+                    if (k.frame == rig->restFrame) text += tr("  (rest frame)");
+                    auto* it = new QListWidgetItem(text);
+                    it->setData(Qt::UserRole, k.frame);
+                    it->setData(Qt::UserRole + 1, static_cast<int>(k.curve.type));
+                    it->setData(Qt::UserRole + 2, rig->restFrame);
+                    m_keys->addItem(it);
+                }
+            if (keep < 0) keep = frame;
+            for (int i = 0; i < m_keys->count(); ++i)
+                if (m_keys->item(i)->data(Qt::UserRole).toInt() == keep) m_keys->setCurrentRow(i);
+        }
+    }
+    const int sel = selectedKeyFrame();
+    if (rig && sel >= 0)
+        for (const RigKey& k : rig->keys)
+            if (k.frame == sel) m_curve->setCurrentIndex(std::max(0, m_curve->findData(static_cast<int>(k.curve.type))));
+    m_filling = false;
+    m_setKey->setEnabled(rig != nullptr);
+    m_setKey->setText(m_view ? tr("Set Key on %1").arg(frame + 1) : tr("Set Key"));
+    m_curve->setEnabled(rig != nullptr);
+    m_deleteKey->setEnabled(rig && sel >= 0);
+    m_bakeKeys->setEnabled(rig && !rig->keys.empty() && !rig->bindings.empty());
+}
+
+void RigPanel::setKey() {
+    if (!m_view || !m_view->document().rig()) return;
+    const int frame = m_view->currentFrame();
+    const auto type = static_cast<CurveType>(m_curve->currentData().toInt());
+    if (edit(tr("Set Key"), [&](Rig& r) {
+            Curve curve;
+            for (const RigKey& k : r.keys)
+                if (k.frame == frame) curve = k.curve;   // keeps custom Bezier points
+            curve.type = type;
+            return rigs::setKey(r, frame, m_pose, curve);
+        })) {
+        m_status->setStyleSheet(QString());
+        m_status->setText(tr("Keyed frame %1.").arg(frame + 1));
+    }
+    showKeys();
+}
+
+void RigPanel::deleteKey() {
+    const int frame = selectedKeyFrame();
+    if (frame < 0) return;
+    edit(tr("Delete Key"), [&](Rig& r) { return rigs::removeKey(r, frame); });
+}
+
+void RigPanel::loadKeyedPose() {
+    const Rig* rig = m_view && m_view->document().rig() ? &*m_view->document().rig() : nullptr;
+    if (rig && !rig->keys.empty()) {
+        m_pose = rigs::poseAt(*rig, m_view->currentFrame());
+        showBone();
+        showChain();
+        updateOverlay();
+    }
+    {
+        const QSignalBlocker b(m_keys);
+        m_keys->setCurrentRow(-1);
+        for (int i = 0; i < m_keys->count(); ++i)
+            if (m_view && m_keys->item(i)->data(Qt::UserRole).toInt() == m_view->currentFrame()) m_keys->setCurrentRow(i);
+    }
+    showKeys();
+}
+
+void RigPanel::bakeKeys() {
+    if (!m_view || !m_view->document().rig()) return;
+    const Rig rig = *m_view->document().rig();
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    auto baked = rigs::bakeKeys(m_view->document());
+    QApplication::restoreOverrideCursor();
+    if (!baked) return report(tr("Bake Keys"), baked.error());
+    if (auto st = m_view->editor().replaceDocument(std::move(baked).value(), tr("Bake Keys").toStdString()); !st)
+        return report(tr("Bake Keys"), st.error());
+    m_status->setStyleSheet(QString());
+    m_status->setText(tr("Baked frames %1–%2 from rest frame %3.")
+                          .arg(rig.keys.front().frame + 1)
+                          .arg(rig.keys.back().frame + 1)
+                          .arg(rig.restFrame + 1));
 }
 
 void RigPanel::updateOverlay() {
@@ -581,7 +744,7 @@ void RigPanel::autoRigCurrentLayer() {
 
 void RigPanel::bakePose() {
     if (!m_view || !m_view->document().rig()) return;
-    const int rest = m_restFrame->value() - 1;
+    const int rest = m_view->document().rig()->restFrame;
     if (rest == m_view->currentFrame() &&
         QMessageBox::question(this, tr("Bake Pose"),
                               tr("This is the rest frame: baking here redraws the parts every later pose starts from. Bake anyway?")) !=

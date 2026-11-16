@@ -149,6 +149,7 @@ template <typename Fn> void Document::remapFrames(Fn fn) {
     }
     m_links = std::move(links);
     dropSingletonLinks();
+    if (m_rig) rigs::remapFrames(*m_rig, fn);
 }
 
 Status Document::setPixelAspect(double x, double y) {

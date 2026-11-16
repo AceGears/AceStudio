@@ -43,8 +43,11 @@ not been run.
   been used on a PC. Bones are edited with the panel's fields: they cannot yet be dragged on the
   canvas. Auto-rig handles bodies with legs (two or four); blobs, flyers, swimmers and objects are
   refused and must be rigged by hand, and arms are only rigged where the silhouette analysis finds
-  them. Every part is rigid on one bone (no bending across a joint). A pose lives in the panel until
-  it is baked into a frame; poses and bone keyframes are not saved. Auto-rig runs on the UI thread
+  them. Every part is rigid on one bone (no bending across a joint). Pose keys with curves are saved
+  in the rig, but an unkeyed working pose lives in the panel until it is keyed or baked, and moving
+  to another frame of a keyed rig replaces it with that frame's keyed pose. There is no curve editor
+  (custom Bezier points only through `rig key --curve bezier:…`), and keys are not drawn on the
+  Timeline. Baking keys runs on the UI thread. Auto-rig runs on the UI thread
   (fast for sprites; a very large layer pauses the window briefly). Projects with a rig need
   schema 4 (this version or later).
 - **ONNX Runtime DirectML:** onnxruntime-directml 1.24.4 fails inside a fused node when running

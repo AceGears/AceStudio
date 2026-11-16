@@ -727,6 +727,7 @@ Status Editor::removeFrame(int frame) {
     auto masks = std::make_shared<std::vector<SavedCel>>(celsAtFrame(m_doc, frame, bytes, true));
     const int duration = m_doc.frames()[static_cast<std::size_t>(frame)].durationMs;
     auto links = std::make_shared<std::map<CelKey, std::uint32_t>>(m_doc.links());
+    auto rig = std::make_shared<std::optional<Rig>>(m_doc.rig());   // keys on the frame go with it
     return apply(std::make_unique<FnCommand>(
         "Delete Frame", [=](Document& d) { return d.removeFrame(frame); },
         [=](Document& d) {
@@ -735,6 +736,7 @@ Status Editor::removeFrame(int frame) {
             for (const auto& sc : *masks) (void)d.setMaskCel(sc.layer, frame, sc.cel);
             (void)d.replaceTags(*tags);
             d.restoreLinks(*links);   // frame keys are back where they were
+            d.setRig(*rig);
         },
         bytes));
 }

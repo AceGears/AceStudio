@@ -124,31 +124,23 @@ int rigAuto(const Args& a, Output& out) {
                        human);
 }
 
-// --frame N --rest R --turn "bone=deg,bone=deg" --move dx,dy --reach "chain=x,y;chain=x,y"
-int rigPose(const Args& a, Output& out) {
-    if (a.positional.size() != 3) return out.fail(kUsage, "rig pose: expected one project file");
-    const auto outPath = a.opt("out");
-    if (!outPath) return out.fail(kUsage, "rig pose: --out is required");
-    const int frame = optInt(a, "frame").value_or(0);
-    const int rest = optInt(a, "rest").value_or(0);
-    auto doc = loadProject(a.positional[2]);
-    if (!doc) return out.fail(doc.error());
-    if (!doc.value().rig()) return out.fail(kUsage, "rig pose: the project has no rig");
-    const Rig& rig = *doc.value().rig();
-    RigPose pose;
+
+// Reads --turn "bone=deg,bone=deg" --move dx,dy --reach "chain=x,y;chain=x,y"
+// into `pose`. Returns kOk, or the exit code of the reported failure.
+int readPose(const Args& a, Output& out, const std::string& cmd, const Rig& rig, RigPose& pose) {
     if (auto t = a.opt("turn"))
         for (const std::string& item : splitOn(*t, ',')) {
             const auto eq = item.rfind('=');
             const Bone* b = eq == std::string::npos ? nullptr : rig.bone(item.substr(0, eq));
             const auto deg = eq == std::string::npos ? std::nullopt : parseDouble(item.substr(eq + 1));
-            if (!b || !deg) return out.fail(kUsage, "rig pose: --turn wants bone=degrees, got '" + item + "'");
+            if (!b || !deg) return out.fail(kUsage, cmd + ": --turn wants bone=degrees, got '" + item + "'");
             pose.turn[b->id] = *deg * kPi / 180;
         }
     if (auto m = a.opt("move")) {
         const auto xy = splitOn(*m, ',');
         const auto dx = xy.size() == 2 ? parseDouble(xy[0]) : std::nullopt;
         const auto dy = xy.size() == 2 ? parseDouble(xy[1]) : std::nullopt;
-        if (!dx || !dy) return out.fail(kUsage, "rig pose: --move wants dx,dy");
+        if (!dx || !dy) return out.fail(kUsage, cmd + ": --move wants dx,dy");
         pose.dx = *dx;
         pose.dy = *dy;
     }
@@ -162,18 +154,144 @@ int rigPose(const Args& a, Output& out) {
             const auto xy = eq == std::string::npos ? std::vector<std::string>{} : splitOn(item.substr(eq + 1), ',');
             const auto x = xy.size() == 2 ? parseDouble(xy[0]) : std::nullopt;
             const auto y = xy.size() == 2 ? parseDouble(xy[1]) : std::nullopt;
-            if (!chain || !x || !y) return out.fail(kUsage, "rig pose: --reach wants chain=x,y, got '" + item + "'");
+            if (!chain || !x || !y) return out.fail(kUsage, cmd + ": --reach wants chain=x,y, got '" + item + "'");
             if (auto st = rigs::reach(rig, pose, *chain, *x, *y); !st) return out.fail(st.error());
         }
-    auto baked = rigs::bakePose(doc.value(), rest, frame, pose);
-    if (!baked) return out.fail(baked.error());
-    if (int code = writeProject(a, out, baked.value(), *outPath); code != kOk) return code;
+    return kOk;
+}
+
+json turnsJson(const Rig& rig, const RigPose& pose) {
     json turns = json::object();
     for (const auto& [id, t] : pose.turn)
         if (const Bone* b = rig.bone(id)) turns[b->name] = rigs::clampTurn(*b, t) * 180 / kPi;
-    return out.success({{"path", *outPath}, {"frame", frame}, {"rest", rest}, {"turns", turns}},
+    return turns;
+}
+
+// Loads the project named by positional[2], which must have a rig, and the
+// required --out path.
+struct RigJob {
+    Document doc;
+    std::string outPath;
+};
+std::optional<RigJob> openRigJob(const Args& a, Output& out, const std::string& cmd, int& code) {
+    if (a.positional.size() != 3) {
+        code = out.fail(kUsage, cmd + ": expected one project file");
+        return std::nullopt;
+    }
+    const auto outPath = a.opt("out");
+    if (!outPath) {
+        code = out.fail(kUsage, cmd + ": --out is required");
+        return std::nullopt;
+    }
+    auto doc = loadProject(a.positional[2]);
+    if (!doc) {
+        code = out.fail(doc.error());
+        return std::nullopt;
+    }
+    if (!doc.value().rig()) {
+        code = out.fail(kUsage, cmd + ": the project has no rig");
+        return std::nullopt;
+    }
+    return RigJob{std::move(doc).value(), *outPath};
+}
+
+// --frame N [--rest R] and a pose (readPose)
+int rigPose(const Args& a, Output& out) {
+    int code = kOk;
+    auto job = openRigJob(a, out, "rig pose", code);
+    if (!job) return code;
+    const Rig& rig = *job->doc.rig();
+    const int frame = optInt(a, "frame").value_or(0);
+    const int rest = optInt(a, "rest").value_or(rig.restFrame);
+    RigPose pose;
+    if (int c = readPose(a, out, "rig pose", rig, pose); c != kOk) return c;
+    auto baked = rigs::bakePose(job->doc, rest, frame, pose);
+    if (!baked) return out.fail(baked.error());
+    if (int c = writeProject(a, out, baked.value(), job->outPath); c != kOk) return c;
+    return out.success({{"path", job->outPath}, {"frame", frame}, {"rest", rest}, {"turns", turnsJson(rig, pose)}},
                        "Posed frame " + std::to_string(frame) + " (parts from rest frame " + std::to_string(rest) + ") into " +
-                           *outPath + "\n");
+                           job->outPath + "\n");
+}
+
+// --frame N, a pose, [--curve linear|ease-in|ease-out|ease-in-out|stepped|bezier:x1,y1,x2,y2]
+int rigKey(const Args& a, Output& out) {
+    int code = kOk;
+    auto job = openRigJob(a, out, "rig key", code);
+    if (!job) return code;
+    const auto frame = optInt(a, "frame");
+    if (!frame) return out.fail(kUsage, "rig key: --frame is required");
+    Rig rig = *job->doc.rig();
+    RigPose pose;
+    if (int c = readPose(a, out, "rig key", rig, pose); c != kOk) return c;
+    Curve curve;
+    if (auto cv = a.opt("curve")) {
+        const std::string name = cv->substr(0, cv->find(':'));
+        const auto type = rigs::curveFromString(name);
+        if (!type) return out.fail(kUsage, "rig key: unknown --curve '" + name + "'");
+        curve.type = *type;
+        if (*type == CurveType::Bezier) {
+            const auto colon = cv->find(':');
+            const auto pts = colon == std::string::npos ? std::vector<std::string>{} : splitOn(cv->substr(colon + 1), ',');
+            std::vector<double> v;
+            for (const auto& p : pts)
+                if (auto d = parseDouble(p)) v.push_back(*d);
+            if (v.size() != 4 || pts.size() != 4) return out.fail(kUsage, "rig key: --curve bezier:x1,y1,x2,y2");
+            curve.x1 = v[0];
+            curve.y1 = v[1];
+            curve.x2 = v[2];
+            curve.y2 = v[3];
+        }
+    }
+    if (auto st = rigs::setKey(rig, *frame, pose, curve); !st) return out.fail(st.error());
+    job->doc.setRig(rig);
+    if (auto st = job->doc.validate(); !st) return out.fail(kUsage, "rig key: " + st.error().message);
+    if (int c = writeProject(a, out, job->doc, job->outPath); c != kOk) return c;
+    return out.success({{"path", job->outPath}, {"frame", *frame}, {"keys", rig.keys.size()}, {"curve", rigs::toString(curve.type)},
+                        {"turns", turnsJson(rig, pose)}},
+                       "Key on frame " + std::to_string(*frame) + " (" + std::to_string(rig.keys.size()) + " keys) in " + job->outPath + "\n");
+}
+
+int rigUnkey(const Args& a, Output& out) {
+    int code = kOk;
+    auto job = openRigJob(a, out, "rig unkey", code);
+    if (!job) return code;
+    const auto frame = optInt(a, "frame");
+    if (!frame) return out.fail(kUsage, "rig unkey: --frame is required");
+    Rig rig = *job->doc.rig();
+    if (auto st = rigs::removeKey(rig, *frame); !st) return out.fail(st.error());
+    job->doc.setRig(rig);
+    if (int c = writeProject(a, out, job->doc, job->outPath); c != kOk) return c;
+    return out.success({{"path", job->outPath}, {"keys", rig.keys.size()}}, "Removed the key on frame " + std::to_string(*frame) + "\n");
+}
+
+int rigRest(const Args& a, Output& out) {
+    int code = kOk;
+    auto job = openRigJob(a, out, "rig rest", code);
+    if (!job) return code;
+    const auto frame = optInt(a, "frame");
+    if (!frame) return out.fail(kUsage, "rig rest: --frame is required");
+    Rig rig = *job->doc.rig();
+    if (auto st = rigs::setRestFrame(rig, *frame); !st) return out.fail(st.error());
+    job->doc.setRig(rig);
+    if (auto st = job->doc.validate(); !st) return out.fail(kUsage, "rig rest: " + st.error().message);
+    if (int c = writeProject(a, out, job->doc, job->outPath); c != kOk) return c;
+    return out.success({{"path", job->outPath}, {"restFrame", *frame}}, "Rest frame is now " + std::to_string(*frame) + "\n");
+}
+
+// [--from F --to L]: default every frame from the first key to the last
+int rigBake(const Args& a, Output& out) {
+    int code = kOk;
+    auto job = openRigJob(a, out, "rig bake", code);
+    if (!job) return code;
+    const int first = optInt(a, "from").value_or(0);
+    const int last = optInt(a, "to").value_or(-1);
+    auto baked = rigs::bakeKeys(job->doc, first, last);
+    if (!baked) return out.fail(baked.error());
+    if (int c = writeProject(a, out, baked.value(), job->outPath); c != kOk) return c;
+    const Rig& rig = *job->doc.rig();
+    const int f0 = first > last ? rig.keys.front().frame : first, f1 = first > last ? rig.keys.back().frame : last;
+    return out.success({{"path", job->outPath}, {"from", f0}, {"to", f1}, {"restFrame", rig.restFrame}},
+                       "Baked frames " + std::to_string(f0) + "-" + std::to_string(f1) + " into " + job->outPath + "\n");
 }
 
 } // namespace
@@ -183,7 +301,11 @@ int cmdRig(const Args& a, Output& out) {
     if (sub == "show") return rigShow(a, out);
     if (sub == "auto") return rigAuto(a, out);
     if (sub == "pose") return rigPose(a, out);
-    return out.fail(kUsage, "rig: expected show, auto or pose");
+    if (sub == "key") return rigKey(a, out);
+    if (sub == "unkey") return rigUnkey(a, out);
+    if (sub == "rest") return rigRest(a, out);
+    if (sub == "bake") return rigBake(a, out);
+    return out.fail(kUsage, "rig: expected show, auto, pose, key, unkey, rest or bake");
 }
 
 } // namespace acestudio::cli

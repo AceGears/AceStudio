@@ -430,3 +430,133 @@ TEST_CASE("Auto-rig refuses bodies without legs", "[rig]") {
     CHECK_FALSE(rigs::autoRig(doc, blob, 3));
     CHECK_FALSE(rigs::bakePose(doc, 0, 0, RigPose{}));
 }
+
+TEST_CASE("Keys interpolate poses with curves", "[rig][keys]") {
+    Leg l = makeLeg();
+    RigPose a, b;
+    a.turn[l.thigh] = 0;
+    b.turn[l.thigh] = 1.0;
+    b.dx = 4;
+    REQUIRE(rigs::setKey(l.rig, 6, b));
+    REQUIRE(rigs::setKey(l.rig, 2, a));
+    REQUIRE(l.rig.keys.size() == 2);
+    CHECK(l.rig.keys[0].frame == 2);   // kept in frame order
+    CHECK(l.rig.keys[0].pose.turn.empty());   // rest turns are not stored
+
+    CHECK(rigs::poseAt(l.rig, 0).turn.empty());            // held before the first key
+    CHECK(rigs::poseAt(l.rig, 9).turn.at(l.thigh) == 1.0);  // and after the last
+    CHECK(rigs::poseAt(l.rig, 4).turn.at(l.thigh) == Approx(0.5));
+    CHECK(rigs::poseAt(l.rig, 4).dx == Approx(2));
+
+    REQUIRE(rigs::setKey(l.rig, 2, a, Curve{CurveType::Stepped}));
+    CHECK(rigs::poseAt(l.rig, 5).turn.at(l.thigh) == Approx(0));
+    REQUIRE(rigs::setKey(l.rig, 2, a, Curve{CurveType::EaseIn}));
+    CHECK(rigs::poseAt(l.rig, 4).turn.at(l.thigh) < 0.5);
+    REQUIRE(rigs::setKey(l.rig, 2, a, Curve{CurveType::EaseOut}));
+    CHECK(rigs::poseAt(l.rig, 4).turn.at(l.thigh) > 0.5);
+    CHECK(rigs::ease(Curve{CurveType::EaseInOut}, 0.5) == Approx(0.5));
+    Curve straight{CurveType::Bezier, 0.25, 0.25, 0.75, 0.75};
+    CHECK(rigs::ease(straight, 0.3) == Approx(0.3).margin(1e-6));
+    Curve css{CurveType::Bezier, 0.42, 0, 0.58, 1};
+    CHECK(rigs::ease(css, 0.25) < 0.25);
+    CHECK(rigs::ease(css, 1) == Approx(1));
+    CHECK_FALSE(rigs::setKey(l.rig, 3, a, Curve{CurveType::Bezier, 1.5, 0, 0.5, 1}));
+    CHECK_FALSE(rigs::setKey(l.rig, -1, a));
+    RigPose ghost;
+    ghost.turn[99] = 1;
+    CHECK_FALSE(rigs::setKey(l.rig, 3, ghost));
+
+    // JSON: version 2 with keys, back to version 1 without.
+    REQUIRE(rigs::setRestFrame(l.rig, 1));
+    auto j = rigs::toJson(l.rig);
+    CHECK(j["version"] == 2);
+    auto back = rigs::fromJson(j);
+    REQUIRE(back);
+    CHECK(back.value() == l.rig);
+    j["keys"][0]["curve"]["type"] = "wobble";
+    CHECK_FALSE(rigs::fromJson(j));
+    // Removing a bone removes its turns from the keys.
+    REQUIRE(rigs::removeBone(l.rig, l.thigh));
+    for (const RigKey& k : l.rig.keys) CHECK_FALSE(k.pose.turn.count(l.thigh));
+    REQUIRE(rigs::removeKey(l.rig, 2));
+    CHECK_FALSE(rigs::removeKey(l.rig, 2));
+    l.rig.keys.clear();
+    l.rig.restFrame = 0;
+    CHECK(rigs::toJson(l.rig)["version"] == 1);
+}
+
+TEST_CASE("Keys follow frames as they are inserted, moved and deleted", "[rig][keys]") {
+    Editor ed(Document::create(16, 16).value());
+    for (int i = 0; i < 4; ++i) REQUIRE(ed.insertFrame(1));
+    Rig rig;
+    const BoneId b = rigs::addBone(rig, makeBone("arm", kNoBone, 4, 4, 6, 0)).value();
+    RigPose p;
+    p.turn[b] = 0.5;
+    REQUIRE(rigs::setKey(rig, 2, p));
+    REQUIRE(rigs::setKey(rig, 4, p));
+    REQUIRE(rigs::setRestFrame(rig, 3));
+    REQUIRE(ed.setRig(rig, "Keys"));
+
+    REQUIRE(ed.insertFrame(0));
+    CHECK(ed.document().rig()->keys[0].frame == 3);
+    CHECK(ed.document().rig()->restFrame == 4);
+    REQUIRE(ed.undo());
+    CHECK(ed.document().rig()->keys[0].frame == 2);
+    REQUIRE(ed.moveFrame(2, 0));
+    CHECK(ed.document().rig()->keys[0].frame == 0);
+    REQUIRE(ed.undo());
+    REQUIRE(ed.removeFrame(2));
+    CHECK(ed.document().rig()->keys.size() == 1);
+    CHECK(ed.document().rig()->keys[0].frame == 3);
+    CHECK(ed.document().rig()->restFrame == 2);
+    REQUIRE(ed.undo());
+    REQUIRE(ed.document().rig()->keys.size() == 2);
+    CHECK(ed.document().rig()->keys[0].frame == 2);
+    CHECK(ed.document().rig()->restFrame == 3);
+    REQUIRE(ed.removeFrames(3, 4));   // the rest frame goes: back to 0
+    CHECK(ed.document().rig()->restFrame == 0);
+    CHECK(ed.document().validate());
+    REQUIRE(ed.undo());
+    CHECK(ed.document().rig()->restFrame == 3);
+    // A key past the last frame is refused.
+    Rig bad = *ed.document().rig();
+    REQUIRE(rigs::setKey(bad, 40, p));
+    CHECK_FALSE(ed.setRig(bad, "Bad"));
+}
+
+TEST_CASE("Baking keys poses every frame between them from the rest frame", "[rig][keys]") {
+    auto sprite = readPng(fixture("rogue64.png"));
+    REQUIRE(sprite);
+    auto doc = Document::create(sprite.value().width() + 20, sprite.value().height() + 10).value();
+    const LayerId hero = doc.addLayer("Hero").value();
+    REQUIRE(doc.setCel(hero, 0, Cel{sprite.value(), 10, 5}));
+    for (int i = 0; i < 4; ++i) REQUIRE(doc.insertFrame(1));
+    auto rigged = rigs::autoRig(doc, hero, 0);
+    REQUIRE(rigged);
+    Document d = std::move(rigged.value().document);
+    const Image rest = d.composite(0);
+    CHECK(rigs::bakeKeys(d).error().message.find("no keys") != std::string::npos);
+
+    Rig rig = *d.rig();
+    CHECK(rig.restFrame == 0);
+    const BoneId thigh = rig.bone("leg0 thigh")->id;
+    RigPose up;
+    up.turn[thigh] = 0.8;
+    REQUIRE(rigs::setKey(rig, 0, RigPose{}));
+    REQUIRE(rigs::setKey(rig, 4, up));
+    d.setRig(rig);
+    auto baked = rigs::bakeKeys(d);
+    REQUIRE(baked);
+    const Document& out = baked.value();
+    CHECK(out.composite(0) == rest);   // the rest frame is never overwritten
+    for (int f = 1; f <= 4; ++f) {
+        INFO("frame " << f);
+        CHECK_FALSE(out.composite(f).isFullyTransparent());
+    }
+    // Frame 4 is exactly the key pose baked on its own.
+    auto single = rigs::bakePose(d, 0, 4, up);
+    REQUIRE(single);
+    CHECK(out.composite(4) == single.value().composite(4));
+    CHECK_FALSE(out.composite(2) == out.composite(4));
+    CHECK_FALSE(rigs::bakeKeys(d, 2, 9));
+}

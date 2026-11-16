@@ -44,4 +44,11 @@ Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame);
 // An empty pose copies the rest cels exactly.
 Result<Document> bakePose(const Document& doc, int restFrame, int frame, const RigPose& pose);
 
+// Bakes the rig's keys into frames [first, last] (each frame gets
+// poseAt(frame), drawn from the rig's rest frame). The rest frame itself is
+// skipped, so the parts at rest are never overwritten. With first > last,
+// every frame from the first key to the last is baked. Fails when there
+// are no keys.
+Result<Document> bakeKeys(const Document& doc, int first = 0, int last = -1);
+
 } // namespace acestudio::rigs

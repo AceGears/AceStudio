@@ -151,6 +151,7 @@ Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame) {
         if (!arm) return arm.error();
         if (auto st = bind(part, arm.value()); !st) return st.error();
     }
+    rig.restFrame = frame;
     if (auto st = validate(rig, &d); !st) return st.error();
     d.setRig(std::move(rig));
     if (auto st = d.validate(); !st) return st.error();
@@ -214,6 +215,25 @@ Result<Document> bakePose(const Document& doc, int restFrame, int frame, const R
             continue;
         }
         if (auto st = d.setCel(layerId, frame, Cel{out.copy(ob), ob.x + box.x, ob.y + box.y}); !st) return st.error();
+    }
+    return d;
+}
+
+Result<Document> bakeKeys(const Document& doc, int first, int last) {
+    if (!doc.rig()) return bad("The document has no rig");
+    const Rig& rig = *doc.rig();
+    if (rig.keys.empty()) return bad("The rig has no keys: set a key on a frame first");
+    if (first > last) {
+        first = rig.keys.front().frame;
+        last = rig.keys.back().frame;
+    }
+    if (first < 0 || last >= doc.frameCount()) return bad("Frame range out of range");
+    Document d = doc;
+    for (int f = first; f <= last; ++f) {
+        if (f == rig.restFrame) continue;
+        auto baked = bakePose(d, rig.restFrame, f, poseAt(rig, f));
+        if (!baked) return baked.error();
+        d = std::move(baked).value();
     }
     return d;
 }

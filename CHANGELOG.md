@@ -73,6 +73,11 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   canvas, and bake the pose into a frame: the parts of a chosen rest frame are moved and turned
   pixel-art safe (whole pixels, RotSprite, no new colours), so baking again never compounds. Saved
   as schema 4 only when a document has a rig (ADR-ANIM-004, `docs/project-format.md`).
+- **Rig keys with curves** (Rig panel › Keys; `acestudio-cli rig key|unkey|rest|bake`). Key a pose
+  on a frame with a linear, eased, stepped or Bezier curve; the frames in between are eased, and
+  Bake Keys draws them all from the rest frame in one undo step. Keys and the rest frame are saved
+  in the rig (rig version 2; a rig without keys is still written as version 1) and follow frames
+  that are inserted, moved or deleted.
 - **In-betweens for pixel art** (Animation › Generate In-betweens…, and `acestudio-cli inbetween
   key1.png key2.png ... --out folder`). New frames between drawn key frames: each pixel of a key
   finds where it went in the next and is moved part of the way, so colours are never blended, the

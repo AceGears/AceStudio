@@ -22,10 +22,13 @@ namespace acestudio::ui {
 class DocumentView;
 
 // The document's rig (ADR-ANIM-004): the bone tree, the selected bone's rest
-// geometry, limits, lock and parts, IK chains, and a working pose that can be
-// baked into the current frame. Every rig edit is one undo step (drags of a
-// value merge); the pose is not part of the document until it is baked.
-// The canvas shows the bones of the working pose.
+// geometry, limits, lock and parts, IK chains, a working pose that can be
+// baked into the current frame, and pose keys with curves (rig version 2)
+// that can be baked into every frame between them. Every rig edit is one
+// undo step (drags of a value merge); the working pose is not part of the
+// document until it is keyed or baked. On a frame change with keys, the
+// working pose becomes the keyed pose of that frame. The canvas shows the
+// bones of the working pose.
 class RigPanel : public QWidget {
     Q_OBJECT
 public:
@@ -38,6 +41,8 @@ public Q_SLOTS:
     // Draws the parts of the rest frame, in the working pose, into the
     // current frame's part cels.
     void bakePose();
+    // Draws every frame from the first key to the last, posed by the keys.
+    void bakeKeys();
 
 Q_SIGNALS:
     void statusMessage(const QString& text);
@@ -58,6 +63,11 @@ private:
     void removeBone();
     void applyGeometry();
     void applyLimits();
+    void showKeys();
+    void setKey();
+    void deleteKey();
+    void loadKeyedPose();
+    int selectedKeyFrame() const;
 
     QPointer<DocumentView> m_view;
     RigPose m_pose;
@@ -97,6 +107,11 @@ private:
     QSpinBox* m_restFrame = nullptr;
     QPushButton* m_resetPose = nullptr;
     QPushButton* m_bake = nullptr;
+    QListWidget* m_keys = nullptr;
+    QComboBox* m_curve = nullptr;
+    QPushButton* m_setKey = nullptr;
+    QPushButton* m_deleteKey = nullptr;
+    QPushButton* m_bakeKeys = nullptr;
     QLabel* m_status = nullptr;
 };
 

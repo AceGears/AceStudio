@@ -135,6 +135,25 @@ Status validate(const Rig& rig, const Document* doc) {
             if (!l || l->kind != LayerKind::Raster) return bad("A part names a missing or non-raster layer");
         }
     }
+    if (rig.restFrame < 0 || rig.restFrame >= Document::kMaxFrames || (doc && rig.restFrame >= doc->frameCount()))
+        return bad("The rest frame is not a frame of the document");
+    if (rig.keys.size() > static_cast<std::size_t>(Rig::kMaxKeys)) return bad("A rig holds at most " + std::to_string(Rig::kMaxKeys) + " keys");
+    for (std::size_t i = 0; i < rig.keys.size(); ++i) {
+        const RigKey& k = rig.keys[i];
+        if (k.frame < 0 || k.frame >= Document::kMaxFrames || (doc && k.frame >= doc->frameCount()))
+            return bad("A key is on a frame the document does not have");
+        if (i > 0 && rig.keys[i - 1].frame >= k.frame) return bad("Keys must be in frame order, one per frame");
+        if (!finite(k.pose.dx) || !finite(k.pose.dy) || std::abs(k.pose.dx) > kMaxCoord || std::abs(k.pose.dy) > kMaxCoord)
+            return bad("The key on frame " + std::to_string(k.frame) + " moves out of range");
+        for (const auto& [b, t] : k.pose.turn)
+            if (!seen.count(b) || !finite(t) || std::abs(t) > 64 * kPi)
+                return bad("The key on frame " + std::to_string(k.frame) + " turns a missing bone or by an invalid angle");
+        const Curve& c = k.curve;
+        for (double v : {c.x1, c.y1, c.x2, c.y2})
+            if (!finite(v)) return bad("A key's curve is not a number");
+        if (c.x1 < 0 || c.x1 > 1 || c.x2 < 0 || c.x2 > 1 || std::abs(c.y1) > 10 || std::abs(c.y2) > 10)
+            return bad("A key's Bezier curve needs x in 0..1");
+    }
     std::set<BoneId> tips;
     for (const IkChain& c : rig.chains) {
         const Bone* t = rig.bone(c.tip);
@@ -233,6 +252,7 @@ Status removeBone(Rig& rig, BoneId id) {
             const Bone* t = r.bone(c.tip);
             return c.tip == id || !t || t->parent == kNoBone;
         });
+        for (RigKey& k : r.keys) k.pose.turn.erase(id);
         return sortBones(r.bones);
     });
 }
@@ -352,6 +372,109 @@ Status reach(const Rig& rig, RigPose& pose, std::size_t chain, double targetX, d
     return {};
 }
 
+Status setKey(Rig& rig, int frame, RigPose pose, Curve curve) {
+    return edited(rig, [&](Rig& r) -> Status {
+        // Turns of 0 are the rest turn: kept out so keys stay small.
+        std::erase_if(pose.turn, [](const auto& kv) { return kv.second == 0.0; });
+        auto it = std::lower_bound(r.keys.begin(), r.keys.end(), frame, [](const RigKey& k, int f) { return k.frame < f; });
+        if (it != r.keys.end() && it->frame == frame) *it = RigKey{frame, std::move(pose), curve};
+        else r.keys.insert(it, RigKey{frame, std::move(pose), curve});
+        return {};
+    });
+}
+
+Status removeKey(Rig& rig, int frame) {
+    const auto before = rig.keys.size();
+    std::erase_if(rig.keys, [&](const RigKey& k) { return k.frame == frame; });
+    if (rig.keys.size() == before) return bad("There is no key on frame " + std::to_string(frame));
+    return {};
+}
+
+Status setRestFrame(Rig& rig, int frame) {
+    return edited(rig, [&](Rig& r) -> Status {
+        r.restFrame = frame;
+        return {};
+    });
+}
+
+double ease(const Curve& c, double t) {
+    t = std::clamp(t, 0.0, 1.0);
+    switch (c.type) {
+    case CurveType::Linear: return t;
+    case CurveType::EaseIn: return t * t * t;
+    case CurveType::EaseOut: return 1 - (1 - t) * (1 - t) * (1 - t);
+    case CurveType::EaseInOut: return t < 0.5 ? 4 * t * t * t : 1 - std::pow(-2 * t + 2, 3) / 2;
+    case CurveType::Stepped: return t >= 1 ? 1 : 0;
+    case CurveType::Bezier: {
+        // x(s) is monotonic for x1, x2 in [0, 1]: find s by bisection.
+        auto bez = [](double p1, double p2, double s) {
+            const double u = 1 - s;
+            return 3 * u * u * s * p1 + 3 * u * s * s * p2 + s * s * s;
+        };
+        double lo = 0, hi = 1;
+        for (int i = 0; i < 60; ++i) {
+            const double mid = (lo + hi) / 2;
+            if (bez(c.x1, c.x2, mid) < t) lo = mid;
+            else hi = mid;
+        }
+        return bez(c.y1, c.y2, (lo + hi) / 2);
+    }
+    }
+    return t;
+}
+
+RigPose poseAt(const Rig& rig, int frame) {
+    if (rig.keys.empty()) return {};
+    if (frame <= rig.keys.front().frame) return rig.keys.front().pose;
+    if (frame >= rig.keys.back().frame) return rig.keys.back().pose;
+    const auto next = std::upper_bound(rig.keys.begin(), rig.keys.end(), frame, [](int f, const RigKey& k) { return f < k.frame; });
+    const RigKey& b = *next;
+    const RigKey& a = *(next - 1);
+    if (a.frame == frame) return a.pose;
+    const double e = ease(a.curve, static_cast<double>(frame - a.frame) / (b.frame - a.frame));
+    std::set<BoneId> ids;
+    for (const auto& kv : a.pose.turn) ids.insert(kv.first);
+    for (const auto& kv : b.pose.turn) ids.insert(kv.first);
+    auto turnOf = [](const RigPose& p, BoneId id) {
+        const auto it = p.turn.find(id);
+        return it == p.turn.end() ? 0.0 : it->second;
+    };
+    RigPose out;
+    for (BoneId id : ids) {
+        const double ta = turnOf(a.pose, id), tb = turnOf(b.pose, id);
+        out.turn[id] = ta + (tb - ta) * e;
+    }
+    out.dx = a.pose.dx + (b.pose.dx - a.pose.dx) * e;
+    out.dy = a.pose.dy + (b.pose.dy - a.pose.dy) * e;
+    return out;
+}
+
+const char* toString(CurveType t) {
+    switch (t) {
+    case CurveType::Linear: return "linear";
+    case CurveType::EaseIn: return "ease-in";
+    case CurveType::EaseOut: return "ease-out";
+    case CurveType::EaseInOut: return "ease-in-out";
+    case CurveType::Stepped: return "stepped";
+    case CurveType::Bezier: return "bezier";
+    }
+    return "linear";
+}
+
+std::optional<CurveType> curveFromString(const std::string& s) {
+    for (CurveType t : {CurveType::Linear, CurveType::EaseIn, CurveType::EaseOut, CurveType::EaseInOut, CurveType::Stepped, CurveType::Bezier})
+        if (s == toString(t)) return t;
+    return std::nullopt;
+}
+
+namespace {
+json poseJson(const RigPose& p) {
+    json turns = json::array();
+    for (const auto& [b, t] : p.turn) turns.push_back({{"bone", b}, {"angle", t}});
+    return {{"turn", turns}, {"dx", p.dx}, {"dy", p.dy}};
+}
+} // namespace
+
 json toJson(const Rig& rig) {
     json bones = json::array();
     for (const Bone& b : rig.bones) {
@@ -364,7 +487,19 @@ json toJson(const Rig& rig) {
     for (const auto& [layer, bone] : rig.bindings) bindings.push_back({{"layer", layer}, {"bone", bone}});
     json chains = json::array();
     for (const IkChain& c : rig.chains) chains.push_back({{"name", c.name}, {"tip", c.tip}, {"bend", c.bend}});
-    return {{"version", Rig::kVersion}, {"nextId", rig.nextId}, {"bones", bones}, {"bindings", bindings}, {"chains", chains}};
+    json j = {{"version", 1}, {"nextId", rig.nextId}, {"bones", bones}, {"bindings", bindings}, {"chains", chains}};
+    if (rig.restFrame != 0 || !rig.keys.empty()) {
+        j["version"] = 2;
+        j["restFrame"] = rig.restFrame;
+        json keys = json::array();
+        for (const RigKey& k : rig.keys) {
+            json jc = {{"type", toString(k.curve.type)}};
+            if (k.curve.type == CurveType::Bezier) jc["points"] = {k.curve.x1, k.curve.y1, k.curve.x2, k.curve.y2};
+            keys.push_back({{"frame", k.frame}, {"pose", poseJson(k.pose)}, {"curve", jc}});
+        }
+        j["keys"] = keys;
+    }
+    return j;
 }
 
 namespace {
@@ -429,6 +564,44 @@ Result<Rig> fromJson(const json& j) {
             return corrupt("an IK chain is incomplete");
         c.name = jc["name"].get<std::string>();
         rig.chains.push_back(std::move(c));
+    }
+    if (version >= 2) {
+        if (j.contains("restFrame") && !getNumber(j, "restFrame", rig.restFrame)) return corrupt("bad rest frame");
+        if (j.contains("keys")) {
+            if (!j["keys"].is_array() || j["keys"].size() > static_cast<std::size_t>(Rig::kMaxKeys)) return corrupt("bad key list");
+            for (const json& jk : j["keys"]) {
+                RigKey k;
+                if (!getNumber(jk, "frame", k.frame) || !jk.contains("pose") || !jk["pose"].is_object()) return corrupt("a key has no frame or pose");
+                const json& jp = jk["pose"];
+                if (!getNumber(jp, "dx", k.pose.dx) || !getNumber(jp, "dy", k.pose.dy) || !jp.contains("turn") || !jp["turn"].is_array())
+                    return corrupt("a key's pose is incomplete");
+                if (jp["turn"].size() > static_cast<std::size_t>(Rig::kMaxBones)) return corrupt("a key turns too many bones");
+                for (const json& jt : jp["turn"]) {
+                    BoneId b = 0;
+                    double a = 0;
+                    if (!getId(jt, "bone", b) || !getNumber(jt, "angle", a)) return corrupt("a key's turn is incomplete");
+                    k.pose.turn[b] = a;
+                }
+                if (jk.contains("curve")) {
+                    const json& jc = jk["curve"];
+                    if (!jc.is_object() || !jc.contains("type") || !jc["type"].is_string()) return corrupt("a key's curve has no type");
+                    const auto type = curveFromString(jc["type"].get<std::string>());
+                    if (!type) return corrupt("unknown curve '" + jc["type"].get<std::string>() + "'");
+                    k.curve.type = *type;
+                    if (*type == CurveType::Bezier) {
+                        if (!jc.contains("points") || !jc["points"].is_array() || jc["points"].size() != 4) return corrupt("a Bezier curve needs four numbers");
+                        const json& pts = jc["points"];
+                        for (const json& v : pts)
+                            if (!v.is_number()) return corrupt("a Bezier curve needs four numbers");
+                        k.curve.x1 = pts[0].get<double>();
+                        k.curve.y1 = pts[1].get<double>();
+                        k.curve.x2 = pts[2].get<double>();
+                        k.curve.y2 = pts[3].get<double>();
+                    }
+                }
+                rig.keys.push_back(std::move(k));
+            }
+        }
     }
     if (auto st = validate(rig); !st) return corrupt(st.error().message);
     return rig;

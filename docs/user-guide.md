@@ -89,8 +89,13 @@ Add, Subtract, Difference), visibility and locks.
   the posed bones (the selected one in amber). Go to the frame you want and press **Bake to
   Frame**: the parts of the **Rest frame** are drawn there in the pose, in one undo step, with no
   new colours. Baking reads the rest frame every time, so it never piles up. **Rest Pose** puts
-  the bones back. Bones cannot be dragged on the canvas yet. Projects with a rig are saved as
-  schema 4.
+  the bones back. The rest frame is saved with the rig. Projects with a rig are saved as schema 4.
+- **Rig keys:** pose the bones on a frame and press **Set Key on N**; choose a **Curve** (linear,
+  ease in, ease out, ease in and out, stepped, Bezier) for how the frames after the key move to the
+  next key. Moving to another frame loads the keyed pose of that frame (in between two keys, the
+  eased pose). **Bake Keys** draws every frame from the first key to the last from the rest frame in
+  one undo step; the rest frame itself is left alone. Keys move with their frames when you insert,
+  move or delete frames. From the command line: `acestudio-cli rig key|unkey|rest|bake`.
 
 ## 6. Export
 
