@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <map>
 #include <random>
@@ -95,11 +96,32 @@ public:
             }
         }
 
+        // Uniqueness: how many pixels of a land on each pixel of b. In flat
+        // colour many moves match equally well, and without this a turning
+        // limb collapses onto the nearest pixels of its colour. Each other
+        // pixel already landing on a target adds a little to the cost of
+        // landing there too (f.cost stays the plain patch difference).
+        std::vector<int> occupied(n, 0);
+        auto target = [&](int x, int y, int dx, int dy) -> std::ptrdiff_t {
+            const int tx = x + dx, ty = y + dy;
+            if (tx < 0 || ty < 0 || tx >= w || ty >= h) return -1;
+            return static_cast<std::ptrdiff_t>(at(w, tx, ty));
+        };
+        auto crowd = [&](std::ptrdiff_t t) { return t < 0 ? 0 : occupied[static_cast<std::size_t>(t)]; };
+        for (std::size_t i : active) {
+            const int x = static_cast<int>(i % static_cast<std::size_t>(w)), y = static_cast<int>(i / static_cast<std::size_t>(w));
+            if (const auto t = target(x, y, f.dx[i], f.dy[i]); t >= 0) ++occupied[static_cast<std::size_t>(t)];
+        }
+        constexpr float kCrowdCost = 0.1f;
         std::mt19937 rng(m_opt.seed);
         auto tryMove = [&](std::size_t i, int x, int y, int dx, int dy) {
             if (dx == f.dx[i] && dy == f.dy[i]) return;
+            const std::ptrdiff_t now = target(x, y, f.dx[i], f.dy[i]), next = target(x, y, dx, dy);
             const float c = cost(x, y, dx, dy);
-            if (c < f.cost[i]) {
+            const float current = f.cost[i] + kCrowdCost * static_cast<float>(std::max(0, crowd(now) - 1));
+            if (c + kCrowdCost * static_cast<float>(crowd(next)) < current) {
+                if (now >= 0) --occupied[static_cast<std::size_t>(now)];
+                if (next >= 0) ++occupied[static_cast<std::size_t>(next)];
                 f.dx[i] = dx;
                 f.dy[i] = dy;
                 f.cost[i] = c;
@@ -119,10 +141,16 @@ public:
                     const std::size_t j = at(w, nx, ny);
                     if (opaque(m_a.pixel(nx, ny))) tryMove(i, x, y, f.dx[j], f.dy[j]);
                 }
-                // Random search round the current move, ever closer.
+                // Random search round the current move, ever closer. The
+                // offsets are drawn one after the other and mapped by hand:
+                // std::uniform_int_distribution and the order of function
+                // arguments both differ between standard libraries and
+                // compilers, and results must be the same on every build.
                 for (int r = radius; r >= 1; r /= 2) {
-                    std::uniform_int_distribution<int> d(-r, r);
-                    tryMove(i, x, y, f.dx[i] + d(rng), f.dy[i] + d(rng));
+                    const auto span = static_cast<std::uint32_t>(2 * r + 1);
+                    const int ox = static_cast<int>(static_cast<std::uint32_t>(rng()) % span) - r;
+                    const int oy = static_cast<int>(static_cast<std::uint32_t>(rng()) % span) - r;
+                    tryMove(i, x, y, f.dx[i] + ox, f.dy[i] + oy);
                 }
             }
         }
@@ -199,7 +227,10 @@ void splat(const Image& src, const Flow& f, const Flow& back, double t, float we
             if (tx >= 0 && ty >= 0 && tx < w && ty < h) {
                 const std::size_t j = at(w, tx, ty);
                 const int ex = dx + back.dx[j], ey = dy + back.dy[j];
-                if (std::abs(ex) + std::abs(ey) > 2) conf = 0.35f;
+                // Far moves (a limb's tip as it turns) may come back a few
+                // pixels off in flat colour and still be right.
+                const int tolerance = std::max(2, (std::abs(dx) + std::abs(dy)) / 3);
+                if (std::abs(ex) + std::abs(ey) > tolerance) conf = 0.35f;
             } else {
                 conf = 0.35f;
             }

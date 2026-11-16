@@ -110,10 +110,19 @@ TEST_CASE("A shape that changes is blended by votes, without new colours or hole
     // The body does not move.
     for (int y = 10; y < 30; ++y)
         for (int x = 10; x < 18; ++x) CHECK(mid.pixel(x, y) == kRed);
-    // The arm is there, between its two poses in size.
-    int blue = 0;
-    for (const Rgba8& c : mid.pixels()) blue += c == kBlue ? 1 : 0;
-    CHECK(blue >= 40);
+    // The arm is there, between its two poses in size (64 and 74 pixels):
+    // it must not collapse onto the nearest blue, whatever the matcher's
+    // random search draws.
+    for (std::uint32_t seed = 1; seed <= 8; ++seed) {
+        INFO("seed " << seed);
+        Options so;
+        so.seed = seed;
+        auto rs = inbetweenPair(a, b, so);
+        REQUIRE(rs);
+        int blue = 0;
+        for (const Rgba8& c : rs.value().frames[0].pixels()) blue += c == kBlue ? 1 : 0;
+        CHECK(blue >= 45);
+    }
 }
 
 TEST_CASE("Identical keys give identical in-betweens", "[inbetween]") {
