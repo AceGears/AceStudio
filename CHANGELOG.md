@@ -78,6 +78,15 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   Bake Keys draws them all from the rest frame in one undo step. Keys and the rest frame are saved
   in the rig (rig version 2; a rig without keys is still written as version 1) and follow frames
   that are inserted, moved or deleted.
+- **Lua and MCP for rigs, vector shapes and the palette lock.** Lua: `doc:rig()`, `set_rig`,
+  `auto_rig`, `pose_rig`, `key_rig`, `unkey_rig`, `bake_rig`, `vector_shapes`, `set_vector_shapes`,
+  `rasterize_vectors`, `palette_locked`, `lock_palette`, `off_palette`, `conform_palette`
+  (docs/lua-api.md); `doc:layers()` entries carry the layer `id`. MCP: `rig_show`, `rig_edit`,
+  `vector_show`, `vector_edit`, `palette_show`, `palette_edit`.
+- **Palette lock** (ADR-ANIM-006; Palette panel › Lock palette, Conform; `acestudio-cli palette`).
+  A locked project refuses palette edits and snaps painted, pasted, imported, generated and vector
+  pixels to the palette in any colour mode; Conform snaps existing cels in one undo step and
+  `palette check` reports off-palette pixels. Saved as a document extension, no new schema.
 - **Vector shapes** (ADR-ANIM-005; Tools panel › Keep as vector shape; `acestudio-cli vector`).
   Lines, rectangles, ellipses, auto-closed polygons and Bezier curves can be kept as shapes on the
   cel with solid, dashed or dotted strokes of any width and solid or gradient fills (ordered-dithered

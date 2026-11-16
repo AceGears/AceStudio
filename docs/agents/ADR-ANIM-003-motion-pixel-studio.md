@@ -37,7 +37,7 @@ Every colour comes from a key, so the palette is kept and alpha stays 0 or 255. 
 | 7 | Frame interpolation | — | **Built**: in-betweens (core, CLI `inbetween`, Animation › Generate In-betweens…) | Optional neural interpolator as an AI-worker step, followed by the same palette-safe clean-up |
 | 8 | Timeline with curves | Frames with durations, tags, linked cels | In-betweens follow split or fixed timing | Keyframed bone and property tracks; linear, Bézier, ease and stepped curves; clip blending |
 | 9 | Creature animation | Gait (biped, quadruped), flight, swim modules on the part rig | — | Non-humanoid motion mapping (ADR-ANIM-002 stage 3c) |
-| 10 | Style consistency | Pixel-art QA (palette, stray pixels, outline), clip checks | In-betweens keep the key palette by construction | Palette lock across a project; style reference for AI steps |
+| 10 | Style consistency | Pixel-art QA (palette, stray pixels, outline), clip checks; style profiles for generation | **Built** (ADR-ANIM-006): project palette lock (palette edits refused, painted, pasted, generated and vector pixels snap to the palette, conform and check); in-betweens keep the key palette by construction | Snapping inside Merge Down, smooth transforms and effects (check and conform instead) |
 | 11 | Performance / cloud | Measured baselines (`PERFORMANCE_BASELINE.md`); cloud GPU designed, off | In-betweens run on a worker thread with cancel | Nothing paid without approval |
 | 12 | QA and Windows installer | Catch2 suite, UI audit, fuzzing, CI on Linux and Windows, installer pipeline | Tests for the in-betweener (9 cases) | Release only through `docs/RELEASE.md`'s gates and the user's go-ahead |
 

@@ -116,6 +116,11 @@ const char* kUsageText =
     "                                  ordered-dithered unless --smooth)\n"
     "  vector clear|rasterize <project> --layer <name|id> --out <project> [--frame N]\n"
     "                                  Remove the shapes and their pixels / keep the pixels, drop the shapes\n"
+    "  palette show|check <project>    The palette, its lock and how many pixels are off it (check: exit 1\n"
+    "                                  when any are)\n"
+    "  palette lock|unlock|conform <project> --out <project>\n"
+    "                                  Lock the palette (edits refused; new pixels snap to it), unlock it, or\n"
+    "                                  snap every cel to it\n"
     "  slice <sheet.png> --out <folder> [--grid WxH|auto [--offset X,Y] [--spacing X,Y] [--keep-empty]]\n"
     "        [--background #rrggbb] [--tolerance 8] [--merge 2] [--min-pixels 4]\n"
     "                                  Cut a sheet into sprites (PNGs + .slices.json)\n"
@@ -384,6 +389,7 @@ int main(int argc, char** argv) {
         if (cmd == "run") return acestudio::cli::cmdRun(*args, out);
         if (cmd == "rig") return acestudio::cli::cmdRig(*args, out);
         if (cmd == "vector") return acestudio::cli::cmdVector(*args, out);
+        if (cmd == "palette") return acestudio::cli::cmdPalette(*args, out);
         return out.fail(kUsage, "Unknown command '" + cmd + "'. Run with --help.");
     } catch (const std::exception& e) {
         return out.fail(kInternal, std::string("Unexpected error: ") + e.what());

@@ -94,6 +94,15 @@ Add, Subtract, Difference), visibility and locks.
   an IK chain reaches instead), drag a root's joint to move the figure, and Ctrl+drag a joint or
   tip to edit the rest bones (only at the rest pose). Presses away from the bones still paint.
   The rest frame is saved with the rig. Projects with a rig are saved as schema 4.
+- **Palette lock:** tick **Lock palette** in the Palette panel to keep the whole project to its
+  palette. The palette can no longer be edited, loaded or replaced, and everything new snaps to the
+  nearest palette colour (alpha is kept): painting with any tool, smooth gradients, pasted and
+  imported images, generated in-betweens and motion clips, and vector shapes. Locking leaves what
+  is already drawn alone; if pixels are off the palette AceStudio offers to snap them, and
+  **Conform** does it at any time (one undo step). Merge Down with a blend mode, smooth transforms
+  and effects can still create new colours: press Conform afterwards. From the command line,
+  `acestudio-cli palette check` reports off-palette pixels (exit 1) and `palette lock|unlock|conform`
+  change a project.
 - **Vector shapes:** with Line, Rectangle, Ellipse, Polygon or Curve, tick **Keep as vector
   shape** in the Tools panel. What you draw is kept as an editable shape on the cel and drawn
   pixel-perfectly: choose the **Stroke** (solid, dashed, dotted or none; the brush size is its

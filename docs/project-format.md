@@ -63,7 +63,8 @@ Rules:
 - Cel `file` must equal `cels/L<layer>_F<frame>.png`; cels may only reference raster layers.
 - Blend modes: normal, multiply, screen, overlay, darken, lighten, add, subtract, difference.
 - `extensions` is a free-form object with namespaced keys (e.g. `ai`, `export`, `tileset`).
-  Readers must preserve unknown keys.
+  Readers must preserve unknown keys. `"paletteLock": true` locks the project palette
+  (ADR-ANIM-006); it needs no particular schema.
 
 ## rig (schema 4)
 

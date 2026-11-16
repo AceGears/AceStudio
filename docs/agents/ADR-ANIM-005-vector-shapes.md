@@ -24,15 +24,15 @@ The brief asks for vector shapes (a pen with anchors, rectangles, ellipses, auto
 | Model, validation, rasteriser, outline order, JSON | `core/include/acestudio/core/Vector.h`, `core/src/Vector.cpp` | `tests/test_vector.cpp` (exact rectangle pixels, connected outlines, widths, dashes, dots, Bezier handles, closed and auto-closed fills, dithered gradients use two colours, ellipse symmetry, draw order, JSON round trip, refusals): run locally and in CI |
 | Shared gradient formula | `Raster.h` (`gradientT`, `gradientColor`), `Paint.cpp` | the Gradient tool's existing tests in CI |
 | Document, undo, frames, layers, rasterise | `Document`, `Editor` | `tests/test_vector.cpp` (undo/redo, insert/delete frames, delete layer, rasterise, linked cel refused): locally and in CI |
-| Project file (schema 5) | `ProjectIO` | project case in `tests/test_vector.cpp`: CI only (miniz is not in the local toolchain) |
-| CLI `vector show`, `vector add`, `vector clear`, `vector rasterize` | `cli/VectorCommand.cpp` | `tests/cli_smoke.cmake`: CI only |
+| Project file (schema 5) | `ProjectIO` | project case in `tests/test_vector.cpp`: locally (full core build) and in CI |
+| CLI `vector show`, `vector add`, `vector clear`, `vector rasterize` | `cli/VectorCommand.cpp` | `tests/cli_smoke.cmake` (its vector steps also replayed locally against a local CLI build) |
 | App: "Keep as vector shape" for Line, Rectangle, Ellipse, Polygon (auto-closed) and Curve (its control points become the anchor handles); stroke style and fill in the Tools panel; Layer › Rasterize Vector Shapes | `ToolState`, `ToolsPanel`, `DocumentView`, `MainWindow` | CI build and UI audit only; not drawn with by hand |
 
 ## Not built
 
 - Editing a shape after it is drawn: selecting it, dragging anchors and handles, changing its colours. Shapes are added from the tools and removed by `vector clear` (or undo); the CLI and the file hold the full model.
 - A pen tool that adds any number of Bezier anchors in one path (the Curve tool makes one segment with handles; the Polygon tool makes straight multi-point paths).
-- Lua and MCP access to shapes.
+- (Built on 2026-11-15: Lua `doc:vector_shapes`, `set_vector_shapes`, `rasterize_vectors` and the MCP tools `vector_show`, `vector_edit`.)
 
 ## Consequences
 

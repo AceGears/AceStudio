@@ -38,6 +38,12 @@ not been run.
   key shows, so big pose changes tear; the area check flags many such frames but not all (a limb
   can move without changing the area). Touching parts of the same colour can swap pixels; keep
   separate parts on separate layers. The work holds a second copy of the document while it runs.
+- **MCP tools for rigs, vector shapes and the palette lock** run the CLI commands that the CLI smoke
+  test covers, but no test calls the tools themselves yet.
+- **Palette lock** (ADR-ANIM-006): the core is tested; painting, saving, the CLI and the Palette
+  panel controls are checked by CI only and have not been used on a PC. Merge Down with blend
+  modes, smooth transforms and effects are not snapped; use Conform after them. The colour picker
+  still lets you choose any colour, which is snapped when painted.
 - **Vector shapes** (ADR-ANIM-005): the core and CLI are tested; the tool options are built by CI
   and opened by the UI audit but have not been drawn with on a PC. A shape cannot be selected or
   edited after it is drawn (undo, `vector clear` or rasterise instead), the Curve tool makes one

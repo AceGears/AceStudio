@@ -283,6 +283,37 @@ endforeach()
 if(NOT h_vec2 STREQUAL h_vec3 OR h_vec2 STREQUAL h_vec4)
     message(FATAL_ERROR "vector: rasterising must keep the pixels, clearing must remove them")
 endif()
+
+# ---- Palette lock: a smooth gradient leaves the palette, conform and lock bring it back
+run(0 vector add "${VB}" --layer 1 --rect 0,0,31,23 --stroke none --fill linear --fill-color "#000000"
+    --fill-color2 "#ffffff" --axis 0,0,31,0 --smooth --out "${VD}_grad.acestudio")
+run(1 palette check "${VD}_grad.acestudio")
+run(0 --json palette show "${VD}_grad.acestudio")
+string(JSON pal_locked GET "${LAST_OUT}" locked)
+string(JSON pal_off GET "${LAST_OUT}" offPalettePixels)
+if(pal_locked OR pal_off EQUAL 0)
+    message(FATAL_ERROR "palette show: a smooth gradient must be off the palette and unlocked: ${LAST_OUT}")
+endif()
+run(1 palette lock "${VD}_grad.acestudio")                                       # no --out
+run(1 palette frobnicate "${VD}_grad.acestudio")
+run(0 palette lock "${VD}_grad.acestudio" --out "${VD}_locked.acestudio")
+run(0 --json info "${VD}_locked.acestudio")
+string(JSON pal_schema GET "${LAST_OUT}" schemaVersion)
+if(NOT pal_schema EQUAL 5)
+    message(FATAL_ERROR "palette lock must not raise the schema (vectors need 5): ${pal_schema}")
+endif()
+run(1 palette check "${VD}_locked.acestudio")                                    # locking keeps the pixels
+run(0 palette conform "${VD}_locked.acestudio" --out "${VD}_conformed.acestudio")
+run(0 palette check "${VD}_conformed.acestudio")
+run(0 --json palette show "${VD}_conformed.acestudio")
+string(JSON pal_locked GET "${LAST_OUT}" locked)
+if(NOT pal_locked)
+    message(FATAL_ERROR "palette lock was not saved: ${LAST_OUT}")
+endif()
+run(0 vector add "${VD}_conformed.acestudio" --layer 1 --ellipse 2,2,20,20 --stroke solid --stroke-color "#123456"
+    --fill radial --fill-color "#ff00ff" --fill-color2 "#00ffff" --axis 11,11,20,11 --smooth --out "${VD}_locked2.acestudio")
+run(0 palette check "${VD}_locked2.acestudio")                                   # new pixels snapped
+run(0 palette unlock "${VD}_locked2.acestudio" --out "${VD}_unlocked.acestudio")
 run(1 run "${WORKDIR}/scripts/make.lua" --save "${WORKDIR}/x.acestudio")   # --save needs --doc
 run(0 --json run "${WORKDIR}/scripts/make.lua" "#00ff00" --doc "${P}" --save "${WORKDIR}/lua_out.acestudio")
 string(JSON changed GET "${LAST_OUT}" documentChanged)

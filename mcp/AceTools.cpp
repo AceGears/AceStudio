@@ -580,6 +580,127 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                      b.overwrite();
                      return fromCli(runCliConfirm(*envPtr, b.args, call));
                  }});
+    // ---------------------------------------------------------- rigs, vector shapes, palette lock
+    auto readProject = [envPtr](std::vector<std::string> cmd) {
+        return [envPtr, cmd](const json& a, const ToolCall& call) {
+            ArgBuilder b{*envPtr, a, cmd, {}};
+            if (!b.path("path")) return badArgs(b.error);
+            return fromCli(runCli(*envPtr, b.args, call));
+        };
+    };
+    const json kLayer = str("Layer name or id");
+    t.push_back({"rig_show", "Describe a project's rig",
+                 std::string("The saved rig of a project: bones (rest head, length, angle, limits, locks), the part layer each "
+                             "bone moves, IK chains, the rest frame and pose keys (ADR-ANIM-004).") + kPathNote,
+                 obj({{"path", str("The .acestudio file")}}, {"path"}), readOnly(), readProject({"rig", "show"})});
+    t.push_back({"rig_edit", "Rig, pose, key or bake a sprite",
+                 std::string("Edits a project's rig and writes the result to `out`. Actions: auto (cut `layer` into part layers "
+                             "with bones: legs with IK, wings or fins), pose (draw the rest parts posed into `frame`), key (store "
+                             "a pose key on `frame` with a `curve`), unkey, rest (make `frame` the rest frame), bake (draw every "
+                             "keyed frame). Poses: `turn` \"bone=degrees,...\" relative to rest, `move` \"dx,dy\" in pixels, "
+                             "`reach` \"chain=x,y;...\" for IK chains.") + kPathNote,
+                 obj({{"action", oneOf("What to do", {"auto", "pose", "key", "unkey", "rest", "bake"})},
+                      {"path", str("The .acestudio file")},
+                      {"out", str("The .acestudio file to write")},
+                      {"layer", kLayer},
+                      {"frame", integer("Frame index, 0-based", 0)},
+                      {"as", oneOf("auto: what to cut (default auto)", {"auto", "legs", "wings", "fins"})},
+                      {"rest", integer("pose: the frame whose parts are drawn (default: the rig's rest frame)", 0)},
+                      {"turn", str("pose/key: bone turns, \"bone=degrees,...\"")},
+                      {"move", str("pose/key: whole-rig move, \"dx,dy\"")},
+                      {"reach", str("pose/key: IK targets, \"chain=x,y;...\"")},
+                      {"curve", str("key: linear, ease-in, ease-out, ease-in-out, stepped or bezier:x1,y1,x2,y2")},
+                      {"from", integer("bake: first frame", 0)},
+                      {"to", integer("bake: last frame", 0)},
+                      {"overwrite", kOverwrite}},
+                     {"action", "path", "out"}),
+                 writes(),
+                 [envPtr](const json& a, const ToolCall& call) {
+                     ArgBuilder b{*envPtr, a, {"rig", a.value("action", std::string())}, {}};
+                     if (!b.path("path") || !b.path("out", "--out")) return badArgs(b.error);
+                     b.opt("layer", "--layer");
+                     b.opt("frame", "--frame");
+                     b.opt("as", "--as");
+                     b.opt("rest", "--rest");
+                     b.opt("turn", "--turn");
+                     b.opt("move", "--move");
+                     b.opt("reach", "--reach");
+                     b.opt("curve", "--curve");
+                     b.opt("from", "--from");
+                     b.opt("to", "--to");
+                     b.overwrite();
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
+                 }});
+    t.push_back({"vector_show", "List a project's vector shapes",
+                 std::string("Every cel's vector shapes (paths with Bezier handles, rectangles, ellipses; stroke and fill) "
+                             "in the project-file format (ADR-ANIM-005).") + kPathNote,
+                 obj({{"path", str("The .acestudio file")}}, {"path"}), readOnly(), readProject({"vector", "show"})});
+    t.push_back({"vector_edit", "Draw or remove vector shapes",
+                 std::string("Adds one vector shape to a cel and redraws it pixel-perfectly (add), removes the cel's shapes and "
+                             "their pixels (clear), or keeps the pixels and drops the shapes (rasterize); writes `out`. Give one "
+                             "of `rect`, `ellipse` (\"x0,y0,x1,y1\") or `anchors` (\"x,y[,inX,inY,outX,outY];...\").") + kPathNote,
+                 obj({{"action", oneOf("What to do", {"add", "clear", "rasterize"})},
+                      {"path", str("The .acestudio file")},
+                      {"out", str("The .acestudio file to write")},
+                      {"layer", kLayer},
+                      {"frame", integer("Frame index, 0-based (default 0)", 0)},
+                      {"rect", str("Rectangle corners \"x0,y0,x1,y1\"")},
+                      {"ellipse", str("Ellipse bounds \"x0,y0,x1,y1\"")},
+                      {"anchors", str("Path anchors \"x,y[,inX,inY,outX,outY];...\"")},
+                      {"closed", boolean("Close the path")},
+                      {"stroke", oneOf("Stroke style (default solid)", {"solid", "dashed", "dotted", "none"})},
+                      {"stroke_color", str("Stroke colour #rrggbb[aa]")},
+                      {"width", integer("Stroke width in pixels", 1, 32)},
+                      {"dash", str("Dash pattern \"on,off\" in pixels")},
+                      {"fill", oneOf("Fill (default none)", {"none", "solid", "linear", "radial"})},
+                      {"fill_color", str("Fill colour, or the gradient's start")},
+                      {"fill_color2", str("The gradient's end colour")},
+                      {"axis", str("Gradient axis \"x0,y0,x1,y1\"")},
+                      {"smooth", boolean("Smooth gradient instead of ordered dithering")},
+                      {"overwrite", kOverwrite}},
+                     {"action", "path", "out", "layer"}),
+                 writes(),
+                 [envPtr](const json& a, const ToolCall& call) {
+                     ArgBuilder b{*envPtr, a, {"vector", a.value("action", std::string())}, {}};
+                     if (!b.path("path") || !b.path("out", "--out")) return badArgs(b.error);
+                     b.opt("layer", "--layer");
+                     b.opt("frame", "--frame");
+                     b.opt("rect", "--rect");
+                     b.opt("ellipse", "--ellipse");
+                     b.opt("anchors", "--path");
+                     b.flag("closed", "--closed");
+                     b.opt("stroke", "--stroke");
+                     b.opt("stroke_color", "--stroke-color");
+                     b.opt("width", "--width");
+                     b.opt("dash", "--dash");
+                     b.opt("fill", "--fill");
+                     b.opt("fill_color", "--fill-color");
+                     b.opt("fill_color2", "--fill-color2");
+                     b.opt("axis", "--axis");
+                     b.flag("smooth", "--smooth");
+                     b.overwrite();
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
+                 }});
+    t.push_back({"palette_show", "Describe a project's palette",
+                 std::string("The palette's colours, whether it is locked, and how many pixels are not palette colours "
+                             "(ADR-ANIM-006).") + kPathNote,
+                 obj({{"path", str("The .acestudio file")}}, {"path"}), readOnly(), readProject({"palette", "show"})});
+    t.push_back({"palette_edit", "Lock, unlock or conform to the palette",
+                 std::string("lock: palette edits are refused and new pixels snap to the palette; unlock; conform: snap every "
+                             "cel to the palette. Writes `out`.") + kPathNote,
+                 obj({{"action", oneOf("What to do", {"lock", "unlock", "conform"})},
+                      {"path", str("The .acestudio file")},
+                      {"out", str("The .acestudio file to write")},
+                      {"overwrite", kOverwrite}},
+                     {"action", "path", "out"}),
+                 writes(),
+                 [envPtr](const json& a, const ToolCall& call) {
+                     ArgBuilder b{*envPtr, a, {"palette", a.value("action", std::string())}, {}};
+                     if (!b.path("path") || !b.path("out", "--out")) return badArgs(b.error);
+                     b.overwrite();
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
+                 }});
+
     t.push_back({"map_info", "Describe a World Builder map",
                  std::string("Size, tile sheets, layers (with tile counts), props, lights and collision of an AceStudio map (.acemap).") + kPathNote,
                  obj({{"path", str("The .acemap file")}}, {"path"}), readOnly(),
