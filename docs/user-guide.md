@@ -79,6 +79,18 @@ Add, Subtract, Difference), visibility and locks.
   Pixels are moved, never mixed, so no new colours appear. Frames listed under "Check frame(s)"
   change too much for an in-between: draw a key there instead. Works best when the keys are
   close poses and separate parts are on separate layers.
+- **Rigs:** open **Window › Rig**. **Auto-Rig** (also **Animation › Auto-Rig Current Layer**)
+  cuts the current layer, as drawn on the current frame, into part layers in a new group (the
+  original is hidden, not deleted) with bones and leg IK; it works on characters and animals with
+  legs. Or build a rig yourself: **Add Bone** adds a bone under the selected one, then set its
+  name, parent, head, length and angle, optional turn limits and lock, and **Bind Layer** to make
+  the current layer move with it. To pose, select a bone and set its **Turn**, move the whole
+  figure with **Move**, or pick an IK chain, set a **Target** and press **Reach**. The canvas shows
+  the posed bones (the selected one in amber). Go to the frame you want and press **Bake to
+  Frame**: the parts of the **Rest frame** are drawn there in the pose, in one undo step, with no
+  new colours. Baking reads the rest frame every time, so it never piles up. **Rest Pose** puts
+  the bones back. Bones cannot be dragged on the canvas yet. Projects with a rig are saved as
+  schema 4.
 
 ## 6. Export
 

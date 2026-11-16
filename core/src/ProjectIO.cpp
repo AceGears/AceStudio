@@ -216,6 +216,13 @@ Result<Document> documentFromJson(const json& j, ZipReader& zip) {
 
     if (j.contains("extensions") && j["extensions"].is_object()) doc.extensions() = j["extensions"];
 
+    // Rig (schema 4)
+    if (j.contains("rig")) {
+        auto rig = rigs::fromJson(j["rig"]);
+        if (!rig) return rig.error();
+        doc.setRig(std::move(rig).value());
+    }
+
     if (auto st = doc.validate(); !st) return st.error();
     return doc;
 }
@@ -234,6 +241,7 @@ int requiredSchemaVersion(const Document& doc) {
             v = std::max(v, 3);   // schema 3: Levels and Curves
     }
     if (!doc.links().empty()) v = std::max(v, 3);   // schema 3: linked cels
+    if (doc.rig()) v = std::max(v, 4);              // schema 4: a rig
     return v;
 }
 
@@ -302,6 +310,7 @@ json documentToJson(const Document& doc) {
                         {"direction", toString(t.direction)}, {"repeat", t.repeat}, {"color", t.color}});
     j["tags"] = tags;
     j["extensions"] = doc.extensions();
+    if (doc.rig()) j["rig"] = rigs::toJson(*doc.rig());
     return j;
 }
 

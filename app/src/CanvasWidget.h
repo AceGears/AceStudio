@@ -6,7 +6,15 @@
 #include <QPointF>
 #include <QWidget>
 
+#include <vector>
+
 namespace acestudio::ui {
+
+// A rig bone drawn over the canvas (image coordinates).
+struct BoneMark {
+    QPointF head, tail;
+    bool selected = false;
+};
 
 struct CanvasAppearance {
     QColor background{"#1B1B20"};
@@ -54,6 +62,8 @@ public:
     void setSelectionPreview(const QPainterPath& path);
     // Tool guides (curve control handles, polygon edges) in image coordinates.
     void setOverlay(const QPainterPath& path);
+    // Rig bones drawn over everything (empty = none).
+    void setBones(std::vector<BoneMark> bones);
     // Tiled preview: neighbouring repeats of the image drawn dimmed around it.
     void setTiling(bool horizontal, bool vertical);
 
@@ -115,6 +125,7 @@ private:
     QPainterPath m_selection;
     QPainterPath m_selectionPreview;
     QPainterPath m_overlay;
+    std::vector<BoneMark> m_bones;
     bool m_tileX = false, m_tileY = false;
 };
 

@@ -48,6 +48,8 @@ add_library(acestudio_core STATIC
     src/PngCodec.cpp
     src/ProjectIO.cpp
     src/Raster.cpp
+    src/Rig.cpp
+    src/RigTools.cpp
     src/Recovery.cpp
     src/Settings.cpp
     src/StbImageImpl.cpp

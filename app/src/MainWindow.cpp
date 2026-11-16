@@ -34,6 +34,7 @@
 #include "ai/AiService.h"
 #include "ai/PerformanceStrip.h"
 #include "panels/PropertiesPanel.h"
+#include "panels/RigPanel.h"
 #include "panels/TimelinePanel.h"
 #include "panels/ToolsPanel.h"
 #include "ImageDialogs.h"
@@ -246,6 +247,8 @@ void MainWindow::buildDocks() {
     };
     m_layers = new LayersPanel(this);
     m_props = new PropertiesPanel(this);
+    m_rigPanel = new RigPanel(this);
+    connect(m_rigPanel, &RigPanel::statusMessage, this, [this](const QString& t) { statusBar()->showMessage(t, 6000); });
     m_palette = new PalettePanel(m_tools, this);
     m_toolsPanel = new ToolsPanel(m_tools, this);
     m_timeline = new TimelinePanel(this);
@@ -278,6 +281,7 @@ void MainWindow::buildDocks() {
     m_toolsDock = makeDock(tr("Tools"), QStringLiteral("dock.tools"), m_toolsPanel, Qt::LeftDockWidgetArea, true);
     m_layersDock = makeDock(tr("Layers"), QStringLiteral("dock.layers"), m_layers, Qt::RightDockWidgetArea);
     m_propsDock = makeDock(tr("Properties"), QStringLiteral("dock.properties"), m_props, Qt::RightDockWidgetArea, true);
+    m_rigDock = makeDock(tr("Rig"), QStringLiteral("dock.rig"), m_rigPanel, Qt::RightDockWidgetArea, true);
     m_paletteDock = makeDock(tr("Palette"), QStringLiteral("dock.palette"), m_palette, Qt::RightDockWidgetArea, true);
     m_timelineDock = makeDock(tr("Timeline"), QStringLiteral("dock.timeline"), m_timeline, Qt::BottomDockWidgetArea);
     m_logDock = makeDock(tr("Log"), QStringLiteral("dock.log"), m_log, Qt::BottomDockWidgetArea);
@@ -290,6 +294,7 @@ void MainWindow::buildDocks() {
     // 1456x819 logical desktop: found on a real Windows PC).
     tabifyDockWidget(m_paletteDock, m_previewDock);
     tabifyDockWidget(m_paletteDock, m_propsDock);
+    tabifyDockWidget(m_paletteDock, m_rigDock);
     m_paletteDock->raise();
     tabifyDockWidget(m_timelineDock, m_logDock);
     m_timelineDock->raise();
@@ -700,6 +705,11 @@ void MainWindow::buildMenus() {
         dlg->setModal(false);
         dlg->show();
     }))->setObjectName(QStringLiteral("anim.inbetween"));
+    (anim->addAction(tr("Auto-&Rig Current Layer"), this, [this] {
+        m_rigDock->show();
+        m_rigDock->raise();
+        m_rigPanel->autoRigCurrentLayer();
+    }))->setObjectName(QStringLiteral("anim.autoRig"));
 
     QMenu* aiMenu = menuBar()->addMenu(tr("AI &Studio"));
     auto showAi = [this](int tab) { m_aiDock->show(); m_aiDock->raise(); m_aiPanel->focusTab(tab); };
@@ -824,7 +834,7 @@ void MainWindow::buildMenus() {
 
     // Window
     QMenu* window = menuBar()->addMenu(tr("&Window"));
-    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_aiDock, m_propsDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock})
+    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_aiDock, m_propsDock, m_rigDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock})
         window->addAction(d->toggleViewAction());
     window->addSeparator();
     m_workspaceMenu = window->addMenu(tr("&Workspaces"));
@@ -864,7 +874,7 @@ void MainWindow::saveWindowState() {
 }
 
 void MainWindow::resetLayout() {
-    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_aiDock, m_propsDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock}) {
+    for (QDockWidget* d : {m_toolsDock, m_layersDock, m_aiDock, m_propsDock, m_rigDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock}) {
         d->setFloating(false);
         d->show();
     }
@@ -1169,7 +1179,7 @@ void MainWindow::applyBuiltinWorkspace(const QString& name) {
         m_logDock->raise();
         resizeDocks({m_aiDock}, {width() / 3}, Qt::Horizontal);
     } else if (name == QLatin1String("Minimal")) {
-        for (QDockWidget* d : {m_aiDock, m_propsDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock}) d->hide();
+        for (QDockWidget* d : {m_aiDock, m_propsDock, m_rigDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock}) d->hide();
     } else {   // Painting
         m_layersDock->raise();
         m_paletteDock->raise();
@@ -1290,6 +1300,7 @@ void MainWindow::onCurrentTabChanged() {
     if (m_generator) m_generator->setView(v);
     m_layers->setView(v);
     m_props->setView(v);
+    m_rigPanel->setView(v);
     m_palette->setView(v);
     m_timeline->setView(v);
     m_preview->setView(v);

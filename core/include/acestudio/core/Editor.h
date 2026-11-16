@@ -143,6 +143,12 @@ public:
     // edit a copy on a worker thread).
     Status replaceDocument(Document next, const std::string& label);
 
+    // ---- Rig ----
+    // Replaces the rig (nullopt removes it) in one undo step. Edits are made
+    // with the rigs:: functions on a copy, then set here. With `mergeKey` >= 0,
+    // consecutive calls with the same key merge into one step (a drag).
+    Status setRig(std::optional<Rig> rig, const std::string& label, long long mergeKey = -1);
+
     // ---- Colour mode ----
     // Converts every cel. Indexed: pixels snap to the nearest opaque palette
     // colour (alpha < 128 becomes transparent, else opaque); with `dither`

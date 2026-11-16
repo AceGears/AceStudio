@@ -91,6 +91,13 @@ const char* kUsageText =
     "                                  3D skeletal motion (BVH, or a glTF/GLB animation: the first unless --animation)\n"
     "                                  onto a two-legged sprite's part rig: strip PNG + GIF,\n"
     "                                  and the projected source skeleton beside it (<name>_source.png/.gif)\n"
+    "  rig show <project>              The project's rig: bones, parts and IK chains\n"
+    "  rig auto <project> --layer <name|id> --out <project> [--frame N]\n"
+    "                                  Cut a sprite layer into part layers with bones and leg IK (schema 4)\n"
+    "  rig pose <project> --out <project> [--frame N] [--rest R] [--turn bone=deg,...] [--move dx,dy]\n"
+    "           [--reach chain=x,y;...]\n"
+    "                                  Draw the parts of rest frame R (default 0), posed, into frame N\n"
+    "                                  (pixel-art safe: whole-pixel moves, RotSprite turns, no new colours)\n"
     "  slice <sheet.png> --out <folder> [--grid WxH|auto [--offset X,Y] [--spacing X,Y] [--keep-empty]]\n"
     "        [--background #rrggbb] [--tolerance 8] [--merge 2] [--min-pixels 4]\n"
     "                                  Cut a sheet into sprites (PNGs + .slices.json)\n"
@@ -356,6 +363,7 @@ int main(int argc, char** argv) {
         if (cmd == "connect") return acestudio::cli::cmdConnect(*args, out);
         if (cmd == "map") return acestudio::cli::cmdMap(*args, out);
         if (cmd == "run") return acestudio::cli::cmdRun(*args, out);
+        if (cmd == "rig") return acestudio::cli::cmdRig(*args, out);
         return out.fail(kUsage, "Unknown command '" + cmd + "'. Run with --help.");
     } catch (const std::exception& e) {
         return out.fail(kInternal, std::string("Unexpected error: ") + e.what());

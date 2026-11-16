@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Partly implemented (2026-11-08, on main): steps 2–5 without the schema change. See section 8. Schema 4 (step 1) is still proposed and needs approval from `acestudio-chief-architect`. |
+| Status | Partly implemented (2026-11-08, on main): steps 2–5 without the schema change. See section 8. Schema 4 (step 1) was built on 2026-11-15 in a different form: see ADR-ANIM-004 (parts are the document's layers, the rig is `"rig"` in `document.json`). |
 | Deciders | `animation-director` (12), `rigging-engineer` (13), `acestudio-chief-architect`, `asset-pipeline-engineer` (format) |
 | Evidence | `docs/agents/AUDIT_2026-11-08-animation.md`, `docs/agents/audit-evidence/2026-11-08/` |
 | Supersedes | Nothing. Builds on `a8f1b3b` (whole-pixel rig), `0f15b26` (AI key poses) and `fa23f09` (sideways swim). |
@@ -97,6 +97,8 @@ Alternatives considered:
 - Owner: `environmental-effects-specialist`. This does not depend on the rig.
 
 ## 4. Schema impact (`docs/project-format.md`)
+
+> Superseded on 2026-11-15 by ADR-ANIM-004: the saved rig keeps its parts as the document's own raster layers and is stored as `"rig"` in `document.json`, with no new archive entries. `docs/project-format.md` now documents schemas 1–4. The proposal below is kept for the record.
 
 `docs/project-format.md` still documents schema 1, but the code writes schemas 2 and 3 (`ProjectIO.cpp:225-238`, `kProjectSchemaVersion = 3`). `documentation-engineer` must first document 2 (tile mode, masks, clipping, adjustment layers) and 3 (Levels/Curves, linked cels).
 
@@ -196,7 +198,7 @@ Built without a schema change. The rig is rebuilt from the sprite each time a cl
 | Step | State | Where |
 |---|---|---|
 | 0 | Partly. `checkClip` uses one area limit (35 %) for every clip; the 8 % flap rule is gone. The top-region check skips roll, flap and fly. `checkClip` reports a frame that mirrors the one before. Golden fixtures `dragon128`, `fish57`, `rogue64`, `knight32` and `campfire64` are in `tests/data/anim/`, with expected results in `expected.json`, and are checked by `tests/test_part_rig.cpp`. The campfire's expected results cover only colours, the top row, held frames and frame count, not the other fire tests of section 6. | `SpriteMotion.cpp::checkClip` |
-| 1 | Not done (schema 4). | – |
+| 1 | Done 2026-11-15 as ADR-ANIM-004 (saved, editable rigs; parts are layers). | `Rig.h`, `RigTools.h`, `ProjectIO.cpp` |
 | 2 | Procedural segmentation per species module: wings (wing line, colour growth, two-wing split by components, then erosion watershed, then column valley), fish (tail stalk, fins by opening), legs (thigh, shin, foot per leg). No GUI hint mask beyond the existing wing selection. | `RigFlight.cpp`, `RigSwim.cpp`, `RigGait.cpp` |
 | 3 | `inpaintHidden`: row and column closure under front parts, filled ring by ring, outline colour on the edge. Procedural only. | `PartRig.cpp` |
 | 4 | `renderPose`: per-pose z, whole-pixel rigid moves, RotSprite turns from an 8× Scale2x copy, column bends (`colDy`), curl (`bend`), skinning to the body, and a per-part floor row (`maxY`). | `PartRig.cpp` |

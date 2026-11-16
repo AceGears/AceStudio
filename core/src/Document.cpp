@@ -212,6 +212,7 @@ Status Document::removeLayer(LayerId id) {
     std::erase_if(m_cels, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
     std::erase_if(m_maskCels, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
     std::erase_if(m_links, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
+    if (m_rig) std::erase_if(m_rig->bindings, [&](const auto& kv) { return doomed.count(kv.first) > 0; });
     return {};
 }
 
@@ -721,6 +722,8 @@ Status Document::validate() const {
         if (k.frame < 0 || k.frame >= frameCount()) return corrupt("Cel references a missing frame");
         if (c.image.isNull()) return corrupt("Cel has no image data");
     }
+    if (m_rig)
+        if (auto st = rigs::validate(*m_rig, this); !st) return corrupt(st.error().message);
     for (const auto& t : m_tags)
         if (t.fromFrame < 0 || t.toFrame >= frameCount() || t.fromFrame > t.toFrame || t.repeat < 0)
             return corrupt("Animation tag '" + t.name + "' has an invalid range");
