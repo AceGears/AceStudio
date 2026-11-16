@@ -291,6 +291,98 @@ void tidy(Image& img) {
     }
 }
 
+// Clear pixels the shape encloses: not reachable from the image border
+// through clear pixels (4-connected).
+std::vector<char> enclosedHoles(const Image& img) {
+    const int w = img.width(), h = img.height();
+    std::vector<char> outside(static_cast<std::size_t>(w) * static_cast<std::size_t>(h), 0);
+    std::vector<std::size_t> stack;
+    auto seed = [&](int x, int y) {
+        const std::size_t i = at(w, x, y);
+        if (!outside[i] && !opaque(img.pixel(x, y))) {
+            outside[i] = 1;
+            stack.push_back(i);
+        }
+    };
+    for (int x = 0; x < w; ++x) {
+        seed(x, 0);
+        seed(x, h - 1);
+    }
+    for (int y = 0; y < h; ++y) {
+        seed(0, y);
+        seed(w - 1, y);
+    }
+    while (!stack.empty()) {
+        const std::size_t i = stack.back();
+        stack.pop_back();
+        const int x = static_cast<int>(i % static_cast<std::size_t>(w)), y = static_cast<int>(i / static_cast<std::size_t>(w));
+        if (x > 0) seed(x - 1, y);
+        if (x + 1 < w) seed(x + 1, y);
+        if (y > 0) seed(x, y - 1);
+        if (y + 1 < h) seed(x, y + 1);
+    }
+    std::vector<char> holes(outside.size(), 0);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const std::size_t i = at(w, x, y);
+            holes[i] = !outside[i] && !opaque(img.pixel(x, y)) ? 1 : 0;
+        }
+    return holes;
+}
+
+// Holes the in-between encloses but neither key has near there are tears
+// (pixels whose votes fell short), not gaps of the drawing: they take the
+// colour their votes favoured, else the colour round them.
+void fillTears(Image& img, const Votes& v, const std::vector<char>& keyHolesNear) {
+    const int w = img.width(), h = img.height();
+    std::vector<char> holes = enclosedHoles(img);
+    for (std::size_t i = 0; i < holes.size(); ++i) holes[i] = holes[i] && !keyHolesNear[i] ? 1 : 0;
+    for (std::size_t i = 0; i < holes.size(); ++i) {
+        if (!holes[i] || v.cell[i].empty()) continue;
+        const auto best = std::max_element(v.cell[i].begin(), v.cell[i].end(), [](const auto& l, const auto& r) { return l.second < r.second; });
+        img.setPixel(static_cast<int>(i % static_cast<std::size_t>(w)), static_cast<int>(i / static_cast<std::size_t>(w)), fromKey(best->first));
+        holes[i] = 0;
+    }
+    // What no vote reached fills from its edges inwards.
+    for (bool changed = true; changed;) {
+        changed = false;
+        Image next = img;
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x) {
+                const std::size_t i = at(w, x, y);
+                if (!holes[i]) continue;
+                std::map<std::uint32_t, int> c;
+                for (int oy = -1; oy <= 1; ++oy)
+                    for (int ox = -1; ox <= 1; ++ox)
+                        if ((ox || oy) && opaque(img.pixel(x + ox, y + oy))) ++c[key(img.pixel(x + ox, y + oy))];
+                if (c.empty()) continue;
+                const auto best = std::max_element(c.begin(), c.end(), [](const auto& l, const auto& r) { return l.second < r.second; });
+                next.setPixel(x, y, fromKey(best->first));
+                holes[i] = 0;
+                changed = true;
+            }
+        img = std::move(next);
+    }
+}
+
+// Where either key has an enclosed gap of its own, within `reach` pixels.
+std::vector<char> keyHolesNear(const Image& a, const Image& b, int reach) {
+    const int w = a.width(), h = a.height();
+    const std::vector<char> ha = enclosedHoles(a), hb = enclosedHoles(b);
+    std::vector<char> near(ha.size(), 0);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const std::size_t i = at(w, x, y);
+            if (!ha[i] && !hb[i]) continue;
+            for (int oy = -reach; oy <= reach; ++oy)
+                for (int ox = -reach; ox <= reach; ++ox) {
+                    const int nx = x + ox, ny = y + oy;
+                    if (nx >= 0 && ny >= 0 && nx < w && ny < h) near[at(w, nx, ny)] = 1;
+                }
+        }
+    return near;
+}
+
 int area(const Image& img) {
     int n = 0;
     for (const Rgba8& c : img.pixels()) n += opaque(c) ? 1 : 0;
@@ -326,6 +418,10 @@ Result<PairResult> inbetweenPair(const Image& a, const Image& b, const Options& 
     if (!bwd) return bwd.error();
     const int w = a.width(), h = a.height(), s = opt.supersample;
     const double areaA = area(a), areaB = area(b);
+    // Gaps drawn in a key (between an arm and the body, a ring) may stay
+    // open in the in-betweens; anything else enclosed is a tear.
+    const int moved = std::max(std::abs(a.opaqueBounds().y - b.opaqueBounds().y), std::abs(a.opaqueBounds().x - b.opaqueBounds().x));
+    const std::vector<char> drawnGaps = keyHolesNear(a, b, 2 + moved);
     PairResult out;
     for (int k = 1; k <= opt.intermediates; ++k) {
         if (stop(opt)) return cancelledError();
@@ -345,6 +441,7 @@ Result<PairResult> inbetweenPair(const Image& a, const Image& b, const Options& 
                                                    [](const auto& l, const auto& r) { return l.second < r.second; });
                 img.setPixel(x, y, fromKey(best->first));
             }
+        fillTears(img, v, drawnGaps);
         tidy(img);
         const double expected = areaA + (areaB - areaA) * t;
         out.areaDeviation.push_back(expected > 0 ? (area(img) - expected) / expected : 0.0);

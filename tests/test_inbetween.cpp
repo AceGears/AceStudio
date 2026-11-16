@@ -125,6 +125,30 @@ TEST_CASE("A shape that changes is blended by votes, without new colours or hole
     }
 }
 
+TEST_CASE("A gap drawn in the keys stays open; the in-between has no other holes", "[inbetween]") {
+    // A ring (a frame with a 6x6 window) bobs down 4 pixels.
+    auto ring = [](int y) {
+        Image img(40, 48);
+        img.fillRect({10, y, 18, 18}, kRed);
+        img.fillRect({16, y + 6, 6, 6}, Rgba8::transparent());
+        return img;
+    };
+    const Image a = ring(10), b = ring(14);
+    auto r = inbetweenPair(a, b, Options{});
+    REQUIRE(r);
+    const Image& mid = r.value().frames[0];
+    int window = 0, solid = 0;
+    for (int y = 0; y < 48; ++y)
+        for (int x = 0; x < 40; ++x) {
+            const bool inWindow = x >= 16 && x < 22 && y >= 18 && y < 24;
+            const bool inFrame = x >= 10 && x < 28 && y >= 12 && y < 30 && !inWindow;
+            if (inWindow) window += mid.pixel(x, y).a == 0 ? 1 : 0;
+            if (inFrame) solid += mid.pixel(x, y).a == 255 ? 1 : 0;
+        }
+    CHECK(window == 36);                 // the window is still open
+    CHECK(solid == 18 * 18 - 36);        // and the frame round it is whole
+}
+
 TEST_CASE("Identical keys give identical in-betweens", "[inbetween]") {
     const Image a = figure(40, 30, 10, 8);
     auto r = inbetweenPair(a, a, Options{});
