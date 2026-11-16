@@ -138,6 +138,15 @@ public:
     Status addPaletteColor(Rgba8 color);
     Status removePaletteColor(std::size_t index);
     Status replacePalette(Palette palette, const std::string& label = "Replace Palette");
+    // Palette lock (ADR-ANIM-006): while locked the four palette edits above
+    // are refused, and pixels entering the document (painting, setCelImage,
+    // image and animation layers, vector shapes) snap to the palette, alpha
+    // kept. Locking needs an opaque palette colour; it does not change
+    // existing pixels (conformToPalette does). One undo step each.
+    Status setPaletteLocked(bool locked);
+    // Snaps every cel to the palette in one undo step; the number of pixels
+    // changed (0 = nothing to do, no undo step).
+    Result<std::size_t> conformToPalette();
 
     // Replaces the whole document in one undo step (used by scripts, which
     // edit a copy on a worker thread).

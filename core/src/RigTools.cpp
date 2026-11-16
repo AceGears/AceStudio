@@ -36,7 +36,7 @@ motion::rig::Vec farthest(const Mask& m, double x, double y) {
 // The centre of a mask's pixels.
 motion::rig::Vec centroid(const Mask& m) {
     double sx = 0, sy = 0;
-    long n = 0;
+    double n = 0;   // double: a 64-bit long to double is a -Wconversion error on GCC
     const IntRect b = m.bounds();
     for (int y = b.y; y < b.y + b.h; ++y)
         for (int x = b.x; x < b.x + b.w; ++x)
@@ -45,7 +45,7 @@ motion::rig::Vec centroid(const Mask& m) {
                 sy += y + 0.5;
                 ++n;
             }
-    return n ? motion::rig::Vec{sx / n, sy / n} : motion::rig::Vec{b.x + b.w / 2.0, b.y + b.h / 2.0};
+    return n > 0 ? motion::rig::Vec{sx / n, sy / n} : motion::rig::Vec{b.x + b.w / 2.0, b.y + b.h / 2.0};
 }
 
 Bone boneFrom(std::string name, BoneId parent, motion::rig::Vec head, motion::rig::Vec tail) {

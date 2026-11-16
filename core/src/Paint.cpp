@@ -165,8 +165,11 @@ Rgba8 PaintSession::constrain(Rgba8 c) const {
     }
     if (c.a == 0) return Rgba8::transparent();
     switch (d.colorMode()) {
-    case ColorMode::Rgba: return c;
-    case ColorMode::Grayscale: { const auto l = c.luma(); return {l, l, l, c.a}; }
+    case ColorMode::Rgba: return d.paletteLocked() ? snapToPalette(d.palette(), c) : c;
+    case ColorMode::Grayscale: {
+        const auto l = c.luma();
+        return d.paletteLocked() ? snapToPalette(d.palette(), Rgba8{l, l, l, c.a}) : Rgba8{l, l, l, c.a};
+    }
     case ColorMode::Indexed: {
         // Nearest opaque palette entry; the palette defines the allowed colours.
         const auto& cols = d.palette().colors();

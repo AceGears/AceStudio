@@ -226,6 +226,7 @@ Result<LayerId> Editor::addImageLayer(std::string name, Image image, LayerId abo
         parent = a->parent;
         index = *m_doc.layerIndex(above) + 1;
     }
+    if (m_doc.paletteLocked()) snapToPalette(m_doc.palette(), image);
     auto created = std::make_shared<std::optional<Layer>>();
     auto pixels = std::make_shared<const Image>(std::move(image));
     const std::size_t bytes = pixels->byteSize();
@@ -756,6 +757,7 @@ Status Editor::setCelImage(LayerId layer, int frame, Image image, int x, int y) 
     std::optional<Cel> before;
     if (const Cel* c = m_doc.cel(layer, frame)) before = *c;
     std::optional<Cel> after;
+    if (m_doc.paletteLocked()) snapToPalette(m_doc.palette(), image);
     if (!image.isNull()) after = Cel{std::move(image), x, y};
     const std::size_t bytes = (before ? celBytes(*before) : 0) + (after ? celBytes(*after) : 0);
     return apply(std::make_unique<FnCommand>(
@@ -1136,7 +1138,12 @@ Status Editor::removeTag(std::size_t index) {
 
 // ------------------------------------------------------------------ palette
 
+namespace {
+const char* const kPaletteLocked = "The palette is locked: unlock it to edit the palette";
+} // namespace
+
 Status Editor::setPaletteColor(std::size_t index, Rgba8 color) {
+    if (m_doc.paletteLocked()) return Error{ErrorCode::PermissionDenied, kPaletteLocked};
     if (index >= m_doc.palette().size()) return Error{ErrorCode::InvalidArgument, "Palette index out of range"};
     const Rgba8 old = m_doc.palette().at(index);
     return apply(std::make_unique<FnCommand>(
@@ -1145,6 +1152,7 @@ Status Editor::setPaletteColor(std::size_t index, Rgba8 color) {
 }
 
 Status Editor::addPaletteColor(Rgba8 color) {
+    if (m_doc.paletteLocked()) return Error{ErrorCode::PermissionDenied, kPaletteLocked};
     if (m_doc.palette().size() >= Palette::kMaxColors) return Error{ErrorCode::InvalidArgument, "Palette is full (256 colors)"};
     const std::size_t index = m_doc.palette().size();
     return apply(std::make_unique<FnCommand>(
@@ -1153,6 +1161,7 @@ Status Editor::addPaletteColor(Rgba8 color) {
 }
 
 Status Editor::removePaletteColor(std::size_t index) {
+    if (m_doc.paletteLocked()) return Error{ErrorCode::PermissionDenied, kPaletteLocked};
     if (index >= m_doc.palette().size()) return Error{ErrorCode::InvalidArgument, "Palette index out of range"};
     const Rgba8 old = m_doc.palette().at(index);
     return apply(std::make_unique<FnCommand>(
@@ -1161,12 +1170,60 @@ Status Editor::removePaletteColor(std::size_t index) {
 }
 
 Status Editor::replacePalette(Palette palette, const std::string& label) {
+    if (m_doc.paletteLocked()) return Error{ErrorCode::PermissionDenied, kPaletteLocked};
     if (palette.size() > Palette::kMaxColors) return Error{ErrorCode::InvalidArgument, "Palette has more than 256 colours"};
     auto before = std::make_shared<Palette>(m_doc.palette());
     auto after = std::make_shared<Palette>(std::move(palette));
     return apply(std::make_unique<FnCommand>(
         label, [=](Document& d) { d.palette() = *after; return Status{}; },
         [=](Document& d) { d.palette() = *before; }));
+}
+
+Status Editor::setPaletteLocked(bool locked) {
+    if (locked == m_doc.paletteLocked()) return {};
+    const auto& pal = m_doc.palette().colors();
+    if (locked && std::none_of(pal.begin(), pal.end(), [](Rgba8 c) { return c.a > 0; }))
+        return Error{ErrorCode::InvalidArgument, "The palette needs at least one opaque colour before it can be locked"};
+    return apply(std::make_unique<FnCommand>(
+        locked ? "Lock Palette" : "Unlock Palette",
+        [=](Document& d) -> Status {
+            d.setPaletteLocked(locked);
+            return {};
+        },
+        [=](Document& d) { d.setPaletteLocked(!locked); }, 0));
+}
+
+Result<std::size_t> Editor::conformToPalette() {
+    const auto& pal = m_doc.palette().colors();
+    if (std::none_of(pal.begin(), pal.end(), [](Rgba8 c) { return c.a > 0; }))
+        return Error{ErrorCode::InvalidArgument, "The palette has no opaque colour to conform to"};
+    auto before = std::make_shared<std::vector<std::pair<CelKey, Cel>>>();
+    auto after = std::make_shared<std::vector<std::pair<CelKey, Cel>>>();
+    std::size_t changed = 0, bytes = 0;
+    for (const auto& [key, cel] : m_doc.cels()) {
+        Cel c = cel;
+        const std::size_t n = snapToPalette(m_doc.palette(), c.image);
+        if (n == 0) continue;
+        changed += n;
+        bytes += celBytes(cel) * 2;
+        before->emplace_back(key, cel);
+        after->emplace_back(key, std::move(c));
+    }
+    if (changed == 0) return std::size_t{0};
+    // Linked cels share pixels: setting one sets them all, which is what we want.
+    auto st = apply(std::make_unique<FnCommand>(
+        "Conform to Palette",
+        [=](Document& d) -> Status {
+            for (const auto& [key, cel] : *after)
+                if (auto s = d.setCel(key.layer, key.frame, cel); !s) return s;
+            return {};
+        },
+        [=](Document& d) {
+            for (const auto& [key, cel] : *before) (void)d.setCel(key.layer, key.frame, cel);
+        },
+        bytes));
+    if (!st) return st.error();
+    return changed;
 }
 
 Status Editor::replaceDocument(Document next, const std::string& label) {
@@ -1220,7 +1277,8 @@ Status Editor::setVectorShapes(LayerId layer, int frame, std::vector<VectorShape
     // The cel becomes the shapes' pixels, trimmed to what they cover.
     std::optional<Cel> after;
     {
-        const Image full = vectors::rasterize(shapes, m_doc.width(), m_doc.height());
+        Image full = vectors::rasterize(shapes, m_doc.width(), m_doc.height());
+        if (m_doc.paletteLocked()) snapToPalette(m_doc.palette(), full);
         const IntRect b = full.opaqueBounds();
         if (!b.empty()) after = Cel{full.copy(b), b.x, b.y};
     }
@@ -1281,6 +1339,8 @@ Rgba8 nearestOpaque(const std::vector<Rgba8>& cols, int r, int g, int b) {
 Status Editor::convertColorMode(ColorMode mode, bool dither) {
     const ColorMode oldMode = m_doc.colorMode();
     const auto& pal = m_doc.palette().colors();
+    if (mode == ColorMode::Grayscale && m_doc.paletteLocked())
+        return Error{ErrorCode::PermissionDenied, "The palette is locked: grey tones would leave it. Unlock the palette first"};
     if (mode == ColorMode::Indexed &&
         std::none_of(pal.begin(), pal.end(), [](Rgba8 c) { return c.a > 0; }))
         return Error{ErrorCode::InvalidArgument, "The palette needs at least one opaque colour before converting to indexed"};

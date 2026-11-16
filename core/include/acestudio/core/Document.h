@@ -246,6 +246,14 @@ public:
     nlohmann::json& extensions() noexcept { return m_extensions; }
     const nlohmann::json& extensions() const noexcept { return m_extensions; }
 
+    // Palette lock (ADR-ANIM-006), kept as the extension "paletteLock": true so
+    // files stay readable by older builds. The Editor snaps painted, imported,
+    // generated and vector pixels to the palette and refuses palette edits.
+    bool paletteLocked() const noexcept;
+    void setPaletteLocked(bool locked);
+    // Opaque pixels of all cels whose colour is not in the palette.
+    std::size_t offPalettePixels() const;
+
     // Renders all visible layers of a frame into a canvas-sized image.
     // Groups are composited in isolation and then blended with their own
     // blend mode and opacity (W3C group semantics).

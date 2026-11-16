@@ -1,6 +1,7 @@
 #pragma once
 
 #include "acestudio/core/Color.h"
+#include "acestudio/core/Image.h"
 #include "acestudio/core/Result.h"
 
 #include <cstddef>
@@ -46,5 +47,14 @@ private:
     std::string m_name = "Untitled";
     std::vector<Rgba8> m_colors;
 };
+
+// ---- Palette lock (ADR-ANIM-006) ----
+// The opaque palette colour nearest to c's RGB, with c's alpha kept; c itself
+// when it is transparent or the palette has no opaque colour.
+Rgba8 snapToPalette(const Palette& p, Rgba8 c) noexcept;
+// Snaps every pixel of `img` as above; returns how many pixels changed.
+std::size_t snapToPalette(const Palette& p, Image& img);
+// Pixels with alpha > 0 whose RGB is not an opaque palette colour.
+std::size_t countOffPalette(const Palette& p, const Image& img);
 
 } // namespace acestudio

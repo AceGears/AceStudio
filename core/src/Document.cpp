@@ -234,6 +234,24 @@ void Document::setVectorShapes(LayerId l, int frame, std::vector<VectorShape> sh
     else m_vectors[CelKey{l, frame}] = std::move(shapes);
 }
 
+bool Document::paletteLocked() const noexcept {
+    if (!m_extensions.is_object()) return false;
+    const auto it = m_extensions.find("paletteLock");
+    return it != m_extensions.end() && it->is_boolean() && it->get<bool>();
+}
+
+void Document::setPaletteLocked(bool locked) {
+    if (!m_extensions.is_object()) m_extensions = nlohmann::json::object();
+    if (locked) m_extensions["paletteLock"] = true;
+    else m_extensions.erase("paletteLock");
+}
+
+std::size_t Document::offPalettePixels() const {
+    std::size_t off = 0;
+    for (const auto& [key, cel] : m_cels) off += countOffPalette(m_palette, cel.image);
+    return off;
+}
+
 Status Document::moveLayer(LayerId id, std::size_t newIndex) {
     auto it = std::find_if(m_layers.begin(), m_layers.end(), [id](const Layer& l) { return l.id == id; });
     if (it == m_layers.end()) return Error{ErrorCode::NotFound, "No such layer"};
