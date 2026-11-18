@@ -91,7 +91,8 @@ not been run.
   Library row is built by CI only and has not been used on a PC. The presets are simple and
   procedural (no capture data), so they look mechanical next to real mocap. Sprites drawn from the
   front never rise off the ground in a retarget (the jump moves the arms and legs but not the
-  height); side-view sprites do. Lua and MCP have no retarget or preset access yet.
+  height); side-view sprites do. Lua has `ace.retarget` and `ace.motion_presets` (tested); the MCP tools `motion_presets`, `motion_retarget` and
+  `motion_directions` run the CLI commands and are compiled, not called by a test.
 - **MCP tools for rigs, vector shapes and the palette lock** run the CLI commands that the CLI smoke
   test covers, but no test calls the tools themselves yet.
 - **Palette lock** (ADR-ANIM-006): the core is tested; painting, saving, the CLI and the Palette

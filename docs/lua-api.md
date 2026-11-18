@@ -175,6 +175,29 @@ ts:write("ground.png", {engines = "godot,unity,tiled", names = {"sand", "grass",
 | `ace.slice(image[, {background, tolerance, merge, grid = "WxH"\|"auto"}])` | list of `{name, x, y, w, h}` |
 | `ace.write_uikit(path[, {scale, rounded, base, light, dark, outline, accent, text, engines, overwrite}])` | writes the UI kit; returns the file count |
 
+### 3D motion onto a sprite
+
+| Function | |
+|---|---|
+| `ace.motion_presets()` | list of `{name, description, seconds, loops, built_in, four_legged}`: the built-in presets and the motions saved in the user's motion library |
+| `ace.retarget(sprite, motion[, opts])` | `{frames = {images}, durations = {ms}, notes = {text}, loops, body, approximate_view, turn}` |
+
+`motion` is `"preset:NAME"` or a `.bvh`, `.glb` or `.gltf` file (inside the script's folders).
+`opts`: `view` (`auto`, `front`, `back`, `right`, `left`, `front-right`, … as the CLI's `--view`),
+`turn`, `tilt`, `roll` (degrees), `perspective`, `start` and `length` (seconds), `fps` (default 12)
+or `frames`, `amount` (0.25 to 2), `travel` (keep the motion's travel), `loop` (one-shot presets
+default to false), `body` (`auto`, `biped` or `quadruped`; auto reads the sprite). A humanoid
+motion on a four-legged sprite, an unknown preset, view or body, and other file types are errors.
+The frames count against the script's memory limit.
+
+```lua
+local hero = ace.load_png("hero.png")
+local walk = ace.retarget(hero, "preset:walk", {fps = 10})
+local d = ace.new_document(walk.frames[1].width, walk.frames[1].height, #walk.frames)
+for i, f in ipairs(walk.frames) do d:set_cel(0, i - 1, f, 0, 0) end
+d:save("hero_walk.acestudio")
+```
+
 ## Example
 
 ```lua

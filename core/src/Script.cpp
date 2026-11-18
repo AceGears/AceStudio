@@ -8,6 +8,8 @@
 #include "acestudio/core/Document.h"
 #include "acestudio/core/Editor.h"
 #include "acestudio/core/FileUtil.h"
+#include "acestudio/core/Mocap.h"
+#include "acestudio/core/MotionLibrary.h"
 #include "acestudio/core/PngCodec.h"
 #include "acestudio/core/ProjectIO.h"
 #include "acestudio/core/RigTools.h"
@@ -906,6 +908,86 @@ void bind(sol::state_view lua, Runtime& rt) {
         for (std::size_t i = 0; i < slices.size(); ++i)
             t[i + 1] = lv.create_table_with("name", slices[i].name, "x", slices[i].rect.x, "y", slices[i].rect.y, "w", slices[i].rect.w, "h", slices[i].rect.h);
         return t;
+    };
+    // ---- 3D motion onto a sprite (ADR-ANIM-002): the motion library and retarget
+    ace["motion_presets"] = [](sol::this_state ts) {
+        sol::state_view lv(ts);
+        sol::table t = lv.create_table();
+        std::vector<mocap::PresetInfo> all = mocap::builtInPresets();
+        if (auto dir = mocap::defaultPresetDir())
+            if (auto saved = mocap::savedPresets(dir.value()))
+                for (const auto& p : saved.value())
+                    if (p.error.empty()) all.push_back(p);
+        for (std::size_t i = 0; i < all.size(); ++i) {
+            const auto& p = all[i];
+            t[i + 1] = lv.create_table_with("name", p.name, "description", p.description, "seconds", p.seconds, "loops", p.loops,
+                                            "built_in", p.builtIn, "four_legged", p.fourLegged);
+        }
+        return t;
+    };
+    // ace.retarget(sprite, "preset:walk" | "motion.bvh" | "motion.glb", {view=, turn=, tilt=, roll=,
+    //   perspective=, start=, length=, fps=, frames=, amount=, travel=, loop=, body="auto"|"biped"|"quadruped"})
+    ace["retarget"] = [&rt](const LImage& sprite, const std::string& source, sol::optional<sol::table> opts, sol::this_state ts) {
+        mocap::Motion motion;
+        bool oneShot = false;
+        if (source.rfind("preset:", 0) == 0) {
+            const std::string name = source.substr(7);
+            auto dir = mocap::defaultPresetDir();
+            motion = unwrap(mocap::loadPreset(name, dir ? dir.value() : fs::path()));
+            for (const auto& p : mocap::builtInPresets())
+                if (p.name == name) oneShot = !p.loops;
+        } else {
+            motion = unwrap(mocap::loadMotion(resolvePath(rt, source)));
+        }
+        mocap::RetargetOptions o;
+        o.loop = !oneShot;
+        std::string body = "auto";
+        if (opts) {
+            const sol::table& t = *opts;
+            std::optional<mocap::Camera> cam;
+            if (sol::optional<std::string> v = t["view"]; v && *v != "auto") {
+                cam = mocap::cameraPreset(*v);
+                if (!cam) fail("unknown view '" + *v + "'");
+            }
+            for (const char* k : {"turn", "tilt", "roll"})
+                if (sol::optional<double> v = t[k]) {
+                    if (!std::isfinite(*v)) fail(std::string(k) + " must be a number of degrees");
+                    if (!cam) cam = mocap::Camera{};
+                    (std::string(k) == "turn" ? cam->turn : std::string(k) == "tilt" ? cam->tilt : cam->roll) = *v;
+                }
+            if (sol::optional<bool> v = t["perspective"]; v && *v) {
+                if (!cam) cam = mocap::Camera{};
+                cam->perspective = true;
+            }
+            o.camera = cam;
+            o.start = std::max(0.0, t["start"].get_or(0.0));
+            o.length = std::max(0.0, t["length"].get_or(0.0));
+            o.fps = std::clamp(t["fps"].get_or(12), 1, 60);
+            o.frames = std::clamp(t["frames"].get_or(0), 0, 240);
+            o.amount = std::clamp(t["amount"].get_or(1.0), 0.25, 2.0);
+            o.inPlace = !t["travel"].get_or(false);
+            o.loop = t["loop"].get_or(o.loop);
+            body = t["body"].get_or(std::string("auto"));
+        }
+        if (body == "auto")
+            o.body = motion::analyzeSubject(sprite.img).body == motion::Body::Quadruped ? motion::Body::Quadruped : motion::Body::Biped;
+        else if (body == "biped") o.body = motion::Body::Biped;
+        else if (body == "quadruped") o.body = motion::Body::Quadruped;
+        else fail("body is \"auto\", \"biped\" or \"quadruped\"");
+        mocap::RetargetResult r = unwrap(mocap::retarget(sprite.img, motion, o));
+        std::size_t bytes = 0;
+        for (const Image& f : r.clip.frames) bytes += f.byteSize();
+        ensureRoom(bytes);
+        sol::state_view lv(ts);
+        sol::table frames = lv.create_table(), durations = lv.create_table(), notes = lv.create_table();
+        for (std::size_t i = 0; i < r.clip.frames.size(); ++i) {
+            frames[i + 1] = LImage{r.clip.frames[i]};
+            durations[i + 1] = i < r.clip.durations.size() ? r.clip.durations[i] : 100;
+        }
+        for (std::size_t i = 0; i < r.notes.size(); ++i) notes[i + 1] = r.notes[i];
+        return lv.create_table_with("frames", frames, "durations", durations, "notes", notes, "loops", r.clip.loops, "body",
+                                    std::string(o.body == motion::Body::Quadruped ? "quadruped" : "biped"), "approximate_view",
+                                    r.approximateView, "turn", r.camera.turn);
     };
     ace["write_uikit"] = [&rt](const std::string& path, sol::optional<sol::table> opts) {
         UiTheme th;

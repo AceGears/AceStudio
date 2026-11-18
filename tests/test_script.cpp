@@ -384,3 +384,38 @@ TEST_CASE("Lua reads and writes rigs, vector shapes and the palette lock", "[scr
     INFO(errorOf(r));
     REQUIRE(r);
 }
+
+TEST_CASE("Lua motion library and retarget", "[script][mocap]") {
+    auto r = run(R"(
+        local names = {}
+        for _, p in ipairs(ace.motion_presets()) do names[p.name] = p end
+        assert(names.walk and names.walk.built_in and names.walk.loops)
+        assert(names['quad-walk'] and names['quad-walk'].four_legged)
+        assert(names.jump and not names.jump.loops)
+
+        -- A dog drawn from the side, facing right (as tests/test_creature_motion.cpp).
+        local dog = ace.image(72, 48)
+        dog:rect(10, 12, 46, 14, '#966432')
+        dog:rect(52, 4, 14, 12, '#966432')
+        dog:rect(64, 9, 4, 4, '#1e1414')
+        dog:rect(4, 10, 7, 3, '#5a3c23')
+        for _, x in ipairs({14, 22, 44, 52}) do dog:rect(x, 26, 5, 20, '#966432') end
+        local walk = ace.retarget(dog, 'preset:quad-walk', {fps = 10})
+        assert(walk.body == 'quadruped', walk.body)
+        assert(#walk.frames == 12, #walk.frames)
+        assert(#walk.durations == 12 and walk.durations[1] == 100)
+        assert(walk.loops and not walk.approximate_view and walk.turn == 90)
+        assert(walk.frames[1].width == walk.frames[12].width)
+        -- A view far from the drawn one is flagged.
+        local back = ace.retarget(dog, 'preset:quad-walk', {fps = 5, view = 'back'})
+        assert(back.approximate_view and #back.notes > 0)
+        -- Refusals: a humanoid motion on four legs, unknown names and options.
+        assert(not pcall(ace.retarget, dog, 'preset:walk'))
+        assert(not pcall(ace.retarget, dog, 'preset:moonwalk'))
+        assert(not pcall(ace.retarget, dog, 'preset:quad-walk', {body = 'six-legged'}))
+        assert(not pcall(ace.retarget, dog, 'preset:quad-walk', {view = 'sideways'}))
+        assert(not pcall(ace.retarget, dog, 'motion.fbx'))
+    )");
+    INFO(errorOf(r));
+    CHECK(r);
+}

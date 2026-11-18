@@ -536,6 +536,95 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                      b.overwrite();
                      return fromCli(runCliConfirm(*envPtr, b.args, call));
                  }});
+    // ---- 3D motion onto sprites (ADR-ANIM-002): the CLI's motion, retarget and directions
+    t.push_back({"motion_presets", "List motion presets",
+                 std::string("The motion library: built-in presets (idle, walk, run, jump, attack, hurt; quad-walk for "
+                             "four-legged sprites) and motions the user saved, with length and whether they loop."),
+                 obj(json::object()), readOnly(),
+                 [envPtr](const json& a, const ToolCall& call) {
+                     ArgBuilder b{*envPtr, a, {"motion", "list"}, {}};
+                     return fromCli(runCli(*envPtr, b.args, call));
+                 }});
+    const json motionArg = str("A BVH, glTF or GLB motion file, or \"preset:NAME\" from motion_presets (e.g. preset:walk)");
+    auto motionOptions = [](ArgBuilder& b) {
+        for (const auto& [k, f] : std::vector<std::pair<std::string, const char*>>{
+                 {"view", "--view"}, {"turn", "--turn"}, {"tilt", "--tilt"}, {"roll", "--roll"}, {"start", "--start"}, {"length", "--length"},
+                 {"fps", "--fps"}, {"frames", "--frames"}, {"amount", "--amount"}, {"name", "--name"}, {"body", "--body"},
+                 {"animation", "--animation"}})
+            b.opt(k, f);
+        b.flag("perspective", "--perspective");
+    };
+    auto motionProps = [&](json props) {
+        props["view"] = str("Camera: auto (as drawn), front, back, right, left, front-right, front-left, back-right, back-left, "
+                            "three-quarter, top-down or isometric");
+        props["turn"] = number("Camera turn in degrees (0 = the motion faces the viewer, 90 = faces screen right)");
+        props["tilt"] = number("Camera tilt in degrees");
+        props["roll"] = number("Camera roll in degrees");
+        props["perspective"] = boolean("Perspective camera instead of orthographic");
+        props["start"] = number("Seconds into the motion");
+        props["length"] = number("Seconds to use (0 = to the end)");
+        props["fps"] = integer("Frames per second of motion (default 12)", 1, 60);
+        props["frames"] = integer("Exactly this many frames instead of fps", 2, 240);
+        props["amount"] = number("Swing of the motion, 0.25-2 (default 1)");
+        props["name"] = str("Name for the outputs and tags (default: the motion's)");
+        props["body"] = oneOf("Sprite body (default auto: from the sprite)", {"auto", "biped", "quadruped"});
+        props["animation"] = str("glTF/GLB: which animation, by index or name");
+        props["overwrite"] = kOverwrite;
+        return props;
+    };
+    t.push_back({"motion_retarget", "Put a 3D motion on a sprite",
+                 std::string("Retargets a 3D skeletal motion (BVH, glTF/GLB or a preset) onto a still sprite drawn from the side "
+                             "or front, without AI: a two-legged sprite takes a humanoid motion, a four-legged one a four-legged "
+                             "motion. Writes a strip PNG and GIF of the posed sprite and of the projected source skeleton to `out`, "
+                             "and reports frames, notes and whether the camera is far from the drawn view.") + kPathNote,
+                 obj(motionProps({{"sprite", str("The sprite PNG (transparent background)")},
+                                  {"motion", motionArg},
+                                  {"out", str("Output folder")},
+                                  {"travel", boolean("Keep the motion's travel (default: in place)")},
+                                  {"no_loop", boolean("Treat the motion as a one-shot")}}),
+                     {"sprite", "motion", "out"}),
+                 writes(),
+                 [envPtr, motionOptions](const json& a, const ToolCall& call) {
+                     ArgBuilder b{*envPtr, a, {"retarget"}, {}};
+                     if (!b.path("sprite")) return badArgs(b.error);
+                     const std::string motion = a.value("motion", std::string());
+                     if (motion.rfind("preset:", 0) == 0) b.args.push_back(motion);
+                     else if (!b.path("motion")) return badArgs(b.error);
+                     if (!b.path("out", "--out")) return badArgs(b.error);
+                     motionOptions(b);
+                     b.flag("travel", "--travel");
+                     b.flag("no_loop", "--no-loop");
+                     b.overwrite();
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
+                 }});
+    t.push_back({"motion_directions", "Make a motion in every direction",
+                 std::string("A direction set: a folder of views of one character (PNGs named s, se, e, ne, n, nw, w, sw or front, "
+                             "right, back-left, ...) and a motion become one project with a tag per direction (<name>_<dir>). "
+                             "Each direction uses the nearest drawn view or its mirror; directions over 30 degrees from any view "
+                             "are flagged.") + kPathNote,
+                 obj(motionProps({{"views", str("Folder of view PNGs")},
+                                  {"motion", motionArg},
+                                  {"out", str("The .acestudio project to write")},
+                                  {"dirs", str("8 (default), 4, or a list such as \"s,e,n,w\"")},
+                                  {"no_mirror", boolean("Do not mirror views for the opposite side")},
+                                  {"turn_clip", str("Also a turning clip between two directions, e.g. \"s,n\"")}}),
+                     {"views", "motion", "out"}),
+                 writes(),
+                 [envPtr, motionOptions](const json& a, const ToolCall& call) {
+                     ArgBuilder b{*envPtr, a, {"directions"}, {}};
+                     if (!b.path("views")) return badArgs(b.error);
+                     const std::string motion = a.value("motion", std::string());
+                     if (motion.rfind("preset:", 0) == 0) b.args.push_back(motion);
+                     else if (!b.path("motion")) return badArgs(b.error);
+                     if (!b.path("out", "--out")) return badArgs(b.error);
+                     if (a.contains("view") || a.contains("turn")) return badArgs("directions sets the camera turn per direction: give tilt, roll or perspective only");
+                     motionOptions(b);
+                     b.opt("dirs", "--dirs");
+                     b.opt("turn_clip", "--turn-clip");
+                     b.flag("no_mirror", "--no-mirror");
+                     b.overwrite();
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
+                 }});
     t.push_back({"sprite_effect", "Animate an environmental sprite (no AI)",
                  std::string("Loops an environmental sprite procedurally, in its own colours: fire flickers and rises above the "
                              "logs, water ripples, plants sway above the trunk, flags wave from the pole, smoke rises, magic "
