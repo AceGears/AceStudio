@@ -91,6 +91,13 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Parts that bend across a joint** (ADR-ANIM-004): a part layer bound to one bone can also
+  follow a child of that bone (`rig skin <project> --layer L --bone CHILD [--blend PX]`), so a
+  one-piece arm or leg bends smoothly at the elbow or knee instead of turning rigidly. Pixels
+  before the joint follow the parent bone, pixels past it the child, and a band either side of the
+  joint mixes the two. Drawn with the same 8x Scale2x sampling as turned parts, so only the
+  sprite's colours appear; at rest, or when both bones turn together, the part is drawn exactly as
+  a rigid one. Rigs that use this are saved as rig version 3 (others stay as they were).
 - **Four-legged motion** (ADR-ANIM-002 section 3.5): `retarget` puts a four-legged motion on a
   four-legged sprite (`--body auto`, the default, picks this for sprites read as four-legged; also
   in Motion Studio and `directions`). The motion's legs are found by shape, not by name: chains of

@@ -16,6 +16,110 @@ constexpr double kPi = 3.14159265358979323846;
 
 Error bad(std::string m) { return Error{ErrorCode::InvalidArgument, std::move(m)}; }
 
+// A bone's move from rest: turn about its rest head, then put the head at
+// `hx, hy`. Clockwise on screen (y down), as the rest of the rig.
+struct BoneMove {
+    double c = 1, s = 0, px = 0, py = 0, hx = 0, hy = 0;
+    BoneMove(double turn, double restX, double restY, double headX, double headY)
+        : c(std::cos(turn)), s(std::sin(turn)), px(restX), py(restY), hx(headX), hy(headY) {}
+    motion::rig::Vec apply(double x, double y) const {
+        x -= px;
+        y -= py;
+        return {c * x - s * y + hx, s * x + c * y + hy};
+    }
+    motion::rig::Vec invert(double x, double y) const {
+        x -= hx;
+        y -= hy;
+        return {c * x + s * y + px, -s * x + c * y + py};
+    }
+};
+
+// A part bent across the joint between its bone `ma` and a child bone `mb`
+// (all in the part's own coordinates). Every source point p goes to
+// (1 - w) A(p) + w B(p), w rising smoothly from 0 to 1 across a band
+// `blend` wide either side of the joint, measured along the direction
+// halfway between the two bones at rest. Drawn by inverse mapping: each
+// output pixel solves for its source point by Newton's method, started from
+// where either bone alone would put it; where the bent part folds over
+// itself the point nearer the child (drawn on top) wins. Colours come from
+// the part's 8x Scale2x copy, as rotated parts do.
+Image renderSkinned(const motion::rig::Part& p, const BoneMove& ma, const BoneMove& mb, double jx, double jy, double nx, double ny,
+                    double blend, int w, int h) {
+    Image out(w, h);
+    if (p.hiBox.empty()) return out;
+    constexpr int kUp = 8;
+    auto weight = [&](double x, double y, double& dw) {
+        const double k = ((x - jx) * nx + (y - jy) * ny + blend) / (2 * blend);
+        if (k <= 0 || k >= 1) {
+            dw = 0;
+            return k <= 0 ? 0.0 : 1.0;
+        }
+        dw = 6 * k * (1 - k) / (2 * blend);
+        return k * k * (3 - 2 * k);
+    };
+    // The output reaches no further than where both bones put the part.
+    double x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18;
+    for (const BoneMove* m : {&ma, &mb})
+        for (int k = 0; k < 4; ++k) {
+            const motion::rig::Vec q = m->apply(k & 1 ? p.hiBox.x + p.hiBox.w : p.hiBox.x, k & 2 ? p.hiBox.y + p.hiBox.h : p.hiBox.y);
+            x0 = std::min(x0, q.x);
+            y0 = std::min(y0, q.y);
+            x1 = std::max(x1, q.x);
+            y1 = std::max(y1, q.y);
+        }
+    const int ix0 = std::max(0, static_cast<int>(std::floor(x0)) - 1), iy0 = std::max(0, static_cast<int>(std::floor(y0)) - 1);
+    const int ix1 = std::min(w - 1, static_cast<int>(std::ceil(x1)) + 1), iy1 = std::min(h - 1, static_cast<int>(std::ceil(y1)) + 1);
+    auto colourAt = [&](double x, double y) {
+        const int hx = static_cast<int>(std::floor((x - p.hiBox.x) * kUp));
+        const int hy = static_cast<int>(std::floor((y - p.hiBox.y) * kUp));
+        return p.hi.contains(hx, hy) ? p.hi.pixel(hx, hy) : Rgba8{};
+    };
+    for (int oy = iy0; oy <= iy1; ++oy)
+        for (int ox = ix0; ox <= ix1; ++ox) {
+            const double tx = ox + 0.5, ty = oy + 0.5;
+            Rgba8 best{};
+            double bestW = -1;
+            const motion::rig::Vec starts[3] = {ma.invert(tx, ty), mb.invert(tx, ty),
+                                                {0.5 * (ma.invert(tx, ty).x + mb.invert(tx, ty).x), 0.5 * (ma.invert(tx, ty).y + mb.invert(tx, ty).y)}};
+            for (motion::rig::Vec q : starts) {
+                bool ok = false;
+                double wq = 0;
+                for (int it = 0; it < 24; ++it) {
+                    double dw = 0;
+                    wq = weight(q.x, q.y, dw);
+                    const motion::rig::Vec a = ma.apply(q.x, q.y), b = mb.apply(q.x, q.y);
+                    const double gx = (1 - wq) * a.x + wq * b.x - tx, gy = (1 - wq) * a.y + wq * b.y - ty;
+                    if (gx * gx + gy * gy < 1e-8) {
+                        ok = true;
+                        break;
+                    }
+                    // Jacobian of the blend: the mixed rotations plus the
+                    // change of weight carrying the point between the bones.
+                    const double ex = b.x - a.x, ey = b.y - a.y;
+                    const double j00 = (1 - wq) * ma.c + wq * mb.c + ex * dw * nx, j01 = -(1 - wq) * ma.s - wq * mb.s + ex * dw * ny;
+                    const double j10 = (1 - wq) * ma.s + wq * mb.s + ey * dw * nx, j11 = (1 - wq) * ma.c + wq * mb.c + ey * dw * ny;
+                    const double det = j00 * j11 - j01 * j10;
+                    if (std::abs(det) < 1e-9) break;
+                    double sx = (j11 * gx - j01 * gy) / det, sy = (-j10 * gx + j00 * gy) / det;
+                    const double len = std::hypot(sx, sy);
+                    if (len > 4) {
+                        sx *= 4 / len;
+                        sy *= 4 / len;
+                    }
+                    q.x -= sx;
+                    q.y -= sy;
+                }
+                if (!ok || wq <= bestW) continue;
+                const Rgba8 c = colourAt(q.x, q.y);
+                if (!c.a) continue;
+                best = c;
+                bestW = wq;
+            }
+            if (bestW >= 0) out.setPixel(ox, oy, best);
+        }
+    return out;
+}
+
 // The part's farthest pixel centre from (x, y), in canvas coordinates.
 motion::rig::Vec farthest(const Mask& m, double x, double y) {
     motion::rig::Vec best{x, y};
@@ -343,7 +447,33 @@ Result<Document> bakePose(const Document& doc, int restFrame, int frame, const R
         pp.dx = bw.headX - b.x;
         pp.dy = bw.headY - b.y;
         pp.angle = bw.turn;
-        const Image out = motion::rig::renderPose(one, {pp}, {0, 0, box.w, box.h});
+        // A part bent across a joint, unless its two bones turn together
+        // (then it is rigid, drawn exactly as other parts).
+        std::size_t ci = rig.bones.size();
+        if (const auto sk = rig.skins.find(layerId); sk != rig.skins.end())
+            for (ci = 0; ci < rig.bones.size() && rig.bones[ci].id != sk->second.bone; ++ci) {}
+        const bool bent = ci < rig.bones.size() && std::abs(std::remainder(world[ci].turn - bw.turn, 2 * kPi)) > 1e-9;
+        Image out;
+        if (bent) {
+            const Bone& kid = rig.bones[ci];
+            const BoneWorld& cw = world[ci];
+            // Whole-pixel moves as rigid parts make, the child keeping its
+            // exact place relative to the parent.
+            const double rx = std::round(pp.dx) - pp.dx, ry = std::round(pp.dy) - pp.dy;
+            const BoneMove ma(bw.turn, b.x - box.x, b.y - box.y, bw.headX + rx - box.x, bw.headY + ry - box.y);
+            const BoneMove mb(cw.turn, kid.x - box.x, kid.y - box.y, cw.headX + rx - box.x, cw.headY + ry - box.y);
+            double nx = std::cos(b.angle) + std::cos(kid.angle), ny = std::sin(b.angle) + std::sin(kid.angle);
+            if (std::hypot(nx, ny) < 1e-6) {
+                nx = std::cos(b.angle);
+                ny = std::sin(b.angle);
+            }
+            const double nl = std::hypot(nx, ny);
+            double blend = rig.skins.at(layerId).blend;
+            if (blend <= 0) blend = std::max(1.5, 0.2 * std::min(b.length, kid.length));
+            out = renderSkinned(one.parts[0], ma, mb, kid.x - box.x, kid.y - box.y, nx / nl, ny / nl, blend, box.w, box.h);
+        } else {
+            out = motion::rig::renderPose(one, {pp}, {0, 0, box.w, box.h});
+        }
         const IntRect ob = out.opaqueBounds();
         if (ob.empty()) {
             d.clearCel(layerId, frame);

@@ -88,16 +88,28 @@ struct RigKey {
     bool operator==(const RigKey&) const = default;
 };
 
+// A part that bends across a joint: besides its own bone (its binding) it
+// follows `bone`, a child of that bone. Pixels before the joint follow the
+// parent, pixels past it the child, and a band `blend` pixels either side of
+// the joint (0 = a fifth of the shorter bone, at least 1.5) mixes the two.
+struct Skin {
+    BoneId bone = kNoBone;
+    double blend = 0;
+    bool operator==(const Skin&) const = default;
+};
+
 struct Rig {
     static constexpr int kMaxBones = 256;
     static constexpr int kMaxChains = 64;
     static constexpr int kMaxKeys = 10000;
-    // 1: bones, bindings, chains. 2: adds the rest frame and keys (written
-    // only when they are used, so rigs without them stay version 1).
-    static constexpr int kVersion = 2;
+    // 1: bones, bindings, chains. 2: adds the rest frame and keys. 3: adds
+    // skins. Each is written only when used, so older readers open rigs
+    // that do not need the newer parts.
+    static constexpr int kVersion = 3;
 
     std::vector<Bone> bones;              // parents before children
     std::map<LayerId, BoneId> bindings;   // part layer -> the bone that moves it
+    std::map<LayerId, Skin> skins;        // bound part layers that also follow a child bone
     std::vector<IkChain> chains;
     BoneId nextId = 1;
     // The frame whose part cels are the parts at rest: baking reads it.
@@ -143,7 +155,10 @@ Status reparentBone(Rig& rig, BoneId id, BoneId newParent);   // no cycles; noth
 Status removeBone(Rig& rig, BoneId id);
 Status setLimits(Rig& rig, BoneId id, bool limited, double minAngle, double maxAngle);
 Status setLocked(Rig& rig, BoneId id, bool locked);
-Status bindLayer(Rig& rig, LayerId layer, BoneId bone);   // kNoBone unbinds
+Status bindLayer(Rig& rig, LayerId layer, BoneId bone);   // kNoBone unbinds (and unskins)
+// Bends a bound part across the joint with `child`, a child of its bone
+// (kNoBone makes it rigid again). `blend` as Skin::blend.
+Status skinLayer(Rig& rig, LayerId layer, BoneId child, double blend = 0);
 Status addChain(Rig& rig, IkChain chain);
 Status removeChain(Rig& rig, std::size_t index);
 

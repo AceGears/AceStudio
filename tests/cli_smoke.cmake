@@ -249,6 +249,32 @@ file(SHA256 "${RK}_posed2.png" h_posed2)
 if(NOT h_baked2 STREQUAL h_posed2 OR NOT h_baked0 STREQUAL h_rigged OR h_baked1 STREQUAL h_baked0 OR h_baked1 STREQUAL h_baked2)
     message(FATAL_ERROR "rig bake: frame 2 must match the keyed pose, frame 0 stay at rest, frame 1 lie between")
 endif()
+# Skins (rig version 3): a part bent across a joint with a child of its bone
+set(RS "${WORKDIR}/rigs/skin")
+run(1 rig skin "${RR}" --layer "leg0 thigh" --out "${RS}_bad.acestudio")                         # no --bone
+run(1 rig skin "${RR}" --layer "leg0 thigh" --bone "leg1 foot" --out "${RS}_bad.acestudio")      # not a child
+run(1 rig skin "${RR}" --layer "leg0 thigh" --bone "leg0 foot" --blend -2 --out "${RS}_bad.acestudio")
+run(0 --json rig skin "${RR}" --layer "leg0 thigh" --bone "leg0 foot" --out "${RS}.acestudio")
+string(JSON skin_count GET "${LAST_OUT}" skins)
+if(NOT skin_count EQUAL 1)
+    message(FATAL_ERROR "rig skin: ${skin_count} skins: ${LAST_OUT}")
+endif()
+run(0 --json rig show "${RS}.acestudio")
+string(JSON skin_version GET "${LAST_OUT}" rig version)
+if(NOT skin_version EQUAL 3)
+    message(FATAL_ERROR "a rig with a skin saved as version ${skin_version}")
+endif()
+run(0 rig skin "${RS}.acestudio" --layer "leg0 thigh" --bone none --out "${RS}_none.acestudio")
+run(0 rig pose "${RS}.acestudio" --frame 1 --out "${RS}_rest.acestudio")
+run(0 rig pose "${RS}.acestudio" --frame 1 --turn "leg0 foot=60" --out "${RS}_bent.acestudio")
+run(0 rig pose "${RR}" --frame 1 --turn "leg0 foot=60" --out "${RS}_rigid.acestudio")
+foreach(n rest bent rigid)
+    run(0 render "${RS}_${n}.acestudio" --frame 1 --out "${RS}_${n}.png")
+    file(SHA256 "${RS}_${n}.png" h_skin_${n})
+endforeach()
+if(NOT h_skin_rest STREQUAL h_rigged OR h_skin_bent STREQUAL h_skin_rigid)
+    message(FATAL_ERROR "rig skin: at rest the part must draw as rigged, bent unlike a rigid part")
+endif()
 
 # Motion keys (RigMotion.h): a preset keyed onto the rig, then baked
 run(1 rig motion "${RR}" preset:walk)                                                   # no --out

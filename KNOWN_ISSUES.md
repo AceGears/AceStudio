@@ -44,6 +44,13 @@ not been run.
   legs) barely moves and holds its last direction. Side-view legs numbered 0 and 1 are taken as
   near and far; if they come out swapped, pair them with `--bones`. Wings, fins and other
   non-humanoid rigs match nothing and are refused. Frames added for the keys are empty until baked.
+- **Parts that bend across a joint** (`rig skin`, ADR-ANIM-004): a part follows at most two bones
+  (its own and one child); there is no painted weight map, the split is a straight line through
+  the joint halfway between the two bones' directions. The bend is a linear blend, so a very sharp
+  bend (past about 120 degrees) pinches the inside of the joint. Command line, the MCP
+  `rig_edit` tool and Lua (`doc:rig()` / `set_rig` carry it in the rig's `skins`); the rig panel
+  does not show or set it yet. Auto-rig does
+  not make bent parts; it still cuts a separate part for each bone.
 - **Four-legged motion** (`retarget --body quadruped`, ADR-ANIM-002 section 3.5): tested on a
   drawn test dog and the `quad-walk` preset only, not on captured animal motion. Only the legs and
   the body's height follow the motion: the back does not pitch, and the head and tail stay as

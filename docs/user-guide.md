@@ -127,6 +127,12 @@ Add, Subtract, Difference), visibility and locks.
   the rig is drawn in. Bones are matched by their auto-rig names; pair others with
   `--bones "upper leg=LThigh,lower leg=LShin"`. Arms keep the pose you drew and swing from it; add
   `--absolute-arms` to have them point where the motion's arms point.
+- **Bending a part at a joint**: a part drawn in one piece over two bones (an arm over the upper
+  arm and forearm) can bend at the joint instead of turning stiffly:
+  `acestudio-cli rig skin hero.acestudio --layer arm --bone forearm --out hero.acestudio --force`.
+  The part must be bound to the forearm's parent bone. `--blend` sets how many pixels either side
+  of the joint are mixed (0, the default, picks a fifth of the shorter bone); `--bone none` makes
+  the part rigid again.
 - **Four-legged animals**: a sprite drawn from the side on four legs takes four-legged motion,
   such as the built-in `quad-walk` or a BVH or glTF animal clip:
   `acestudio-cli retarget dog.png preset:quad-walk --out out`, or **Animation › Motion Studio**
