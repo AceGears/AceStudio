@@ -121,8 +121,16 @@ moves fading in beyond them); the leg hips follow their end. Side views only. Ve
 rises and falls at least 2 rows and more than with a stiff back, neck and tail, at most a quarter
 of its height; colours kept); the dog's walk sheet was looked at.
 
-Not done: sideways head and tail swing, leg overrides by name, six legs, fins (`RigSwim`),
-`rig motion` for four-legged rigs. Wings: section 3.7.
+Built later on 2026-11-18: `rig motion` for four-legged rigs (`rigs::keysFromMotion`, see
+`RigMotion.h`): legs paired by hind/front (from the rig's facing, read from its highest body art)
+and near/far, thighs and shins aimed along the creature legs, IK reach scaled by the straight
+top-to-foot distance, the root's height from the hips' mean, "body" turned by the back's change.
+Verified: `tests/test_rig_motion.cpp` (the test dog faces right, two hind and two front legs,
+every thigh swings, every foot lifts and lands, none below the ground, the root within 3 px;
+`--bones` refused) and a `tests/cli_smoke.cmake` step, run locally; the baked sheet was looked at.
+
+Not done: sideways head and tail swing, leg overrides by name, six legs, fins (`RigSwim`), head and
+tail bones on four-legged rigs. Wings: section 3.7.
 
 ### 3.7 Wings from a humanoid motion (stage 3c, second part, 2026-11-18)
 

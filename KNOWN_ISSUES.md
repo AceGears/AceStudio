@@ -62,8 +62,13 @@ not been run.
   (a side view cannot show them without art drawn for it), and the head and tail bend only up and
   down by moving columns, so a long neck or tail held at a steep angle shears rather than turns. Exactly four legs reaching the floor are needed (six-legged and winged skeletons are
   refused); legs cannot be paired by hand yet, and Motion Studio's bone table lists humanoid bones
-  only. Sprites must be drawn from the side with their legs apart; `rig motion` does not take
-  four-legged motion.
+  only. Sprites must be drawn from the side with their legs apart. `rig motion` takes four-legged
+  motion on an auto-rigged four-legged sprite (since 2026-11-18; tested on the test dog): the legs,
+  the back's pitch and the body's height become keys. The rig's head and tail are not bones, so
+  they ride the body; the foot bones keep their angle to the shin (they do not stay flat on the
+  ground); legs are paired by auto-rig numbers only (no `--bones` pairs for four-legged motion); the
+  facing is read from the highest art of the body (the head), so a sprite whose tail is higher than
+  its head is read backwards.
 - **Wings from a 3D motion** (`retarget --body flyer`, ADR-ANIM-002 section 3.7): a humanoid
   motion's arms beat a winged side view's wings (each wing turns about its shoulder as its arm
   rises and falls, the hand end bends with the elbow, the body rises and sinks with the hips).

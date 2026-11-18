@@ -314,3 +314,70 @@ TEST_CASE("Arm boxes rig arms the analysis missed", "[rig]") {
     bad.body = rigs::AutoRigBody::Wings;
     CHECK_FALSE(rigs::autoRig(doc, hero, 0, bad));
 }
+
+TEST_CASE("A four-legged motion walks an auto-rigged four-legged sprite", "[rig][mocap][creature]") {
+    const Document doc = rigged("dog72.png");
+    rigs::MotionKeysOptions o;
+    o.fps = 10;
+    auto r = rigs::keysFromMotion(doc, preset("quad-walk"), o);
+    REQUIRE(r);
+    const rigs::MotionKeysResult& res = r.value();
+    for (const auto& n : res.notes) UNSCOPED_INFO(n);
+    CHECK(res.count == 12);   // 1.2 s at 10 fps
+    // The dog faces right (its head is the highest art), so the legs on
+    // the left are hind legs; front pairs with front, hind with hind.
+    CHECK(res.camera.turn == 90);
+    int hind = 0, front = 0;
+    bool body = false;
+    for (const auto& [bone, what] : res.matched) {
+        CAPTURE(bone, what);
+        if (bone.find("thigh") != std::string::npos) {
+            const bool h = what.rfind("hind", 0) == 0;
+            (h ? hind : front) += 1;
+            CHECK((bone == "leg0 thigh" || bone == "leg1 thigh") == h);
+        }
+        body = body || (bone == "body" && what.rfind("back", 0) == 0);
+    }
+    CHECK(hind == 2);
+    CHECK(front == 2);
+    CHECK(body);
+
+    const Document& d = res.document;
+    REQUIRE(d.validate());
+    const Rig& rig = *d.rig();
+    const auto rest = rigs::solve(rig, RigPose{});
+    double ground = -1e9;
+    for (std::size_t i = 0; i < rig.bones.size(); ++i)
+        if (rig.bones[i].name.rfind("leg", 0) == 0) ground = std::max({ground, rest[i].tailY, rest[i].headY});
+    // Every leg swings, no foot goes below the ground, and each foot is
+    // lifted in some key and on the ground in another.
+    for (const char* leg : {"leg0", "leg1", "leg2", "leg3"}) {
+        INFO(leg);
+        const std::string thigh = std::string(leg) + " thigh", shin = std::string(leg) + " shin";
+        double lo = 1e9, hi = -1e9, footHi = 1e9, footLo = -1e9;
+        std::size_t shinIdx = 0;
+        for (std::size_t i = 0; i < rig.bones.size(); ++i)
+            if (rig.bones[i].name == shin) shinIdx = i;
+        for (const RigKey& k : rig.keys) {
+            const double t = turnOf(rig, k.pose, thigh.c_str());
+            lo = std::min(lo, t);
+            hi = std::max(hi, t);
+            const auto w = rigs::solve(rig, k.pose);
+            CHECK(w[shinIdx].tailY <= ground + 1.0);
+            footHi = std::min(footHi, w[shinIdx].tailY);
+            footLo = std::max(footLo, w[shinIdx].tailY);
+        }
+        CHECK(hi - lo > 0.2);
+        CHECK(footLo - footHi >= 1.5);
+    }
+    // The body stays near its drawn height (no crouch): the root moves at
+    // most a sixth of the legs' length.
+    for (const RigKey& k : rig.keys) CHECK(std::abs(k.pose.dy) <= 3.0);
+    auto baked = rigs::bakeKeys(d);
+    REQUIRE(baked);
+
+    // Bone pairs name humanoid joints: refused with a four-legged motion.
+    rigs::MotionKeysOptions pairs = o;
+    pairs.bones = {{"leg0 thigh", mocap::Bone::LThigh}};
+    CHECK_FALSE(rigs::keysFromMotion(doc, preset("quad-walk"), pairs));
+}

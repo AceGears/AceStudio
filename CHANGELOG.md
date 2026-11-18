@@ -94,6 +94,11 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **`rig motion` takes four-legged motion**: on a four-legged sprite rigged with auto-rig, a
+  four-legged motion (such as `quad-walk`) becomes pose keys: hind legs follow the motion's hind
+  legs and front legs its front legs, the back pitches with the motion, and the body rises and
+  sinks. The rig's facing comes from its art (the head end), and the legs are scaled by their
+  straight reach so a stiff-legged drawing is not made to crouch.
 - **Wings take 3D motion**: `retarget --body flyer` puts a humanoid motion's arms on a winged
   sprite drawn from the side. Each wing turns about its shoulder as the matching arm rises and
   falls (the wing as drawn is the top of the stroke), the hand end trails as the elbow bends, the

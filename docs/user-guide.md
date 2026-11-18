@@ -139,6 +139,8 @@ Add, Subtract, Difference), visibility and locks.
   `acestudio-cli retarget dog.png preset:quad-walk --out out`, or **Animation › Motion Studio**
   with the sprite open. The motion's legs are found by their shape, so joint names do not matter.
   The legs, the body's height, the back's rock and the head's and tail's rise and fall follow the motion.
+  To keep editable keys instead, auto-rig the sprite and run
+  `acestudio-cli rig motion dog_rig.acestudio preset:quad-walk --out dog_walk.acestudio`.
 - **Winged creatures**: a dragon, bird or bat drawn from the side can beat its wings to a motion's
   arms: `acestudio-cli retarget dragon.png preset:flap --body flyer --out out`, or choose
   **Wings** in Motion Studio's Body box. Each wing turns as the motion's arm rises and falls. If

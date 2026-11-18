@@ -426,6 +426,21 @@ if(NOT body STREQUAL "quadruped" OR NOT n_frames EQUAL 12 OR NOT n_legs EQUAL 4 
     message(FATAL_ERROR "retarget preset:quad-walk: expected 12 four-legged frames (1.2 s at 10 fps), hind legs first: ${LAST_OUT}")
 endif()
 run(1 retarget "${WORKDIR}/rigs/dog72.png" preset:walk --out "${WORKDIR}/presets")             # a humanoid has two legs
+# A four-legged motion onto an auto-rigged four-legged sprite (rig motion)
+file(WRITE "${WORKDIR}/rigs/dog.lua" [=[
+local s = ace.load_png("dog72.png")
+local d = ace.new_document(s.width + 16, s.height + 16)
+d:set_cel(0, 0, s, 8, 8)
+d:save("dog.acestudio")
+]=])
+run(0 run "${WORKDIR}/rigs/dog.lua")
+run(0 rig auto "${WORKDIR}/rigs/dog.acestudio" --layer 1 --out "${WORKDIR}/rigs/dog_rig.acestudio")
+run(0 --json rig motion "${WORKDIR}/rigs/dog_rig.acestudio" preset:quad-walk --fps 10 --out "${WORKDIR}/rigs/dog_walk.acestudio")
+string(JSON n_keys GET "${LAST_OUT}" keys)
+if(NOT n_keys EQUAL 12 OR NOT LAST_OUT MATCHES "hind leg" OR NOT LAST_OUT MATCHES "front leg")
+    message(FATAL_ERROR "rig motion preset:quad-walk: expected 12 keys driving hind and front legs: ${LAST_OUT}")
+endif()
+run(0 rig bake "${WORKDIR}/rigs/dog_walk.acestudio" --out "${WORKDIR}/rigs/dog_baked.acestudio")
 run(1 retarget "${WORKDIR}/rigs/dog72.png" preset:quad-walk --body six-legged --out "${WORKDIR}/presets")
 # Wings (--body flyer): the motion's arms beat a winged sprite's wings
 file(COPY "${TEXTURES}/../../data/anim/dragon128.png" DESTINATION "${WORKDIR}/rigs")
