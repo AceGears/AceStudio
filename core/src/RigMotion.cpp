@@ -189,8 +189,15 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
             else if (an->part == 0) thighOf[an->n] = i;
         }
     mocap::Camera drawnCam = drawnCamera(rig);
+    const Bone* headBone = rig.bone("head");
+    double legMid = 0;
+    for (const auto& [n, i] : thighOf) legMid += rest[i].headX;
+    if (!thighOf.empty()) legMid /= static_cast<double>(thighOf.size());
     if (quad && opt.facing != 0) {
         drawnCam.turn = opt.facing > 0 ? 90 : -90;
+    } else if (quad && headBone && !thighOf.empty() && std::abs(headBone->x - legMid) >= 1.0) {
+        // Auto-rig's head bone starts where the head leaves the body.
+        drawnCam.turn = headBone->x > legMid ? 90 : -90;
     } else if (quad && thighOf.size() >= 2) {
         // A four-legged side view faces the end its art rises highest at
         // (the head): the top rows of the parts bound to the root bone, from
@@ -361,6 +368,16 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
                 mt.fromBone = an->part == 0 ? MB::LThigh : MB::LShin;
                 mt.toBone = an->part == 0 ? MB::LShin : MB::LFoot;
                 mt.label = std::string(leg.hind ? "hind" : "front") + " leg " + m.joints[uz(mt.from)].name + " -> " + m.joints[uz(mt.to)].name;
+            } else if ((n == "head" && cm.head >= 0) || (n == "tail" && cm.tail >= 0)) {
+                // The head turns by the change of the line from the front
+                // legs' top to the head's end (a nod), the tail by the line
+                // from the hind legs' top to its tip.
+                const bool head = n == "head";
+                mt.from = cm.legs[head ? 2 : 0].joints.front();
+                mt.to = head ? cm.head : cm.tail;
+                mt.relative = true;
+                mt.label = std::string(head ? "head " : "tail ") + m.joints[uz(mt.from)].name + " -> " + m.joints[uz(mt.to)].name +
+                           " (turns by its change)";
             } else if ((n == "body" || n == "torso" || n == "spine") && cm.legs[0].joints.size() && cm.legs[2].joints.size()) {
                 mt.from = cm.legs[0].joints.front();
                 mt.to = cm.legs[2].joints.front();

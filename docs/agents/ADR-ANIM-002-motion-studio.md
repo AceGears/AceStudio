@@ -135,8 +135,20 @@ override the facing and the pairing. Verified: `tests/test_rig_motion.cpp` (ever
 angle in every key; facing left swaps hind and front; hand pairs win, near and far differ; a missing
 leg and leg pairs with a humanoid motion refused) and `tests/cli_smoke.cmake`, run locally.
 
-Not done: sideways head and tail swing, six legs, fins (`RigSwim`), head and tail bones on
-four-legged rigs (auto-rig would have to cut them from the body). Wings: section 3.7.
+Then: head and tail bones. `rigs::autoRig` on a four-legged side view reads the body part's
+outline per column; the back and belly rows are those most columns over the legs share. Going
+outwards from the legs, the first column whose bottom leaves the belly line starts the end; the
+columns before it that rise above the back join it above the back line (the top of a head, a
+raised tail). Each end over 2% of the body becomes a layer ("head", "tail") above the body, on a
+bone from the middle of its first column to its farthest pixel. `keysFromMotion` turns "head" by
+the change of the line from the front legs' top to the motion's head end, and "tail" from the hind
+legs' top to the tail tip (relative, like the back); the head bone also gives the facing.
+Verified: `tests/test_rig_motion.cpp` (the test dog's nose all in the head layer, the tail's
+colour in the tail layer, no pixel lost; both turn by more than 0.05 and less than 1 rad over the
+walk; the keys bake), run locally; the baked walk was looked at.
+
+Not done: sideways head and tail swing, curving necks and tails (they turn as one piece), six
+legs, fins (`RigSwim`). Wings: section 3.7.
 
 ### 3.7 Wings from a humanoid motion (stage 3c, second part, 2026-11-18)
 

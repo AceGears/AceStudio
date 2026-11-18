@@ -64,13 +64,16 @@ not been run.
   refused); legs cannot be paired by hand yet, and Motion Studio's bone table lists humanoid bones
   only. Sprites must be drawn from the side with their legs apart. `rig motion` takes four-legged
   motion on an auto-rigged four-legged sprite (since 2026-11-18; tested on the test dog): the legs,
-  the back's pitch and the body's height become keys. The rig's head and tail are not bones, so
-  they ride the body (auto-rig cuts no head or tail part). Feet keep their drawn angle to the
-  ground. Legs are paired by position (behind or ahead of the middle of the legs, then the first
+  the back's pitch and the body's height become keys. Auto-rig cuts the head and the tail of a
+  four-legged side view into parts of their own (since 2026-11-18), and the motion nods the head
+  and raises and lowers the tail; they are rigid parts turned at one joint, so a long neck or
+  tail does not curve, and the joint can show a notch when it turns far. The cut follows the
+  body's outline (where the belly line ends, and what rises above the back next to it), tested on
+  the test dog only; an end smaller than 2% of the body stays on the body. Feet keep their drawn
+  angle to the ground. Legs are paired by position (behind or ahead of the middle of the legs, then the first
   numbered as the near one); `--legs "0=hind-near,..."` pairs them by hand, and `--bones` pairs
-  are refused for four-legged motion. The facing is read from the highest body art (the head); a
-  sprite whose tail rises higher than its head is read backwards unless `--facing left|right` is
-  given. `--facing` and `--legs` are command line only (Lua, MCP and the app do not offer them).
+  are refused for four-legged motion. The facing is read from the head bone auto-rig cut (else
+  from the highest body art); `--facing left|right` overrides it. `--facing` and `--legs` are command line only (Lua, MCP and the app do not offer them).
 - **Wings from a 3D motion** (`retarget --body flyer`, ADR-ANIM-002 section 3.7): a humanoid
   motion's arms beat a winged side view's wings (each wing turns about its shoulder as its arm
   rises and falls, the hand end bends with the elbow, the body rises and sinks with the hips).

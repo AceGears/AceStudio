@@ -438,3 +438,71 @@ TEST_CASE("Four-legged rig motion: level feet, facing and leg pairs by hand", "[
     hand.legs = {{0, QL::HindNear}};
     CHECK_FALSE(rigs::keysFromMotion(doc, preset("walk"), hand));
 }
+
+TEST_CASE("Auto-rig cuts a four-legged sprite's head and tail, and a motion nods and swings them", "[rig][mocap][creature]") {
+    const Document doc = rigged("dog72.png");
+    const Rig& rig = *doc.rig();
+    const Bone* head = rig.bone("head");
+    const Bone* tail = rig.bone("tail");
+    REQUIRE(head);
+    REQUIRE(tail);
+    CHECK(head->parent == rig.bones.front().id);   // on the body
+    CHECK(tail->parent == rig.bones.front().id);
+    CHECK(head->x > tail->x);                      // the dog faces right
+    // The nose (the darkest colour) is all in the head's layer, the tail's
+    // colour in the tail's; the body keeps neither.
+    const Rgba8 nose{30, 20, 20, 255}, tailColour{90, 60, 35, 255};
+    auto layerOf = [&](BoneId b) {
+        for (const auto& [l, bone] : rig.bindings)
+            if (bone == b) return l;
+        return kNoLayer;
+    };
+    auto count = [&](LayerId l, Rgba8 c) {
+        const Cel* cel = doc.cel(l, 0);
+        int n = 0;
+        if (cel)
+            for (const Rgba8& p : cel->image.pixels()) n += p == c ? 1 : 0;
+        return n;
+    };
+    const LayerId headL = layerOf(head->id), tailL = layerOf(tail->id), bodyL = layerOf(rig.bones.front().id);
+    REQUIRE(headL != kNoLayer);
+    REQUIRE(tailL != kNoLayer);
+    CHECK(count(headL, nose) == 16);       // the 4x4 nose
+    CHECK(count(bodyL, nose) == 0);
+    CHECK(count(tailL, tailColour) >= 14);  // the 7x3 tail, its root column may stay on the body
+    // Nothing is lost: the parts together hold the sprite's pixels.
+    auto sprite = readPng(fixture("dog72.png"));
+    REQUIRE(sprite);
+    int drawn = 0, parts = 0;
+    for (const Rgba8& p : sprite.value().pixels()) drawn += p.a ? 1 : 0;
+    for (const auto& [l, b] : rig.bindings)
+        if (const Cel* c = doc.cel(l, 0))
+            for (const Rgba8& p : c->image.pixels()) parts += p.a ? 1 : 0;
+    CHECK(parts >= drawn);
+
+    // A four-legged motion turns them by the motion's head and tail.
+    rigs::MotionKeysOptions o;
+    o.fps = 10;
+    auto r = rigs::keysFromMotion(doc, preset("quad-walk"), o);
+    REQUIRE(r);
+    bool headMatched = false, tailMatched = false;
+    for (const auto& [b, what] : r.value().matched) {
+        headMatched = headMatched || (b == "head" && what.rfind("head", 0) == 0);
+        tailMatched = tailMatched || (b == "tail" && what.rfind("tail", 0) == 0);
+    }
+    CHECK(headMatched);
+    CHECK(tailMatched);
+    const Rig& keyed = *r.value().document.rig();
+    for (const char* bone : {"head", "tail"}) {
+        INFO(bone);
+        double lo = 1e9, hi = -1e9;
+        for (const RigKey& k : keyed.keys) {
+            const double t = turnOf(keyed, k.pose, bone);
+            lo = std::min(lo, t);
+            hi = std::max(hi, t);
+        }
+        CHECK(hi - lo > 0.05);   // it moves
+        CHECK(hi - lo < 1.0);    // a nod and a swing, not a spin
+    }
+    CHECK(rigs::bakeKeys(r.value().document));
+}
