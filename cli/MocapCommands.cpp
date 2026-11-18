@@ -261,6 +261,7 @@ int cmdRigMotion(const Args& a, Output& out) {
     o.inPlace = ma.inPlace;
     o.loop = ma.loop;
     o.mapOverrides = ma.mapOverrides;
+    o.armsFromDrawing = a.flags.count("absolute-arms") == 0;
     if (a.opt("first")) {
         const auto f = optInt(a, "first");
         if (!f || *f < 0) return out.fail(kUsage, "rig motion: --first expects a frame number");

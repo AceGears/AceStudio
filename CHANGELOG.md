@@ -87,7 +87,12 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   other key and baked (`--bake` bakes them at once). Auto-rig names are matched (body, legs, arms),
   as are bones named after skeleton joints (`LThigh`, ...); `--bones "rig bone=Joint"` pairs any
   other. IK chains put the feet where the motion's feet are, scaled to the rig, never below its
-  ground. Same timing, view and `--map` options as `retarget`.
+  ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
+  by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
+  `--absolute-arms` points them where the motion's arms point instead.
+- **Arm boxes for auto-rig** (`acestudio-cli rig auto --arms "x,y,w,h;x,y,w,h"`): arms the
+  silhouette analysis misses (it looks only beside the legs) can be marked as boxes; every pixel
+  inside a box becomes that arm's part, turning about where the box meets the body.
 - **Motion library** (ADR-ANIM-002 stage 3b). Six built-in motions made by code, so none carries
   a licence: idle, walk, run (loops) and jump, attack, hurt (played once). Motion Studio has a
   Library row (pick a preset, Save as Preset…, Remove); saved presets are BVH files in

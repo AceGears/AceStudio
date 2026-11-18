@@ -67,6 +67,14 @@ Stretch stretchFor(MB b) {
     return {MB::Hips, {MB::Neck}};
 }
 
+bool isArm(MB b) {
+    switch (b) {
+        case MB::LShoulder: case MB::LUpperArm: case MB::LForearm: case MB::LHand:
+        case MB::RShoulder: case MB::RUpperArm: case MB::RForearm: case MB::RHand: return true;
+        default: return false;
+    }
+}
+
 bool isLeg(MB b) {
     switch (b) {
         case MB::LThigh: case MB::LShin: case MB::LFoot: case MB::LToe:
@@ -110,6 +118,8 @@ struct Match {
     std::size_t bone = 0;    // index in rig.bones
     int from = -1, to = -1;  // joint indices in the motion
     MB fromBone = MB::Hips, toBone = MB::Hips;
+    bool relative = false;   // turns by the stretch's change (armsFromDrawing)
+    double ref = 0;          // the stretch's reference direction on screen
 };
 
 } // namespace
@@ -262,9 +272,11 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
                 break;
             }
         if (mt.to < 0 || len(sub(restW[uz(mt.to)], restW[uz(mt.from)])) < 1e-9) continue;
+        mt.relative = opt.armsFromDrawing && isArm(mt.fromBone);
         matchOf[i] = static_cast<int>(matches.size());
         matches.push_back(mt);
-        res.matched.emplace_back(b.name, std::string(mocap::toString(mt.fromBone)) + " -> " + std::string(mocap::toString(mt.toBone)));
+        res.matched.emplace_back(b.name, std::string(mocap::toString(mt.fromBone)) + " -> " + std::string(mocap::toString(mt.toBone)) +
+                                             (mt.relative ? " (from the drawn pose)" : ""));
     }
     if (matches.empty())
         return bad("No bone of the rig matches the motion's skeleton (auto-rig names like 'leg1 thigh', 'arm1', 'body', or joint names like 'LThigh'); "
@@ -322,16 +334,49 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
     Rig keyed = rig;
     std::erase_if(keyed.keys, [&](const RigKey& key) { return key.frame >= first && key.frame <= last; });
 
-    std::vector<double> prevWorld(rig.bones.size(), 0), prevTurn(rig.bones.size(), 0);
-    std::vector<bool> haveWorld(rig.bones.size(), false);
-    for (std::size_t i = 0; i < rig.bones.size(); ++i) prevWorld[i] = rig.bones[i].angle;
-    int endOn = 0;
+    // Every frame seen by the camera (travel removed for an in-place cycle).
+    std::vector<std::vector<Vec3>> seen;
+    std::vector<mocap::Projected> projected;
     for (int f = 0; f < frames; ++f) {
         std::vector<Vec3> w = world[uz(f)];
         const Vec3 travel{J(w, MB::Hips).x - hips0.x, 0, J(w, MB::Hips).z - hips0.z};
         if (opt.inPlace)
             for (Vec3& q : w) q = sub(q, travel);
-        const mocap::Projected pr = mocap::project(w, cam, forward, height, centre);
+        projected.push_back(mocap::project(w, cam, forward, height, centre));
+        seen.push_back(std::move(w));
+    }
+    // A stretch's direction on screen, or nothing when it is seen end-on.
+    auto direction = [&](const Match& mt, int f) -> std::optional<double> {
+        const mocap::Projected& pr = projected[uz(f)];
+        const double dx = pr.x[uz(mt.to)] - pr.x[uz(mt.from)], dy = pr.y[uz(mt.to)] - pr.y[uz(mt.from)];
+        const double full = len(sub(seen[uz(f)][uz(mt.to)], seen[uz(f)][uz(mt.from)])) / height;
+        if (full > 1e-9 && std::hypot(dx, dy) >= 0.15 * full) return std::atan2(dy, dx);
+        return std::nullopt;
+    };
+    // Arms from the drawing: the reference is the first frame of a one-shot
+    // (it starts at rest), else the average direction over the cycle.
+    for (Match& mt : matches) {
+        if (!mt.relative) continue;
+        double sx = 0, sy = 0;
+        const std::optional<double> d0 = direction(mt, 0);
+        if (!opt.loop && d0) {
+            mt.ref = *d0;
+            continue;
+        }
+        for (int f = 0; f < frames; ++f)
+            if (auto d = direction(mt, f)) {
+                sx += std::cos(*d);
+                sy += std::sin(*d);
+            }
+        mt.ref = std::hypot(sx, sy) > 1e-9 ? std::atan2(sy, sx) : 0;
+    }
+
+    std::vector<double> prevWorld(rig.bones.size(), 0), prevTurn(rig.bones.size(), 0);
+    std::vector<bool> haveWorld(rig.bones.size(), false);
+    for (std::size_t i = 0; i < rig.bones.size(); ++i) prevWorld[i] = rig.bones[i].angle;
+    int endOn = 0;
+    for (int f = 0; f < frames; ++f) {
+        const mocap::Projected& pr = projected[uz(f)];
 
         RigPose pose;
         const double hipAbove = J(world[uz(f)], MB::Hips).y - floorY;
@@ -341,10 +386,8 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
         // Where each matched stretch points on screen (held when seen end-on).
         std::vector<double> want(rig.bones.size(), 0);
         for (const Match& mt : matches) {
-            const double dx = pr.x[uz(mt.to)] - pr.x[uz(mt.from)], dy = pr.y[uz(mt.to)] - pr.y[uz(mt.from)];
-            const double full = len(sub(w[uz(mt.to)], w[uz(mt.from)])) / height;
-            if (std::hypot(dx, dy) >= 0.15 * full && full > 1e-9) {
-                prevWorld[mt.bone] = std::atan2(dy, dx);
+            if (const std::optional<double> d = direction(mt, f)) {
+                prevWorld[mt.bone] = mt.relative ? rig.bones[mt.bone].angle + wrap(*d - mt.ref) : *d;
                 haveWorld[mt.bone] = true;
             } else {
                 ++endOn;

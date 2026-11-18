@@ -74,6 +74,9 @@ struct Subject {
     // Arms: the parts of the upper body beside the legs (shoulder to hand).
     // A walk swings them against the legs.
     std::vector<IntRect> arms;
+    // Where each arm turns (its shoulder), same order as `arms`; missing
+    // entries turn about the middle of the box's top edge.
+    std::vector<std::pair<double, double>> armShoulders;
     // Lowest row of each foot (same order as `feet`). In a three-quarter view
     // the far foot stands a row or two higher: each foot keeps its own ground.
     std::vector<int> footBottoms;

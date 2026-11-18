@@ -44,6 +44,10 @@ not been run.
   legs) barely moves and holds its last direction. Side-view legs numbered 0 and 1 are taken as
   near and far; if they come out swapped, pair them with `--bones`. Wings, fins and other
   non-humanoid rigs match nothing and are refused. Frames added for the keys are empty until baked.
+- **Arm boxes for auto-rig** (`rig auto --arms`): CLI and core only (no way to draw the boxes in the
+  app yet; not in Lua or MCP). A box takes every pixel inside it, so torso or cape pixels in the box
+  move with the arm; keep boxes tight. The arm turns about where its pixels touch the body outside
+  the box, which is the shoulder only when the box is cut at the shoulder.
 - **Background threads at exit:** the app waits up to 5 s for thumbnail, library and MCP threads
   before shutting down (a likely cause of the UI audit's occasional access violation). The fix
   is built by CI; whether it ends those crashes is shown only by later CI runs.

@@ -49,6 +49,18 @@ std::optional<AutoRigBody> autoRigBodyFromString(const std::string& s);
 // legs, wings or fins): rig those by hand.
 Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, AutoRigBody body = AutoRigBody::Auto);
 
+// Arms the analysis missed (it looks only beside the legs), marked by hand.
+struct AutoRigOptions {
+    AutoRigBody body = AutoRigBody::Auto;
+    // Boxes in canvas pixels, at most 4, not overlapping. Every pixel of the
+    // layer inside a box becomes that arm's part, with a bone "armN" from
+    // its shoulder (where the box's pixels touch the body outside it) to
+    // its farthest pixel. Given boxes replace the arms the analysis found.
+    // For legged rigs only; a box with no pixels is refused.
+    std::vector<IntRect> arms;
+};
+Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, const AutoRigOptions& opt);
+
 // Draws every bound part layer's cel of `restFrame` (the parts as drawn at
 // rest) under `pose` into its cel on `frame` (which may be the same frame).
 // Each part turns about its bone's rest head and moves with it; a part with

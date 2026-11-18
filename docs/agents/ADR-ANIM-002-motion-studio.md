@@ -86,6 +86,11 @@ without the nuance of captured motion. A sprite drawn from the front does not ri
 | `rigs::keysFromMotion`: a BVH/glTF/preset motion sampled like retarget and keyed onto the document's rig. Matched bones point the way their stretch of the projected skeleton points (held when seen end-on); IK chains with both bones matched reach for the skeleton's foot (or toe), measured from the chain's top joint and scaled to the rig, clamped to the rig's ground; the root rises and sinks with the hips and travels unless in place. Keys on the keyed frames are replaced; frames are added at the end; the rest frame is never keyed. `rigs::drawnCamera` guesses the drawn view from the legs | `core/include/acestudio/core/RigMotion.h`, `core/src/RigMotion.cpp` | `tests/test_rig_motion.cpp`: walk on the auto-rigged rogue and knight (keys, matches, feet never below the ground, bake works), a side view swings the thighs out of step, a jump lifts the root, keys outside the range stay, refusals (no rig, rest frame, unknown bone, nothing matches), a hand-made rig matched by joint names and by `bones` pairs. Run locally and in CI |
 | CLI `rig motion` (with `--first`, `--bones`, `--bake` and retarget's timing, view and `--map` options, which now share one parser) | `cli/MocapCommands.cpp`, `cli/RigCommand.cpp` | `tests/cli_smoke.cmake` motion-keys section, replayed locally (rogue and knight): keys, first frame, frames added, refusals, `--bake` keeps the rest frame as rigged and changes a jump frame. Contact sheets of baked walks and jumps were looked at |
 
+Arms keep their drawn pose by default (`armsFromDrawing`): they turn by the change of their
+stretch from its average direction over a loop, or from the first frame of a one-shot, so a sprite
+drawn with raised weapons keeps them up instead of dropping them to the motion's hanging arms
+(checked in `tests/test_rig_motion.cpp`, and by eye on the rogue with arm boxes).
+
 Matching is by name: auto-rig names (`body`, `head`, `legN thigh|shin|foot`, `armN`), joint names
 (`LThigh`, ...), or `--bones` pairs. Not done: a button in Motion Studio or the Rig panel, Lua and
 MCP access, non-humanoid mapping (stage 3c).

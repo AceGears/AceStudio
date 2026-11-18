@@ -78,6 +78,13 @@ std::optional<AutoRigBody> autoRigBodyFromString(const std::string& s) {
 }
 
 Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, AutoRigBody kind) {
+    AutoRigOptions o;
+    o.body = kind;
+    return autoRig(doc, layer, frame, o);
+}
+
+Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, const AutoRigOptions& opt) {
+    const AutoRigBody kind = opt.body;
     if (doc.rig()) return bad("This document already has a rig. Remove it first to rig again.");
     const Layer* src = doc.layer(layer);
     if (!src || src->kind != LayerKind::Raster) return bad("Choose a raster layer to rig");
@@ -92,7 +99,45 @@ Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, Aut
     Image sprite(box.w, box.h);
     for (int y = 0; y < box.h; ++y)
         for (int x = 0; x < box.w; ++x) sprite.setPixel(x, y, whole.pixel(box.x + x, box.y + y));
-    const motion::Subject subj = motion::analyzeSubject(sprite);
+    motion::Subject subj = motion::analyzeSubject(sprite);
+    if (!opt.arms.empty()) {
+        if (opt.arms.size() > 4) return bad("At most 4 arm boxes");
+        if (kind == AutoRigBody::Wings || kind == AutoRigBody::Fins) return bad("Arm boxes are for legged rigs");
+        subj.arms.clear();
+        subj.armShoulders.clear();
+        for (std::size_t i = 0; i < opt.arms.size(); ++i) {
+            const IntRect& c = opt.arms[i];
+            const std::string which = "Arm box " + std::to_string(i + 1);
+            if (c.empty()) return bad(which + " is empty");
+            for (std::size_t j = 0; j < i; ++j)
+                if (!c.intersected(opt.arms[j]).empty()) return bad(which + " overlaps arm box " + std::to_string(j + 1));
+            // In the cropped sprite's coordinates.
+            const IntRect r = IntRect{c.x - box.x, c.y - box.y, c.w, c.h}.intersected({0, 0, box.w, box.h});
+            int count = 0;
+            double sx = 0, sy = 0;
+            int touch = 0;
+            for (int y = r.y; y < r.y + r.h; ++y)
+                for (int x = r.x; x < r.x + r.w; ++x) {
+                    if (sprite.pixel(x, y).a == 0) continue;
+                    ++count;
+                    // A pixel next to an opaque pixel outside the box joins the body.
+                    bool joins = false;
+                    for (const auto& [dx, dy] : {std::pair{1, 0}, std::pair{-1, 0}, std::pair{0, 1}, std::pair{0, -1}}) {
+                        const int nx = x + dx, ny = y + dy;
+                        const bool inside = nx >= r.x && ny >= r.y && nx < r.x + r.w && ny < r.y + r.h;
+                        if (!inside && nx >= 0 && ny >= 0 && nx < box.w && ny < box.h && sprite.pixel(nx, ny).a > 0) joins = true;
+                    }
+                    if (joins) {
+                        sx += x + 0.5;
+                        sy += y + 0.5;
+                        ++touch;
+                    }
+                }
+            if (count == 0) return bad(which + " holds no pixels of the layer");
+            subj.arms.push_back(r);
+            subj.armShoulders.emplace_back(touch ? sx / touch : r.x + r.w / 2.0, touch ? sy / touch : r.y + 0.5);
+        }
+    }
     // Legs first (the gait rig); else wings for a flyer, fins for a swimmer:
     // the same cuts the animator's part rig uses (ADR-ANIM-001).
     std::optional<motion::detail::GaitRig> built;
@@ -104,6 +149,7 @@ Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, Aut
         flight = motion::detail::buildFlightRig(sprite, subj, motion::detail::WingSpec{}, false);
     if (!built && !flight && (kind == AutoRigBody::Fins || (any && subj.body == motion::Body::Swimmer)))
         swim = motion::detail::buildSwimRig(sprite, subj, motion::SwimStyle::Auto);
+    if (!built && !opt.arms.empty()) return bad("Arm boxes need legs, and no legs were found; add the bones by hand instead.");
     if (!built && !flight && !swim) {
         const std::string reads = std::string("this sprite reads as ") + motion::toString(subj.body);
         switch (kind) {

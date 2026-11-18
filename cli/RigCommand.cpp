@@ -69,7 +69,18 @@ int rigAuto(const Args& a, Output& out) {
     std::string err;
     const auto layer = findLayer(doc.value(), *layerKey, err);
     if (!layer) return out.fail(kUsage, "rig auto: " + err);
-    auto r = rigs::autoRig(doc.value(), *layer, frame, *kind);
+    rigs::AutoRigOptions opt;
+    opt.body = *kind;
+    // --arms "x,y,w,h;x,y,w,h": arms the analysis missed, in canvas pixels.
+    if (auto arms = a.opt("arms"))
+        for (const std::string& item : splitOn(*arms, ';')) {
+            const auto v = splitOn(item, ',');
+            std::vector<std::optional<int>> n;
+            for (const std::string& s : v) n.push_back(parseInt(s));
+            if (v.size() != 4 || !n[0] || !n[1] || !n[2] || !n[3]) return out.fail(kUsage, "rig auto: --arms wants x,y,w,h boxes separated by ';', got '" + item + "'");
+            opt.arms.push_back({*n[0], *n[1], *n[2], *n[3]});
+        }
+    auto r = rigs::autoRig(doc.value(), *layer, frame, opt);
     if (!r) return out.fail(r.error());
     if (int code = writeProject(a, out, r.value().document, *outPath); code != kOk) return code;
     std::string human = "Rigged '" + layerName(doc.value(), *layer) + "' into " + *outPath + "\n";

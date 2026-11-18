@@ -191,7 +191,9 @@ std::optional<GaitRig> buildGaitRig(const Image& sprite, const Subject& subj, Bo
     std::vector<int>& armParts = out.armParts;
     for (std::size_t a = 0; a < subj.arms.size(); ++a) {
         const IntRect& r = subj.arms[a];
-        armParts.push_back(rig::addPart(rig, sprite, "arm" + std::to_string(a), armMask[a], {r.x + r.w / 2.0, r.y + 0.5}, 2));
+        const rig::Vec pivot = a < subj.armShoulders.size() ? rig::Vec{subj.armShoulders[a].first, subj.armShoulders[a].second}
+                                                            : rig::Vec{r.x + r.w / 2.0, r.y + 0.5};
+        armParts.push_back(rig::addPart(rig, sprite, "arm" + std::to_string(a), armMask[a], pivot, 2));
     }
     rig::inpaintHidden(rig, std::max(3, bb.h / 10));
     rig::prepare(rig);

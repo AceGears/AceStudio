@@ -238,3 +238,79 @@ TEST_CASE("Hand-made rigs are matched by joint names or explicit pairs", "[rig][
     }
     CHECK(hi - lo > 0.3);
 }
+
+TEST_CASE("Arm boxes rig arms the analysis missed", "[rig]") {
+    auto sprite = readPng(fixture("rogue64.png"));
+    REQUIRE(sprite);
+    auto doc = Document::create(sprite.value().width() + 40, sprite.value().height() + 20).value();
+    const LayerId hero = doc.addLayer("Hero").value();
+    REQUIRE(doc.setCel(hero, 0, Cel{sprite.value(), 20, 10}));
+    const Image before = doc.composite(0);
+
+    // The rogue holds a dagger up in each hand, away from the legs: the
+    // analysis finds no arms.
+    auto plain = rigs::autoRig(doc, hero, 0);
+    REQUIRE(plain);
+    CHECK_FALSE(plain.value().document.rig()->bone("arm0"));
+
+    rigs::AutoRigOptions o;
+    o.arms = {{31, 16, 14, 22}, {58, 26, 16, 22}};   // sprite (11,6) and (38,16), moved by (20,10)
+    auto r = rigs::autoRig(doc, hero, 0, o);
+    REQUIRE(r);
+    const Document& d = r.value().document;
+    const Rig& rig = *d.rig();
+    CHECK(d.composite(0) == before);
+    const Bone* a0 = rig.bone("arm0");
+    const Bone* a1 = rig.bone("arm1");
+    REQUIRE(a0);
+    REQUIRE(a1);
+    // Shoulders where the boxes meet the body: the inner edge of each box.
+    CHECK(a0->x > 38);
+    CHECK(a0->x < 46);
+    CHECK(a1->x > 57);
+    CHECK(a1->x < 66);
+    // The left arm's blade points up and out: its bone does too.
+    CHECK(std::sin(a0->angle) < 0);
+    CHECK(rig.parts(a0->id).size() == 1);
+
+    RigPose p;
+    p.turn[a0->id] = 0.5;
+    auto posed = rigs::bakePose(d, 0, 0, p);
+    REQUIRE(posed);
+    CHECK_FALSE(posed.value().composite(0) == before);
+
+    // A motion now swings the arms too.
+    auto keys = rigs::keysFromMotion(d, preset("walk"), {});
+    REQUIRE(keys);
+    int arms = 0;
+    for (const auto& m : keys.value().matched) arms += m.first.rfind("arm", 0) == 0 ? 1 : 0;
+    CHECK(arms == 2);
+    // The arms are drawn raised; the walk hangs its arms. From the drawing
+    // (the default) they swing about the raised pose; absolute, they drop.
+    auto meanArmTurn = [&](const rigs::MotionKeysResult& res) {
+        const Rig& kr = *res.document.rig();
+        double sum = 0;
+        for (const RigKey& k : kr.keys) sum += std::abs(turnOf(kr, k.pose, "arm0"));
+        return sum / static_cast<double>(kr.keys.size());
+    };
+    CHECK(meanArmTurn(keys.value()) < 0.6);
+    rigs::MotionKeysOptions absolute;
+    absolute.armsFromDrawing = false;
+    auto dropped = rigs::keysFromMotion(d, preset("walk"), absolute);
+    REQUIRE(dropped);
+    CHECK(meanArmTurn(dropped.value()) > 1.5);
+
+    // Refusals.
+    rigs::AutoRigOptions bad = o;
+    bad.arms = {{31, 16, 14, 22}, {40, 20, 10, 10}};
+    CHECK_FALSE(rigs::autoRig(doc, hero, 0, bad));   // overlapping
+    bad.arms = {{0, 0, 5, 5}};
+    CHECK_FALSE(rigs::autoRig(doc, hero, 0, bad));   // no pixels there
+    bad.arms = {{1, 1, 1, 1}, {3, 3, 1, 1}, {5, 5, 1, 1}, {7, 7, 1, 1}, {9, 9, 1, 1}};
+    CHECK_FALSE(rigs::autoRig(doc, hero, 0, bad));   // too many
+    bad.arms = {{31, 16, 14, 22}, {58, 26, 0, 22}};
+    CHECK_FALSE(rigs::autoRig(doc, hero, 0, bad));   // empty
+    bad = o;
+    bad.body = rigs::AutoRigBody::Wings;
+    CHECK_FALSE(rigs::autoRig(doc, hero, 0, bad));
+}

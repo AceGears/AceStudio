@@ -9,8 +9,10 @@
 //
 // For every frame the motion is projected by a camera, then:
 //  - each rig bone matched to a stretch of the skeleton (say "leg1 shin" to
-//    shin -> ankle) turns so it points the way that stretch points on screen;
-//    a stretch seen end-on keeps the previous frame's direction;
+//    shin -> ankle) turns so it points the way that stretch points on screen
+//    (arms, by default, turn by how much the stretch turns: see
+//    armsFromDrawing); a stretch seen end-on keeps the previous frame's
+//    direction;
 //  - an IK chain whose two bones are both matched puts its tip where the
 //    skeleton's does, measured from the chain's top joint and scaled to the
 //    rig's bone lengths (the rig keeps its proportions), never below the
@@ -43,6 +45,11 @@ struct MotionKeysOptions {
     bool inPlace = true;         // remove the root's travel
     bool loop = true;            // the last key is one step before the first repeats
     double amount = 1;           // scales turns and moves (0.25..2)
+    // Arms keep their drawn pose and turn by the motion's change from its
+    // average direction (a loop) or its first frame (played once), instead of
+    // pointing where the motion's arms point: drawn arms are often raised or
+    // holding something, motions mostly hang them.
+    bool armsFromDrawing = true;
     int first = -1;              // the first keyed frame; -1 = the one after the rest frame
     // Rig bone name -> skeleton joint, winning over the name match. A bone
     // paired with Hips points along the spine (hips -> neck).
