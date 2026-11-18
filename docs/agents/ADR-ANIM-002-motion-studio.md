@@ -110,9 +110,19 @@ MCP access, non-humanoid mapping (stage 3c).
 | `quad-walk` preset: a four-beat walk (left hind, left front, right hind, right front), the lowest toe on the floor every frame | `core/src/MotionLibrary.cpp` | tests: four legs found, every foot lifts, travels forward |
 | CLI `--body auto|biped|quadruped` on `retarget` and `directions`; JSON `body` and `legs`; Motion Studio picks four-legged motion for four-legged sprites | `cli/MocapCommands.cpp`, `app/src/MotionStudioPanel.cpp` | `tests/cli_smoke.cmake` (run locally with a placeholder GIF writer); the dialog is compiled by CI only. The test dog's walk sheet was looked at |
 
-Not done: back pitch, head and tail follow-through, leg overrides by name, six legs, wings and
-fins (`RigFlight`, `RigSwim`), spine and tail chains onto column bends, `rig motion` for
-four-legged rigs.
+Built later on 2026-11-18: back pitch and head and tail follow-through.
+`CreatureMap::head` and `tail` are the non-leg ends (above the floor band) furthest forward and
+furthest behind the hind legs in the first frame. Per frame, the hind and front leg tops' heights
+over the root (the back's pitch) and the head's height over the front tops and the tail's over
+the hind tops, each from its neutral (the loop's mean, or a one-shot's first frame), become rows
+(`backColumns`: `PartPose::colDy` of the body, straight between the leg pairs, the head and tail
+moves fading in beyond them); the leg hips follow their end. Side views only. Verified:
+`tests/test_creature_motion.cpp` (head and tail found by shape on `quad-walk`; the test dog's nose
+rises and falls at least 2 rows and more than with a stiff back, neck and tail, at most a quarter
+of its height; colours kept); the dog's walk sheet was looked at.
+
+Not done: sideways head and tail swing, leg overrides by name, six legs, wings and fins
+(`RigFlight`, `RigSwim`), `rig motion` for four-legged rigs.
 
 ### 3.4 Direction sets (stage 4, first part, 2026-11-18)
 

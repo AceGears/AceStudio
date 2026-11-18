@@ -155,3 +155,52 @@ TEST_CASE("A four-legged walk retargets onto a four-legged sprite", "[mocap][cre
     CHECK(bad.error().message.find("four legs") != std::string::npos);
     CHECK_FALSE(retarget(Image(8, 8), quad(), o));
 }
+
+TEST_CASE("The back, head and tail of a four-legged sprite follow the motion", "[mocap][creature][anim]") {
+    const Motion m = quad();
+    const CreatureMap cm = creatureMap(m);
+    REQUIRE(cm.hasFourLegs());
+    REQUIRE(cm.head >= 0);
+    REQUIRE(cm.tail >= 0);
+    CHECK(m.joints[uz(cm.head)].name.find("Head") != std::string::npos);
+    CHECK(m.joints[uz(cm.tail)].name.find("Tail") != std::string::npos);
+
+    // The same walk with a stiff back, neck and tail.
+    Motion stiff = m;
+    for (const char* name : {"Spine", "Chest", "Neck", "Tail", "Tail1"})
+        for (std::size_t j = 0; j < stiff.joints.size(); ++j)
+            if (stiff.joints[j].name == name)
+                for (int f = 0; f < stiff.frameCount; ++f)
+                    for (std::size_t c = 0; c < stiff.joints[j].channels.size(); ++c)
+                        stiff.values[uz(f) * uz(stiff.channelCount) + uz(stiff.joints[j].firstChannel) + c] = 0;
+    REQUIRE(creatureMap(stiff).hasFourLegs());
+
+    // How far the nose (its own colour) rises and falls over the loop.
+    const Image dog = dogSprite();
+    auto noseSpread = [&](const Motion& mo) {
+        RetargetOptions o;
+        o.body = motion::Body::Quadruped;
+        o.fps = 10;
+        auto r = retarget(dog, mo, o);
+        REQUIRE(r);
+        int lo = 1 << 20, hi = -1;
+        for (const Image& f : r.value().clip.frames) {
+            int top = -1;
+            for (int y = 0; y < f.height() && top < 0; ++y)
+                for (int x = 0; x < f.width(); ++x)
+                    if (f.pixel(x, y) == Rgba8{30, 20, 20, 255}) {
+                        top = y;
+                        break;
+                    }
+            REQUIRE(top >= 0);   // the nose is never lost
+            lo = std::min(lo, top);
+            hi = std::max(hi, top);
+        }
+        return hi - lo;
+    };
+    const int bobbing = noseSpread(m), still = noseSpread(stiff);
+    CAPTURE(bobbing, still);
+    CHECK(bobbing >= 2);
+    CHECK(bobbing > still);
+    CHECK(bobbing <= 12);   // a quarter of the sprite's height at most
+}

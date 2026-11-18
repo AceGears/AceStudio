@@ -169,6 +169,10 @@ struct CreatureMap {
     int root = -1;
     std::vector<CreatureLeg> legs;   // hind legs first, then front legs
     Vec3 forward{0, 0, 1};           // horizontal, from the hind legs to the front legs
+    // The other ends, found by shape too: the head is the end furthest
+    // forward (ahead of the middle), the tail the end furthest back (behind
+    // the hind legs). -1 when there is none.
+    int head = -1, tail = -1;
     std::vector<std::string> notes;
     bool hasFourLegs() const { return legs.size() == 4; }
 };

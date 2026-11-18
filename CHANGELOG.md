@@ -94,6 +94,12 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Four-legged bodies move with the motion**: the back now rocks with the motion (the front and
+  back of the body rise and sink with the source's shoulders and hips), and the drawn head and
+  tail bend up and down with the source's head and tail. Head and tail are found by shape, like
+  the legs: the end furthest forward and the end furthest behind the hind legs. The body bends
+  column by column in whole pixels, so its colours and outline stay as drawn. The `quad-walk`
+  preset now nods its head and lifts its tail.
 - **Motion Studio is a dockable panel** (ADR-ANIM-002): **Animation › Motion Studio** now opens a
   panel instead of a dialog that blocked the window. It opens floating the first time and docks
   like the other panels (Window › Motion Studio shows or hides it). **Use Current Sprite** puts

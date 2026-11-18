@@ -56,9 +56,11 @@ not been run.
   does not show or set it yet. Auto-rig does
   not make bent parts; it still cuts a separate part for each bone.
 - **Four-legged motion** (`retarget --body quadruped`, ADR-ANIM-002 section 3.5): tested on a
-  drawn test dog and the `quad-walk` preset only, not on captured animal motion. Only the legs and
-  the body's height follow the motion: the back does not pitch, and the head and tail stay as
-  drawn. Exactly four legs reaching the floor are needed (six-legged and winged skeletons are
+  drawn test dog and the `quad-walk` preset only, not on captured animal motion. The legs, the body's
+  height, the back's pitch and the head's and tail's rise and fall follow the motion (since
+  2026-11-18); sideways swings of the head and tail, and a head turning to look, are not shown
+  (a side view cannot show them without art drawn for it), and the head and tail bend only up and
+  down by moving columns, so a long neck or tail held at a steep angle shears rather than turns. Exactly four legs reaching the floor are needed (six-legged and winged skeletons are
   refused); legs cannot be paired by hand yet, and Motion Studio's bone table lists humanoid bones
   only. Sprites must be drawn from the side with their legs apart; `rig motion` does not take
   four-legged motion.

@@ -374,9 +374,11 @@ Motion quadWalk() {
         v[0] = 0;
         v[1] = reach;   // near; set exactly below
         v[2] = speed * t;
-        rot(spine, 1.5 * std::sin(2 * kPi * 2 * t / period), 2 * std::sin(2 * kPi * t / period), 0);
-        rot(neck, 3 * std::sin(2 * kPi * 2 * t / period + 0.8), 0, 0);
-        rot(tail, 10, 12 * std::sin(2 * kPi * t / period), 0);
+        // The back rocks a little with each step, the head nods twice a
+        // stride and the tail swings and lifts.
+        rot(spine, 3 * std::sin(2 * kPi * 2 * t / period), 2 * std::sin(2 * kPi * t / period), 0);
+        rot(neck, 8 * std::sin(2 * kPi * 2 * t / period + 0.8), 0, 0);
+        rot(tail, 10 - 8 * std::sin(2 * kPi * 2 * t / period + 1.6), 12 * std::sin(2 * kPi * t / period), 0);
         rot(tail1, 8, 10 * std::sin(2 * kPi * t / period - 0.7), 0);
         rot(chest, 0, -2 * std::sin(2 * kPi * t / period), 0);
     }

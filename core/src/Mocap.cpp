@@ -929,11 +929,71 @@ CreatureMap creatureMap(const Motion& m) {
     for (std::size_t i = 0; i < 4; ++i) (i < 2 ? hindC : frontC) = (i < 2 ? hindC : frontC) + horizontal(p0[uz(legs[i].joints.front())]) * 0.5;
     cm.forward = norm(frontC - hindC);
     if (len(cm.forward) < 1e-9) cm.forward = axis * sign;
+    // Head and tail: the ends (not in a leg, above the floor band) furthest
+    // forward and back.
+    double headAt = 0, tailAt = dot(hindC - c, cm.forward);
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!kids[i].empty() || static_cast<int>(i) == cm.root || rest[i].y <= floorBand) continue;
+        bool inLeg = false;
+        for (const CreatureLeg& l : legs)
+            inLeg = inLeg || std::find(l.joints.begin(), l.joints.end(), static_cast<int>(i)) != l.joints.end();
+        if (inLeg) continue;
+        const double along = dot(horizontal(p0[i]) - c, cm.forward);
+        if (along > headAt) {
+            headAt = along;
+            cm.head = static_cast<int>(i);
+        }
+        if (along < tailAt) {
+            tailAt = along;
+            cm.tail = static_cast<int>(i);
+        }
+    }
     cm.legs = std::move(legs);
     return cm;
 }
 
 namespace {
+
+// The rows each column of a four-legged body moves (rg::PartPose::colDy):
+// straight between the hind and front leg tops (`endDy` of the hind and front
+// ends, the back's pitch), carried on past them, plus the head's and tail's
+// own moves fading in over the stretch beyond the legs.
+std::vector<int> backColumns(const rg::Part& body, const motion::detail::GaitRig& g, const double endDy[4]) {
+    if (body.hiBox.empty()) return {};
+    const int x0 = body.hiBox.x + 1, w = body.hiBox.w - 2;
+    double hindX = 0, frontX = 0;
+    int nh = 0, nf = 0;
+    for (const auto& L : g.legs) {
+        (L.hind ? hindX : frontX) += L.hip.x;
+        ++(L.hind ? nh : nf);
+    }
+    if (nh == 0 || nf == 0) return {};
+    hindX /= nh;
+    frontX /= nf;
+    const double gap = frontX - hindX;
+    if (std::abs(gap) < 2) return {};
+    // How far the body reaches past each pair (in the facing direction).
+    const double headReach = std::max(1.0, g.dir > 0 ? x0 + w - frontX : frontX - x0);
+    const double tailReach = std::max(1.0, g.dir > 0 ? hindX - x0 : x0 + w - hindX);
+    auto smooth = [](double k) {
+        k = std::clamp(k, 0.0, 1.0);
+        return k * k * (3 - 2 * k);
+    };
+    std::vector<int> out(static_cast<std::size_t>(w));
+    bool any = false;
+    for (int k = 0; k < w; ++k) {
+        const double cx = x0 + k + 0.5;
+        const double t = std::clamp((cx - hindX) / gap, -0.5, 1.5);
+        double d = endDy[0] + (endDy[1] - endDy[0]) * t;
+        const double ahead = (cx - frontX) * g.dir, behind = (hindX - cx) * g.dir;
+        if (ahead > 0) d += endDy[2] * smooth(ahead / headReach);
+        if (behind > 0) d += endDy[3] * smooth(behind / tailReach);
+        out[static_cast<std::size_t>(k)] = iround(d);
+        any = any || out[static_cast<std::size_t>(k)] != 0;
+    }
+    if (!any) out.clear();
+    return out;
+}
 
 // A four-legged motion on a four-legged sprite's gait rig: each drawn leg
 // follows the source leg on its end (hind or front) and side (near or far);
@@ -1041,6 +1101,25 @@ Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, c
         const int used = opt.loop ? frames : 1;
         for (int f = 0; f < used; ++f) stand += (world[uz(f)][uz(root)].y - floorY) / used;
     }
+    // The back and its ends, as heights above the root: the hind and front
+    // leg tops (the back's pitch), the head over the front tops and the tail
+    // over the hind ones. Each is measured from its neutral (as the feet).
+    enum { kHindEnd, kFrontEnd, kHeadEnd, kTailEnd };
+    auto endHeight = [&](const std::vector<Vec3>& w, int which) {
+        const double hind = 0.5 * (w[uz(topOf(0))].y + w[uz(topOf(1))].y), front = 0.5 * (w[uz(topOf(2))].y + w[uz(topOf(3))].y);
+        switch (which) {
+        case kHindEnd: return hind - w[uz(root)].y;
+        case kFrontEnd: return front - w[uz(root)].y;
+        case kHeadEnd: return cm.head >= 0 ? w[uz(cm.head)].y - front : 0.0;
+        default: return cm.tail >= 0 ? w[uz(cm.tail)].y - hind : 0.0;
+        }
+    };
+    double endNeutral[4] = {0, 0, 0, 0};
+    {
+        const int used = opt.loop ? frames : 1;
+        for (int f = 0; f < used; ++f)
+            for (int e = 0; e < 4; ++e) endNeutral[e] += endHeight(world[uz(f)], e) / used;
+    }
     const double tiltCos = std::cos(std::clamp(cam.tilt, -90.0, 90.0) * kDeg);
     double legPx = 0;
     for (const auto& L : g.legs) legPx += (L.l1 + L.l2) / static_cast<double>(nLegs);
@@ -1058,6 +1137,13 @@ Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, c
         const std::vector<Vec3> w2 = jointPositions(m, start + f * step + m.frameTime);
         std::vector<rg::PartPose> pose = rig.rest();
         int dy = iround(kMean * tiltCos * (stand - (w[uz(root)].y - floorY)) / height * amount);
+        // Screen rows each end of the back moves (down is +), and the head
+        // and tail over them; side views only (a front view shows no pitch).
+        double endDy[4] = {0, 0, 0, 0};
+        if (!g.front)
+            for (int e = 0; e < 4; ++e)
+                endDy[e] = std::clamp(-kMean * tiltCos * (endHeight(w, e) - endNeutral[e]) / height * amount, -bb.h / 4.0, bb.h / 4.0);
+        auto legEndDy = [&](const motion::detail::GaitLeg& L) { return iround(endDy[L.hind ? kHindEnd : kFrontEnd]); };
         struct FootT {
             double x = 0, y = 0;
             bool planted = false;
@@ -1103,12 +1189,13 @@ Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, c
                 const double reach = 0.97 * (L.l1 + L.l2);
                 const double dx = ft[i].x - L.hip.x;
                 const double vertical = std::sqrt(std::max(0.0, reach * reach - dx * dx));
-                dy = std::max(dy, static_cast<int>(std::ceil((L.ankle.y - L.hip.y) - vertical - 1e-9)));
+                dy = std::max(dy, static_cast<int>(std::ceil((L.ankle.y - L.hip.y) - vertical - 1e-9)) - legEndDy(L));
             }
         if (g.front) dy = std::max(0, dy);
         dy = std::clamp(dy, -bb.h / 2, bb.h / 3);
         for (int part : {g.bodyPart, g.shoulderPart, g.pelvisPart})
             if (part >= 0) pose[uz(part)].dy = dy;
+        if (!g.front && g.bodyPart >= 0) pose[uz(g.bodyPart)].colDy = backColumns(rig.parts[uz(g.bodyPart)], g, endDy);
         const int maxShift = std::max(1, bb.h / 24);
         for (std::size_t i = 0; i < nLegs; ++i) {
             const auto& L = g.legs[i];
@@ -1128,7 +1215,7 @@ Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, c
                 shin.dx = foot.dx = sideDx;
                 continue;
             }
-            const rg::Vec hip{L.hip.x, L.hip.y + dy};
+            const rg::Vec hip{L.hip.x, L.hip.y + dy + legEndDy(L)};
             const rg::Vec ankle{t.x, t.planted ? L.ankle.y : t.y};
             const int bend = (L.hind ? -g.dir : g.dir) > 0 ? -1 : 1;
             const rg::Vec knee = rg::solveTwoBone(hip, ankle, L.l1, L.l2, bend);

@@ -137,7 +137,7 @@ Add, Subtract, Difference), visibility and locks.
   such as the built-in `quad-walk` or a BVH or glTF animal clip:
   `acestudio-cli retarget dog.png preset:quad-walk --out out`, or **Animation › Motion Studio**
   with the sprite open. The motion's legs are found by their shape, so joint names do not matter.
-  The legs and the body's height follow the motion; the head, back and tail keep their drawn pose.
+  The legs, the body's height, the back's rock and the head's and tail's rise and fall follow the motion.
 - **A motion in every direction** (command line only for now): put the views you drew in a
   folder, named by the way the character faces: `s.png` (towards you), `se.png`, `e.png` (facing
   right), `ne.png`, `n.png` (away from you), and so on, or `front.png`, `right.png`,
