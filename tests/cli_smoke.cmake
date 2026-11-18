@@ -240,6 +240,38 @@ if(NOT h_baked2 STREQUAL h_posed2 OR NOT h_baked0 STREQUAL h_rigged OR h_baked1 
     message(FATAL_ERROR "rig bake: frame 2 must match the keyed pose, frame 0 stay at rest, frame 1 lie between")
 endif()
 
+# Motion keys (RigMotion.h): a preset keyed onto the rig, then baked
+run(1 rig motion "${RR}" preset:walk)                                                   # no --out
+run(1 rig motion "${RP}" preset:walk --out "${RK}_m_bad.acestudio")                     # no rig
+run(2 rig motion "${RR}" preset:moonwalk --out "${RK}_m_bad.acestudio")                 # no such preset
+run(4 rig motion "${RR}" "${WORKDIR}/rigs/moves.fbx" --out "${RK}_m_bad.acestudio")     # FBX: convert first
+run(1 rig motion "${RR}" preset:walk --first 0 --out "${RK}_m_bad.acestudio")           # covers the rest frame
+run(1 rig motion "${RR}" preset:walk --bones "nobone=LThigh" --out "${RK}_m_bad.acestudio")
+run(1 rig motion "${RR}" preset:walk --bones "body=Elbow" --out "${RK}_m_bad.acestudio")
+run(1 rig motion "${RR}" preset:walk --animation 0 --out "${RK}_m_bad.acestudio")       # a preset holds one motion
+run(0 --json rig motion "${RR}" preset:walk --fps 8 --out "${RK}_walk.acestudio")
+string(JSON mk_keys GET "${LAST_OUT}" keys)
+string(JSON mk_first GET "${LAST_OUT}" first)
+string(JSON mk_added GET "${LAST_OUT}" framesAdded)
+string(JSON mk_thigh GET "${LAST_OUT}" matched "leg0 thigh")
+if(NOT mk_keys EQUAL 8 OR NOT mk_first EQUAL 1 OR NOT mk_added EQUAL 6 OR mk_thigh STREQUAL "")
+    message(FATAL_ERROR "rig motion walk: ${LAST_OUT}")
+endif()
+run(2 rig motion "${RR}" preset:walk --fps 8 --out "${RK}_walk.acestudio")              # refuses to overwrite
+run(0 --json rig motion "${RR}" preset:jump --fps 8 --view right --bake --out "${RK}_jump.acestudio")
+string(JSON mk_baked GET "${LAST_OUT}" baked)
+string(JSON mk_last GET "${LAST_OUT}" last)
+if(NOT mk_baked OR NOT mk_last EQUAL 8)
+    message(FATAL_ERROR "rig motion jump: ${LAST_OUT}")
+endif()
+foreach(f 0 4)
+    run(0 render "${RK}_jump.acestudio" --frame ${f} --out "${RK}_jump${f}.png")
+    file(SHA256 "${RK}_jump${f}.png" h_jump${f})
+endforeach()
+if(h_jump0 STREQUAL h_jump4 OR NOT h_jump0 STREQUAL h_rigged)
+    message(FATAL_ERROR "rig motion --bake: the rest frame must stay as rigged and a jump frame differ from it")
+endif()
+
 # ---- Vector shapes (schema 5): add, show, rasterise, clear
 file(MAKE_DIRECTORY "${WORKDIR}/vec")
 file(WRITE "${WORKDIR}/vec/make.lua" [=[

@@ -119,6 +119,13 @@ Add, Subtract, Difference), visibility and locks.
   eased pose). **Bake Keys** draws every frame from the first key to the last from the rest frame in
   one undo step; the rest frame itself is left alone. Keys move with their frames when you insert,
   move or delete frames. From the command line: `acestudio-cli rig key|unkey|rest|bake`.
+- **Motion onto your rig** (command line only for now): `acestudio-cli rig motion hero.acestudio
+  preset:walk --out hero_walk.acestudio` keys a motion (a preset, BVH or glTF/GLB file) onto the rig
+  you made or auto-rigged, one key per frame after the rest frame (frames are added if needed).
+  Open the result, adjust keys in the Rig panel and **Bake Keys**, or add `--bake` to draw them at
+  once. `--view right` (or `--turn`) picks the side the motion is seen from; it defaults to the view
+  the rig is drawn in. Bones are matched by their auto-rig names; pair others with
+  `--bones "upper leg=LThigh,lower leg=LShin"`.
 - **Motion presets:** in **Animation › Motion Studio (3D Motion)…**, the **Library** row offers ready motions
   (idle, walk, run, jump, attack, hurt) next to **Load Motion…**. Jump, attack and hurt play once;
   the others loop. **Save as Preset…** keeps the loaded motion (a BVH or glTF/GLB animation) in your

@@ -5,6 +5,9 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 ## [0.10.0] — 2026-11-01 — Premium AI game asset studio (unreleased)
 
 ### Fixed
+- The UI audit sometimes ended in an access violation after its last step: background threads
+  (Home page thumbnails, Library scans, MCP scripts) could still be running while the app shut
+  down. The app now waits for them (up to 5 s; 20 s in the audit) before exiting.
 - In-betweens of a bobbing figure (a run) no longer have holes inside the shape (dark specks in
   hair or clothes): enclosed gaps that neither key has are filled with the colour their pixels
   voted for. Gaps drawn in the keys stay open.
@@ -78,6 +81,13 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   Bake Keys draws them all from the rest frame in one undo step. Keys and the rest frame are saved
   in the rig (rig version 2; a rig without keys is still written as version 1) and follow frames
   that are inserted, moved or deleted.
+- **Motion onto a saved rig** (ADR-ANIM-002 section 3.3): `acestudio-cli rig motion <project>
+  <motion.bvh|.glb|.gltf|preset:NAME> --out <project>` turns a 3D motion into keys on the project's
+  rig, one per sampled frame (frames are added at the end as needed), which can be edited like any
+  other key and baked (`--bake` bakes them at once). Auto-rig names are matched (body, legs, arms),
+  as are bones named after skeleton joints (`LThigh`, ...); `--bones "rig bone=Joint"` pairs any
+  other. IK chains put the feet where the motion's feet are, scaled to the rig, never below its
+  ground. Same timing, view and `--map` options as `retarget`.
 - **Motion library** (ADR-ANIM-002 stage 3b). Six built-in motions made by code, so none carries
   a licence: idle, walk, run (loops) and jump, attack, hurt (played once). Motion Studio has a
   Library row (pick a preset, Save as Preset…, Remove); saved presets are BVH files in

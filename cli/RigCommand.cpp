@@ -260,7 +260,8 @@ int cmdRig(const Args& a, Output& out) {
     if (sub == "unkey") return rigUnkey(a, out);
     if (sub == "rest") return rigRest(a, out);
     if (sub == "bake") return rigBake(a, out);
-    return out.fail(kUsage, "rig: expected show, auto, pose, key, unkey, rest or bake");
+    if (sub == "motion") return cmdRigMotion(a, out);
+    return out.fail(kUsage, "rig: expected show, auto, pose, key, unkey, rest, bake or motion");
 }
 
 } // namespace acestudio::cli

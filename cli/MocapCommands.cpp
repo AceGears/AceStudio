@@ -7,9 +7,14 @@
 #include "acestudio/core/Mocap.h"
 #include "acestudio/core/MotionLibrary.h"
 #include "acestudio/core/PngCodec.h"
+#include "acestudio/core/ProjectIO.h"
+#include "acestudio/core/RigMotion.h"
+#include "acestudio/core/RigTools.h"
+#include "ProjectArgs.h"
 
 #include <cctype>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -53,44 +58,66 @@ Result<fs::path> libraryDir(const Args& a) {
     return mocap::defaultPresetDir();
 }
 
-} // namespace
-
-int cmdRetarget(const Args& a, Output& out) {
-    if (a.positional.size() != 3) return out.fail(kUsage, "retarget: expected a sprite PNG and a motion file (.bvh, .glb or .gltf)");
-    const auto outDir = a.opt("out");
-    if (!outDir) return out.fail(kUsage, "retarget: --out (a folder) is required");
-    const fs::path spritePath = a.positional[1], motionPath = a.positional[2];
-    // "preset:<name>": a built-in motion or one saved in the motion library.
-    const std::string motionArg = a.positional[2];
-    const bool preset = motionArg.rfind("preset:", 0) == 0;
-    const std::string presetName = preset ? motionArg.substr(7) : std::string();
+// The motion argument: a .bvh/.glb/.gltf file or "preset:<name>" (a built-in
+// motion or one saved in the motion library), with --animation for glTF.
+struct LoadedMotion {
+    mocap::Motion motion;
+    bool preset = false, oneShot = false;
+    std::string name;   // the preset name or the file's stem
+};
+std::optional<LoadedMotion> loadMotionArg(const Args& a, Output& out, const std::string& cmd, const std::string& arg, int& code) {
+    LoadedMotion lm;
+    lm.preset = arg.rfind("preset:", 0) == 0;
+    const fs::path motionPath = arg;
+    lm.name = lm.preset ? arg.substr(7) : motionPath.stem().string();
     std::string ext = motionPath.extension().string();
     for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    if (!preset && ext != ".bvh" && ext != ".glb" && ext != ".gltf") {
-        return out.fail(kUnsupported, "retarget: motion is read from BVH, glTF or GLB, or a preset (preset:walk; see 'motion list'). Convert FBX first "
-                                      "(Blender: File > Import > FBX, then File > Export > glTF 2.0 (.glb)).");
+    if (!lm.preset && ext != ".bvh" && ext != ".glb" && ext != ".gltf") {
+        code = out.fail(kUnsupported, cmd + ": motion is read from BVH, glTF or GLB, or a preset (preset:walk; see 'motion list'). Convert FBX first "
+                                            "(Blender: File > Import > FBX, then File > Export > glTF 2.0 (.glb)).");
+        return std::nullopt;
     }
     mocap::GltfOptions gopt;
     if (auto anim = a.opt("animation")) {
-        if (preset || ext == ".bvh") return out.fail(kUsage, "retarget: --animation is for glTF/GLB files (a BVH or a preset holds one motion)");
+        if (lm.preset || ext == ".bvh") {
+            code = out.fail(kUsage, cmd + ": --animation is for glTF/GLB files (a BVH or a preset holds one motion)");
+            return std::nullopt;
+        }
         gopt.animation = *anim;   // a name, or an index
     }
-    auto sprite = readPng(spritePath);
-    if (!sprite) return out.fail(sprite.error());
     Result<mocap::Motion> motion = Error{ErrorCode::Internal, "no motion"};
-    bool oneShot = false;
-    if (preset) {
+    if (lm.preset) {
         auto dir = libraryDir(a);
-        if (!dir) return out.fail(dir.error());
-        motion = mocap::loadPreset(presetName, dir.value());
+        if (!dir) {
+            code = out.fail(dir.error());
+            return std::nullopt;
+        }
+        motion = mocap::loadPreset(lm.name, dir.value());
         for (const auto& p : mocap::builtInPresets())
-            if (p.name == presetName) oneShot = !p.loops;
+            if (p.name == lm.name) lm.oneShot = !p.loops;
     } else {
         motion = mocap::loadMotion(motionPath, gopt);
     }
-    if (!motion) return out.fail(motion.error());
+    if (!motion) {
+        code = out.fail(motion.error());
+        return std::nullopt;
+    }
+    lm.motion = std::move(motion).value();
+    return lm;
+}
 
-    mocap::RetargetOptions o;
+// Timing, camera and mapping options shared by retarget and rig motion:
+// --view, --turn/--tilt/--roll/--fov/--perspective, --start, --length,
+// --amount, --fps, --frames, --travel, --no-loop, --map. `drawnTurn` gives
+// the turn to use when only tilt, roll or fov are given.
+struct MotionArgs {
+    std::optional<mocap::Camera> camera;
+    double start = 0, length = 0, amount = 1;
+    int fps = 12, frames = 0;
+    bool inPlace = true, loop = true;
+    std::vector<std::pair<mocap::Bone, std::string>> mapOverrides;
+};
+int readMotionArgs(const Args& a, Output& out, const std::string& cmd, bool oneShot, const std::function<double()>& drawnTurn, MotionArgs& o) {
     std::string err;
     if (auto v = a.opt("view")) {
         if (*v != "auto") {
@@ -98,23 +125,18 @@ int cmdRetarget(const Args& a, Output& out) {
             if (!o.camera) {
                 std::string names;
                 for (const auto& n : mocap::cameraPresetNames()) names += (names.empty() ? "" : ", ") + n;
-                return out.fail(kUsage, "retarget: --view expects auto or one of " + names);
+                return out.fail(kUsage, cmd + ": --view expects auto or one of " + names);
             }
         }
     }
     const auto turn = optDouble(a, "turn", err), tilt = optDouble(a, "tilt", err), roll = optDouble(a, "roll", err);
     const auto start = optDouble(a, "start", err), length = optDouble(a, "length", err), amount = optDouble(a, "amount", err);
     const auto fov = optDouble(a, "fov", err);
-    if (!err.empty()) return out.fail(kUsage, "retarget: " + err);
+    if (!err.empty()) return out.fail(kUsage, cmd + ": " + err);
     if (turn || tilt || roll || fov || a.flags.count("perspective")) {
         if (!o.camera) o.camera = mocap::Camera{};
-        if (!a.opt("view") || *a.opt("view") == "auto") {
-            // Turn defaults to the sprite's own view when only tilt/roll are given.
-            if (!turn) {
-                const motion::Subject s = motion::analyzeSubject(sprite.value());
-                o.camera->turn = s.frontView ? 0 : (s.facing < 0 ? -90 : 90);
-            }
-        }
+        // Turn defaults to the drawn view when only tilt/roll are given.
+        if ((!a.opt("view") || *a.opt("view") == "auto") && !turn) o.camera->turn = drawnTurn();
         if (turn) o.camera->turn = *turn;
         if (tilt) o.camera->tilt = *tilt;
         if (roll) o.camera->roll = *roll;
@@ -136,21 +158,54 @@ int cmdRetarget(const Args& a, Output& out) {
             const std::string item = mp->substr(s, comma == std::string::npos ? std::string::npos : comma - s);
             const std::size_t eq = item.find('=');
             const auto bone = eq == std::string::npos ? std::nullopt : mocap::boneFromString(item.substr(0, eq));
-            if (!bone) return out.fail(kUsage, "retarget: --map expects Bone=joint pairs (Bone: Hips, LThigh, RShin, LUpperArm, ...): '" + item + "'");
+            if (!bone) return out.fail(kUsage, cmd + ": --map expects Bone=joint pairs (Bone: Hips, LThigh, RShin, LUpperArm, ...): '" + item + "'");
             o.mapOverrides.emplace_back(*bone, item.substr(eq + 1));
             if (comma == std::string::npos) break;
             s = comma + 1;
         }
     }
+    return kOk;
+}
 
-    auto res = mocap::retarget(sprite.value(), motion.value(), o);
+} // namespace
+
+int cmdRetarget(const Args& a, Output& out) {
+    if (a.positional.size() != 3) return out.fail(kUsage, "retarget: expected a sprite PNG and a motion file (.bvh, .glb or .gltf)");
+    const auto outDir = a.opt("out");
+    if (!outDir) return out.fail(kUsage, "retarget: --out (a folder) is required");
+    const fs::path spritePath = a.positional[1];
+    int code = kOk;
+    auto loaded = loadMotionArg(a, out, "retarget", a.positional[2], code);
+    if (!loaded) return code;
+    auto sprite = readPng(spritePath);
+    if (!sprite) return out.fail(sprite.error());
+    const mocap::Motion& mo = loaded->motion;
+
+    MotionArgs ma;
+    const auto spriteTurn = [&] {
+        const motion::Subject s = motion::analyzeSubject(sprite.value());
+        return s.frontView ? 0.0 : (s.facing < 0 ? -90.0 : 90.0);
+    };
+    if (int c = readMotionArgs(a, out, "retarget", loaded->oneShot, spriteTurn, ma); c != kOk) return c;
+    mocap::RetargetOptions o;
+    o.camera = ma.camera;
+    o.start = ma.start;
+    o.length = ma.length;
+    o.amount = ma.amount;
+    o.fps = ma.fps;
+    o.frames = ma.frames;
+    o.inPlace = ma.inPlace;
+    o.loop = ma.loop;
+    o.mapOverrides = ma.mapOverrides;
+
+    auto res = mocap::retarget(sprite.value(), mo, o);
     if (!res) return out.fail(res.error());
     const mocap::RetargetResult& r = res.value();
 
     const fs::path dir = *outDir;
     std::error_code ec;
     fs::create_directories(dir, ec);
-    const std::string stem = spritePath.stem().string() + "_" + a.opt("name").value_or(preset ? presetName : motionPath.stem().string());
+    const std::string stem = spritePath.stem().string() + "_" + a.opt("name").value_or(loaded->name);
     const fs::path png = dir / (stem + ".png"), gif = dir / (stem + ".gif");
     const fs::path srcPng = dir / (stem + "_source.png"), srcGif = dir / (stem + "_source.gif");
     for (const fs::path& p : {png, gif, srcPng, srcGif})
@@ -162,7 +217,7 @@ int cmdRetarget(const Args& a, Output& out) {
     json mapped = json::object();
     for (int b = 0; b < mocap::kBoneCount; ++b) {
         const int j = r.map.joint[static_cast<std::size_t>(b)];
-        mapped[std::string(mocap::toString(static_cast<mocap::Bone>(b)))] = j >= 0 ? json(motion.value().joints[static_cast<std::size_t>(j)].name) : json(nullptr);
+        mapped[std::string(mocap::toString(static_cast<mocap::Bone>(b)))] = j >= 0 ? json(mo.joints[static_cast<std::size_t>(j)].name) : json(nullptr);
     }
     std::string text = "Wrote " + png.string() + " and " + gif.string() + " (" + std::to_string(r.clip.frames.size()) + " frames), and the source skeleton beside them\n";
     for (const auto& n : r.notes) text += "note: " + n + "\n";
@@ -177,6 +232,80 @@ int cmdRetarget(const Args& a, Output& out) {
                         {"bones", mapped},
                         {"notes", r.notes},
                         {"issues", chk.issues}},
+                       text);
+}
+
+// acestudio-cli rig motion <project> <motion|preset:NAME> --out <project>:
+// the motion as keys on the project's rig (RigMotion.h).
+int cmdRigMotion(const Args& a, Output& out) {
+    if (a.positional.size() != 4) return out.fail(kUsage, "rig motion: expected a project and a motion (.bvh, .glb, .gltf or preset:NAME)");
+    const auto outPath = a.opt("out");
+    if (!outPath) return out.fail(kUsage, "rig motion: --out is required");
+    int code = kOk;
+    auto loaded = loadMotionArg(a, out, "rig motion", a.positional[3], code);
+    if (!loaded) return code;
+    auto doc = loadProject(a.positional[2]);
+    if (!doc) return out.fail(doc.error());
+    if (!doc.value().rig()) return out.fail(kUsage, "rig motion: the project has no rig (rig auto, or rig one in the app)");
+    const Rig& rig = *doc.value().rig();
+
+    MotionArgs ma;
+    if (int c = readMotionArgs(a, out, "rig motion", loaded->oneShot, [&] { return rigs::drawnCamera(rig).turn; }, ma); c != kOk) return c;
+    rigs::MotionKeysOptions o;
+    o.camera = ma.camera;
+    o.start = ma.start;
+    o.length = ma.length;
+    o.amount = ma.amount;
+    o.fps = ma.fps;
+    o.frames = ma.frames;
+    o.inPlace = ma.inPlace;
+    o.loop = ma.loop;
+    o.mapOverrides = ma.mapOverrides;
+    if (a.opt("first")) {
+        const auto f = optInt(a, "first");
+        if (!f || *f < 0) return out.fail(kUsage, "rig motion: --first expects a frame number");
+        o.first = *f;
+    }
+    // --bones "rig bone=Joint,..."
+    if (auto bs = a.opt("bones"))
+        for (const std::string& item : splitOn(*bs, ',')) {
+            const auto eq = item.rfind('=');
+            const auto joint = eq == std::string::npos ? std::nullopt : mocap::boneFromString(item.substr(eq + 1));
+            if (!joint) return out.fail(kUsage, "rig motion: --bones expects rig bone=Joint pairs (Joint: Hips, LThigh, RShin, LUpperArm, ...): '" + item + "'");
+            o.bones.emplace_back(item.substr(0, eq), *joint);
+        }
+
+    auto res = rigs::keysFromMotion(doc.value(), loaded->motion, o);
+    if (!res) return out.fail(res.error());
+    const rigs::MotionKeysResult& r = res.value();
+    const int last = r.first + r.count - 1;
+    const bool bake = a.flags.count("bake") > 0;
+    std::optional<Document> baked;
+    if (bake) {
+        auto b = rigs::bakeKeys(r.document, r.first, last);
+        if (!b) return out.fail(b.error());
+        baked = std::move(b).value();
+    }
+    if (int c = writeProject(a, out, baked ? *baked : r.document, *outPath); c != kOk) return c;
+
+    json matched = json::object();
+    std::string text = "Keyed frames " + std::to_string(r.first) + "-" + std::to_string(last) + " from " + loaded->name +
+                       (r.framesAdded ? " (" + std::to_string(r.framesAdded) + " frames added)" : std::string()) + (bake ? ", baked," : "") +
+                       " into " + *outPath + "\n";
+    for (const auto& [bone, what] : r.matched) {
+        matched[bone] = what;
+        text += "  " + bone + ": " + what + "\n";
+    }
+    for (const auto& n : r.notes) text += "note: " + n + "\n";
+    return out.success({{"path", *outPath},
+                        {"first", r.first},
+                        {"last", last},
+                        {"keys", r.count},
+                        {"framesAdded", r.framesAdded},
+                        {"baked", bake},
+                        {"camera", {{"turn", r.camera.turn}, {"tilt", r.camera.tilt}, {"roll", r.camera.roll}, {"perspective", r.camera.perspective}}},
+                        {"matched", matched},
+                        {"notes", r.notes}},
                        text);
 }
 

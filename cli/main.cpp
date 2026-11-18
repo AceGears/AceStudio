@@ -168,7 +168,7 @@ std::optional<Args> parseArgs(int argc, char** argv, std::string& err) {
         else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot" || s == "--yes" || s == "--cpu" || s == "--rotate" ||
                  s == "--no-outline" || s == "--no-merge" || s == "--square" || s == "--keep-empty" || s == "--no-bob" ||
                  s == "--remove" || s == "--dry-run" || s == "--global" || s == "--lighting" || s == "--collision" || s == "--show-grid" ||
-                 s == "--perspective" || s == "--travel" || s == "--no-loop" || s == "--loop-back" || s == "--closed" ||
+                 s == "--perspective" || s == "--travel" || s == "--no-loop" || s == "--bake" || s == "--loop-back" || s == "--closed" ||
                  s == "--smooth")
             a.flags.insert(s.substr(2));
         else if (s == "-h" || s == "--help") { a.positional = {"help"}; return a; }

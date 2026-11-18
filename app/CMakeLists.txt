@@ -7,6 +7,7 @@ set(CMAKE_AUTORCC ON)
 add_executable(AceStudio WIN32
     resources/app.qrc
     src/main.cpp
+    src/WorkerThreads.h
     src/ui/Icons.h
     src/ui/Icons.cpp
     src/ui/Motion.h

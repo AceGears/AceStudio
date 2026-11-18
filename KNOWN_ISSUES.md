@@ -38,6 +38,15 @@ not been run.
   key shows, so big pose changes tear; the area check flags many such frames but not all (a limb
   can move without changing the area). Touching parts of the same colour can swap pixels; keep
   separate parts on separate layers. The work holds a second copy of the document while it runs.
+- **Motion onto a saved rig** (`rig motion`, ADR-ANIM-002 section 3.3): tested locally and in CI (core
+  and CLI smoke test); there is no button for it in the app yet (CLI only; not in Lua or MCP). Bones
+  turn to point the way the projected skeleton points, so a limb seen end-on (a front-view walk's
+  legs) barely moves and holds its last direction. Side-view legs numbered 0 and 1 are taken as
+  near and far; if they come out swapped, pair them with `--bones`. Wings, fins and other
+  non-humanoid rigs match nothing and are refused. Frames added for the keys are empty until baked.
+- **Background threads at exit:** the app waits up to 5 s for thumbnail, library and MCP threads
+  before shutting down (a likely cause of the UI audit's occasional access violation). The fix
+  is built by CI; whether it ends those crashes is shown only by later CI runs.
 - **Motion library** (ADR-ANIM-002 stage 3b): the presets, BVH writing and the saved-preset folder
   are tested locally and in CI, and the CLI is covered by the CLI smoke test; the Motion Studio
   Library row is built by CI only and has not been used on a PC. The presets are simple and

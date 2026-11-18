@@ -4,6 +4,7 @@
 #include "SingleInstance.h"
 #include "Accessibility.h"
 #include "Theme.h"
+#include "WorkerThreads.h"
 #include "selftest/UiAudit.h"
 #include "ui/Motion.h"
 
@@ -25,6 +26,7 @@
 #include <QMessageBox>
 #include <QTimer>
 
+#include <cstdio>
 #include <memory>
 
 namespace {
@@ -133,6 +135,12 @@ int main(int argc, char* argv[]) {
         files << ctx.recentProjects().first();
     if (!auditReport.isEmpty()) {
         const int rc = runUiAudit(window, auditReport, auditProject);
+        std::fprintf(stderr, "ui-audit: waiting for %d background thread(s)
+", WorkerThreads::running());
+        if (!WorkerThreads::waitIdle(20000)) std::fprintf(stderr, "ui-audit: background threads still running at exit
+");
+        std::fprintf(stderr, "ui-audit: exiting
+");
         Logger::instance().flush();
         return rc;
     }
@@ -152,6 +160,9 @@ int main(int argc, char* argv[]) {
         });
 
     const int rc = QApplication::exec();
+    // Thumbnails, library scans and MCP scripts finish (or notice the page is
+    // gone) before the application is torn down.
+    WorkerThreads::waitIdle(5000);
     Logger::instance().flush();
     return rc;
 }

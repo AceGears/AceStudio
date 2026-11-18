@@ -13,6 +13,7 @@ add_library(acestudio_core STATIC
     src/Mocap.cpp
     src/MocapGltf.cpp
     src/MotionLibrary.cpp
+    src/RigMotion.cpp
     src/PartRig.cpp
     src/RigFlight.cpp
     src/RigSwim.cpp

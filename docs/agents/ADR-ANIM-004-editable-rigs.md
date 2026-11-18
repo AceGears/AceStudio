@@ -48,7 +48,9 @@ The part rig of ADR-ANIM-001 is rebuilt from the sprite every time a clip is mad
 - A swimmer's body bending: auto-rig makes it one rigid part (the swim animator bends it column by column, which a saved rig cannot yet express).
 - Skinning (rows, columns, mesh) of a part across two bones: every part is rigid on one bone.
 - (Built on 2026-11-15: Lua `doc:rig()`, `set_rig`, `auto_rig`, `pose_rig`, `key_rig`, `unkey_rig`, `bake_rig`, and the MCP tools `rig_show` and `rig_edit`, which run the CLI. Lua is tested locally and in CI; the MCP tools are compiled, not called by a test.)
-- Retargeting BVH/glTF motion onto a saved rig (Motion Studio still builds its own rig per clip).
+- (Built on 2026-11-17, CLI only: `rig motion` keys a BVH/glTF/preset motion onto a saved rig; see
+  ADR-ANIM-002 section 3.3. Motion Studio still builds its own rig per clip, and the app has no
+  button for it yet.)
 
 ## Consequences
 

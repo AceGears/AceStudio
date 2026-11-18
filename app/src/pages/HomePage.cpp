@@ -3,6 +3,7 @@
 #include "../AppContext.h"
 #include "../QtBridge.h"
 #include "../Theme.h"
+#include "../WorkerThreads.h"
 #include "../ui/Icons.h"
 #include "../ui/Motion.h"
 
@@ -247,7 +248,7 @@ void HomePage::rebuildRecent() {
     // One background thread renders the missing thumbnails in order.
     QPointer<HomePage> self(this);
     std::weak_ptr<bool> alive = m_alive;
-    std::thread([self, alive, toRender] {
+    std::thread([token = WorkerThreads::token(), self, alive, toRender] {
         for (const QString& p : toRender) {
             if (alive.expired()) return;
             QImage img = renderThumbnail(p, 120);

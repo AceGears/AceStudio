@@ -45,6 +45,7 @@ add_executable(acestudio_core_tests
     test_palette_lock.cpp
     test_mocap.cpp
     test_motion_library.cpp
+    test_rig_motion.cpp
     test_world_map.cpp
     test_style_profile.cpp
     test_app_bridge.cpp
