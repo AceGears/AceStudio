@@ -5,6 +5,7 @@
 #include "acestudio/core/AnimCodec.h"
 #include "acestudio/core/FileUtil.h"
 #include "acestudio/core/Mocap.h"
+#include "acestudio/core/MotionLibrary.h"
 #include "acestudio/core/PngCodec.h"
 
 #include <cctype>
@@ -46,6 +47,12 @@ Status writeClip(const motion::Clip& c, const fs::path& png, const fs::path& gif
     return writeFileAtomic(gif, bytes.value());
 }
 
+// --library <folder>, else "<user data>/motions".
+Result<fs::path> libraryDir(const Args& a) {
+    if (auto d = a.opt("library")) return fs::path(*d);
+    return mocap::defaultPresetDir();
+}
+
 } // namespace
 
 int cmdRetarget(const Args& a, Output& out) {
@@ -53,20 +60,34 @@ int cmdRetarget(const Args& a, Output& out) {
     const auto outDir = a.opt("out");
     if (!outDir) return out.fail(kUsage, "retarget: --out (a folder) is required");
     const fs::path spritePath = a.positional[1], motionPath = a.positional[2];
+    // "preset:<name>": a built-in motion or one saved in the motion library.
+    const std::string motionArg = a.positional[2];
+    const bool preset = motionArg.rfind("preset:", 0) == 0;
+    const std::string presetName = preset ? motionArg.substr(7) : std::string();
     std::string ext = motionPath.extension().string();
     for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    if (ext != ".bvh" && ext != ".glb" && ext != ".gltf") {
-        return out.fail(kUnsupported, "retarget: motion is read from BVH, glTF or GLB. Convert FBX first "
+    if (!preset && ext != ".bvh" && ext != ".glb" && ext != ".gltf") {
+        return out.fail(kUnsupported, "retarget: motion is read from BVH, glTF or GLB, or a preset (preset:walk; see 'motion list'). Convert FBX first "
                                       "(Blender: File > Import > FBX, then File > Export > glTF 2.0 (.glb)).");
     }
     mocap::GltfOptions gopt;
     if (auto anim = a.opt("animation")) {
-        if (ext == ".bvh") return out.fail(kUsage, "retarget: --animation is for glTF/GLB files (a BVH holds one motion)");
+        if (preset || ext == ".bvh") return out.fail(kUsage, "retarget: --animation is for glTF/GLB files (a BVH or a preset holds one motion)");
         gopt.animation = *anim;   // a name, or an index
     }
     auto sprite = readPng(spritePath);
     if (!sprite) return out.fail(sprite.error());
-    auto motion = mocap::loadMotion(motionPath, gopt);
+    Result<mocap::Motion> motion = Error{ErrorCode::Internal, "no motion"};
+    bool oneShot = false;
+    if (preset) {
+        auto dir = libraryDir(a);
+        if (!dir) return out.fail(dir.error());
+        motion = mocap::loadPreset(presetName, dir.value());
+        for (const auto& p : mocap::builtInPresets())
+            if (p.name == presetName) oneShot = !p.loops;
+    } else {
+        motion = mocap::loadMotion(motionPath, gopt);
+    }
     if (!motion) return out.fail(motion.error());
 
     mocap::RetargetOptions o;
@@ -106,7 +127,7 @@ int cmdRetarget(const Args& a, Output& out) {
     o.fps = optInt(a, "fps").value_or(12);
     o.frames = optInt(a, "frames").value_or(0);
     o.inPlace = a.flags.count("travel") == 0;
-    o.loop = a.flags.count("no-loop") == 0;
+    o.loop = a.flags.count("no-loop") == 0 && !oneShot;   // jump, attack and hurt play once
     // --map Bone=joint,Bone=joint
     if (auto mp = a.opt("map")) {
         std::size_t s = 0;
@@ -129,7 +150,7 @@ int cmdRetarget(const Args& a, Output& out) {
     const fs::path dir = *outDir;
     std::error_code ec;
     fs::create_directories(dir, ec);
-    const std::string stem = spritePath.stem().string() + "_" + a.opt("name").value_or(motionPath.stem().string());
+    const std::string stem = spritePath.stem().string() + "_" + a.opt("name").value_or(preset ? presetName : motionPath.stem().string());
     const fs::path png = dir / (stem + ".png"), gif = dir / (stem + ".gif");
     const fs::path srcPng = dir / (stem + "_source.png"), srcGif = dir / (stem + "_source.gif");
     for (const fs::path& p : {png, gif, srcPng, srcGif})
@@ -157,6 +178,68 @@ int cmdRetarget(const Args& a, Output& out) {
                         {"notes", r.notes},
                         {"issues", chk.issues}},
                        text);
+}
+
+// acestudio-cli motion: the motion library (built-in presets and saved ones).
+int cmdMotion(const Args& a, Output& out) {
+    const std::string sub = a.positional.size() > 1 ? a.positional[1] : std::string();
+    auto dir = libraryDir(a);
+    if (!dir) return out.fail(dir.error());
+    if (sub == "list") {
+        if (a.positional.size() != 2) return out.fail(kUsage, "motion list: no arguments (--library <folder> lists another library)");
+        auto saved = mocap::savedPresets(dir.value());
+        if (!saved) return out.fail(saved.error());
+        json items = json::array();
+        std::string text = "Built in:\n";
+        for (const auto& p : mocap::builtInPresets()) {
+            items.push_back({{"name", p.name}, {"builtIn", true}, {"seconds", p.seconds}, {"loops", p.loops}, {"description", p.description}});
+            text += "  " + p.name + " - " + p.description + "\n";
+        }
+        text += "Saved in " + dir.value().string() + ":\n";
+        if (saved.value().empty()) text += "  (none)\n";
+        for (const auto& p : saved.value()) {
+            json item = {{"name", p.name}, {"builtIn", false}, {"seconds", p.seconds}, {"file", p.file.string()}};
+            if (!p.error.empty()) item["error"] = p.error;
+            items.push_back(item);
+            text += "  " + p.name + (p.error.empty() ? " - " + p.description : " - unreadable: " + p.error) + "\n";
+        }
+        return out.success({{"library", dir.value().string()}, {"presets", items}}, text);
+    }
+    if (sub == "export") {
+        if (a.positional.size() != 3) return out.fail(kUsage, "motion export: expected a preset name");
+        const auto file = a.opt("out");
+        if (!file) return out.fail(kUsage, "motion export: --out <file.bvh> is required");
+        auto m = mocap::loadPreset(a.positional[2], dir.value());
+        if (!m) return out.fail(m.error());
+        auto text = mocap::writeBvh(m.value());
+        if (!text) return out.fail(text.error());
+        std::error_code ec;
+        if (!a.force && fs::exists(*file, ec)) return out.fail(kIo, *file + " already exists (use --force)");
+        const std::string& t = text.value();
+        if (auto st = writeFileAtomic(*file, std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(t.data()), t.size())); !st)
+            return out.fail(st.error());
+        return out.success({{"file", *file}, {"frames", m.value().frameCount}, {"seconds", m.value().duration()}},
+                           "Wrote " + *file + " (" + std::to_string(m.value().frameCount) + " frames)\n");
+    }
+    if (sub == "save") {
+        if (a.positional.size() != 3) return out.fail(kUsage, "motion save: expected a motion file (.bvh, .glb or .gltf)");
+        const auto name = a.opt("name");
+        if (!name) return out.fail(kUsage, "motion save: --name <preset name> is required");
+        mocap::GltfOptions gopt;
+        if (auto anim = a.opt("animation")) gopt.animation = *anim;
+        auto m = mocap::loadMotion(a.positional[2], gopt);
+        if (!m) return out.fail(m.error());
+        if (auto st = mocap::savePreset(dir.value(), *name, m.value(), a.force); !st) return out.fail(st.error());
+        const fs::path file = dir.value() / (*name + ".bvh");
+        return out.success({{"name", *name}, {"file", file.string()}, {"frames", m.value().frameCount}, {"seconds", m.value().duration()}},
+                           "Saved preset '" + *name + "' as " + file.string() + "\n");
+    }
+    if (sub == "remove") {
+        if (a.positional.size() != 3) return out.fail(kUsage, "motion remove: expected a saved preset's name");
+        if (auto st = mocap::removePreset(dir.value(), a.positional[2]); !st) return out.fail(st.error());
+        return out.success({{"removed", a.positional[2]}}, "Removed preset '" + a.positional[2] + "'\n");
+    }
+    return out.fail(kUsage, "motion: expected list, export, save or remove");
 }
 
 } // namespace acestudio::cli

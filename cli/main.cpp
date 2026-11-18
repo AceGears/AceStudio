@@ -85,12 +85,18 @@ const char* kUsageText =
     "  effect <sprite.png> --out <folder> [--effect auto|fire|water|sway|flag|smoke|pulse] [--style campfire|torch|furnace|raging|magic] [--frames 8]\n"
     "         [--ms 90] [--amount 1] [--seed 1]\n"
     "                                  Procedural looping effect (palette kept): strip PNG + GIF\n"
-    "  retarget <sprite.png> <motion.bvh|.glb|.gltf> --out <folder> [--view auto|front|back|right|left|front-right|...]\n"
+    "  retarget <sprite.png> <motion.bvh|.glb|.gltf|preset:NAME> --out <folder> [--view auto|front|back|right|left|front-right|...]\n"
     "           [--turn DEG --tilt DEG --roll DEG [--perspective --fov 35]] [--start S --length S] [--fps 12 | --frames N]\n"
     "           [--amount 1] [--travel] [--no-loop] [--map Bone=joint,...] [--name walk] [--animation <index|name>]\n"
     "                                  3D skeletal motion (BVH, or a glTF/GLB animation: the first unless --animation)\n"
     "                                  onto a two-legged sprite's part rig: strip PNG + GIF,\n"
-    "                                  and the projected source skeleton beside it (<name>_source.png/.gif)\n"
+    "                                  and the projected source skeleton beside it (<name>_source.png/.gif);\n"
+    "                                  preset:NAME uses the motion library (built in: idle, walk, run, jump, attack, hurt)\n"
+    "  motion list [--library <folder>]  The motion library: built-in presets and saved ones\n"
+    "  motion export <preset> --out <file.bvh>   A preset as a BVH file\n"
+    "  motion save <motion.bvh|.glb|.gltf> --name <preset> [--animation <index|name>]\n"
+    "                                  Saves a motion to the library as BVH (--force replaces one)\n"
+    "  motion remove <preset>          Deletes a saved preset\n"
     "  rig show <project>              The project's rig: bones, parts and IK chains\n"
     "  rig auto <project> --layer <name|id> --out <project> [--frame N] [--as auto|legs|wings|fins]\n"
     "                                  Cut a sprite layer into part layers with bones (legs with IK, wings\n"
@@ -384,6 +390,7 @@ int main(int argc, char** argv) {
         if (cmd == "inbetween") return acestudio::cli::cmdInbetween(*args, out);
         if (cmd == "effect") return acestudio::cli::cmdEffect(*args, out);
         if (cmd == "retarget") return acestudio::cli::cmdRetarget(*args, out);
+        if (cmd == "motion") return acestudio::cli::cmdMotion(*args, out);
         if (cmd == "connect") return acestudio::cli::cmdConnect(*args, out);
         if (cmd == "map") return acestudio::cli::cmdMap(*args, out);
         if (cmd == "run") return acestudio::cli::cmdRun(*args, out);

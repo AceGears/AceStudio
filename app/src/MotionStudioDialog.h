@@ -72,6 +72,12 @@ public:
 private:
     void loadMotion();
     void loadMotionFile(const QString& path);
+    // The motion library (MotionLibrary.h).
+    void refreshPresets(const QString& select = QString());
+    void libraryChosen();
+    void saveAsPreset();
+    void removeSavedPreset();
+    void useMotion(::acestudio::mocap::Motion motion, const QString& name, bool oneShot);
     void presetChosen();
     void cameraEdited();
     void scheduleRetarget();
@@ -87,11 +93,15 @@ private:
     std::optional<::acestudio::mocap::Motion> m_motion;
     ::acestudio::mocap::BoneMap m_map;
     QString m_motionName;
+    bool m_oneShot = false;   // a built-in one-shot preset: retargeted without looping
     std::optional<::acestudio::mocap::RetargetResult> m_result;
     int m_frame = 0;
     bool m_syncing = false;
 
     QLabel* m_motionLabel = nullptr;
+    QComboBox* m_presets = nullptr;
+    QPushButton* m_savePreset = nullptr;
+    QPushButton* m_removePreset = nullptr;
     QComboBox* m_view = nullptr;
     QSlider* m_turn = nullptr;
     QSlider* m_tilt = nullptr;

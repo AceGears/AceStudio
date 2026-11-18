@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Stage 1 (audit) done. Stage 3 core (BVH import, mapping, camera, retarget onto the part rig) built and tested locally on 2026-11-15. A first Motion Studio window is in the app. Stage 3b glTF/GLB animation import built and tested locally (core); the motion library is not built. Everything else is planned below, not built. |
+| Status | Stage 1 (audit) done. Stage 3 core (BVH import, mapping, camera, retarget onto the part rig) built and tested locally on 2026-11-15. A first Motion Studio window is in the app. Stage 3b glTF/GLB animation import built and tested locally (core); the motion library was built on 2026-11-17 (section 3.2). Everything else is planned below, not built. |
 | Builds on | ADR-ANIM-001 (part rig: parts, hidden pixels, depth, whole-pixel/RotSprite rendering, two-bone IK) |
 | Reference | A "Bonebase"-style Aseprite extension: a 3D skeleton beside a 2D rig, with turn, tilt and roll. It was used for the concept only. No code or assets were taken from it. |
 
@@ -59,18 +59,32 @@ FBX is not parsed: its SDK is proprietary, and reverse-engineered readers are la
 | `acestudio-cli retarget` reads `.glb`/`.gltf`, `--animation <index|name>` | `cli/MocapCommands.cpp`, `cli/main.cpp` | Compiled locally with strict warnings only, not run |
 | Motion Studio: open filter `*.bvh *.glb *.gltf`; a file with several animations asks which one (`QInputDialog::getItem`) | `app/src/MotionStudioDialog.cpp` | **Not compiled or run locally** (no Qt here). CI compiles it |
 
-Not done in 3b: the motion library (presets, save-as-preset). glTF limits: morph weights are ignored; `KHR_animation_pointer` and other extension-defined targets are skipped; Motion time 0 is the animation's first keyframe; a sampled frame rate other than 30 can be set in `GltfOptions::fps` (not yet in the UI or CLI).
+glTF limits: morph weights are ignored; `KHR_animation_pointer` and other extension-defined targets are skipped; Motion time 0 is the animation's first keyframe; a sampled frame rate other than 30 can be set in `GltfOptions::fps` (not yet in the UI or CLI).
 
 Measured locally (zig clang -O2, 12 frames of a synthetic 30-frame walk): knight32 0.8 ms, rogue64 3–4 ms, and a 119×249 hero 41–50 ms per full retarget. The window re-runs it 120 ms after the last change, on the UI thread.
 
 The walk used in tests is generated in the test (`walkBvh`), so no third-party mocap is committed. A visual review of local renders (the rogue and the user's hero sheet, side and front) showed: the planted foot holds; the near and far feet keep their own ground rows; short legs step a few pixels and do not tear; front views lift the feet in turn. Arms were not found in these sprites, so arm retargeting is covered only by the code path, not by an image.
+
+### 3.2 Motion library (stage 3b, second part)
+
+| Piece | Where | Verified |
+|---|---|---|
+| Built-in presets made by code: idle, walk, run (loops, ending one frame before they repeat) and jump, attack, hurt (one-shot, starting and ending at rest). A Mixamo-named humanoid, Y up, facing +Z, 30 fps; the walk and run travel forward so retargeting finds the facing | `core/include/acestudio/core/MotionLibrary.h`, `core/src/MotionLibrary.cpp` | `tests/test_motion_library.cpp`: every preset maps to a full humanoid, keeps its timing, stays above the floor and retargets onto the rogue fixture; the walk alternates its feet with one planted; the jump leaves the floor. Run locally (zig clang) and in CI. Retargets onto the rogue and knight fixtures were looked at by eye |
+| `writeBvh`: depth-first joints, BVH-safe unique names, values in file order; refuses several roots, no frames, values BVH cannot hold | same | round trip of a preset and of a motion with awkward names and a non-depth-first order |
+| Saved presets: BVH files in `<user data>/motions`; names are 1–64 ASCII letters, digits, spaces, `-`, `_`, not a built-in or Windows-reserved name, which also keeps every lookup inside the folder | same | save, refuse a duplicate, overwrite, list (an unreadable file is listed with its error), load, refuse `../`, remove |
+| CLI: `retarget <sprite> preset:NAME [--library DIR]` (one-shot presets do not loop); `motion list`, `motion export <preset> --out f.bvh`, `motion save <file> --name N`, `motion remove N` | `cli/MocapCommands.cpp`, `cli/main.cpp` | `tests/cli_smoke.cmake` motion section, also replayed locally against a local CLI build (GIF writing is stubbed locally) |
+| Motion Studio: Library row (presets, Save as Preset…, Remove) | `app/src/MotionStudioDialog.*` | CI build only; not used on a PC |
+
+The presets are procedural: they show the motion's shape (stride, arm swing, crouch, tuck, strike)
+without the nuance of captured motion. A sprite drawn from the front does not rise in a retarget
+(the hips only drop for front views), so the jump reads best on side-view sprites.
 
 ## 4. Remaining work, staged (none of this is built, except where marked)
 
 | Stage | Scope | Notes |
 |---|---|---|
 | 2 | Saved, editable rigs (ADR-ANIM-001 schema 4): bone tree, add/remove/rename/reparent, joint limits, IK chains, mirror, lock, undo; GUI bone overlay on the canvas | Needs the chief architect's approval for the schema bump |
-| 3b | ~~glTF/GLB animation import~~ (built, section 3.1); a motion library with presets (idle, walk, run, jump, attack, ...) from CC0 sources or generated, plus save-as-preset | License each motion. Do not bundle CMU clips without checking terms. |
+| 3b | ~~glTF/GLB animation import~~ (built, section 3.1); ~~a motion library with presets and save-as-preset~~ (built, section 3.2) | More presets (crouch, climb, cast, die) and CC0 captured clips, each licensed |
 | 3c | Non-humanoid mapping: quadruped (four legs on `buildGaitRig`'s four-leg mode), wing chains onto `RigFlight` parts, spine/tail chains onto column bends | |
 | 4 | Multi-view: a direction set (front, back, side, three-quarter art) chosen by camera turn, with a turn clip between views; reference-view slots | This is where "new view" stops being an approximation |
 | 5 | AI assist (optional, worker or cloud only, with an explicit cost prompt): pose estimation of the sprite for auto-rig hints, hidden-surface inpainting of parts, view generation, text-to-motion (an LLM picks and parameterises library motions; no generative model where procedural motion works) | Respect the no-cost-without-approval rule |

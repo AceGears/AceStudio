@@ -314,6 +314,41 @@ run(0 vector add "${VD}_conformed.acestudio" --layer 1 --ellipse 2,2,20,20 --str
     --fill radial --fill-color "#ff00ff" --fill-color2 "#00ffff" --axis 11,11,20,11 --smooth --out "${VD}_locked2.acestudio")
 run(0 palette check "${VD}_locked2.acestudio")                                   # new pixels snapped
 run(0 palette unlock "${VD}_locked2.acestudio" --out "${VD}_unlocked.acestudio")
+
+# ---- Motion library: built-in presets, export, save, retarget a preset, remove
+set(MD "${WORKDIR}/motions")
+run(0 --json motion list)
+string(JSON n_presets LENGTH "${LAST_OUT}" presets)
+if(NOT n_presets EQUAL 6)
+    message(FATAL_ERROR "motion list: expected the 6 built-in presets: ${LAST_OUT}")
+endif()
+run(1 motion frobnicate)
+run(1 motion export walk)                                                       # no --out
+run(2 motion export moonwalk --out "${MD}/x.bvh")                              # no such preset
+run(0 motion export walk --out "${WORKDIR}/walk.bvh")
+run(2 motion export walk --out "${WORKDIR}/walk.bvh")                          # refuses to overwrite
+run(1 motion save "${WORKDIR}/walk.bvh")                                        # no --name
+run(1 motion save "${WORKDIR}/walk.bvh" --name walk)                            # a built-in name
+run(1 motion save "${WORKDIR}/walk.bvh" --name "../out")                        # not a preset name
+run(0 motion save "${WORKDIR}/walk.bvh" --name "my walk" --library "${MD}")
+run(1 motion save "${WORKDIR}/walk.bvh" --name "my walk" --library "${MD}")     # already saved
+run(0 motion save "${WORKDIR}/walk.bvh" --name "my walk" --library "${MD}" --force)
+run(0 --json motion list --library "${MD}")
+string(JSON n_presets LENGTH "${LAST_OUT}" presets)
+if(NOT n_presets EQUAL 7 OR NOT EXISTS "${MD}/my walk.bvh")
+    message(FATAL_ERROR "motion save: the saved preset is not listed: ${LAST_OUT}")
+endif()
+run(0 --json retarget "${WORKDIR}/rigs/rogue64.png" preset:jump --out "${WORKDIR}/presets" --fps 10)
+string(JSON n_frames GET "${LAST_OUT}" frames)
+if(n_frames LESS 8 OR NOT EXISTS "${WORKDIR}/presets/rogue64_jump.gif")
+    message(FATAL_ERROR "retarget preset:jump: expected about 10 frames (1 s at 10 fps) and a GIF: ${LAST_OUT}")
+endif()
+run(0 retarget "${WORKDIR}/rigs/rogue64.png" "preset:my walk" --library "${MD}" --out "${WORKDIR}/presets")
+run(2 retarget "${WORKDIR}/rigs/rogue64.png" preset:moonwalk --out "${WORKDIR}/presets")
+run(1 retarget "${WORKDIR}/rigs/rogue64.png" preset:walk --animation 0 --out "${WORKDIR}/presets")
+run(1 motion remove walk --library "${MD}")                                      # built in
+run(0 motion remove "my walk" --library "${MD}")
+run(2 motion remove "my walk" --library "${MD}")
 run(1 run "${WORKDIR}/scripts/make.lua" --save "${WORKDIR}/x.acestudio")   # --save needs --doc
 run(0 --json run "${WORKDIR}/scripts/make.lua" "#00ff00" --doc "${P}" --save "${WORKDIR}/lua_out.acestudio")
 string(JSON changed GET "${LAST_OUT}" documentChanged)

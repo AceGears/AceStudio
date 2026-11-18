@@ -119,6 +119,14 @@ Add, Subtract, Difference), visibility and locks.
   eased pose). **Bake Keys** draws every frame from the first key to the last from the rest frame in
   one undo step; the rest frame itself is left alone. Keys move with their frames when you insert,
   move or delete frames. From the command line: `acestudio-cli rig key|unkey|rest|bake`.
+- **Motion presets:** in **Animation › Motion Studio (3D Motion)…**, the **Library** row offers ready motions
+  (idle, walk, run, jump, attack, hurt) next to **Load Motion…**. Jump, attack and hurt play once;
+  the others loop. **Save as Preset…** keeps the loaded motion (a BVH or glTF/GLB animation) in your
+  library, as a BVH file in the `motions` folder of AceStudio's data folder, and **Remove** deletes a
+  saved one. The presets are simple, made-by-code motions: good for blocking out an animation, less
+  lifelike than captured motion. A sprite drawn from the front stays on the ground in a jump; a
+  side-view sprite rises. From the command line: `acestudio-cli retarget sprite.png preset:walk
+  --out folder` and `acestudio-cli motion list|export|save|remove`.
 
 ## 6. Export
 

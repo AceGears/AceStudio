@@ -78,6 +78,13 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   Bake Keys draws them all from the rest frame in one undo step. Keys and the rest frame are saved
   in the rig (rig version 2; a rig without keys is still written as version 1) and follow frames
   that are inserted, moved or deleted.
+- **Motion library** (ADR-ANIM-002 stage 3b). Six built-in motions made by code, so none carries
+  a licence: idle, walk, run (loops) and jump, attack, hurt (played once). Motion Studio has a
+  Library row (pick a preset, Save as Preset…, Remove); saved presets are BVH files in
+  `<user data>/motions`, and saving a glTF/GLB animation converts it to BVH.
+  `acestudio-cli retarget <sprite> preset:walk` uses a preset; `acestudio-cli motion list | export |
+  save | remove` manages the library (`--library <folder>` for another one). BVH can now be written
+  as well as read (`motion export`).
 - **Lua and MCP for rigs, vector shapes and the palette lock.** Lua: `doc:rig()`, `set_rig`,
   `auto_rig`, `pose_rig`, `key_rig`, `unkey_rig`, `bake_rig`, `vector_shapes`, `set_vector_shapes`,
   `rasterize_vectors`, `palette_locked`, `lock_palette`, `off_palette`, `conform_palette`

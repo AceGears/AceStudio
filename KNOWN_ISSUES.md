@@ -38,6 +38,12 @@ not been run.
   key shows, so big pose changes tear; the area check flags many such frames but not all (a limb
   can move without changing the area). Touching parts of the same colour can swap pixels; keep
   separate parts on separate layers. The work holds a second copy of the document while it runs.
+- **Motion library** (ADR-ANIM-002 stage 3b): the presets, BVH writing and the saved-preset folder
+  are tested locally and in CI, and the CLI is covered by the CLI smoke test; the Motion Studio
+  Library row is built by CI only and has not been used on a PC. The presets are simple and
+  procedural (no capture data), so they look mechanical next to real mocap. Sprites drawn from the
+  front never rise off the ground in a retarget (the jump moves the arms and legs but not the
+  height); side-view sprites do. Lua and MCP have no retarget or preset access yet.
 - **MCP tools for rigs, vector shapes and the palette lock** run the CLI commands that the CLI smoke
   test covers, but no test calls the tools themselves yet.
 - **Palette lock** (ADR-ANIM-006): the core is tested; painting, saving, the CLI and the Palette
