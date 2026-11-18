@@ -389,7 +389,7 @@ MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(par
 void MotionStudioPanel::setSprite(const Image& sprite, const QString& name) {
     m_sprite = sprite;
     m_name = name;
-    m_fourLegged = !m_sprite.empty() && ::acestudio::motion::analyzeSubject(m_sprite).body == ::acestudio::motion::Body::Quadruped;
+    m_fourLegged = !m_sprite.isNull() && ::acestudio::motion::analyzeSubject(m_sprite).body == ::acestudio::motion::Body::Quadruped;
     m_spriteLabel->setText(tr("Sprite: <b>%1</b> (%2 x %3)%4")
                                .arg(name.toHtmlEscaped())
                                .arg(m_sprite.width())

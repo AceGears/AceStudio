@@ -72,7 +72,7 @@ public:
     // The sprite the motion is put on (cropped to its pixels); the motion,
     // camera and timing are kept.
     void setSprite(const Image& sprite, const QString& name);
-    bool hasSprite() const { return !m_sprite.empty() && m_sprite.width() > 0; }
+    bool hasSprite() const { return !m_sprite.isNull(); }
 
 Q_SIGNALS:
     // "Use Current Sprite": the window answers with setSprite().
