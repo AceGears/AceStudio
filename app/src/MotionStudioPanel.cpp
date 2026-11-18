@@ -660,9 +660,9 @@ void MotionStudioPanel::retarget() {
     if (body == QLatin1String("biped")) o.body = ::acestudio::motion::Body::Biped;
     else if (body == QLatin1String("quadruped")) o.body = ::acestudio::motion::Body::Quadruped;
     else if (body == QLatin1String("flyer")) o.body = ::acestudio::motion::Body::Flyer;
+    else o.body = m_fourLegged ? ::acestudio::motion::Body::Quadruped : ::acestudio::motion::Body::Biped;
     o.wingLine = m_wingLine->value() / 100.0;
     o.wingMask = m_wingMask;
-    else o.body = m_fourLegged ? ::acestudio::motion::Body::Quadruped : ::acestudio::motion::Body::Biped;
     auto r = mc::retarget(m_sprite, *m_motion, o);
     if (!r) {
         m_result.reset();
