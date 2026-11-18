@@ -156,6 +156,32 @@ struct BoneMap {
 // anything still missing. `overrides` ("Bone=joint name") win.
 BoneMap autoMap(const Motion& m, const std::vector<std::pair<Bone, std::string>>& overrides = {});
 
+// ---- Four-legged skeletons (ADR-ANIM-002 stage 3c) -------------------------------
+
+// A leg found by shape: a chain of joints from the body down to a joint that
+// touches the floor in the rest pose.
+struct CreatureLeg {
+    std::vector<int> joints;     // from its top (the joint below the body) to the lowest joint
+    bool hind = false;
+    double length = 0;           // rest length along the chain
+};
+struct CreatureMap {
+    int root = -1;
+    std::vector<CreatureLeg> legs;   // hind legs first, then front legs
+    Vec3 forward{0, 0, 1};           // horizontal, from the hind legs to the front legs
+    // The other ends, found by shape too: the head is the end furthest
+    // forward (ahead of the middle), the tail the end furthest back (behind
+    // the hind legs). -1 when there is none.
+    int head = -1, tail = -1;
+    std::vector<std::string> notes;
+    bool hasFourLegs() const { return legs.size() == 4; }
+};
+// Names are not used: the legs are the chains ending near the floor (a toe
+// and heel under one foot count once), the front pair is the one the root
+// travels towards, or else the one nearer the highest other end (the head).
+// Anything but four legs is reported in `notes` and gives no legs.
+CreatureMap creatureMap(const Motion& m);
+
 // ---- Camera ----------------------------------------------------------------------
 
 // Angles in degrees, about the character (not the world):
@@ -190,6 +216,11 @@ struct RetargetOptions {
     // Nullopt = chosen from the sprite: front for a front view, the side the
     // sprite faces for a side view.
     std::optional<Camera> camera;
+    // The turn the sprite is drawn at (degrees, as Camera::turn), when it is
+    // known (a direction set's view). Nullopt = read from the sprite (front
+    // or side). It is the camera's turn when no camera is given, and the view
+    // the "approximate view" check measures from.
+    std::optional<double> drawnTurn;
     double start = 0;            // seconds into the motion
     double length = 0;           // seconds; 0 = to the end
     int fps = 12;                // frames sampled per second of motion
@@ -197,6 +228,9 @@ struct RetargetOptions {
     bool inPlace = true;         // remove the root's travel
     bool loop = true;
     double amount = 1;           // scales the motion's swing (0.25..2)
+    // Biped: a humanoid motion on a two-legged sprite. Quadruped: a
+    // four-legged motion (creatureMap) on a four-legged sprite; its legs
+    // follow the motion's legs and the body rises and sinks with it.
     motion::Body body = motion::Body::Biped;
     std::vector<std::pair<Bone, std::string>> mapOverrides;
 };
@@ -204,7 +238,8 @@ struct RetargetOptions {
 struct RetargetResult {
     motion::Clip clip;           // the sprite, posed frame by frame
     motion::Clip source;         // the projected 3D skeleton, same frames
-    BoneMap map;
+    BoneMap map;                 // humanoid bones (a four-legged retarget maps only Hips)
+    CreatureMap creature;        // four-legged retargets only
     Camera camera;
     bool approximateView = false;   // camera far from the sprite's drawn view
     std::vector<std::string> notes;

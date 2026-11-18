@@ -44,6 +44,33 @@ not been run.
   legs) barely moves and holds its last direction. Side-view legs numbered 0 and 1 are taken as
   near and far; if they come out swapped, pair them with `--bones`. Wings, fins and other
   non-humanoid rigs match nothing and are refused. Frames added for the keys are empty until baked.
+- **Motion Studio panel** (ADR-ANIM-002): compiled and opened by the CI UI audit only; it has not
+  been used on a PC since it became a dock. The panel does not follow the open document by
+  itself: press Use Current Sprite after switching sprites or frames. Its controls no longer have
+  Alt-key mnemonics (they would clash with the menu bar when docked), like the other panels.
+- **Parts that bend across a joint** (`rig skin`, ADR-ANIM-004): a part follows at most two bones
+  (its own and one child); there is no painted weight map, the split is a straight line through
+  the joint halfway between the two bones' directions. The bend is a linear blend, so a very sharp
+  bend (past about 120 degrees) pinches the inside of the joint. Command line, the MCP
+  `rig_edit` tool and Lua (`doc:rig()` / `set_rig` carry it in the rig's `skins`); the rig panel
+  does not show or set it yet. Auto-rig does
+  not make bent parts; it still cuts a separate part for each bone.
+- **Four-legged motion** (`retarget --body quadruped`, ADR-ANIM-002 section 3.5): tested on a
+  drawn test dog and the `quad-walk` preset only, not on captured animal motion. The legs, the body's
+  height, the back's pitch and the head's and tail's rise and fall follow the motion (since
+  2026-11-18); sideways swings of the head and tail, and a head turning to look, are not shown
+  (a side view cannot show them without art drawn for it), and the head and tail bend only up and
+  down by moving columns, so a long neck or tail held at a steep angle shears rather than turns. Exactly four legs reaching the floor are needed (six-legged and winged skeletons are
+  refused); legs cannot be paired by hand yet, and Motion Studio's bone table lists humanoid bones
+  only. Sprites must be drawn from the side with their legs apart; `rig motion` does not take
+  four-legged motion.
+- **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI and core only (no app page,
+  Lua or MCP yet). The art is chosen, never turned or drawn: a direction with no view drawn near it
+  shows the nearest view with the motion seen from the new direction, and is flagged. Mirrored
+  views swap the character's left and right (a sword hand, a shield); draw that side or use
+  `--no-mirror`. Views are read from file names only (no reference-view slots in a project yet).
+  The turn clip cuts between drawn views; nothing in between is drawn. Retarget reads each view's
+  legs as front or side, so three-quarter art moves like the nearer of the two.
 - **Arm boxes for auto-rig** (`rig auto --arms`): CLI and core only (no way to draw the boxes in the
   app yet; not in Lua or MCP). A box takes every pixel inside it, so torso or cape pixels in the box
   move with the arm; keep boxes tight. The arm turns about where its pixels touch the body outside
@@ -54,7 +81,11 @@ not been run.
   thumbnail, library and MCP threads before exit did not stop it, so the cause is still unknown.
   The audit now installs a crash report (`app/src/selftest/CrashReport.*`) that prints the
   exception, the thread and a symbolised stack into the test output, and MSVC builds write a PDB
-  for it. Not yet known whether the app itself can crash this way when a user quits it.
+  for it. On 2026-11-18 that report named the cause: a document view destroyed during shutdown
+  told the AI service (already deleted) that drawing had stopped
+  (`AiService::setDrawing`). Those connections now belong to the AI service, so they go with it;
+  this would also have hit a user quitting with a document open. Whether this was the only cause
+  is shown only by later CI runs.
 - **Motion library** (ADR-ANIM-002 stage 3b): the presets, BVH writing and the saved-preset folder
   are tested locally and in CI, and the CLI is covered by the CLI smoke test; the Motion Studio
   Library row is built by CI only and has not been used on a PC. The presets are simple and

@@ -46,7 +46,11 @@ int rigShow(const Args& a, Output& out) {
         if (b.limited) line << "  limits " << b.minAngle * 180 / kPi << ".." << b.maxAngle * 180 / kPi;
         if (b.locked) line << "  locked";
         std::string parts;
-        for (LayerId l : rig.parts(b.id)) parts += (parts.empty() ? "" : ", ") + layerName(d, l);
+        for (LayerId l : rig.parts(b.id)) {
+            parts += (parts.empty() ? "" : ", ") + layerName(d, l);
+            if (auto sk = rig.skins.find(l); sk != rig.skins.end())
+                if (const Bone* c = rig.bone(sk->second.bone)) parts += " (bends with " + c->name + ")";
+        }
         if (!parts.empty()) line << "  parts: " << parts;
         human += line.str() + "\n";
     }
@@ -249,6 +253,42 @@ int rigRest(const Args& a, Output& out) {
     return out.success({{"path", job->outPath}, {"restFrame", *frame}}, "Rest frame is now " + std::to_string(*frame) + "\n");
 }
 
+// --layer <name|id> --bone <child|none> [--blend PX]: bends a bound part
+// across the joint with a child of its bone, or makes it rigid again.
+int rigSkin(const Args& a, Output& out) {
+    int code = kOk;
+    auto job = openRigJob(a, out, "rig skin", code);
+    if (!job) return code;
+    const auto layerKey = a.opt("layer");
+    const auto boneName = a.opt("bone");
+    if (!layerKey || !boneName) return out.fail(kUsage, "rig skin: --layer and --bone are required");
+    std::string err;
+    const auto layer = findLayer(job->doc, *layerKey, err);
+    if (!layer) return out.fail(kUsage, "rig skin: " + err);
+    Rig rig = *job->doc.rig();
+    BoneId child = kNoBone;
+    if (*boneName != "none") {
+        const Bone* c = rig.bone(*boneName);
+        if (!c) return out.fail(kUsage, "rig skin: no bone '" + *boneName + "'");
+        child = c->id;
+    }
+    double blend = 0;
+    if (auto bl = a.opt("blend")) {
+        const auto v = parseDouble(*bl);
+        if (!v) return out.fail(kUsage, "rig skin: --blend wants a number of pixels");
+        blend = *v;
+    }
+    if (auto st = rigs::skinLayer(rig, *layer, child, blend); !st) return out.fail(st.error());
+    job->doc.setRig(rig);
+    if (auto st = job->doc.validate(); !st) return out.fail(kUsage, "rig skin: " + st.error().message);
+    if (int c = writeProject(a, out, job->doc, job->outPath); c != kOk) return c;
+    const std::string name = layerName(job->doc, *layer);
+    return out.success({{"path", job->outPath}, {"layer", name}, {"bone", child == kNoBone ? json(nullptr) : json(*boneName)},
+                        {"blend", blend}, {"skins", rig.skins.size()}},
+                       child == kNoBone ? "'" + name + "' is rigid again\n"
+                                        : "'" + name + "' now bends with '" + *boneName + "'\n");
+}
+
 // [--from F --to L]: default every frame from the first key to the last
 int rigBake(const Args& a, Output& out) {
     int code = kOk;
@@ -276,8 +316,9 @@ int cmdRig(const Args& a, Output& out) {
     if (sub == "unkey") return rigUnkey(a, out);
     if (sub == "rest") return rigRest(a, out);
     if (sub == "bake") return rigBake(a, out);
+    if (sub == "skin") return rigSkin(a, out);
     if (sub == "motion") return cmdRigMotion(a, out);
-    return out.fail(kUsage, "rig: expected show, auto, pose, key, unkey, rest, bake or motion");
+    return out.fail(kUsage, "rig: expected show, auto, pose, key, unkey, rest, bake, skin or motion");
 }
 
 } // namespace acestudio::cli

@@ -164,8 +164,12 @@ struct Builtin {
     const char* description;
     double seconds;
     bool loops;
-    Pose (*pose)(double);
+    Pose (*pose)(double);       // humanoid presets
+    Motion (*make)() = nullptr; // others (four-legged), made whole
+    bool fourLegged = false;
 };
+
+Motion quadWalk();
 
 Pose jump(double t) { return keyed(jumpKeys(), t); }
 Pose attack(double t) { return keyed(attackKeys(), t); }
@@ -178,6 +182,8 @@ constexpr Builtin kBuiltins[] = {
     {"jump", "Crouch, take off, tuck, land and recover (1 s, starts and ends at rest)", 1.0, false, jump},
     {"attack", "A right-hand punch with a step: guard, wind-up, strike, recover (0.6 s)", 0.6, false, attack},
     {"hurt", "Knocked back: recoil and recover (0.5 s)", 0.5, false, hurt},
+    {"quad-walk", "A four-legged walk: hind, front, hind, front, one stride in 1.2 s (for four-legged sprites)", 1.2, true, nullptr,
+     quadWalk, true},
 };
 
 const Builtin* findBuiltin(std::string_view name) {
@@ -238,6 +244,7 @@ Skeleton presetSkeleton() {
 }
 
 Motion generate(const Builtin& b) {
+    if (b.make) return b.make();
     Skeleton s = presetSkeleton();
     Motion& m = s.m;
     const int steps = static_cast<int>(std::lround(b.seconds * kFps));
@@ -277,6 +284,113 @@ Motion generate(const Builtin& b) {
         }
     }
     return std::move(s.m);
+}
+
+// ---- The four-legged preset --------------------------------------------------------
+
+// A four-legged animal, Y up, facing +Z, its back level: Hips (the pelvis,
+// the root) and a spine forward to the chest, a neck and head up and
+// forward, a tail back; hind legs under the hips and front legs under the
+// chest, each three bones and a toe end. Units as the humanoid (a dog about
+// 60 high at the back).
+constexpr double kQuadThigh = 20, kQuadShin = 18, kQuadCannon = 14;   // hind
+constexpr double kQuadUpper = 18, kQuadFore = 18, kQuadPastern = 12;  // front
+
+Motion quadWalk() {
+    Motion m;
+    auto add = [&](std::string name, int parent, Vec3 offset, bool root = false, bool end = false) {
+        Joint j;
+        j.name = end ? m.joints[uz(parent)].name + "_end" : std::move(name);
+        j.parent = parent;
+        j.offset = offset;
+        j.endSite = end;
+        if (root)
+            j.channels = {Channel::Xposition, Channel::Yposition, Channel::Zposition, Channel::Zrotation, Channel::Xrotation, Channel::Yrotation};
+        else if (!end)
+            j.channels = {Channel::Zrotation, Channel::Xrotation, Channel::Yrotation};
+        j.firstChannel = m.channelCount;
+        m.channelCount += static_cast<int>(j.channels.size());
+        m.joints.push_back(std::move(j));
+        return static_cast<int>(m.joints.size()) - 1;
+    };
+    const int hips = add("Hips", -1, {0, 0, 0}, true);
+    const int spine = add("Spine", hips, {0, 2, 16});
+    const int chest = add("Chest", spine, {0, 0, 18});
+    const int neck = add("Neck", chest, {0, 8, 6});
+    const int head = add("Head", neck, {0, 10, 6});
+    add({}, head, {0, 0, 12}, false, true);
+    const int tail = add("Tail", hips, {0, 2, -6});
+    const int tail1 = add("Tail1", tail, {0, -4, -10});
+    add({}, tail1, {0, -6, -8}, false, true);
+    // Legs: [0] left hind, [1] right hind, [2] left front, [3] right front
+    // (left is +X when facing +Z).
+    int upper[4], lower[4], foot[4], toes[4];
+    for (int i = 0; i < 4; ++i) {
+        const bool hind = i < 2;
+        const double sx = i % 2 == 0 ? 1 : -1;
+        const std::string pre = std::string(i % 2 == 0 ? "Left" : "Right") + (hind ? "Hind" : "Front");
+        upper[i] = add(pre + "Thigh", hind ? hips : chest, {6 * sx, hind ? -4.0 : -6.0, 0});
+        lower[i] = add(pre + "Shin", upper[i], {0, -(hind ? kQuadThigh : kQuadUpper), 0});
+        foot[i] = add(pre + "Foot", lower[i], {0, -(hind ? kQuadShin : kQuadFore), 0});
+        toes[i] = add(pre + "Toe", foot[i], {0, -(hind ? kQuadCannon : kQuadPastern), 0});
+        add({}, toes[i], {0, 0, 4}, false, true);
+    }
+
+    constexpr double period = 1.2, stride = 22;
+    // A lateral-sequence walk: left hind, left front, right hind, right front.
+    constexpr double phase[4] = {0.0, 0.5, 0.25, 0.75};
+    // Rest bends: the hind stifle forward and hock back; the front leg
+    // nearly straight. Lift bends the middle joint while the leg swings.
+    constexpr double restUpper[4] = {-25, -25, 6, 6}, restMid[4] = {50, 50, -4, -4}, lift[4] = {30, 30, 55, 55};
+    const double legLen = (kQuadThigh + kQuadShin + kQuadCannon + kQuadUpper + kQuadFore + kQuadPastern) / 2;
+    const double speed = 4 * legLen * std::sin(stride * kDeg) / period;
+    const int steps = static_cast<int>(std::lround(period * kFps));
+    m.frameCount = steps;
+    m.frameTime = 1.0 / kFps;
+    m.values.assign(uz(m.frameCount) * uz(m.channelCount), 0.0);
+    for (int f = 0; f < m.frameCount; ++f) {
+        const double t = static_cast<double>(f) / kFps;
+        double* v = &m.values[uz(f) * uz(m.channelCount)];
+        auto rot = [&](int joint, double x, double y, double z) {
+            const int c = m.joints[uz(joint)].firstChannel;
+            v[c] = z;
+            v[c + 1] = x;
+            v[c + 2] = y;
+        };
+        // How far below its top each leg's toe reaches (to stand the lowest on the floor).
+        double reach = 0;
+        for (int i = 0; i < 4; ++i) {
+            const bool hind = i < 2;
+            const double ph = 2 * kPi * (t / period + phase[i]);
+            const double a = restUpper[i] - stride * std::sin(ph);
+            const double b = restMid[i] + lift[i] * std::max(0.0, std::cos(ph));
+            rot(upper[i], a, 0, 0);
+            rot(lower[i], b, 0, 0);
+            rot(foot[i], -(a + b), 0, 0);   // the cannon or pastern stays upright
+            const double l1 = hind ? kQuadThigh : kQuadUpper, l2 = hind ? kQuadShin : kQuadFore, l3 = hind ? kQuadCannon : kQuadPastern;
+            const double top = 4;   // every leg starts 4 below the hips (the chest sits 2 above them, its legs 6 below it)
+            reach = std::max(reach, top + l1 * std::cos(a * kDeg) + l2 * std::cos((a + b) * kDeg) + l3);
+        }
+        v[0] = 0;
+        v[1] = reach;   // near; set exactly below
+        v[2] = speed * t;
+        // The back rocks a little with each step, the head nods twice a
+        // stride and the tail swings and lifts.
+        rot(spine, 3 * std::sin(2 * kPi * 2 * t / period), 2 * std::sin(2 * kPi * t / period), 0);
+        rot(neck, 8 * std::sin(2 * kPi * 2 * t / period + 0.8), 0, 0);
+        rot(tail, 10 - 8 * std::sin(2 * kPi * 2 * t / period + 1.6), 12 * std::sin(2 * kPi * t / period), 0);
+        rot(tail1, 8, 10 * std::sin(2 * kPi * t / period - 0.7), 0);
+        rot(chest, 0, -2 * std::sin(2 * kPi * t / period), 0);
+    }
+    // The lowest toe on the floor in every frame (the spine's sway moves the
+    // front legs a little, so the height is measured, not worked out).
+    for (int f = 0; f < m.frameCount; ++f) {
+        const std::vector<Vec3> w = jointPositions(m, f * m.frameTime);
+        double lowest = 1e300;
+        for (int i = 0; i < 4; ++i) lowest = std::min(lowest, w[uz(toes[i])].y);
+        m.values[uz(f) * uz(m.channelCount) + 1] -= lowest;
+    }
+    return m;
 }
 
 // ---- BVH writing -----------------------------------------------------------------
@@ -342,6 +456,7 @@ std::vector<PresetInfo> builtInPresets() {
         i.seconds = b.seconds;
         i.loops = b.loops;
         i.builtIn = true;
+        i.fourLegged = b.fourLegged;
         out.push_back(std::move(i));
     }
     return out;

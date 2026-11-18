@@ -810,11 +810,485 @@ Image drawSkeleton(const Motion& m, const BoneMap& map, const Camera& cam, doubl
     return img;
 }
 
+// ---- Four-legged skeletons -------------------------------------------------------
+
+CreatureMap creatureMap(const Motion& m) {
+    CreatureMap cm;
+    const std::size_t n = m.joints.size();
+    if (n == 0) {
+        cm.notes.push_back("the motion has no joints");
+        return cm;
+    }
+    const std::vector<Vec3> rest = restPositions(m);
+    std::vector<std::vector<int>> kids(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const int p = m.joints[i].parent;
+        if (p >= 0 && uz(p) < n) kids[uz(p)].push_back(static_cast<int>(i));
+        else if (p < 0 && cm.root < 0) cm.root = static_cast<int>(i);
+    }
+    if (cm.root < 0) {
+        cm.notes.push_back("the motion has no root joint");
+        return cm;
+    }
+    double minY = 1e300, maxY = -1e300;
+    for (const Vec3& p : rest) {
+        minY = std::min(minY, p.y);
+        maxY = std::max(maxY, p.y);
+    }
+    const double height = std::max(1e-6, maxY - minY);
+    // The highest rest point in each joint's subtree (passes until nothing
+    // changes, so any parent-before-child order works).
+    std::vector<double> top(n);
+    for (std::size_t i = 0; i < n; ++i) top[i] = rest[i].y;
+    for (std::size_t pass = 0; pass < n; ++pass) {
+        bool changed = false;
+        for (std::size_t i = 0; i < n; ++i) {
+            const int p = m.joints[i].parent;
+            if (p >= 0 && uz(p) < n && top[i] > top[uz(p)]) {
+                top[uz(p)] = top[i];
+                changed = true;
+            }
+        }
+        if (!changed) break;
+    }
+    const double floorBand = minY + 0.08 * height, footBand = minY + 0.25 * height;
+    std::vector<CreatureLeg> legs;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!kids[i].empty() || rest[i].y > floorBand) continue;
+        // Climb while the joint above belongs to the same leg: its other
+        // children (a heel beside a toe) stay near the floor. Never into the root.
+        std::vector<int> chain{static_cast<int>(i)};
+        int j = static_cast<int>(i);
+        while (chain.size() < 32) {
+            const int p = m.joints[uz(j)].parent;
+            if (p < 0 || m.joints[uz(p)].parent < 0) break;
+            bool sameLeg = true;
+            for (int c : kids[uz(p)])
+                if (c != j && top[uz(c)] > footBand) sameLeg = false;
+            if (!sameLeg) break;
+            chain.insert(chain.begin(), p);
+            j = p;
+        }
+        if (chain.size() < 3) continue;   // too short to be a jointed leg
+        CreatureLeg leg;
+        leg.joints = chain;
+        for (std::size_t k = 1; k < chain.size(); ++k) leg.length += len(rest[uz(chain[k])] - rest[uz(chain[k - 1])]);
+        bool merged = false;
+        for (CreatureLeg& other : legs)
+            if (other.joints.front() == leg.joints.front()) {
+                if (leg.joints.size() > other.joints.size()) other = leg;
+                merged = true;
+            }
+        if (!merged && leg.length > 0.1 * height) legs.push_back(std::move(leg));
+    }
+    if (legs.size() != 4) {
+        cm.notes.push_back("found " + std::to_string(legs.size()) + " leg(s) reaching the floor; a four-legged motion needs four");
+        return cm;
+    }
+    // Front and back lie along the longest horizontal spread of the leg tops,
+    // measured in the first frame (the rest pose leaves out the root's turn).
+    const std::vector<Vec3> p0 = jointPositions(m, 0), p1 = jointPositions(m, m.duration());
+    Vec3 c{};
+    for (const CreatureLeg& l : legs) c = c + horizontal(p0[uz(l.joints.front())]) * 0.25;
+    double sxx = 0, sxz = 0, szz = 0;
+    for (const CreatureLeg& l : legs) {
+        const Vec3 d = horizontal(p0[uz(l.joints.front())]) - c;
+        sxx += d.x * d.x;
+        sxz += d.x * d.z;
+        szz += d.z * d.z;
+    }
+    const double theta = 0.5 * std::atan2(2 * sxz, sxx - szz);
+    const Vec3 axis{std::cos(theta), 0, std::sin(theta)};
+    std::sort(legs.begin(), legs.end(), [&](const CreatureLeg& a, const CreatureLeg& b) {
+        return dot(p0[uz(a.joints.front())] - c, axis) < dot(p0[uz(b.joints.front())] - c, axis);
+    });
+    // Which end is the front: where the root travels, else the head's end.
+    double sign = 0;
+    const Vec3 travel = horizontal(p1[uz(cm.root)] - p0[uz(cm.root)]);
+    if (len(travel) > 0.1 * height && std::abs(dot(norm(travel), axis)) > 0.3) {
+        sign = dot(travel, axis) > 0 ? 1 : -1;
+    } else {
+        int head = -1;
+        for (std::size_t i = 0; i < n; ++i) {
+            if (!kids[i].empty() || static_cast<int>(i) == cm.root) continue;
+            bool inLeg = false;
+            for (const CreatureLeg& l : legs)
+                inLeg = inLeg || std::find(l.joints.begin(), l.joints.end(), static_cast<int>(i)) != l.joints.end();
+            if (!inLeg && (head < 0 || p0[i].y > p0[uz(head)].y)) head = static_cast<int>(i);
+        }
+        if (head >= 0 && std::abs(dot(p0[uz(head)] - c, axis)) > 1e-6) {
+            sign = dot(p0[uz(head)] - c, axis) > 0 ? 1 : -1;
+        } else {
+            sign = axis.z >= 0 ? 1 : -1;
+            cm.notes.push_back("the front could not be told from the back; +Z is taken as forward");
+        }
+    }
+    if (sign < 0) std::reverse(legs.begin(), legs.end());
+    for (std::size_t i = 0; i < 4; ++i) legs[i].hind = i < 2;
+    Vec3 hindC{}, frontC{};
+    for (std::size_t i = 0; i < 4; ++i) (i < 2 ? hindC : frontC) = (i < 2 ? hindC : frontC) + horizontal(p0[uz(legs[i].joints.front())]) * 0.5;
+    cm.forward = norm(frontC - hindC);
+    if (len(cm.forward) < 1e-9) cm.forward = axis * sign;
+    // Head and tail: the ends (not in a leg, above the floor band) furthest
+    // forward and back.
+    double headAt = 0, tailAt = dot(hindC - c, cm.forward);
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!kids[i].empty() || static_cast<int>(i) == cm.root || rest[i].y <= floorBand) continue;
+        bool inLeg = false;
+        for (const CreatureLeg& l : legs)
+            inLeg = inLeg || std::find(l.joints.begin(), l.joints.end(), static_cast<int>(i)) != l.joints.end();
+        if (inLeg) continue;
+        const double along = dot(horizontal(p0[i]) - c, cm.forward);
+        if (along > headAt) {
+            headAt = along;
+            cm.head = static_cast<int>(i);
+        }
+        if (along < tailAt) {
+            tailAt = along;
+            cm.tail = static_cast<int>(i);
+        }
+    }
+    cm.legs = std::move(legs);
+    return cm;
+}
+
+namespace {
+
+// The rows each column of a four-legged body moves (rg::PartPose::colDy):
+// straight between the hind and front leg tops (`endDy` of the hind and front
+// ends, the back's pitch), carried on past them, plus the head's and tail's
+// own moves fading in over the stretch beyond the legs.
+std::vector<int> backColumns(const rg::Part& body, const motion::detail::GaitRig& g, const double endDy[4]) {
+    if (body.hiBox.empty()) return {};
+    const int x0 = body.hiBox.x + 1, w = body.hiBox.w - 2;
+    double hindX = 0, frontX = 0;
+    int nh = 0, nf = 0;
+    for (const auto& L : g.legs) {
+        (L.hind ? hindX : frontX) += L.hip.x;
+        ++(L.hind ? nh : nf);
+    }
+    if (nh == 0 || nf == 0) return {};
+    hindX /= nh;
+    frontX /= nf;
+    const double gap = frontX - hindX;
+    if (std::abs(gap) < 2) return {};
+    // How far the body reaches past each pair (in the facing direction).
+    const double headReach = std::max(1.0, g.dir > 0 ? x0 + w - frontX : frontX - x0);
+    const double tailReach = std::max(1.0, g.dir > 0 ? hindX - x0 : x0 + w - hindX);
+    auto smooth = [](double k) {
+        k = std::clamp(k, 0.0, 1.0);
+        return k * k * (3 - 2 * k);
+    };
+    std::vector<int> out(static_cast<std::size_t>(w));
+    bool any = false;
+    for (int k = 0; k < w; ++k) {
+        const double cx = x0 + k + 0.5;
+        const double t = std::clamp((cx - hindX) / gap, -0.5, 1.5);
+        double d = endDy[0] + (endDy[1] - endDy[0]) * t;
+        const double ahead = (cx - frontX) * g.dir, behind = (hindX - cx) * g.dir;
+        if (ahead > 0) d += endDy[2] * smooth(ahead / headReach);
+        if (behind > 0) d += endDy[3] * smooth(behind / tailReach);
+        out[static_cast<std::size_t>(k)] = iround(d);
+        any = any || out[static_cast<std::size_t>(k)] != 0;
+    }
+    if (!any) out.clear();
+    return out;
+}
+
+// A four-legged motion on a four-legged sprite's gait rig: each drawn leg
+// follows the source leg on its end (hind or front) and side (near or far);
+// the body rises and sinks with the root.
+Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, const RetargetOptions& opt) {
+    RetargetResult res;
+    res.creature = creatureMap(m);
+    const CreatureMap& cm = res.creature;
+    if (!cm.hasFourLegs())
+        return Error(ErrorCode::InvalidArgument,
+                     "the motion's skeleton has no four legs standing on the floor" + (cm.notes.empty() ? std::string() : " (" + cm.notes.front() + ")"));
+    res.map.joint.fill(-1);
+    res.map[Bone::Hips] = cm.root;
+    const motion::Subject subj = motion::analyzeSubject(sprite);
+    auto built = motion::detail::buildGaitRig(sprite, subj, motion::Body::Quadruped);
+    if (!built || built->legs.size() < 2)
+        return Error(ErrorCode::InvalidArgument, "no legs were found in the sprite (a four-legged sprite needs at least two legs drawn apart)");
+    motion::detail::GaitRig& g = *built;
+    const rg::Rig& rig = g.rig;
+    const IntRect bb = subj.bounds;
+    const double amount = std::clamp(opt.amount, 0.25, 2.0);
+
+    const bool turnKnown = opt.drawnTurn && std::isfinite(*opt.drawnTurn);
+    const double drawnTurn = turnKnown ? *opt.drawnTurn : (g.front ? 0 : (g.dir < 0 ? -90 : 90));
+    res.camera = opt.camera ? *opt.camera : Camera{};
+    if (!opt.camera) res.camera.turn = drawnTurn;
+    const Camera& cam = res.camera;
+    {
+        double diff = std::abs(wrapAngle((cam.turn - drawnTurn) * kDeg)) / kDeg;
+        if (!turnKnown && g.front) diff = std::min(diff, std::abs(wrapAngle((cam.turn - 180) * kDeg)) / kDeg);
+        if (diff > 30 || std::abs(cam.tilt) > 40) {
+            res.approximateView = true;
+            res.notes.push_back("The sprite is drawn " +
+                                (turnKnown ? "at turn " + std::to_string(iround(drawnTurn)) + " degrees"
+                                           : std::string(g.front ? "from the front" : "from the side")) +
+                                "; this camera only changes how the motion is seen, the art is not turned. "
+                                "A view this far from the drawing needs art drawn for it (a reference view).");
+        }
+    }
+
+    const double start = std::clamp(opt.start, 0.0, m.duration());
+    const double span = opt.length > 0 ? std::min(opt.length, m.duration() - start) : m.duration() - start;
+    if (span <= 0) return Error(ErrorCode::InvalidArgument, "the time span is empty");
+    const int fps = std::clamp(opt.fps, 1, 60);
+    const int frames = std::clamp(opt.frames > 0 ? opt.frames : std::max(2, iround(span * fps)), 2, 240);
+    const double step = opt.loop ? span / frames : (frames > 1 ? span / (frames - 1) : 0);
+
+    const std::vector<Vec3> rest = restPositions(m);
+    double restMinY = 1e300, restMaxY = -1e300;
+    for (const Vec3& p : rest) {
+        restMinY = std::min(restMinY, p.y);
+        restMaxY = std::max(restMaxY, p.y);
+    }
+    const double height = std::max(1e-6, restMaxY - restMinY);
+    const int root = cm.root;
+    auto footOf = [&](int s) { return cm.legs[uz(s)].joints.back(); };
+    auto topOf = [&](int s) { return cm.legs[uz(s)].joints.front(); };
+
+    std::vector<std::vector<Vec3>> world;
+    double floorY = 1e300;
+    for (int f = 0; f < frames; ++f) {
+        std::vector<Vec3> w = jointPositions(m, start + f * step);
+        for (int s = 0; s < 4; ++s) floorY = std::min(floorY, w[uz(footOf(s))].y);
+        world.push_back(std::move(w));
+    }
+    const Vec3 root0 = world[0][uz(root)];
+    const Vec3 centre{root0.x, floorY, root0.z};
+    std::vector<Vec3> travel(uz(frames));
+    for (int f = 0; f < frames; ++f) travel[uz(f)] = horizontal(world[uz(f)][uz(root)] - root0);
+    std::vector<Projected> prs;
+    for (int f = 0; f < frames; ++f) {
+        std::vector<Vec3> w = world[uz(f)];
+        if (opt.inPlace)
+            for (Vec3& q : w) q = q - travel[uz(f)];
+        prs.push_back(project(w, cam, cm.forward, height, centre));
+    }
+    const Projected& restPr = prs[0];
+
+    // Drawn legs to source legs: same end, near to near.
+    const std::size_t nLegs = g.legs.size();
+    std::vector<int> src(nLegs, -1);
+    for (std::size_t i = 0; i < nLegs; ++i) {
+        const auto& L = g.legs[i];
+        const int a = L.hind ? 0 : 2, b = a + 1;
+        const bool aNearer = restPr.depth[uz(topOf(a))] >= restPr.depth[uz(topOf(b))];
+        int want = (L.nearLeg == aNearer) ? a : b;
+        for (std::size_t j = 0; j < i; ++j)
+            if (src[j] == want) want = want == a ? b : a;
+        src[i] = want;
+    }
+    // Pixels per screen unit, per leg; the neutral foot offset (the loop's
+    // average, or a one-shot's first frame) is where the foot is drawn.
+    std::vector<double> k(nLegs), neutral(nLegs, 0.0);
+    double kMean = 0;
+    for (std::size_t i = 0; i < nLegs; ++i) {
+        const auto& L = g.legs[i];
+        const double drawn = g.front ? std::max(1.0, L.ankle.y - L.hip.y) : L.l1 + L.l2;
+        k[i] = drawn / std::max(1e-6, cm.legs[uz(src[i])].length / height);
+        kMean += k[i] / static_cast<double>(nLegs);
+        const int used = opt.loop ? frames : 1;
+        for (int f = 0; f < used; ++f) neutral[i] += (prs[uz(f)].x[uz(footOf(src[i]))] - prs[uz(f)].x[uz(topOf(src[i]))]) / used;
+    }
+    double stand = 0;
+    {
+        const int used = opt.loop ? frames : 1;
+        for (int f = 0; f < used; ++f) stand += (world[uz(f)][uz(root)].y - floorY) / used;
+    }
+    // The back and its ends, as heights above the root: the hind and front
+    // leg tops (the back's pitch), the head over the front tops and the tail
+    // over the hind ones. Each is measured from its neutral (as the feet).
+    enum { kHindEnd, kFrontEnd, kHeadEnd, kTailEnd };
+    auto endHeight = [&](const std::vector<Vec3>& w, int which) {
+        const double hind = 0.5 * (w[uz(topOf(0))].y + w[uz(topOf(1))].y), front = 0.5 * (w[uz(topOf(2))].y + w[uz(topOf(3))].y);
+        switch (which) {
+        case kHindEnd: return hind - w[uz(root)].y;
+        case kFrontEnd: return front - w[uz(root)].y;
+        case kHeadEnd: return cm.head >= 0 ? w[uz(cm.head)].y - front : 0.0;
+        default: return cm.tail >= 0 ? w[uz(cm.tail)].y - hind : 0.0;
+        }
+    };
+    double endNeutral[4] = {0, 0, 0, 0};
+    {
+        const int used = opt.loop ? frames : 1;
+        for (int f = 0; f < used; ++f)
+            for (int e = 0; e < 4; ++e) endNeutral[e] += endHeight(world[uz(f)], e) / used;
+    }
+    const double tiltCos = std::cos(std::clamp(cam.tilt, -90.0, 90.0) * kDeg);
+    double legPx = 0;
+    for (const auto& L : g.legs) legPx += (L.l1 + L.l2) / static_cast<double>(nLegs);
+    if (legPx < 6) res.notes.push_back("The sprite's legs are only a few pixels long; steps will be small.");
+    const int travelPx = opt.inPlace ? 0 : iround(kMean * span * 4);
+    const int margin = iround(legPx) + bb.h / 2 + travelPx + 8;
+    const IntRect big{bb.x - margin, bb.y - margin, bb.w + 2 * margin, bb.h + 2 * margin};
+
+    std::vector<Image> imgs;
+    std::vector<std::vector<rg::PartPose>> poses;
+    int planted = 0, footFrames = 0;
+    for (int f = 0; f < frames; ++f) {
+        const Projected& pr = prs[uz(f)];
+        const std::vector<Vec3>& w = world[uz(f)];
+        const std::vector<Vec3> w2 = jointPositions(m, start + f * step + m.frameTime);
+        std::vector<rg::PartPose> pose = rig.rest();
+        int dy = iround(kMean * tiltCos * (stand - (w[uz(root)].y - floorY)) / height * amount);
+        // Screen rows each end of the back moves (down is +), and the head
+        // and tail over them; side views only (a front view shows no pitch).
+        double endDy[4] = {0, 0, 0, 0};
+        if (!g.front)
+            for (int e = 0; e < 4; ++e)
+                endDy[e] = std::clamp(-kMean * tiltCos * (endHeight(w, e) - endNeutral[e]) / height * amount, -bb.h / 4.0, bb.h / 4.0);
+        auto legEndDy = [&](const motion::detail::GaitLeg& L) { return iround(endDy[L.hind ? kHindEnd : kFrontEnd]); };
+        struct FootT {
+            double x = 0, y = 0;
+            bool planted = false;
+        };
+        std::vector<FootT> ft(nLegs);
+        for (std::size_t i = 0; i < nLegs; ++i) {
+            const auto& L = g.legs[i];
+            const int s = src[i];
+            const CreatureLeg& sl = cm.legs[uz(s)];
+            const double off = pr.x[uz(footOf(s))] - pr.x[uz(topOf(s))];
+            FootT& t = ft[i];
+            t.x = L.ankle.x + k[i] * (off - neutral[i]) * amount;
+            const double footUp = w[uz(footOf(s))].y - floorY;
+            t.y = L.ankle.y - std::max(0.0, k[i] * tiltCos * footUp / height * amount);
+            const double speed = len(horizontal(w2[uz(footOf(s))] - w[uz(footOf(s))])) / m.frameTime;
+            t.planted = footUp < 0.06 * sl.length && speed < 1.2 * sl.length;
+            ++footFrames;
+            planted += t.planted ? 1 : 0;
+        }
+        // Unless the body is in the air, the lowest foot carries it.
+        bool any = false;
+        for (const FootT& t : ft) any = any || t.planted;
+        if (!any) {
+            std::size_t low = 0;
+            double lowH = 1e300;
+            for (std::size_t i = 0; i < nLegs; ++i) {
+                const double h = w[uz(footOf(src[i]))].y - floorY;
+                if (h < lowH) {
+                    lowH = h;
+                    low = i;
+                }
+            }
+            if (lowH < 0.15 * cm.legs[uz(src[low])].length) {
+                ft[low].planted = true;
+                ++planted;
+            }
+        }
+        // Low enough for every planted foot to reach the ground.
+        if (!g.front)
+            for (std::size_t i = 0; i < nLegs; ++i) {
+                if (!ft[i].planted) continue;
+                const auto& L = g.legs[i];
+                const double reach = 0.97 * (L.l1 + L.l2);
+                const double dx = ft[i].x - L.hip.x;
+                const double vertical = std::sqrt(std::max(0.0, reach * reach - dx * dx));
+                dy = std::max(dy, static_cast<int>(std::ceil((L.ankle.y - L.hip.y) - vertical - 1e-9)) - legEndDy(L));
+            }
+        if (g.front) dy = std::max(0, dy);
+        dy = std::clamp(dy, -bb.h / 2, bb.h / 3);
+        for (int part : {g.bodyPart, g.shoulderPart, g.pelvisPart})
+            if (part >= 0) pose[uz(part)].dy = dy;
+        if (!g.front && g.bodyPart >= 0) pose[uz(g.bodyPart)].colDy = backColumns(rig.parts[uz(g.bodyPart)], g, endDy);
+        const int maxShift = std::max(1, bb.h / 24);
+        for (std::size_t i = 0; i < nLegs; ++i) {
+            const auto& L = g.legs[i];
+            const FootT& t = ft[i];
+            auto& thigh = pose[uz(L.thigh)];
+            auto& shin = pose[uz(L.shin)];
+            auto& foot = pose[uz(L.foot)];
+            const int lift = std::max(0, iround(L.ankle.y - t.y));
+            const int liftNow = t.planted ? 0 : lift;
+            if (g.front) {
+                const double thighRows = std::max(1.0, L.knee.y - L.hip.y);
+                const int lf = std::min(liftNow, std::max(0, static_cast<int>(thighRows) - 1 - dy));
+                const int sideDx = std::clamp(iround(t.x - L.ankle.x), -maxShift, maxShift);
+                thigh.dy = dy;
+                thigh.sy = std::max(0.35, (thighRows - dy - lf) / thighRows);
+                shin.dy = foot.dy = -lf;
+                shin.dx = foot.dx = sideDx;
+                continue;
+            }
+            const rg::Vec hip{L.hip.x, L.hip.y + dy + legEndDy(L)};
+            const rg::Vec ankle{t.x, t.planted ? L.ankle.y : t.y};
+            const int bend = (L.hind ? -g.dir : g.dir) > 0 ? -1 : 1;
+            const rg::Vec knee = rg::solveTwoBone(hip, ankle, L.l1, L.l2, bend);
+            const double shinA = std::atan2(ankle.y - knee.y, ankle.x - knee.x);
+            const rg::Vec reached{knee.x + L.l2 * std::cos(shinA), knee.y + L.l2 * std::sin(shinA)};
+            thigh.dx = hip.x - L.hip.x;
+            thigh.dy = hip.y - L.hip.y;
+            thigh.angle = std::atan2(knee.y - hip.y, knee.x - hip.x) - std::atan2(L.knee.y - L.hip.y, L.knee.x - L.hip.x);
+            shin.dx = knee.x - L.knee.x;
+            shin.dy = knee.y - L.knee.y;
+            shin.angle = shinA - std::atan2(L.ankle.y - L.knee.y, L.ankle.x - L.knee.x);
+            foot.dx = reached.x - L.ankle.x;
+            foot.dy = t.planted ? 0 : std::min(0.0, reached.y - L.ankle.y);
+            thigh.maxY = shin.maxY = foot.maxY = L.ground;
+        }
+        if (!opt.inPlace) {
+            const int rootDx = iround(kMean * (dot(travel[uz(f)], basisFor(cam, cm.forward).sx) / height));
+            for (auto& q : pose) q.dx += rootDx;
+        }
+        imgs.push_back(rg::renderPose(rig, pose, big));
+        poses.push_back(std::move(pose));
+    }
+
+    int x0 = big.w, y0 = big.h, x1 = -1, y1 = -1;
+    for (const Image& im : imgs) {
+        const IntRect r = im.opaqueBounds();
+        if (r.empty()) continue;
+        x0 = std::min(x0, r.x);
+        y0 = std::min(y0, r.y);
+        x1 = std::max(x1, r.x + r.w);
+        y1 = std::max(y1, r.y + r.h);
+    }
+    if (x1 < 0) return Error(ErrorCode::Internal, "retarget produced empty frames");
+    const int frameMs = std::max(10, iround(1000.0 * step));
+    int groundLo = g.legs[0].ground, groundHi = g.legs[0].ground;
+    for (const auto& L : g.legs) {
+        groundLo = std::min(groundLo, L.ground);
+        groundHi = std::max(groundHi, L.ground);
+    }
+    res.clip.name = "retarget";
+    res.clip.loops = opt.loop;
+    res.clip.body = motion::Body::Quadruped;
+    res.clip.footStagger = groundHi - groundLo;
+    res.clip.depthPops = static_cast<int>(rg::zPops(rig, poses, big).size());
+    for (const Image& im : imgs) {
+        res.clip.frames.push_back(im.copy({x0, y0, x1 - x0, y1 - y0}));
+        res.clip.durations.push_back(frameMs);
+    }
+    const int fw = x1 - x0, fh = y1 - y0;
+    const int side = std::max(fw, fh);
+    res.source.name = "source";
+    res.source.loops = opt.loop;
+    const double groundY = (groundHi + 1) - (big.y + y0);
+    for (const Projected& pr : prs) {
+        Image img(side, fh);
+        paintSkeleton(img, m, res.map, pr, std::min(static_cast<double>(bb.h), groundY - 1), side / 2.0, groundY);
+        res.source.frames.push_back(img);
+        res.source.durations.push_back(frameMs);
+    }
+    if (footFrames > 0 && planted == 0) res.notes.push_back("No foot of the motion touches its floor: nothing is held on the ground.");
+    if (nLegs < 4) res.notes.push_back("Only " + std::to_string(nLegs) + " legs are drawn apart; they follow the nearer source legs.");
+    for (const std::string& n : cm.notes) res.notes.push_back("Legs: " + n);
+    return res;
+}
+
+} // namespace
+
 Result<RetargetResult> retarget(const Image& sprite, const Motion& m, const RetargetOptions& opt) {
     if (sprite.isNull() || sprite.isFullyTransparent()) return Error(ErrorCode::InvalidArgument, "the sprite has no visible pixels");
     if (m.frameCount < 1 || m.joints.empty()) return Error(ErrorCode::InvalidArgument, "the motion is empty");
+    if (opt.body == motion::Body::Quadruped) return retargetQuadruped(sprite, m, opt);
     if (opt.body != motion::Body::Biped)
-        return Error(ErrorCode::InvalidArgument, "humanoid motion can be put on a two-legged (biped) sprite only, for now");
+        return Error(ErrorCode::InvalidArgument, "motion can be put on two-legged (biped) and four-legged (quadruped) sprites only, for now");
     RetargetResult res;
     res.map = autoMap(m, opt.mapOverrides);
     if (!res.map.hasLegs()) {
@@ -832,16 +1306,20 @@ Result<RetargetResult> retarget(const Image& sprite, const Motion& m, const Reta
     const double amount = std::clamp(opt.amount, 0.25, 2.0);
 
     // Camera: chosen from the sprite unless given.
-    const double drawnTurn = g.front ? 0 : (g.dir < 0 ? -90 : 90);
+    const bool turnKnown = opt.drawnTurn && std::isfinite(*opt.drawnTurn);
+    const double drawnTurn = turnKnown ? *opt.drawnTurn : (g.front ? 0 : (g.dir < 0 ? -90 : 90));
     res.camera = opt.camera ? *opt.camera : Camera{};
     if (!opt.camera) res.camera.turn = drawnTurn;
     const Camera& cam = res.camera;
     {
         double diff = std::abs(wrapAngle((cam.turn - drawnTurn) * kDeg)) / kDeg;
-        if (g.front) diff = std::min(diff, std::abs(wrapAngle((cam.turn - 180) * kDeg)) / kDeg);
+        // A front view read from the art may as well be a back view.
+        if (!turnKnown && g.front) diff = std::min(diff, std::abs(wrapAngle((cam.turn - 180) * kDeg)) / kDeg);
         if (diff > 30 || std::abs(cam.tilt) > 40) {
             res.approximateView = true;
-            res.notes.push_back(std::string("The sprite is drawn ") + (g.front ? "from the front" : "from the side") +
+            const std::string drawn = turnKnown ? "at turn " + std::to_string(iround(drawnTurn)) + " degrees"
+                                                : (g.front ? "from the front" : "from the side");
+            res.notes.push_back("The sprite is drawn " + drawn +
                                 "; this camera only changes how the motion is seen, the art is not turned. "
                                 "A view this far from the drawing needs art drawn for it (a reference view).");
         }

@@ -5,6 +5,9 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 ## [0.10.0] — 2026-11-01 — Premium AI game asset studio (unreleased)
 
 ### Fixed
+- A crash while the app closed with a document open: a closing view told the AI service, already
+  deleted, that drawing had stopped. Found by the UI audit's crash report
+  (`AiService::setDrawing`); the connections now go with the AI service.
 - Background threads (Home page thumbnails, Library scans, MCP scripts) are waited for (up to
   5 s; 20 s in the UI audit) before the app shuts down, so none runs on while it is torn down.
   This did not end the UI audit's occasional crash at exit (see KNOWN_ISSUES); the audit now
@@ -91,6 +94,40 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Four-legged bodies move with the motion**: the back now rocks with the motion (the front and
+  back of the body rise and sink with the source's shoulders and hips), and the drawn head and
+  tail bend up and down with the source's head and tail. Head and tail are found by shape, like
+  the legs: the end furthest forward and the end furthest behind the hind legs. The body bends
+  column by column in whole pixels, so its colours and outline stay as drawn. The `quad-walk`
+  preset now nods its head and lifts its tail.
+- **Motion Studio is a dockable panel** (ADR-ANIM-002): **Animation › Motion Studio** now opens a
+  panel instead of a dialog that blocked the window. It opens floating the first time and docks
+  like the other panels (Window › Motion Studio shows or hides it). **Use Current Sprite** puts
+  the loaded motion on another sprite or frame without reloading the motion or resetting the
+  camera, and Open as Document keeps the panel open. Playback stops while the panel is hidden.
+- **Parts that bend across a joint** (ADR-ANIM-004): a part layer bound to one bone can also
+  follow a child of that bone (`rig skin <project> --layer L --bone CHILD [--blend PX]`), so a
+  one-piece arm or leg bends smoothly at the elbow or knee instead of turning rigidly. Pixels
+  before the joint follow the parent bone, pixels past it the child, and a band either side of the
+  joint mixes the two. Drawn with the same 8x Scale2x sampling as turned parts, so only the
+  sprite's colours appear; at rest, or when both bones turn together, the part is drawn exactly as
+  a rigid one. Rigs that use this are saved as rig version 3 (others stay as they were).
+- **Four-legged motion** (ADR-ANIM-002 section 3.5): `retarget` puts a four-legged motion on a
+  four-legged sprite (`--body auto`, the default, picks this for sprites read as four-legged; also
+  in Motion Studio and `directions`). The motion's legs are found by shape, not by name: chains of
+  joints that reach the floor, front and back told apart by which way the body travels or where
+  the head is. Each drawn leg follows the source leg at its end (hind or front) and side (near or
+  far), measured from where the foot is drawn, and the body rises and sinks with the motion. A
+  built-in `quad-walk` preset (a four-beat walk) was added to the motion library.
+- **Direction sets** (ADR-ANIM-002 section 3.4): `acestudio-cli directions <views folder>
+  <motion|preset:NAME> --out <project>` plays a motion in 8 (or 4, or listed) directions from the
+  views you drew, PNGs named by view (`s`, `se`, `e`, ... or `front`, `right`, `back-left`, ...).
+  Each direction uses the nearest drawn view, or the mirror of the opposite side's view, and the
+  motion is seen from that direction; a direction more than 30 degrees from every drawn view is
+  flagged so the missing view can be drawn. The result is one project with a tag per direction
+  (`walk_s`, `walk_se`, ...), every direction standing on one ground row; `--turn-clip s,n` adds a
+  turn on the spot that cuts between the drawn views. `retarget` takes the drawn turn of its
+  sprite from the direction set (`RetargetOptions::drawnTurn`) instead of guessing front or side.
 - **Arm boxes for auto-rig** (`acestudio-cli rig auto --arms "x,y,w,h;x,y,w,h"`): arms the
   silhouette analysis misses (it looks only beside the legs) can be marked as boxes; every pixel
   inside a box becomes that arm's part, turning about where the box meets the body.

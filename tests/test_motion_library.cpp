@@ -36,13 +36,14 @@ Motion presetOrFail(const char* name) {
 
 } // namespace
 
-TEST_CASE("Built-in presets map to a full humanoid and keep their timing", "[mocap][library]") {
+TEST_CASE("Built-in humanoid presets map to a full humanoid and keep their timing", "[mocap][library]") {
     const auto list = builtInPresets();
-    REQUIRE(list.size() == 6);
+    REQUIRE(list.size() == 7);
     for (const PresetInfo& p : list) {
         CAPTURE(p.name);
         CHECK(p.builtIn);
         CHECK_FALSE(p.description.empty());
+        if (p.fourLegged) continue;   // test_creature_motion.cpp
         const Motion m = presetOrFail(p.name.c_str());
         const BoneMap map = autoMap(m);
         CHECK(map.hasLegs());
@@ -91,11 +92,12 @@ TEST_CASE("The jump leaves the floor and lands", "[mocap][library]") {
     CHECK(jointPositions(m, m.duration())[lf].y < 0.01);
 }
 
-TEST_CASE("Every built-in preset retargets onto a sprite", "[mocap][library][anim]") {
+TEST_CASE("Every built-in humanoid preset retargets onto a sprite", "[mocap][library][anim]") {
     auto sprite = readPng(fixture("rogue64.png"));
     REQUIRE(sprite);
     for (const PresetInfo& p : builtInPresets()) {
         CAPTURE(p.name);
+        if (p.fourLegged) continue;   // test_creature_motion.cpp
         const Motion m = presetOrFail(p.name.c_str());
         RetargetOptions o;
         o.fps = 12;

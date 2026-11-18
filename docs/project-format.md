@@ -123,6 +123,22 @@ fields (a rig without either is still written as version 1, so older readers kee
 - Inserting, moving or deleting frames moves keys with their frames; a key on a deleted frame goes,
   and a deleted rest frame falls back to frame 0.
 
+### Rig version 3: parts bent across a joint
+
+A rig with a part that bends across a joint is written as `"version": 3`, with `restFrame` and
+(when there are any) `keys` as in version 2, and a `skins` list (rigs without one keep their
+lower version):
+
+```json
+"skins": [ { "layer": 7, "bone": 4, "blend": 0 } ]
+```
+
+- `layer`: a part layer that is in `bindings`; at most one entry per layer.
+- `bone`: a child of the layer's bound bone. The part follows its own bone before the joint (the
+  child's head) and the child past it.
+- `blend`: pixels either side of the joint over which the two bones are mixed, 0 or more; 0 means
+  a fifth of the shorter of the two bones, at least 1.5.
+
 ## vectors (schema 5)
 
 Present only in documents that have vector shapes (ADR-ANIM-005). The cel's pixels are stored as

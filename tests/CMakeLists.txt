@@ -41,11 +41,14 @@ add_executable(acestudio_core_tests
     test_cycle.cpp
     test_inbetween.cpp
     test_rig.cpp
+    test_rig_skin.cpp
     test_vector.cpp
     test_palette_lock.cpp
     test_mocap.cpp
     test_motion_library.cpp
     test_rig_motion.cpp
+    test_direction_set.cpp
+    test_creature_motion.cpp
     test_world_map.cpp
     test_style_profile.cpp
     test_app_bridge.cpp

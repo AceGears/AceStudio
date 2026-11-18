@@ -104,6 +104,18 @@ std::vector<LayerId> Rig::parts(BoneId id) const {
     return out;
 }
 
+namespace {
+// Skins whose part lost its binding or whose bone is no longer a child of
+// the part's bone (after a bone is removed, reparented or the part rebound).
+void dropBrokenSkins(Rig& r) {
+    std::erase_if(r.skins, [&](const auto& kv) {
+        const auto bound = r.bindings.find(kv.first);
+        const Bone* c = r.bone(kv.second.bone);
+        return bound == r.bindings.end() || !c || c->parent != bound->second;
+    });
+}
+} // namespace
+
 namespace rigs {
 
 Status validate(const Rig& rig, const Document* doc) {
@@ -134,6 +146,13 @@ Status validate(const Rig& rig, const Document* doc) {
             const Layer* l = doc->layer(layer);
             if (!l || l->kind != LayerKind::Raster) return bad("A part names a missing or non-raster layer");
         }
+    }
+    for (const auto& [layer, sk] : rig.skins) {
+        const auto bound = rig.bindings.find(layer);
+        if (bound == rig.bindings.end()) return bad("A bent part is not bound to a bone");
+        const Bone* child = rig.bone(sk.bone);
+        if (!child || child->parent != bound->second) return bad("A bent part must bend with a child of its own bone");
+        if (!finite(sk.blend) || sk.blend < 0 || sk.blend > kMaxCoord) return bad("A bent part's blend width is out of range");
     }
     if (rig.restFrame < 0 || rig.restFrame >= Document::kMaxFrames || (doc && rig.restFrame >= doc->frameCount()))
         return bad("The rest frame is not a frame of the document");
@@ -231,6 +250,7 @@ Status reparentBone(Rig& rig, BoneId id, BoneId newParent) {
         r.bone(id)->parent = newParent;
         // A chain whose tip loses its parent cannot be solved any more.
         if (newParent == kNoBone) std::erase_if(r.chains, [&](const IkChain& c) { return c.tip == id; });
+        dropBrokenSkins(r);
         return sortBones(r.bones);
     });
 }
@@ -253,6 +273,7 @@ Status removeBone(Rig& rig, BoneId id) {
             return c.tip == id || !t || t->parent == kNoBone;
         });
         for (RigKey& k : r.keys) k.pose.turn.erase(id);
+        dropBrokenSkins(r);
         return sortBones(r.bones);
     });
 }
@@ -278,10 +299,27 @@ Status bindLayer(Rig& rig, LayerId layer, BoneId bone) {
     if (layer == 0) return bad("No layer");
     if (bone == kNoBone) {
         rig.bindings.erase(layer);
+        rig.skins.erase(layer);
         return {};
     }
     if (!rig.bone(bone)) return bad("No such bone");
     rig.bindings[layer] = bone;
+    dropBrokenSkins(rig);
+    return {};
+}
+
+Status skinLayer(Rig& rig, LayerId layer, BoneId child, double blend) {
+    const auto bound = rig.bindings.find(layer);
+    if (bound == rig.bindings.end()) return bad("Bind the part to a bone before bending it across a joint");
+    if (child == kNoBone) {
+        rig.skins.erase(layer);
+        return {};
+    }
+    const Bone* c = rig.bone(child);
+    if (!c) return bad("No such bone");
+    if (c->parent != bound->second) return bad("A part bends with a child of its own bone ('" + c->name + "' is not one)");
+    if (!finite(blend) || blend < 0 || blend > kMaxCoord) return bad("The blend width must be 0 (automatic) or more pixels");
+    rig.skins[layer] = Skin{child, blend};
     return {};
 }
 
@@ -499,6 +537,13 @@ json toJson(const Rig& rig) {
         }
         j["keys"] = keys;
     }
+    if (!rig.skins.empty()) {
+        j["version"] = 3;
+        if (!j.contains("restFrame")) j["restFrame"] = rig.restFrame;
+        json skins = json::array();
+        for (const auto& [layer, sk] : rig.skins) skins.push_back({{"layer", layer}, {"bone", sk.bone}, {"blend", sk.blend}});
+        j["skins"] = skins;
+    }
     return j;
 }
 
@@ -601,6 +646,16 @@ Result<Rig> fromJson(const json& j) {
                 }
                 rig.keys.push_back(std::move(k));
             }
+        }
+    }
+    if (version >= 3 && j.contains("skins")) {
+        if (!j["skins"].is_array() || j["skins"].size() > static_cast<std::size_t>(Rig::kMaxBones)) return corrupt("bad list of bent parts");
+        for (const json& js : j["skins"]) {
+            LayerId layer = 0;
+            Skin sk;
+            if (!getId(js, "layer", layer) || !getId(js, "bone", sk.bone) || !getNumber(js, "blend", sk.blend))
+                return corrupt("a bent part has no layer, bone or blend");
+            if (!rig.skins.emplace(layer, sk).second) return corrupt("a part is bent twice");
         }
     }
     if (auto st = validate(rig); !st) return corrupt(st.error().message);

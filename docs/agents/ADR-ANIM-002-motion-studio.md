@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Stage 1 (audit) done. Stage 3 core (BVH import, mapping, camera, retarget onto the part rig) built and tested locally on 2026-11-15. A first Motion Studio window is in the app. Stage 3b glTF/GLB animation import built and tested locally (core); the motion library was built on 2026-11-17 (section 3.2). Everything else is planned below, not built. |
+| Status | Stage 1 (audit) done. Stage 3 core (BVH import, mapping, camera, retarget onto the part rig) built and tested locally on 2026-11-15. A first Motion Studio window is in the app. Stage 3b glTF/GLB animation import built and tested locally (core); the motion library was built on 2026-11-17 (section 3.2), direction sets and four-legged motion on 2026-11-18 (sections 3.4 and 3.5). Everything else is planned below, not built. |
 | Builds on | ADR-ANIM-001 (part rig: parts, hidden pixels, depth, whole-pixel/RotSprite rendering, two-bone IK) |
 | Reference | A "Bonebase"-style Aseprite extension: a 3D skeleton beside a 2D rig, with turn, tilt and roll. It was used for the concept only. No code or assets were taken from it. |
 
@@ -46,7 +46,7 @@ FBX is not parsed: its SDK is proprietary, and reverse-engineered readers are la
 | Camera with 11 presets, roll, perspective | same | tests: facing, front/left, top-down, roll and perspective directions |
 | Retarget onto the gait rig, plus a source-skeleton clip at the same frame count | same | tests on `rogue64`: 12 frames, one size, feet on the ground within the foot stagger, ≥ 10 distinct frames, `checkClip` clean, no depth pops |
 | `acestudio-cli retarget` | `cli/MocapCommands.cpp` | Compiled locally with strict warnings only. Not run: `cli/main.cpp` needs the generated `Version.h`, so CI is the first full build. |
-| Motion Studio window (Animation > Motion Studio): a 3D view (drag turns and tilts, wheel zooms, arrow keys), a synced 2D preview, turn/tilt/roll sliders, presets, perspective, span, fps, amount, in place, bone table, notes, Open as Document | `app/src/MotionStudioDialog.*` | **Not run.** Computer use is not allowed here, and Qt is not in the local toolchain. CI compiles it, and the UI audit (`anim.motionStudio`) opens it. |
+| Motion Studio window (Animation > Motion Studio): a 3D view (drag turns and tilts, wheel zooms, arrow keys), a synced 2D preview, turn/tilt/roll sliders, presets, perspective, span, fps, amount, in place, bone table, notes, Open as Document | `app/src/MotionStudioPanel.*` | **Not run.** Computer use is not allowed here, and Qt is not in the local toolchain. CI compiles it, and the UI audit (`anim.motionStudio`) opens it. |
 
 ### 3.1 glTF/GLB import (stage 3b, first part)
 
@@ -57,7 +57,7 @@ FBX is not parsed: its SDK is proprietary, and reverse-engineered readers are la
 | Untrusted input: 64 MB (file plus external buffers), 512 joints, 16384 nodes, 4096 channels and 2^20 keyframes per channel, 200000 frames, JSON depth 64 checked before parsing; every accessor checked (`byteOffset + (count-1)*stride + elementSize` within the view, the view within the buffer, the buffer within its data), component type, type, `normalized`, byteStride; sparse accessors refused; buffers only from the GLB BIN chunk, base64 `data:` URIs or relative file names inside the file's folder (no `..`, no absolute or drive paths, no URL schemes, symlinks resolved and checked); `extensionsRequired` refused; unknown chunks, extensions and channel paths are skipped, never followed. Errors name the animation, channel, node and accessor | same | tests: truncated GLB, bad version, chunk length overflow, first chunk not JSON, accessor out of bounds, bad componentType/type/normalized/byteStride, sparse, missing bufferView, buffer shorter than declared or over the limit, bad target node and interpolation, wrong output count, times going backwards, node cycles and double parents, matrix plus TRS, `extensionsRequired`, glTF 1.0, bad skin joint, JSON nested 100000 deep, 14 unsafe or broken URIs, byte flips over the whole GLB, and every limit. A `fuzz_gltf` libFuzzer target was added (not run here: clang/libFuzzer is CI only) |
 | A Mixamo-named humanoid walk (the BVH test walk written as a GLB under a 0.01 Armature) | tests | same joints and parents as the BVH, positions equal to the BVH's in metres within 2 µm every frame, and the retarget onto `rogue64` passes the same checks as the BVH walk |
 | `acestudio-cli retarget` reads `.glb`/`.gltf`, `--animation <index|name>` | `cli/MocapCommands.cpp`, `cli/main.cpp` | Compiled locally with strict warnings only, not run |
-| Motion Studio: open filter `*.bvh *.glb *.gltf`; a file with several animations asks which one (`QInputDialog::getItem`) | `app/src/MotionStudioDialog.cpp` | **Not compiled or run locally** (no Qt here). CI compiles it |
+| Motion Studio: open filter `*.bvh *.glb *.gltf`; a file with several animations asks which one (`QInputDialog::getItem`) | `app/src/MotionStudioPanel.cpp` | **Not compiled or run locally** (no Qt here). CI compiles it |
 
 glTF limits: morph weights are ignored; `KHR_animation_pointer` and other extension-defined targets are skipped; Motion time 0 is the animation's first keyframe; a sampled frame rate other than 30 can be set in `GltfOptions::fps` (not yet in the UI or CLI).
 
@@ -73,7 +73,7 @@ The walk used in tests is generated in the test (`walkBvh`), so no third-party m
 | `writeBvh`: depth-first joints, BVH-safe unique names, values in file order; refuses several roots, no frames, values BVH cannot hold | same | round trip of a preset and of a motion with awkward names and a non-depth-first order |
 | Saved presets: BVH files in `<user data>/motions`; names are 1–64 ASCII letters, digits, spaces, `-`, `_`, not a built-in or Windows-reserved name, which also keeps every lookup inside the folder | same | save, refuse a duplicate, overwrite, list (an unreadable file is listed with its error), load, refuse `../`, remove |
 | CLI: `retarget <sprite> preset:NAME [--library DIR]` (one-shot presets do not loop); `motion list`, `motion export <preset> --out f.bvh`, `motion save <file> --name N`, `motion remove N` | `cli/MocapCommands.cpp`, `cli/main.cpp` | `tests/cli_smoke.cmake` motion section, also replayed locally against a local CLI build (GIF writing is stubbed locally) |
-| Motion Studio: Library row (presets, Save as Preset…, Remove) | `app/src/MotionStudioDialog.*` | CI build only; not used on a PC |
+| Motion Studio: Library row (presets, Save as Preset…, Remove) | `app/src/MotionStudioPanel.*` | CI build only; not used on a PC |
 
 The presets are procedural: they show the motion's shape (stride, arm swing, crouch, tuck, strike)
 without the nuance of captured motion. A sprite drawn from the front does not rise in a retarget
@@ -95,14 +95,55 @@ Matching is by name: auto-rig names (`body`, `head`, `legN thigh|shin|foot`, `ar
 (`LThigh`, ...), or `--bones` pairs. Not done: a button in Motion Studio or the Rig panel, Lua and
 MCP access, non-humanoid mapping (stage 3c).
 
+### 3.6 Dockable Motion Studio (2026-11-18)
+
+| Piece | Where | Verified |
+|---|---|---|
+| `MotionStudioPanel` (was `MotionStudioDialog`): a `QWidget` in the dock `dock.motionStudio`, floating and hidden at start, shown and raised by Animation › Motion Studio (sized 980x760 and centred the first time), in Window and hidden by the Minimal workspace; `setSprite` keeps the motion, camera and timing ("As drawn" re-reads the sprite's facing); Use Current Sprite asks the window for the current frame; Open as Document leaves the panel open; the preview stops while hidden and resumes when shown; no Alt mnemonics | `app/src/MotionStudioPanel.*`, `app/src/MainWindow.*` | CI build and UI audit only (no Qt here, and computer use is not allowed) |
+
+### 3.5 Four-legged motion (stage 3c, first part, 2026-11-18)
+
+| Piece | Where | Verified |
+|---|---|---|
+| `creatureMap`: legs by shape (leaf joints within 8% of the height above the floor in the rest pose, climbed up while the parent's other children stay low, so a toe and heel count once; never into the root); front and back along the longest horizontal spread of the leg tops in the first frame, the front being where the root travels or else the end nearer the highest other leaf (the head) | `core/src/Mocap.cpp`, `Mocap.h` | `tests/test_creature_motion.cpp`: the preset's four legs (hind first, forward +Z), a humanoid refused (2 legs), on the spot and turned a quarter turn the head still tells the front |
+| `retarget` with `body = Quadruped`: the gait rig's four-leg mode; drawn legs take the source leg at the same end and side (near to near by depth); each foot moves from where it is drawn by the source foot's offset from its leg top around the loop's average, scaled per leg; lift, planting, the body's sink so planted feet reach, and the hind hock bending back as the procedural gait does | same | tests: a 72x48 test dog (`tests/data/anim/dog72.png`, drawn for the tests): 12 frames, at least 6 distinct, no floating frames or mirror flips, only the sprite's colours; a humanoid motion is refused |
+| `quad-walk` preset: a four-beat walk (left hind, left front, right hind, right front), the lowest toe on the floor every frame | `core/src/MotionLibrary.cpp` | tests: four legs found, every foot lifts, travels forward |
+| CLI `--body auto|biped|quadruped` on `retarget` and `directions`; JSON `body` and `legs`; Motion Studio picks four-legged motion for four-legged sprites | `cli/MocapCommands.cpp`, `app/src/MotionStudioPanel.cpp` | `tests/cli_smoke.cmake` (run locally with a placeholder GIF writer); the dialog is compiled by CI only. The test dog's walk sheet was looked at |
+
+Built later on 2026-11-18: back pitch and head and tail follow-through.
+`CreatureMap::head` and `tail` are the non-leg ends (above the floor band) furthest forward and
+furthest behind the hind legs in the first frame. Per frame, the hind and front leg tops' heights
+over the root (the back's pitch) and the head's height over the front tops and the tail's over
+the hind tops, each from its neutral (the loop's mean, or a one-shot's first frame), become rows
+(`backColumns`: `PartPose::colDy` of the body, straight between the leg pairs, the head and tail
+moves fading in beyond them); the leg hips follow their end. Side views only. Verified:
+`tests/test_creature_motion.cpp` (head and tail found by shape on `quad-walk`; the test dog's nose
+rises and falls at least 2 rows and more than with a stiff back, neck and tail, at most a quarter
+of its height; colours kept); the dog's walk sheet was looked at.
+
+Not done: sideways head and tail swing, leg overrides by name, six legs, wings and fins
+(`RigFlight`, `RigSwim`), `rig motion` for four-legged rigs.
+
+### 3.4 Direction sets (stage 4, first part, 2026-11-18)
+
+| Piece | Where | Verified |
+|---|---|---|
+| `directions::chooseView`: the drawn view nearest a camera turn, or the mirror of a view on the other side (a tie goes to drawn art); `retargetDirections`: the motion retargeted per direction onto the chosen art, the camera turned to that direction, `RetargetOptions::drawnTurn` set to the art's turn so the 30 degree "approximate view" check measures from the art actually used; `turnClip`: a turn on the spot that shows the nearest view at each step, repeats dropped; `clipsDocument`: the clips on one project, one tag each, every clip's figure centred and standing on one row | `core/include/acestudio/core/DirectionSet.h`, `core/src/DirectionSet.cpp`, `Mocap.cpp` | `tests/test_direction_set.cpp`: names and turns, choice and mirror ties, refusals, a walk in 8 directions from a front and a side view (choices, flags, notes, west matches the mirrored east by silhouette), a turn clip on one ground row, the document's tags and cels. Run locally |
+| CLI `directions <views folder> <motion> --out <project>` (`--dirs`, `--no-mirror`, `--turn-clip`, `--turn-step`, `--turn-ms`, `--name`, retarget's timing, tilt and `--map` options) | `cli/MocapCommands.cpp` | `tests/cli_smoke.cmake` direction-set section, run locally; the 8-direction walk sheet was looked at |
+
+The art is never turned: this stage stops "new view" from being an approximation only where a
+view is drawn. Not done: a turn clip that draws in-between views, reference-view slots in the
+project and the app, three-quarter-aware leg handling in retarget (three-quarter art is read as
+front or side), rig motion per direction, and Lua and MCP access.
+
 ## 4. Remaining work, staged (none of this is built, except where marked)
 
 | Stage | Scope | Notes |
 |---|---|---|
 | 2 | Saved, editable rigs (ADR-ANIM-001 schema 4): bone tree, add/remove/rename/reparent, joint limits, IK chains, mirror, lock, undo; GUI bone overlay on the canvas | Needs the chief architect's approval for the schema bump |
 | 3b | ~~glTF/GLB animation import~~ (built, section 3.1); ~~a motion library with presets and save-as-preset~~ (built, section 3.2) | More presets (crouch, climb, cast, die) and CC0 captured clips, each licensed |
-| 3c | Non-humanoid mapping: quadruped (four legs on `buildGaitRig`'s four-leg mode), wing chains onto `RigFlight` parts, spine/tail chains onto column bends | |
-| 4 | Multi-view: a direction set (front, back, side, three-quarter art) chosen by camera turn, with a turn clip between views; reference-view slots | This is where "new view" stops being an approximation |
+| 3c | (four-legged first part built, section 3.5) Non-humanoid mapping: quadruped (four legs on `buildGaitRig`'s four-leg mode), wing chains onto `RigFlight` parts, spine/tail chains onto column bends | |
+| 4 | (first part built, section 3.4) Multi-view: a direction set (front, back, side, three-quarter art) chosen by camera turn, with a turn clip between views; reference-view slots | This is where "new view" stops being an approximation |
 | 5 | AI assist (optional, worker or cloud only, with an explicit cost prompt): pose estimation of the sprite for auto-rig hints, hidden-surface inpainting of parts, view generation, text-to-motion (an LLM picks and parameterises library motions; no generative model where procedural motion works) | Respect the no-cost-without-approval rule |
 | 6 | Timeline tracks: bone keyframes, curves (linear, Bezier, eases, stepped), events, blending between clips (idle→walk→run with phase match) | |
 | 7 | Mesh deformation for HD art (triangle mesh, bone weights, weight painting); pixel art keeps the rigid part path | |

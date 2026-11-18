@@ -127,10 +127,33 @@ Add, Subtract, Difference), visibility and locks.
   the rig is drawn in. Bones are matched by their auto-rig names; pair others with
   `--bones "upper leg=LThigh,lower leg=LShin"`. Arms keep the pose you drew and swing from it; add
   `--absolute-arms` to have them point where the motion's arms point.
+- **Bending a part at a joint**: a part drawn in one piece over two bones (an arm over the upper
+  arm and forearm) can bend at the joint instead of turning stiffly:
+  `acestudio-cli rig skin hero.acestudio --layer arm --bone forearm --out hero.acestudio --force`.
+  The part must be bound to the forearm's parent bone. `--blend` sets how many pixels either side
+  of the joint are mixed (0, the default, picks a fifth of the shorter bone); `--bone none` makes
+  the part rigid again.
+- **Four-legged animals**: a sprite drawn from the side on four legs takes four-legged motion,
+  such as the built-in `quad-walk` or a BVH or glTF animal clip:
+  `acestudio-cli retarget dog.png preset:quad-walk --out out`, or **Animation › Motion Studio**
+  with the sprite open. The motion's legs are found by their shape, so joint names do not matter.
+  The legs, the body's height, the back's rock and the head's and tail's rise and fall follow the motion.
+- **A motion in every direction** (command line only for now): put the views you drew in a
+  folder, named by the way the character faces: `s.png` (towards you), `se.png`, `e.png` (facing
+  right), `ne.png`, `n.png` (away from you), and so on, or `front.png`, `right.png`,
+  `back-left.png`... Then `acestudio-cli directions views preset:walk --out walk8.acestudio` makes
+  the walk in 8 directions (`--dirs 4` for four, or `--dirs s,e,n`), one tag each (`walk_s`,
+  `walk_se`, ...). Missing left-facing views are the right-facing ones mirrored (`--no-mirror` to
+  stop that). A direction far from every view you drew is listed as approximate: draw that view
+  and run it again. `--turn-clip s,e` adds a turn on the spot from one direction to another.
 - **Arms auto-rig missed** (command line only for now): auto-rig finds arms only beside the legs.
   Mark others as boxes on the canvas: `acestudio-cli rig auto hero.acestudio --layer Hero --arms
   "15,10,14,22;42,20,16,22" --out rigged.acestudio`. Every pixel inside a box becomes that arm, so
   keep each box tight around the arm and its weapon.
+- **Motion Studio as a panel:** **Animation › Motion Studio (3D Motion)…** opens a panel that floats
+  at first; drag its title bar onto the window's edge to dock it, or use **Window › Motion
+  Studio** to show and hide it. Press **Use Current Sprite** to put the same motion and camera on
+  another sprite or frame.
 - **Motion presets:** in **Animation › Motion Studio (3D Motion)…**, the **Library** row offers ready motions
   (idle, walk, run, jump, attack, hurt) next to **Load Motion…**. Jump, attack and hurt play once;
   the others loop. **Save as Preset…** keeps the loaded motion (a BVH or glTF/GLB animation) in your

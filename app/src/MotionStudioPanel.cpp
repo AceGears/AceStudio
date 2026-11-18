@@ -1,4 +1,4 @@
-#include "MotionStudioDialog.h"
+#include "MotionStudioPanel.h"
 
 #include "QtBridge.h"
 
@@ -6,7 +6,8 @@
 
 #include <QCheckBox>
 #include <QComboBox>
-#include <QDialogButtonBox>
+#include <QHideEvent>
+#include <QShowEvent>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -172,7 +173,7 @@ void SkeletonView::keyPressEvent(QKeyEvent* e) {
     Q_EMIT cameraDragged(turn, tilt);
 }
 
-// ---- MotionStudioDialog ----------------------------------------------------------------
+// ---- MotionStudioPanel ----------------------------------------------------------------
 
 namespace {
 
@@ -186,18 +187,25 @@ QSlider* angleSlider(QWidget* parent, int lo, int hi, const QString& name) {
 
 } // namespace
 
-MotionStudioDialog::MotionStudioDialog(const Image& sprite, const QString& name, OpenFn open, QWidget* parent)
-    : QDialog(parent), m_sprite(sprite), m_name(name), m_open(std::move(open)) {
-    setWindowTitle(tr("Motion Studio: 3D Motion onto a Sprite"));
-    setSizeGripEnabled(true);
+MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(parent), m_open(std::move(open)) {
     auto* root = new QVBoxLayout(this);
+
+    // The sprite the motion goes on.
+    auto* spriteRow = new QHBoxLayout;
+    m_spriteLabel = new QLabel(tr("No sprite: open one and press Use Current Sprite"), this);
+    m_spriteLabel->setWordWrap(true);
+    auto* useSprite = new QPushButton(tr("Use Current Sprite"), this);
+    useSprite->setToolTip(tr("Put the motion on the current frame of the open sprite"));
+    spriteRow->addWidget(m_spriteLabel, 1);
+    spriteRow->addWidget(useSprite);
+    root->addLayout(spriteRow);
 
     // Motion and camera controls.
     auto* top = new QHBoxLayout;
     root->addLayout(top);
     auto* motionBox = new QGroupBox(tr("Motion"), this);
     auto* mf = new QFormLayout(motionBox);
-    auto* load = new QPushButton(tr("&Load Motion…"), motionBox);
+    auto* load = new QPushButton(tr("Load Motion…"), motionBox);
     load->setAutoDefault(false);
     load->setToolTip(tr("A BVH motion (Blender, CMU mocap, Rokoko) or a glTF/GLB animation (Mixamo via Blender, Unity, Unreal, most 3D tools). "
                         "FBX: import it into Blender and export glTF first."));
@@ -209,7 +217,7 @@ MotionStudioDialog::MotionStudioDialog(const Image& sprite, const QString& name,
     m_presets = new QComboBox(motionBox);
     m_presets->setAccessibleName(tr("Motion presets"));
     m_presets->setToolTip(tr("Ready motions (idle, walk, run, jump, attack, hurt) and the motions you saved"));
-    m_savePreset = new QPushButton(tr("Save as Pre&set…"), motionBox);
+    m_savePreset = new QPushButton(tr("Save as Preset…"), motionBox);
     m_savePreset->setAutoDefault(false);
     m_savePreset->setToolTip(tr("Keep the loaded motion in your motion library (saved as BVH)"));
     m_savePreset->setEnabled(false);
@@ -220,7 +228,7 @@ MotionStudioDialog::MotionStudioDialog(const Image& sprite, const QString& name,
     libRow->addWidget(m_presets, 1);
     libRow->addWidget(m_savePreset);
     libRow->addWidget(m_removePreset);
-    mf->addRow(tr("&Library:"), libRow);
+    mf->addRow(tr("Library:"), libRow);
     m_start = new QDoubleSpinBox(motionBox);
     m_start->setRange(0, 3600);
     m_start->setDecimals(2);
@@ -244,10 +252,10 @@ MotionStudioDialog::MotionStudioDialog(const Image& sprite, const QString& name,
     m_amount->setAccessibleName(tr("Motion amount"));
     m_inPlace = new QCheckBox(tr("In place (no travel)"), motionBox);
     m_inPlace->setChecked(true);
-    mf->addRow(tr("&Start:"), m_start);
-    mf->addRow(tr("&Length:"), m_length);
-    mf->addRow(tr("&Frame rate:"), m_fps);
-    mf->addRow(tr("&Amount:"), m_amount);
+    mf->addRow(tr("Start:"), m_start);
+    mf->addRow(tr("Length:"), m_length);
+    mf->addRow(tr("Frame rate:"), m_fps);
+    mf->addRow(tr("Amount:"), m_amount);
     mf->addRow(QString(), m_inPlace);
     top->addWidget(motionBox, 1);
 
@@ -262,7 +270,7 @@ MotionStudioDialog::MotionStudioDialog(const Image& sprite, const QString& name,
     for (std::size_t i = 0; i < keys.size() && i < static_cast<std::size_t>(labels.size()); ++i)
         m_view->addItem(labels[static_cast<int>(i)], QString::fromStdString(keys[i]));
     m_view->addItem(tr("Custom"), QStringLiteral("custom"));
-    cf->addRow(tr("&View:"), m_view);
+    cf->addRow(tr("View:"), m_view);
     auto angleRow = [&](QSlider*& s, QLabel*& value, int lo, int hi, const QString& label, const QString& accessible) {
         s = angleSlider(camBox, lo, hi, accessible);
         value = new QLabel(camBox);
@@ -275,10 +283,10 @@ MotionStudioDialog::MotionStudioDialog(const Image& sprite, const QString& name,
         l->setBuddy(s);
         cf->addRow(l, row);
     };
-    angleRow(m_turn, m_turnValue, -180, 180, tr("&Turn:"), tr("Camera turn"));
-    angleRow(m_tilt, m_tiltValue, -90, 90, tr("T&ilt:"), tr("Camera tilt"));
-    angleRow(m_roll, m_rollValue, -180, 180, tr("&Roll:"), tr("Camera roll"));
-    m_perspective = new QCheckBox(tr("&Perspective"), camBox);
+    angleRow(m_turn, m_turnValue, -180, 180, tr("Turn:"), tr("Camera turn"));
+    angleRow(m_tilt, m_tiltValue, -90, 90, tr("Tilt:"), tr("Camera tilt"));
+    angleRow(m_roll, m_rollValue, -180, 180, tr("Roll:"), tr("Camera roll"));
+    m_perspective = new QCheckBox(tr("Perspective"), camBox);
     cf->addRow(QString(), m_perspective);
     top->addWidget(camBox, 1);
 
@@ -325,21 +333,23 @@ MotionStudioDialog::MotionStudioDialog(const Image& sprite, const QString& name,
     bottom->addWidget(m_notes, 1);
     root->addLayout(bottom);
 
-    auto* buttons = new QDialogButtonBox(this);
-    m_openButton = buttons->addButton(tr("&Open as Document"), QDialogButtonBox::AcceptRole);
-    buttons->addButton(QDialogButtonBox::Close);
+    auto* buttons = new QHBoxLayout;
+    m_openButton = new QPushButton(tr("Open as Document"), this);
+    m_openButton->setToolTip(tr("Open the posed frames as a new animation document"));
     m_openButton->setEnabled(false);
-    root->addWidget(buttons);
+    buttons->addStretch(1);
+    buttons->addWidget(m_openButton);
+    root->addLayout(buttons);
 
     m_timer = new QTimer(this);
     m_debounce = new QTimer(this);
     m_debounce->setSingleShot(true);
     m_debounce->setInterval(120);
 
-    connect(load, &QPushButton::clicked, this, &MotionStudioDialog::loadMotion);
+    connect(load, &QPushButton::clicked, this, &MotionStudioPanel::loadMotion);
     connect(m_presets, &QComboBox::currentIndexChanged, this, [this] { libraryChosen(); });
-    connect(m_savePreset, &QPushButton::clicked, this, &MotionStudioDialog::saveAsPreset);
-    connect(m_removePreset, &QPushButton::clicked, this, &MotionStudioDialog::removeSavedPreset);
+    connect(m_savePreset, &QPushButton::clicked, this, &MotionStudioPanel::saveAsPreset);
+    connect(m_removePreset, &QPushButton::clicked, this, &MotionStudioPanel::removeSavedPreset);
     refreshPresets();
     connect(m_view, &QComboBox::currentIndexChanged, this, [this] { presetChosen(); });
     for (QSlider* s : {m_turn, m_tilt, m_roll}) connect(s, &QSlider::valueChanged, this, [this] { cameraEdited(); });
@@ -355,8 +365,8 @@ MotionStudioDialog::MotionStudioDialog(const Image& sprite, const QString& name,
         m_syncing = false;
         cameraEdited();
     });
-    connect(m_debounce, &QTimer::timeout, this, &MotionStudioDialog::retarget);
-    connect(m_timer, &QTimer::timeout, this, &MotionStudioDialog::tick);
+    connect(m_debounce, &QTimer::timeout, this, &MotionStudioPanel::retarget);
+    connect(m_timer, &QTimer::timeout, this, &MotionStudioPanel::tick);
     connect(m_play, &QPushButton::clicked, this, [this] {
         if (m_timer->isActive()) {
             m_timer->stop();
@@ -370,16 +380,40 @@ MotionStudioDialog::MotionStudioDialog(const Image& sprite, const QString& name,
         m_frame = v;
         showFrame();
     });
-    connect(m_openButton, &QPushButton::clicked, this, &MotionStudioDialog::openDocument);
-    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    connect(m_openButton, &QPushButton::clicked, this, &MotionStudioPanel::openDocument);
+    connect(useSprite, &QPushButton::clicked, this, &MotionStudioPanel::currentSpriteRequested);
 
     presetChosen();
-    resize(980, 760);
 }
 
-MotionStudioDialog::~MotionStudioDialog() = default;
+void MotionStudioPanel::setSprite(const Image& sprite, const QString& name) {
+    m_sprite = sprite;
+    m_name = name;
+    m_fourLegged = !m_sprite.isNull() && ::acestudio::motion::analyzeSubject(m_sprite).body == ::acestudio::motion::Body::Quadruped;
+    m_spriteLabel->setText(tr("Sprite: <b>%1</b> (%2 x %3)%4")
+                               .arg(name.toHtmlEscaped())
+                               .arg(m_sprite.width())
+                               .arg(m_sprite.height())
+                               .arg(m_fourLegged ? tr(", four-legged") : QString()));
+    // "As drawn" follows the new sprite's facing; other views keep the camera.
+    if (m_view->currentData().toString().isEmpty()) presetChosen();
+    else scheduleRetarget();
+}
 
-mc::Camera MotionStudioDialog::camera() const {
+void MotionStudioPanel::hideEvent(QHideEvent* e) {
+    // A closed panel does not keep playing.
+    m_timer->stop();
+    QWidget::hideEvent(e);
+}
+
+void MotionStudioPanel::showEvent(QShowEvent* e) {
+    QWidget::showEvent(e);
+    if (m_result && !m_result->clip.frames.empty() && m_play->text() == tr("Pause")) m_timer->start();
+}
+
+MotionStudioPanel::~MotionStudioPanel() = default;
+
+mc::Camera MotionStudioPanel::camera() const {
     mc::Camera c;
     c.turn = m_turn->value();
     c.tilt = m_tilt->value();
@@ -388,15 +422,17 @@ mc::Camera MotionStudioDialog::camera() const {
     return c;
 }
 
-void MotionStudioDialog::presetChosen() {
+void MotionStudioPanel::presetChosen() {
     if (m_syncing) return;
     const QString key = m_view->currentData().toString();
     mc::Camera c = camera();
     if (key.isEmpty()) {
         // As drawn: the side the sprite faces, or the front.
-        const ::acestudio::motion::Subject s = ::acestudio::motion::analyzeSubject(m_sprite);
         c = mc::Camera{};
-        c.turn = s.frontView ? 0 : (s.facing < 0 ? -90 : 90);
+        if (hasSprite()) {
+            const ::acestudio::motion::Subject s = ::acestudio::motion::analyzeSubject(m_sprite);
+            c.turn = s.frontView ? 0 : (s.facing < 0 ? -90 : 90);
+        }
     } else if (key != QStringLiteral("custom")) {
         if (auto p = mc::cameraPreset(key.toStdString())) c = *p;
     }
@@ -409,7 +445,7 @@ void MotionStudioDialog::presetChosen() {
     cameraEdited();
 }
 
-void MotionStudioDialog::cameraEdited() {
+void MotionStudioPanel::cameraEdited() {
     if (m_syncing) return;
     m_turnValue->setText(tr("%1 deg").arg(m_turn->value()));
     m_tiltValue->setText(tr("%1 deg").arg(m_tilt->value()));
@@ -418,16 +454,16 @@ void MotionStudioDialog::cameraEdited() {
     scheduleRetarget();
 }
 
-void MotionStudioDialog::scheduleRetarget() {
+void MotionStudioPanel::scheduleRetarget() {
     if (m_motion) m_debounce->start();
 }
 
-void MotionStudioDialog::loadMotion() {
+void MotionStudioPanel::loadMotion() {
     const QString path = QFileDialog::getOpenFileName(this, tr("Load Motion"), QString(), tr("Motion (*.bvh *.glb *.gltf);;BVH motion (*.bvh);;glTF animation (*.glb *.gltf);;All files (*)"));
     if (!path.isEmpty()) loadMotionFile(path);
 }
 
-void MotionStudioDialog::loadMotionFile(const QString& path) {
+void MotionStudioPanel::loadMotionFile(const QString& path) {
     const std::filesystem::path file = path.toStdWString();
     // A glTF file can hold several animations: let the user pick one.
     mc::GltfOptions gopt;
@@ -463,7 +499,7 @@ void MotionStudioDialog::loadMotionFile(const QString& path) {
     useMotion(std::move(m).value(), motionName, false);
 }
 
-void MotionStudioDialog::refreshPresets(const QString& select) {
+void MotionStudioPanel::refreshPresets(const QString& select) {
     const QSignalBlocker b(m_presets);
     m_presets->clear();
     m_presets->addItem(tr("Choose a preset…"), QString());
@@ -482,7 +518,7 @@ void MotionStudioDialog::refreshPresets(const QString& select) {
     m_removePreset->setEnabled(m_presets->currentData().toString().startsWith(QStringLiteral("s:")));
 }
 
-void MotionStudioDialog::libraryChosen() {
+void MotionStudioPanel::libraryChosen() {
     const QString key = m_presets->currentData().toString();
     m_removePreset->setEnabled(key.startsWith(QStringLiteral("s:")));
     if (key.isEmpty()) return;
@@ -503,7 +539,7 @@ void MotionStudioDialog::libraryChosen() {
     useMotion(std::move(m).value(), QString::fromStdString(name), oneShot);
 }
 
-void MotionStudioDialog::saveAsPreset() {
+void MotionStudioPanel::saveAsPreset() {
     if (!m_motion) return;
     auto dir = mc::defaultPresetDir();
     if (!dir) {
@@ -535,7 +571,7 @@ void MotionStudioDialog::saveAsPreset() {
     m_motionName = name;
 }
 
-void MotionStudioDialog::removeSavedPreset() {
+void MotionStudioPanel::removeSavedPreset() {
     const QString key = m_presets->currentData().toString();
     if (!key.startsWith(QStringLiteral("s:"))) return;
     const QString name = key.mid(2);
@@ -548,7 +584,7 @@ void MotionStudioDialog::removeSavedPreset() {
     refreshPresets();
 }
 
-void MotionStudioDialog::useMotion(mc::Motion motion, const QString& name, bool oneShot) {
+void MotionStudioPanel::useMotion(mc::Motion motion, const QString& name, bool oneShot) {
     m_motion = std::move(motion);
     m_oneShot = oneShot;
     m_map = mc::autoMap(*m_motion);
@@ -573,8 +609,8 @@ void MotionStudioDialog::useMotion(mc::Motion motion, const QString& name, bool 
     retarget();
 }
 
-void MotionStudioDialog::retarget() {
-    if (!m_motion) return;
+void MotionStudioPanel::retarget() {
+    if (!m_motion || !hasSprite()) return;
     mc::RetargetOptions o;
     o.camera = camera();
     o.start = m_start->value();
@@ -583,6 +619,7 @@ void MotionStudioDialog::retarget() {
     o.amount = m_amount->value();
     o.inPlace = m_inPlace->isChecked();
     o.loop = !m_oneShot;   // jump, attack and hurt play once
+    o.body = m_fourLegged ? ::acestudio::motion::Body::Quadruped : ::acestudio::motion::Body::Biped;
     auto r = mc::retarget(m_sprite, *m_motion, o);
     if (!r) {
         m_result.reset();
@@ -605,12 +642,12 @@ void MotionStudioDialog::retarget() {
     m_scrub->blockSignals(false);
     m_frame = std::min(m_frame, n - 1);
     m_timer->setInterval(std::max(16, m_result->clip.durations.empty() ? 83 : m_result->clip.durations[0]));
-    if (!m_timer->isActive() && m_play->text() == tr("Pause")) m_timer->start();
+    if (!m_timer->isActive() && m_play->text() == tr("Pause") && isVisible()) m_timer->start();
     m_openButton->setEnabled(true);
     showFrame();
 }
 
-void MotionStudioDialog::tick() {
+void MotionStudioPanel::tick() {
     if (!m_result || m_result->clip.frames.empty()) return;
     m_frame = (m_frame + 1) % static_cast<int>(m_result->clip.frames.size());
     m_scrub->blockSignals(true);
@@ -619,7 +656,7 @@ void MotionStudioDialog::tick() {
     showFrame();
 }
 
-void MotionStudioDialog::showFrame() {
+void MotionStudioPanel::showFrame() {
     if (!m_result || m_frame < 0 || m_frame >= static_cast<int>(m_result->clip.frames.size())) return;
     const Image& f = m_result->clip.frames[static_cast<std::size_t>(m_frame)];
     const QSize area = m_preview->size() - QSize(8, 8);
@@ -640,7 +677,7 @@ void MotionStudioDialog::showFrame() {
     m_source->setTime(m_start->value() + (n > 0 ? span * m_frame / n : m_frame / fps), m_inPlace->isChecked());
 }
 
-void MotionStudioDialog::openDocument() {
+void MotionStudioPanel::openDocument() {
     if (!m_result || !m_open) return;
     const int n = static_cast<int>(m_result->clip.frames.size());
     std::vector<AnimationTag> tags;
@@ -650,7 +687,6 @@ void MotionStudioDialog::openDocument() {
     t.toFrame = n - 1;
     tags.push_back(t);
     m_open(m_result->clip.frames, m_result->clip.durations, tags, m_name + QStringLiteral("_") + m_motionName);
-    accept();
 }
 
 } // namespace acestudio::ui

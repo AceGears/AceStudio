@@ -40,6 +40,7 @@ The part rig of ADR-ANIM-001 is rebuilt from the sprite every time a clip is mad
 | Rig panel (bone tree, name, parent, head, length, angle, limits, lock, parts, IK chains, working pose, rest frame, bake, remove), Animation › Auto-Rig Current Layer | `app/src/panels/RigPanel.*`, `MainWindow` | CI build and UI audit only |
 | Bone overlay on the canvas (the working pose; selected bone highlighted) | `CanvasWidget::setBones` | CI build only; not looked at on a screen |
 | Dragging on the canvas: a bone's tip turns it (an IK chain's tip reaches), a root's joint moves the figure, Ctrl+drag edits rest geometry at the rest pose. The canvas grabs a press only within 7 screen pixels of a joint or tip; other presses go to the tool | `CanvasWidget::setBonesInteractive`, `RigPanel::boneGrabbed/boneDragged` | CI build only; not dragged by hand |
+| Parts bent across a joint (`Skin`, `Rig::skins`, `skinLayer`; dropped when the child bone, the binding or the layer goes, or the child is reparented; saved as rig version 3 only when used). Each source point goes to the blend (1 - w) A(p) + w B(p) of the two bones' moves, w a smoothstep across a band either side of the joint along the direction halfway between the bones at rest; drawn by inverse mapping (Newton's method from both bones' inverse points, the point nearer the child winning where it folds) from the 8x Scale2x copy. At rest, or when the bones turn together, the rigid path draws it | `Rig`, `RigTools.cpp` (`renderSkinned`), `Document`, `Editor` (layer undo), `cli/RigCommand.cpp` (`rig skin`), `mcp/AceTools.cpp` | `tests/test_rig_skin.cpp` (rest and turning together exact; bent 0.5, 1.2 and -0.9 rad: one piece, no holes, pixel count kept within 80-130%, only the sprite's colours, the upper arm unmoved, the end at the forearm's tail; validation, edits, JSON), run locally; `tests/cli_smoke.cmake` run locally with a placeholder GIF writer; a striped test arm looked at bent from -46 to 92 degrees. The MCP action is compiled by CI only |
 
 ## Not built (next stages)
 
@@ -49,7 +50,8 @@ The part rig of ADR-ANIM-001 is rebuilt from the sprite every time a clip is mad
   `tests/test_rig_motion.cpp` and the CLI smoke test; no app UI to draw the boxes yet). A rig that
   has both legs and wings is not built (Wings leaves the legs in the body).
 - A swimmer's body bending: auto-rig makes it one rigid part (the swim animator bends it column by column, which a saved rig cannot yet express).
-- Skinning (rows, columns, mesh) of a part across two bones: every part is rigid on one bone.
+- Skinning across more than two bones, painted weights or a mesh. (Built on 2026-11-18: a part
+  bends across the joint with one child of its bone, `Rig::skins`, rig version 3; see below.)
 - (Built on 2026-11-15: Lua `doc:rig()`, `set_rig`, `auto_rig`, `pose_rig`, `key_rig`, `unkey_rig`, `bake_rig`, and the MCP tools `rig_show` and `rig_edit`, which run the CLI. Lua is tested locally and in CI; the MCP tools are compiled, not called by a test.)
 - (Built on 2026-11-17, CLI only: `rig motion` keys a BVH/glTF/preset motion onto a saved rig; see
   ADR-ANIM-002 section 3.3. Motion Studio still builds its own rig per clip, and the app has no

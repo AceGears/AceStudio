@@ -1,5 +1,7 @@
 #pragma once
 // Motion Studio: 3D skeletal motion (BVH, glTF/GLB) onto a 2D sprite (acestudio::mocap).
+// A panel in its own dock (floating at first, dockable like the others), so
+// the canvas stays usable; "Use Current Sprite" takes the open sprite again.
 //
 // Left: the source skeleton in 3D (drag to turn the camera, wheel to zoom).
 // Right: the sprite posed by the retargeted motion, on the same clock. The
@@ -10,7 +12,6 @@
 #include "acestudio/core/Document.h"
 #include "acestudio/core/Mocap.h"
 
-#include <QDialog>
 #include <QWidget>
 
 #include <functional>
@@ -61,13 +62,25 @@ private:
     double m_dragTurn = 0, m_dragTilt = 0;
 };
 
-class MotionStudioDialog : public QDialog {
+class MotionStudioPanel : public QWidget {
     Q_OBJECT
 public:
     using OpenFn = std::function<void(const std::vector<Image>& frames, const std::vector<int>& durations,
                                       const std::vector<AnimationTag>& tags, const QString& name)>;
-    MotionStudioDialog(const Image& sprite, const QString& name, OpenFn open, QWidget* parent = nullptr);
-    ~MotionStudioDialog() override;
+    explicit MotionStudioPanel(OpenFn open, QWidget* parent = nullptr);
+    ~MotionStudioPanel() override;
+    // The sprite the motion is put on (cropped to its pixels); the motion,
+    // camera and timing are kept.
+    void setSprite(const Image& sprite, const QString& name);
+    bool hasSprite() const { return !m_sprite.isNull(); }
+
+Q_SIGNALS:
+    // "Use Current Sprite": the window answers with setSprite().
+    void currentSpriteRequested();
+
+protected:
+    void hideEvent(QHideEvent* e) override;
+    void showEvent(QShowEvent* e) override;
 
 private:
     void loadMotion();
@@ -88,6 +101,7 @@ private:
     ::acestudio::mocap::Camera camera() const;
 
     Image m_sprite;
+    bool m_fourLegged = false;   // the sprite is four-legged: four-legged motion (legs found by shape)
     QString m_name;
     OpenFn m_open;
     std::optional<::acestudio::mocap::Motion> m_motion;
@@ -98,6 +112,7 @@ private:
     int m_frame = 0;
     bool m_syncing = false;
 
+    QLabel* m_spriteLabel = nullptr;
     QLabel* m_motionLabel = nullptr;
     QComboBox* m_presets = nullptr;
     QPushButton* m_savePreset = nullptr;

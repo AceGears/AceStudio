@@ -219,7 +219,10 @@ Status Document::removeLayer(LayerId id) {
     std::erase_if(m_cels, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
     std::erase_if(m_maskCels, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
     std::erase_if(m_links, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
-    if (m_rig) std::erase_if(m_rig->bindings, [&](const auto& kv) { return doomed.count(kv.first) > 0; });
+    if (m_rig) {
+        std::erase_if(m_rig->bindings, [&](const auto& kv) { return doomed.count(kv.first) > 0; });
+        std::erase_if(m_rig->skins, [&](const auto& kv) { return doomed.count(kv.first) > 0; });
+    }
     std::erase_if(m_vectors, [&](const auto& kv) { return doomed.count(kv.first.layer) > 0; });
     return {};
 }

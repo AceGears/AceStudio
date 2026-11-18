@@ -45,8 +45,8 @@ add_executable(AceStudio WIN32
     src/AnimationDialogs.h
     src/AnimationDialogs.cpp
     src/SpriteAnimateDialog.cpp
-    src/MotionStudioDialog.h
-    src/MotionStudioDialog.cpp
+    src/MotionStudioPanel.h
+    src/MotionStudioPanel.cpp
     src/ExportDialog.h
     src/ExportDialog.cpp
     src/ai/AiService.h

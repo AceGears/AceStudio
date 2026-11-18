@@ -89,6 +89,7 @@ struct LayerSnapshot {
     std::vector<SavedCel> masks;
     std::vector<std::pair<CelKey, std::uint32_t>> links;
     std::vector<std::pair<LayerId, BoneId>> bindings;   // rig parts among the layers
+    std::vector<std::pair<LayerId, Skin>> skins;        // ...and those bent across a joint
     std::vector<std::pair<CelKey, std::vector<VectorShape>>> vectors;
     std::size_t bytes = 0;
 
@@ -110,6 +111,8 @@ struct LayerSnapshot {
                 if (k.layer == id) s.links.emplace_back(k, g);
             if (d.rig())
                 if (auto it = d.rig()->bindings.find(id); it != d.rig()->bindings.end()) s.bindings.emplace_back(id, it->second);
+            if (d.rig())
+                if (auto it = d.rig()->skins.find(id); it != d.rig()->skins.end()) s.skins.emplace_back(id, it->second);
             for (const auto& [k, shapes] : d.vectorCels())
                 if (k.layer == id) s.vectors.emplace_back(k, shapes);
         }
@@ -132,6 +135,8 @@ struct LayerSnapshot {
             Rig rig = *d.rig();
             for (const auto& [layer, bone] : bindings)
                 if (rig.bone(bone)) rig.bindings[layer] = bone;
+            for (const auto& [layer, sk] : skins)
+                (void)rigs::skinLayer(rig, layer, sk.bone, sk.blend);   // only if it still holds
             d.setRig(std::move(rig));
         }
     }

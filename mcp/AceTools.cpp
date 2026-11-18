@@ -597,9 +597,10 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                  std::string("Edits a project's rig and writes the result to `out`. Actions: auto (cut `layer` into part layers "
                              "with bones: legs with IK, wings or fins), pose (draw the rest parts posed into `frame`), key (store "
                              "a pose key on `frame` with a `curve`), unkey, rest (make `frame` the rest frame), bake (draw every "
-                             "keyed frame). Poses: `turn` \"bone=degrees,...\" relative to rest, `move` \"dx,dy\" in pixels, "
+                             "keyed frame), skin (bend part `layer` across the joint with `bone`, a child of its own bone; \"none\" "
+                             "makes it rigid again; `blend` pixels either side of the joint, 0 = automatic). Poses: `turn` \"bone=degrees,...\" relative to rest, `move` \"dx,dy\" in pixels, "
                              "`reach` \"chain=x,y;...\" for IK chains.") + kPathNote,
-                 obj({{"action", oneOf("What to do", {"auto", "pose", "key", "unkey", "rest", "bake"})},
+                 obj({{"action", oneOf("What to do", {"auto", "pose", "key", "unkey", "rest", "bake", "skin"})},
                       {"path", str("The .acestudio file")},
                       {"out", str("The .acestudio file to write")},
                       {"layer", kLayer},
@@ -612,6 +613,8 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                       {"curve", str("key: linear, ease-in, ease-out, ease-in-out, stepped or bezier:x1,y1,x2,y2")},
                       {"from", integer("bake: first frame", 0)},
                       {"to", integer("bake: last frame", 0)},
+                      {"bone", str("skin: the child bone the part bends with, or \"none\"")},
+                      {"blend", number("skin: pixels either side of the joint that mix the two bones (0 = automatic)")},
                       {"overwrite", kOverwrite}},
                      {"action", "path", "out"}),
                  writes(),
@@ -628,6 +631,8 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                      b.opt("curve", "--curve");
                      b.opt("from", "--from");
                      b.opt("to", "--to");
+                     b.opt("bone", "--bone");
+                     b.opt("blend", "--blend");
                      b.overwrite();
                      return fromCli(runCliConfirm(*envPtr, b.args, call));
                  }});
