@@ -52,8 +52,8 @@ not been run.
   (its own and one child); there is no painted weight map, the split is a straight line through
   the joint halfway between the two bones' directions. The bend is a linear blend, so a very sharp
   bend (past about 120 degrees) pinches the inside of the joint. Command line, the MCP
-  `rig_edit` tool and Lua (`doc:rig()` / `set_rig` carry it in the rig's `skins`); the rig panel
-  does not show or set it yet. Auto-rig does
+  `rig_edit` tool, Lua (`doc:rig()` / `set_rig` carry it in the rig's `skins`) and the rig panel's
+  Bends with box (compiled and audited by CI; no Qt test drives it). Auto-rig does
   not make bent parts; it still cuts a separate part for each bone.
 - **Four-legged motion** (`retarget --body quadruped`, ADR-ANIM-002 section 3.5): tested on a
   drawn test dog and the `quad-walk` preset only, not on captured animal motion. The legs, the body's

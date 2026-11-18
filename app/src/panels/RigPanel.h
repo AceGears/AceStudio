@@ -107,6 +107,7 @@ private:
     QListWidget* m_parts = nullptr;
     QPushButton* m_bind = nullptr;
     QPushButton* m_unbind = nullptr;
+    QComboBox* m_bendWith = nullptr;   // the current layer's part: rigid, or bent with a child of its bone
     QListWidget* m_chains = nullptr;
     QPushButton* m_addChain = nullptr;
     QPushButton* m_removeChain = nullptr;
