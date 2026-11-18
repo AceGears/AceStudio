@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Stage 1 (audit) done. Stage 3 core (BVH import, mapping, camera, retarget onto the part rig) built and tested locally on 2026-11-15. A first Motion Studio window is in the app. Stage 3b glTF/GLB animation import built and tested locally (core); the motion library was built on 2026-11-17 (section 3.2), direction sets on 2026-11-18 (section 3.4). Everything else is planned below, not built. |
+| Status | Stage 1 (audit) done. Stage 3 core (BVH import, mapping, camera, retarget onto the part rig) built and tested locally on 2026-11-15. A first Motion Studio window is in the app. Stage 3b glTF/GLB animation import built and tested locally (core); the motion library was built on 2026-11-17 (section 3.2), direction sets and four-legged motion on 2026-11-18 (sections 3.4 and 3.5). Everything else is planned below, not built. |
 | Builds on | ADR-ANIM-001 (part rig: parts, hidden pixels, depth, whole-pixel/RotSprite rendering, two-bone IK) |
 | Reference | A "Bonebase"-style Aseprite extension: a 3D skeleton beside a 2D rig, with turn, tilt and roll. It was used for the concept only. No code or assets were taken from it. |
 
@@ -95,6 +95,19 @@ Matching is by name: auto-rig names (`body`, `head`, `legN thigh|shin|foot`, `ar
 (`LThigh`, ...), or `--bones` pairs. Not done: a button in Motion Studio or the Rig panel, Lua and
 MCP access, non-humanoid mapping (stage 3c).
 
+### 3.5 Four-legged motion (stage 3c, first part, 2026-11-18)
+
+| Piece | Where | Verified |
+|---|---|---|
+| `creatureMap`: legs by shape (leaf joints within 8% of the height above the floor in the rest pose, climbed up while the parent's other children stay low, so a toe and heel count once; never into the root); front and back along the longest horizontal spread of the leg tops in the first frame, the front being where the root travels or else the end nearer the highest other leaf (the head) | `core/src/Mocap.cpp`, `Mocap.h` | `tests/test_creature_motion.cpp`: the preset's four legs (hind first, forward +Z), a humanoid refused (2 legs), on the spot and turned a quarter turn the head still tells the front |
+| `retarget` with `body = Quadruped`: the gait rig's four-leg mode; drawn legs take the source leg at the same end and side (near to near by depth); each foot moves from where it is drawn by the source foot's offset from its leg top around the loop's average, scaled per leg; lift, planting, the body's sink so planted feet reach, and the hind hock bending back as the procedural gait does | same | tests: a 72x48 test dog (`tests/data/anim/dog72.png`, drawn for the tests): 12 frames, at least 6 distinct, no floating frames or mirror flips, only the sprite's colours; a humanoid motion is refused |
+| `quad-walk` preset: a four-beat walk (left hind, left front, right hind, right front), the lowest toe on the floor every frame | `core/src/MotionLibrary.cpp` | tests: four legs found, every foot lifts, travels forward |
+| CLI `--body auto|biped|quadruped` on `retarget` and `directions`; JSON `body` and `legs`; Motion Studio picks four-legged motion for four-legged sprites | `cli/MocapCommands.cpp`, `app/src/MotionStudioDialog.cpp` | `tests/cli_smoke.cmake` (run locally with a placeholder GIF writer); the dialog is compiled by CI only. The test dog's walk sheet was looked at |
+
+Not done: back pitch, head and tail follow-through, leg overrides by name, six legs, wings and
+fins (`RigFlight`, `RigSwim`), spine and tail chains onto column bends, `rig motion` for
+four-legged rigs.
+
 ### 3.4 Direction sets (stage 4, first part, 2026-11-18)
 
 | Piece | Where | Verified |
@@ -113,7 +126,7 @@ front or side), rig motion per direction, and Lua and MCP access.
 |---|---|---|
 | 2 | Saved, editable rigs (ADR-ANIM-001 schema 4): bone tree, add/remove/rename/reparent, joint limits, IK chains, mirror, lock, undo; GUI bone overlay on the canvas | Needs the chief architect's approval for the schema bump |
 | 3b | ~~glTF/GLB animation import~~ (built, section 3.1); ~~a motion library with presets and save-as-preset~~ (built, section 3.2) | More presets (crouch, climb, cast, die) and CC0 captured clips, each licensed |
-| 3c | Non-humanoid mapping: quadruped (four legs on `buildGaitRig`'s four-leg mode), wing chains onto `RigFlight` parts, spine/tail chains onto column bends | |
+| 3c | (four-legged first part built, section 3.5) Non-humanoid mapping: quadruped (four legs on `buildGaitRig`'s four-leg mode), wing chains onto `RigFlight` parts, spine/tail chains onto column bends | |
 | 4 | (first part built, section 3.4) Multi-view: a direction set (front, back, side, three-quarter art) chosen by camera turn, with a turn clip between views; reference-view slots | This is where "new view" stops being an approximation |
 | 5 | AI assist (optional, worker or cloud only, with an explicit cost prompt): pose estimation of the sprite for auto-rig hints, hidden-surface inpainting of parts, view generation, text-to-motion (an LLM picks and parameterises library motions; no generative model where procedural motion works) | Respect the no-cost-without-approval rule |
 | 6 | Timeline tracks: bone keyframes, curves (linear, Bezier, eases, stepped), events, blending between clips (idle→walk→run with phase match) | |

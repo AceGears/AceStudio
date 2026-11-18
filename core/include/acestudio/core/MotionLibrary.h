@@ -28,11 +28,12 @@ struct PresetInfo {
     double seconds = 0;
     bool loops = false;          // built-in presets only; saved presets: false
     bool builtIn = false;
+    bool fourLegged = false;     // a four-legged skeleton (for four-legged sprites)
     std::filesystem::path file;  // saved presets: the BVH file
     std::string error;           // saved presets that could not be read
 };
 
-// idle, walk, run, jump, attack, hurt.
+// idle, walk, run, jump, attack, hurt (humanoid) and quad-walk (four-legged).
 std::vector<PresetInfo> builtInPresets();
 // NotFound for an unknown name.
 Result<Motion> builtInPreset(std::string_view name);

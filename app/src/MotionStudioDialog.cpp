@@ -187,7 +187,9 @@ QSlider* angleSlider(QWidget* parent, int lo, int hi, const QString& name) {
 } // namespace
 
 MotionStudioDialog::MotionStudioDialog(const Image& sprite, const QString& name, OpenFn open, QWidget* parent)
-    : QDialog(parent), m_sprite(sprite), m_name(name), m_open(std::move(open)) {
+    : QDialog(parent), m_sprite(sprite),
+      m_fourLegged(::acestudio::motion::analyzeSubject(sprite).body == ::acestudio::motion::Body::Quadruped), m_name(name),
+      m_open(std::move(open)) {
     setWindowTitle(tr("Motion Studio: 3D Motion onto a Sprite"));
     setSizeGripEnabled(true);
     auto* root = new QVBoxLayout(this);
@@ -583,6 +585,7 @@ void MotionStudioDialog::retarget() {
     o.amount = m_amount->value();
     o.inPlace = m_inPlace->isChecked();
     o.loop = !m_oneShot;   // jump, attack and hurt play once
+    o.body = m_fourLegged ? ::acestudio::motion::Body::Quadruped : ::acestudio::motion::Body::Biped;
     auto r = mc::retarget(m_sprite, *m_motion, o);
     if (!r) {
         m_result.reset();

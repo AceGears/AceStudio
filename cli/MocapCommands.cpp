@@ -169,6 +169,18 @@ int readMotionArgs(const Args& a, Output& out, const std::string& cmd, bool oneS
     return kOk;
 }
 
+// --body auto|biped|quadruped: the kind of figure the sprite is (auto: read
+// from the sprite; four-legged sprites take four-legged motion).
+int readBody(const Args& a, Output& out, const std::string& cmd, const Image& sprite, motion::Body& body) {
+    const std::string v = a.opt("body").value_or("auto");
+    if (v == "biped") body = motion::Body::Biped;
+    else if (v == "quadruped") body = motion::Body::Quadruped;
+    else if (v == "auto")
+        body = motion::analyzeSubject(sprite).body == motion::Body::Quadruped ? motion::Body::Quadruped : motion::Body::Biped;
+    else return out.fail(kUsage, cmd + ": --body expects auto, biped or quadruped");
+    return kOk;
+}
+
 } // namespace
 
 int cmdRetarget(const Args& a, Output& out) {
@@ -199,6 +211,7 @@ int cmdRetarget(const Args& a, Output& out) {
     o.inPlace = ma.inPlace;
     o.loop = ma.loop;
     o.mapOverrides = ma.mapOverrides;
+    if (int c = readBody(a, out, "retarget", sprite.value(), o.body); c != kOk) return c;
 
     auto res = mocap::retarget(sprite.value(), mo, o);
     if (!res) return out.fail(res.error());
@@ -221,6 +234,10 @@ int cmdRetarget(const Args& a, Output& out) {
         const int j = r.map.joint[static_cast<std::size_t>(b)];
         mapped[std::string(mocap::toString(static_cast<mocap::Bone>(b)))] = j >= 0 ? json(mo.joints[static_cast<std::size_t>(j)].name) : json(nullptr);
     }
+    // Four-legged motion: each leg by its top joint, hind legs first.
+    json legs = json::array();
+    for (const auto& l : r.creature.legs)
+        legs.push_back({{"top", mo.joints[static_cast<std::size_t>(l.joints.front())].name}, {"hind", l.hind}});
     std::string text = "Wrote " + png.string() + " and " + gif.string() + " (" + std::to_string(r.clip.frames.size()) + " frames), and the source skeleton beside them\n";
     for (const auto& n : r.notes) text += "note: " + n + "\n";
     for (const auto& i : chk.issues) text += "check: " + i + "\n";
@@ -232,6 +249,8 @@ int cmdRetarget(const Args& a, Output& out) {
                         {"camera", {{"turn", r.camera.turn}, {"tilt", r.camera.tilt}, {"roll", r.camera.roll}, {"perspective", r.camera.perspective}}},
                         {"approximateView", r.approximateView},
                         {"bones", mapped},
+                        {"body", o.body == motion::Body::Quadruped ? "quadruped" : "biped"},
+                        {"legs", legs},
                         {"notes", r.notes},
                         {"issues", chk.issues}},
                        text);
@@ -370,6 +389,7 @@ int cmdDirections(const Args& a, Output& out) {
     o.retarget.inPlace = ma.inPlace;
     o.retarget.loop = ma.loop;
     o.retarget.mapOverrides = ma.mapOverrides;
+    if (int c = readBody(a, out, "directions", views.front().art, o.retarget.body); c != kOk) return c;
     // --dirs 8 (default) | 4 | s,e,n,...
     const std::string dirs = a.opt("dirs").value_or("8");
     if (dirs == "8" || dirs == "4") {

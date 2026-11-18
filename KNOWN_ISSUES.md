@@ -44,6 +44,13 @@ not been run.
   legs) barely moves and holds its last direction. Side-view legs numbered 0 and 1 are taken as
   near and far; if they come out swapped, pair them with `--bones`. Wings, fins and other
   non-humanoid rigs match nothing and are refused. Frames added for the keys are empty until baked.
+- **Four-legged motion** (`retarget --body quadruped`, ADR-ANIM-002 section 3.5): tested on a
+  drawn test dog and the `quad-walk` preset only, not on captured animal motion. Only the legs and
+  the body's height follow the motion: the back does not pitch, and the head and tail stay as
+  drawn. Exactly four legs reaching the floor are needed (six-legged and winged skeletons are
+  refused); legs cannot be paired by hand yet, and Motion Studio's bone table lists humanoid bones
+  only. Sprites must be drawn from the side with their legs apart; `rig motion` does not take
+  four-legged motion.
 - **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI and core only (no app page,
   Lua or MCP yet). The art is chosen, never turned or drawn: a direction with no view drawn near it
   shows the nearest view with the motion seen from the new direction, and is flagged. Mirrored

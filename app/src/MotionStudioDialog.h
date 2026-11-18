@@ -88,6 +88,7 @@ private:
     ::acestudio::mocap::Camera camera() const;
 
     Image m_sprite;
+    bool m_fourLegged = false;   // the sprite is four-legged: four-legged motion (legs found by shape)
     QString m_name;
     OpenFn m_open;
     std::optional<::acestudio::mocap::Motion> m_motion;

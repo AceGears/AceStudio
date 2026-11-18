@@ -127,6 +127,11 @@ Add, Subtract, Difference), visibility and locks.
   the rig is drawn in. Bones are matched by their auto-rig names; pair others with
   `--bones "upper leg=LThigh,lower leg=LShin"`. Arms keep the pose you drew and swing from it; add
   `--absolute-arms` to have them point where the motion's arms point.
+- **Four-legged animals**: a sprite drawn from the side on four legs takes four-legged motion,
+  such as the built-in `quad-walk` or a BVH or glTF animal clip:
+  `acestudio-cli retarget dog.png preset:quad-walk --out out`, or **Animation › Motion Studio**
+  with the sprite open. The motion's legs are found by their shape, so joint names do not matter.
+  The legs and the body's height follow the motion; the head, back and tail keep their drawn pose.
 - **A motion in every direction** (command line only for now): put the views you drew in a
   folder, named by the way the character faces: `s.png` (towards you), `se.png`, `e.png` (facing
   right), `ne.png`, `n.png` (away from you), and so on, or `front.png`, `right.png`,

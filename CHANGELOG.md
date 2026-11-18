@@ -91,6 +91,13 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Four-legged motion** (ADR-ANIM-002 section 3.5): `retarget` puts a four-legged motion on a
+  four-legged sprite (`--body auto`, the default, picks this for sprites read as four-legged; also
+  in Motion Studio and `directions`). The motion's legs are found by shape, not by name: chains of
+  joints that reach the floor, front and back told apart by which way the body travels or where
+  the head is. Each drawn leg follows the source leg at its end (hind or front) and side (near or
+  far), measured from where the foot is drawn, and the body rises and sinks with the motion. A
+  built-in `quad-walk` preset (a four-beat walk) was added to the motion library.
 - **Direction sets** (ADR-ANIM-002 section 3.4): `acestudio-cli directions <views folder>
   <motion|preset:NAME> --out <project>` plays a motion in 8 (or 4, or listed) directions from the
   views you drew, PNGs named by view (`s`, `se`, `e`, ... or `front`, `right`, `back-left`, ...).
