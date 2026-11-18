@@ -38,13 +38,28 @@ not been run.
   key shows, so big pose changes tear; the area check flags many such frames but not all (a limb
   can move without changing the area). Touching parts of the same colour can swap pixels; keep
   separate parts on separate layers. The work holds a second copy of the document while it runs.
+- **MCP tools for rigs, vector shapes and the palette lock** run the CLI commands that the CLI smoke
+  test covers, but no test calls the tools themselves yet.
+- **Palette lock** (ADR-ANIM-006): the core is tested; painting, saving, the CLI and the Palette
+  panel controls are checked by CI only and have not been used on a PC. Merge Down with blend
+  modes, smooth transforms and effects are not snapped; use Conform after them. The colour picker
+  still lets you choose any colour, which is snapped when painted.
+- **Vector shapes** (ADR-ANIM-005): the core and CLI are tested; the tool options are built by CI
+  and opened by the UI audit but have not been drawn with on a PC. A shape cannot be selected or
+  edited after it is drawn (undo, `vector clear` or rasterise instead), the Curve tool makes one
+  Bezier segment per shape (no multi-anchor pen yet), and painting by hand on a cel with shapes is
+  lost at the next shape added unless the cel is rasterised first. Linked cels cannot hold shapes.
 - **Rigs** (Rig panel, Animation › Auto-Rig Current Layer, `acestudio-cli rig`): the core and CLI
   are tested; the panel and the bone overlay are built by CI and opened by the UI audit but have not
-  been used on a PC. Bones are edited with the panel's fields: they cannot yet be dragged on the
-  canvas. Auto-rig handles bodies with legs (two or four); blobs, flyers, swimmers and objects are
-  refused and must be rigged by hand, and arms are only rigged where the silhouette analysis finds
-  them. Every part is rigid on one bone (no bending across a joint). A pose lives in the panel until
-  it is baked into a frame; poses and bone keyframes are not saved. Auto-rig runs on the UI thread
+  been used on a PC, and bone dragging on the canvas has not been tried by hand. While dragging is
+  on, a paint stroke that starts within 7 screen pixels of a joint or tip grabs the bone instead
+  (turn **Drag bones on the canvas** off to paint there). Auto-rig handles bodies with legs (two or four), wings (cut below the wing line, so legs stay in
+  the body) and fish (the body stays one rigid part); blobs and objects are refused and must be
+  rigged by hand, and arms are only rigged where the silhouette analysis finds them. Every part is rigid on one bone (no bending across a joint). Pose keys with curves are saved
+  in the rig, but an unkeyed working pose lives in the panel until it is keyed or baked, and moving
+  to another frame of a keyed rig replaces it with that frame's keyed pose. There is no curve editor
+  (custom Bezier points only through `rig key --curve bezier:…`), and keys are not drawn on the
+  Timeline. Baking keys runs on the UI thread. Auto-rig runs on the UI thread
   (fast for sprites; a very large layer pauses the window briefly). Projects with a rig need
   schema 4 (this version or later).
 - **ONNX Runtime DirectML:** onnxruntime-directml 1.24.4 fails inside a fused node when running

@@ -289,6 +289,34 @@ ToolsPanel::ToolsPanel(ToolState* state, QWidget* parent) : QWidget(parent), m_s
     m_gradDither->addItem(tr("Smooth"), static_cast<int>(GradientDither::Smooth));
     gf->addRow(tr("Shape"), m_gradShape);
     gf->addRow(tr("Style"), m_gradDither);
+    // Vector shapes (Line, Rectangle, Ellipse, Polygon, Curve)
+    m_vecBox = new QWidget(this);
+    auto* vf = new QFormLayout(m_vecBox);
+    vf->setContentsMargins(0, 0, 0, 0);
+    m_vector = new QCheckBox(tr("Keep as vector shape"), m_vecBox);
+    m_vector->setToolTip(tr("Add an editable shape to the cel instead of painting pixels; it is drawn pixel-perfectly"));
+    m_strokeStyle = new QComboBox(m_vecBox);
+    m_strokeStyle->setAccessibleName(tr("Stroke style"));
+    m_strokeStyle->addItem(tr("Solid"), static_cast<int>(StrokeStyle::Solid));
+    m_strokeStyle->addItem(tr("Dashed"), static_cast<int>(StrokeStyle::Dashed));
+    m_strokeStyle->addItem(tr("Dotted"), static_cast<int>(StrokeStyle::Dotted));
+    m_strokeStyle->addItem(tr("No outline"), static_cast<int>(StrokeStyle::None));
+    m_vecFill = new QComboBox(m_vecBox);
+    m_vecFill->setAccessibleName(tr("Shape fill"));
+    m_vecFill->setToolTip(tr("Solid: the other colour. Gradients: primary to secondary, dithered or smooth as set for the Gradient tool"));
+    m_vecFill->addItem(tr("None"), static_cast<int>(FillStyle::None));
+    m_vecFill->addItem(tr("Solid"), static_cast<int>(FillStyle::Solid));
+    m_vecFill->addItem(tr("Linear gradient"), static_cast<int>(FillStyle::Linear));
+    m_vecFill->addItem(tr("Radial gradient"), static_cast<int>(FillStyle::Radial));
+    vf->addRow(m_vector);
+    vf->addRow(tr("Stroke"), m_strokeStyle);
+    vf->addRow(tr("Fill"), m_vecFill);
+    connect(m_vector, &QCheckBox::toggled, this, [this](bool on) { if (!m_syncing) m_state->setVectorShapes(on); });
+    connect(m_strokeStyle, &QComboBox::currentIndexChanged, this,
+            [this] { if (!m_syncing) m_state->setStrokeStyle(static_cast<StrokeStyle>(m_strokeStyle->currentData().toInt())); });
+    connect(m_vecFill, &QComboBox::currentIndexChanged, this,
+            [this] { if (!m_syncing) m_state->setVectorFill(static_cast<FillStyle>(m_vecFill->currentData().toInt())); });
+
     connect(m_selOp, &QComboBox::currentIndexChanged, this,
             [this] { if (!m_syncing) m_state->setSelectionOp(static_cast<SelectionOp>(m_selOp->currentData().toInt())); });
     connect(m_gradShape, &QComboBox::currentIndexChanged, this,
@@ -326,6 +354,7 @@ ToolsPanel::ToolsPanel(ToolState* state, QWidget* parent) : QWidget(parent), m_s
     root->addWidget(m_fillBox);
     root->addWidget(m_selBox);
     root->addWidget(m_gradBox);
+    root->addWidget(m_vecBox);
     root->addWidget(m_sampleMerged);
     root->addStretch();
     // Combos would otherwise size to their longest item and widen the dock as tools change.
@@ -381,11 +410,18 @@ void ToolsPanel::syncFromState() {
     m_selOp->setCurrentIndex(m_selOp->findData(static_cast<int>(m_state->selectionOp())));
     m_gradShape->setCurrentIndex(m_gradShape->findData(static_cast<int>(m_state->gradientShape())));
     m_gradDither->setCurrentIndex(m_gradDither->findData(static_cast<int>(m_state->gradientDither())));
+    m_vector->setChecked(m_state->vectorShapes());
+    m_strokeStyle->setCurrentIndex(m_strokeStyle->findData(static_cast<int>(m_state->strokeStyle())));
+    m_vecFill->setCurrentIndex(m_vecFill->findData(static_cast<int>(m_state->vectorFill())));
+    m_strokeStyle->setEnabled(m_state->vectorShapes());
+    m_vecFill->setEnabled(m_state->vectorShapes());
 
     const bool brushTool = isBrushTool(t);
     m_brushBox->setVisible(brushTool);
     m_pixelPerfect->setVisible(t == Tool::Pencil || t == Tool::Eraser);
-    m_filled->setVisible(t == Tool::Rectangle || t == Tool::Ellipse || t == Tool::Polygon);
+    const bool shapeTool = t == Tool::Line || t == Tool::Rectangle || t == Tool::Ellipse || t == Tool::Polygon || t == Tool::Curve;
+    m_vecBox->setVisible(shapeTool);
+    m_filled->setVisible((t == Tool::Rectangle || t == Tool::Ellipse || t == Tool::Polygon) && !m_state->vectorShapes());
     const bool inkTool = brushTool && t != Tool::Eraser;
     m_ink->setVisible(inkTool);
     if (auto* lbl = qobject_cast<QFormLayout*>(m_brushBox->layout())->labelForField(m_ink)) lbl->setVisible(inkTool);

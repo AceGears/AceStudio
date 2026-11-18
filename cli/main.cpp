@@ -92,12 +92,35 @@ const char* kUsageText =
     "                                  onto a two-legged sprite's part rig: strip PNG + GIF,\n"
     "                                  and the projected source skeleton beside it (<name>_source.png/.gif)\n"
     "  rig show <project>              The project's rig: bones, parts and IK chains\n"
-    "  rig auto <project> --layer <name|id> --out <project> [--frame N]\n"
-    "                                  Cut a sprite layer into part layers with bones and leg IK (schema 4)\n"
+    "  rig auto <project> --layer <name|id> --out <project> [--frame N] [--as auto|legs|wings|fins]\n"
+    "                                  Cut a sprite layer into part layers with bones (legs with IK, wings\n"
+    "                                  or fins; auto picks from the analysis) (schema 4)\n"
     "  rig pose <project> --out <project> [--frame N] [--rest R] [--turn bone=deg,...] [--move dx,dy]\n"
     "           [--reach chain=x,y;...]\n"
-    "                                  Draw the parts of rest frame R (default 0), posed, into frame N\n"
-    "                                  (pixel-art safe: whole-pixel moves, RotSprite turns, no new colours)\n"
+    "                                  Draw the parts of rest frame R (default: the rig's rest frame), posed,\n"
+    "                                  into frame N (pixel-art safe: whole-pixel moves, RotSprite turns)\n"
+    "  rig key <project> --out <project> --frame N [pose options as rig pose]\n"
+    "          [--curve linear|ease-in|ease-out|ease-in-out|stepped|bezier:x1,y1,x2,y2]\n"
+    "                                  Store a pose key on frame N; frames between keys follow the curve\n"
+    "  rig unkey <project> --out <project> --frame N   Remove the key on frame N\n"
+    "  rig rest <project> --out <project> --frame N    Make frame N the rig's rest frame\n"
+    "  rig bake <project> --out <project> [--from F --to L]\n"
+    "                                  Draw every keyed frame (default: first key to last) from the rest frame\n"
+    "  vector show <project>           Every cel's vector shapes (schema 5)\n"
+    "  vector add <project> --layer <name|id> --out <project> [--frame N]\n"
+    "             (--rect x0,y0,x1,y1 | --ellipse x0,y0,x1,y1 | --path \"x,y[,inX,inY,outX,outY];...\" (';' or spaces) [--closed])\n"
+    "             [--stroke solid|dashed|dotted|none] [--stroke-color #rrggbb] [--width N] [--dash on,off]\n"
+    "             [--fill none|solid|linear|radial] [--fill-color #rrggbb] [--fill-color2 #rrggbb]\n"
+    "             [--axis x0,y0,x1,y1] [--smooth]\n"
+    "                                  Add a shape to a cel and redraw it pixel-perfectly (gradients are\n"
+    "                                  ordered-dithered unless --smooth)\n"
+    "  vector clear|rasterize <project> --layer <name|id> --out <project> [--frame N]\n"
+    "                                  Remove the shapes and their pixels / keep the pixels, drop the shapes\n"
+    "  palette show|check <project>    The palette, its lock and how many pixels are off it (check: exit 1\n"
+    "                                  when any are)\n"
+    "  palette lock|unlock|conform <project> --out <project>\n"
+    "                                  Lock the palette (edits refused; new pixels snap to it), unlock it, or\n"
+    "                                  snap every cel to it\n"
     "  slice <sheet.png> --out <folder> [--grid WxH|auto [--offset X,Y] [--spacing X,Y] [--keep-empty]]\n"
     "        [--background #rrggbb] [--tolerance 8] [--merge 2] [--min-pixels 4]\n"
     "                                  Cut a sheet into sprites (PNGs + .slices.json)\n"
@@ -139,7 +162,8 @@ std::optional<Args> parseArgs(int argc, char** argv, std::string& err) {
         else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot" || s == "--yes" || s == "--cpu" || s == "--rotate" ||
                  s == "--no-outline" || s == "--no-merge" || s == "--square" || s == "--keep-empty" || s == "--no-bob" ||
                  s == "--remove" || s == "--dry-run" || s == "--global" || s == "--lighting" || s == "--collision" || s == "--show-grid" ||
-                 s == "--perspective" || s == "--travel" || s == "--no-loop" || s == "--loop-back")
+                 s == "--perspective" || s == "--travel" || s == "--no-loop" || s == "--loop-back" || s == "--closed" ||
+                 s == "--smooth")
             a.flags.insert(s.substr(2));
         else if (s == "-h" || s == "--help") { a.positional = {"help"}; return a; }
         else if (s.rfind("--", 0) == 0) {
@@ -364,6 +388,8 @@ int main(int argc, char** argv) {
         if (cmd == "map") return acestudio::cli::cmdMap(*args, out);
         if (cmd == "run") return acestudio::cli::cmdRun(*args, out);
         if (cmd == "rig") return acestudio::cli::cmdRig(*args, out);
+        if (cmd == "vector") return acestudio::cli::cmdVector(*args, out);
+        if (cmd == "palette") return acestudio::cli::cmdPalette(*args, out);
         return out.fail(kUsage, "Unknown command '" + cmd + "'. Run with --help.");
     } catch (const std::exception& e) {
         return out.fail(kInternal, std::string("Unexpected error: ") + e.what());

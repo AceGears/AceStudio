@@ -6,6 +6,7 @@
 #include "acestudio/core/Raster.h"
 #include "acestudio/core/Result.h"
 #include "acestudio/core/Rig.h"
+#include "acestudio/core/Vector.h"
 
 #include <nlohmann/json.hpp>
 
@@ -230,11 +231,28 @@ public:
     const std::optional<Rig>& rig() const noexcept { return m_rig; }
     void setRig(std::optional<Rig> rig) { m_rig = std::move(rig); }
 
+    // ---- Vector shapes (schema 5; Vector.h) ----
+    // Editable shapes on a raster layer's cel; the cel's pixels are their
+    // rasterisation (Editor::setVectorShapes keeps the two in step). They move
+    // with their frame and go with their layer.
+    const std::vector<VectorShape>* vectorShapes(LayerId layer, int frame) const noexcept;
+    const std::map<CelKey, std::vector<VectorShape>>& vectorCels() const noexcept { return m_vectors; }
+    // Sets the shapes of one cel (an empty list removes them); pixels untouched.
+    void setVectorShapes(LayerId layer, int frame, std::vector<VectorShape> shapes);
+
     // Free-form, namespaced extension data preserved on save: AI
     // generation settings, model provenance, export presets, tileset
     // metadata, per-project preferences.
     nlohmann::json& extensions() noexcept { return m_extensions; }
     const nlohmann::json& extensions() const noexcept { return m_extensions; }
+
+    // Palette lock (ADR-ANIM-006), kept as the extension "paletteLock": true so
+    // files stay readable by older builds. The Editor snaps painted, imported,
+    // generated and vector pixels to the palette and refuses palette edits.
+    bool paletteLocked() const noexcept;
+    void setPaletteLocked(bool locked);
+    // Opaque pixels of all cels whose colour is not in the palette.
+    std::size_t offPalettePixels() const;
 
     // Renders all visible layers of a frame into a canvas-sized image.
     // Groups are composited in isolation and then blended with their own
@@ -279,6 +297,7 @@ private:
     Mask m_selection;
     std::vector<AnimationTag> m_tags;
     std::optional<Rig> m_rig;
+    std::map<CelKey, std::vector<VectorShape>> m_vectors;
     nlohmann::json m_extensions = nlohmann::json::object();
 };
 

@@ -327,3 +327,60 @@ TEST_CASE("Lua layer, frame and palette API", "[script]") {
     CHECK(ed.document().layers()[0].name == "A");
     CHECK(ed.document().frameCount() == 1);
 }
+
+TEST_CASE("Lua reads and writes rigs, vector shapes and the palette lock", "[script][rig][vector][palette]") {
+    auto r = run(R"(
+        local d = ace.new_document(32, 24, 3)
+        local layer = d:layers()[1]
+        assert(layer.id ~= nil)
+
+        -- Vector shapes, in the project-file form.
+        assert(#d:vector_shapes(0, 0) == 0)
+        d:set_vector_shapes(0, 0, {
+            {kind = 'rectangle', points = {{x = 2, y = 2}, {x = 12, y = 10}},
+             stroke = {style = 'solid', color = '#000000', width = 1}, fill = {style = 'solid', color = '#ff0000'}},
+            {kind = 'path', closed = true, points = {{x = 14, y = 2}, {x = 30, y = 2, ['in'] = {-4, 6}}, {x = 22, y = 20}},
+             stroke = {style = 'dashed', color = '#0000ff', dash = 3, gap = 1}},
+        })
+        local s = d:vector_shapes(0, 0)
+        assert(#s == 2 and s[1].kind == 'rectangle' and #s[2].points == 3 and s[2].closed == true)
+        assert(d:cel(0, 0):hex(6, 6) == '#ff0000ff')
+        assert(not pcall(function() d:set_vector_shapes(0, 0, {{kind = 'blob', points = {}}}) end))
+        d:rasterize_vectors(0, 0)
+        assert(#d:vector_shapes(0, 0) == 0 and d:cel(0, 0):hex(6, 6) == '#ff0000ff')
+
+        -- Rigs: none yet; set one, key it, read it back.
+        assert(d:rig() == nil)
+        assert(not pcall(function() d:key_rig(1, {}) end))
+        d:set_rig({version = 1, nextId = 2, bones = {{id = 1, parent = 0, name = 'body', x = 8, y = 8, length = 6, angle = 0}},
+                   bindings = {}, chains = {}})
+        local rig = d:rig()
+        assert(#rig.bones == 1 and rig.bones[1].name == 'body')
+        d:key_rig(0, {})
+        d:key_rig(2, {turn = {body = 30}, dx = 1}, 'ease-in')
+        d:key_rig(1, {turn = {body = 10}}, 'bezier', {0.42, 0, 0.58, 1})
+        assert(not pcall(function() d:key_rig(1, {turn = {tail = 5}}) end))
+        rig = d:rig()
+        assert(rig.version == 2 and #rig.keys == 3 and rig.keys[3].frame == 2 and rig.keys[3].pose.dx == 1)
+        assert(rig.keys[2].curve.type == 'bezier')
+        d:unkey_rig(1)
+        assert(#d:rig().keys == 2)
+        d:set_rig(nil)
+        assert(d:rig() == nil)
+
+        -- Palette lock.
+        assert(d:palette_locked() == false)
+        d:set_cel(0, 1, ace.image(4, 4, {201, 13, 77}))
+        assert(d:off_palette() > 0)
+        d:lock_palette()
+        assert(d:palette_locked())
+        assert(not pcall(function() d:set_palette({'#000000'}) end))
+        assert(d:conform_palette() >= 16 and d:off_palette() == 0)   -- the 4x4 block, and frame 0's shapes if off the palette
+        d:set_cel(0, 2, ace.image(4, 4, {3, 250, 9}))
+        assert(d:off_palette() == 0)
+        d:lock_palette(false)
+        assert(not d:palette_locked())
+    )");
+    INFO(errorOf(r));
+    REQUIRE(r);
+}

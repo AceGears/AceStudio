@@ -3,6 +3,9 @@
 #include "QtBridge.h"
 #include "ToolState.h"
 
+#include <QCheckBox>
+
+#include <algorithm>
 #include <QColorDialog>
 #include <QFileDialog>
 #include <QMessageBox>
@@ -118,6 +121,21 @@ PalettePanel::PalettePanel(ToolState* tools, QWidget* parent) : QWidget(parent),
     fileRow->addWidget(extract);
     fileRow->addStretch();
     layout->addLayout(fileRow);
+    auto* lockRow = new QHBoxLayout;
+    m_lock = new QCheckBox(tr("Lock palette"), this);
+    m_lock->setObjectName(QStringLiteral("palette.lock"));
+    m_lock->setToolTip(tr("Keep the project to these colours: palette edits are refused and everything painted, "
+                          "pasted, generated or drawn as a vector shape snaps to the nearest palette colour"));
+    m_conform = new QPushButton(tr("Conform"), this);
+    m_conform->setObjectName(QStringLiteral("palette.conform"));
+    m_conform->setToolTip(tr("Snap every pixel of every cel to the nearest palette colour (one undo step)"));
+    lockRow->addWidget(m_lock);
+    lockRow->addWidget(m_conform);
+    lockRow->addStretch();
+    layout->addLayout(lockRow);
+    m_editButtons = {add, remove, load, extract};
+    connect(m_lock, &QCheckBox::clicked, this, &PalettePanel::toggleLock);
+    connect(m_conform, &QPushButton::clicked, this, &PalettePanel::conform);
     layout->addStretch();
     const QString filter = tr("Palettes (*.gpl *.pal *.hex *.txt *.ase);;GIMP (*.gpl);;JASC-PAL (*.pal);;Hex list (*.hex);;Paint.NET (*.txt);;Adobe Swatch Exchange (*.ase)");
     connect(load, &QPushButton::clicked, this, [this, filter] {
@@ -193,16 +211,56 @@ void PalettePanel::setView(DocumentView* view) {
 
 void PalettePanel::rebuild() {
     QList<QColor> colors;
+    const bool locked = m_view && m_view->document().paletteLocked();
     if (m_view) {
         const auto& pal = m_view->document().palette();
         for (const auto& c : pal.colors()) colors << toQColor(c);
-        m_name->setText(QStringLiteral("<b>%1</b> — %2").arg(qs(pal.name()).toHtmlEscaped())
-                            .arg(tr("%n color(s)", nullptr, static_cast<int>(pal.size()))));
+        m_name->setText(QStringLiteral("<b>%1</b> — %2%3").arg(qs(pal.name()).toHtmlEscaped())
+                            .arg(tr("%n color(s)", nullptr, static_cast<int>(pal.size())))
+                            .arg(locked ? tr(" — locked") : QString()));
     } else {
         m_name->setText(tr("No document open"));
     }
     m_grid->setColors(colors);
+    m_lock->setChecked(locked);
+    for (QPushButton* b : m_editButtons) b->setEnabled(!locked);
     setEnabled(m_view != nullptr);
+}
+
+void PalettePanel::toggleLock(bool locked) {
+    if (!m_view) return;
+    Editor& ed = m_view->editor();
+    Status st;
+    if (locked) {
+        const std::size_t off = m_view->document().offPalettePixels();
+        bool conformToo = false;
+        if (off > 0) {
+            const auto answer = QMessageBox::question(
+                this, tr("Lock Palette"),
+                tr("%n pixel(s) in this project are not palette colours. Snap them to the nearest palette colour now?\n\n"
+                   "Either way, from now on new pixels snap to the palette.", nullptr, static_cast<int>(std::min<std::size_t>(off, 2147483647))),
+                QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel, QMessageBox::Yes);
+            if (answer == QMessageBox::Cancel) { rebuild(); return; }
+            conformToo = answer == QMessageBox::Yes;
+        }
+        if (conformToo) {
+            if (auto r = ed.lockAndConformPalette(); !r) st = r.error();
+        } else {
+            st = ed.setPaletteLocked(true);
+        }
+    } else {
+        st = ed.setPaletteLocked(false);
+    }
+    if (!st) Q_EMIT m_view->statusMessage(qs(st.error().message));
+    rebuild();
+}
+
+void PalettePanel::conform() {
+    if (!m_view) return;
+    auto r = m_view->editor().conformToPalette();
+    if (!r) { Q_EMIT m_view->statusMessage(qs(r.error().message)); return; }
+    Q_EMIT m_view->statusMessage(r.value() == 0 ? tr("Every pixel is already a palette colour")
+                                                : tr("Snapped %1 pixels to the palette").arg(r.value()));
 }
 
 } // namespace acestudio::ui

@@ -41,6 +41,8 @@ add_executable(acestudio_core_tests
     test_cycle.cpp
     test_inbetween.cpp
     test_rig.cpp
+    test_vector.cpp
+    test_palette_lock.cpp
     test_mocap.cpp
     test_world_map.cpp
     test_style_profile.cpp

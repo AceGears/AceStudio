@@ -165,8 +165,11 @@ Rgba8 PaintSession::constrain(Rgba8 c) const {
     }
     if (c.a == 0) return Rgba8::transparent();
     switch (d.colorMode()) {
-    case ColorMode::Rgba: return c;
-    case ColorMode::Grayscale: { const auto l = c.luma(); return {l, l, l, c.a}; }
+    case ColorMode::Rgba: return d.paletteLocked() ? snapToPalette(d.palette(), c) : c;
+    case ColorMode::Grayscale: {
+        const auto l = c.luma();
+        return d.paletteLocked() ? snapToPalette(d.palette(), Rgba8{l, l, l, c.a}) : Rgba8{l, l, l, c.a};
+    }
     case ColorMode::Indexed: {
         // Nearest opaque palette entry; the palette defines the allowed colours.
         const auto& cols = d.palette().colors();
@@ -434,29 +437,11 @@ void drawEllipse(PaintSession& s, Point a, Point b, bool filled, Rgba8 color) {
 
 void drawGradient(PaintSession& s, Point a, Point b, Rgba8 c0, Rgba8 c1, GradientShape shape, GradientDither dither) {
     const Image& img = s.original();
-    const double dx = b.x - a.x, dy = b.y - a.y;
-    const double len2 = dx * dx + dy * dy;
-    const double radius = std::sqrt(len2);
-    auto lerp = [](std::uint8_t p, std::uint8_t q, double t) {
-        return static_cast<std::uint8_t>(std::lround(p + (q - p) * t));
-    };
     for (int y = 0; y < img.height(); ++y)
-        for (int x = 0; x < img.width(); ++x) {
-            double t = 0.0;
-            if (len2 > 0) {
-                if (shape == GradientShape::Linear) t = ((x - a.x) * dx + (y - a.y) * dy) / len2;
-                else t = std::sqrt((x - a.x) * (x - a.x) + double(y - a.y) * (y - a.y)) / radius;
-            }
-            t = std::clamp(t, 0.0, 1.0);
-            Rgba8 c;
-            if (dither == GradientDither::Ordered) {
-                // 17 levels: compare against the Bayer threshold.
-                c = (t * 16.0 > bayer4(x, y) + 0.5) ? c1 : c0;
-            } else {
-                c = {lerp(c0.r, c1.r, t), lerp(c0.g, c1.g, t), lerp(c0.b, c1.b, t), lerp(c0.a, c1.a, t)};
-            }
-            s.writePixel(x, y, c);
-        }
+        for (int x = 0; x < img.width(); ++x)
+            s.writePixel(x, y,
+                         gradientColor(c0, c1, gradientT(a.x, a.y, b.x, b.y, shape == GradientShape::Radial, x, y), dither == GradientDither::Ordered,
+                                       x, y));
 }
 
 void fillRegion(PaintSession& s, Point seed, Rgba8 color, bool contiguous, int tolerance) {

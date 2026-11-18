@@ -193,6 +193,7 @@ int runUiAudit(MainWindow& window, const QString& reportPath, const QString& pro
     std::pair<QString, int> widestWorkspace{QString(), 0};
     for (const WorkspaceInfo& w : workspaceInfos()) {
         current = QStringLiteral("workspace ") + QString::fromLatin1(w.key);
+        std::fprintf(stderr, "ui-audit: %s\n", qPrintable(current));
         window.showWorkspace(w.id);
         // Pages fade in (motion::fadeIn, 170 ms at normal speed); let the fade
         // finish so the audit and its screenshots see the page, not a blank one.
@@ -224,6 +225,7 @@ int runUiAudit(MainWindow& window, const QString& reportPath, const QString& pro
         if (mw > widestWorkspace.second) widestWorkspace = {QString::fromLatin1(w.key), mw};
     }
     watchdog.stop();
+    std::fprintf(stderr, "ui-audit: autosave check\n");
 
     // Background autosave: the commands above changed the documents. An
     // autosave writes a recovery file for each without blocking, and
@@ -252,6 +254,7 @@ int runUiAudit(MainWindow& window, const QString& reportPath, const QString& pro
                                {"recoveryFilesAfterDiscard", static_cast<int>(files())}};
     }
 
+    std::fprintf(stderr, "ui-audit: writing the report\n");
     QJsonObject report{{"actions", a.actions},       {"skipped", a.skipped},         {"windows", a.windows},
                        {"controls", a.controls},     {"unnamed", a.unnamed},         {"unreachable", a.unreachable},
                        {"autosave", autosave},       {"minimumWidth", std::max(minimumWidth, widestWorkspace.second)},

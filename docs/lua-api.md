@@ -89,7 +89,7 @@ Errors give the file name and line, for example `make.lua:12: there is no frame 
 | Member | |
 |---|---|
 | `doc.width`, `doc.height`, `doc.frames` | size and frame count |
-| `doc:layers()` | list of `{index, name, visible, locked, opacity, blend, group}` |
+| `doc:layers()` | list of `{index, id, name, visible, locked, opacity, blend, group}` (`id` is how rigs name layers) |
 | `doc:add_layer([name])` | adds a layer on top and returns its index |
 | `doc:set_layer(layer, {name, visible, locked, opacity, blend})` | changes layer properties (any subset; opacity 0..255; blend such as `"multiply"`) |
 | `doc:remove_layer(layer)` | removes a layer (a document keeps at least one) |
@@ -114,6 +114,41 @@ Errors give the file name and line, for example `make.lua:12: there is no frame 
 - `tag` = `"walk"`;
 - `engines` = `"godot,unity,tiled"`;
 - `overwrite` = `true`.
+
+### Rigs, vector shapes and the palette lock
+
+Rigs and vector shapes are plain Lua tables in the project-file form (docs/project-format.md):
+whole numbers are integers, and a list is a table with keys 1..n. Every change is undoable.
+
+| Member | |
+|---|---|
+| `doc:rig()` | the rig (`{version, nextId, bones, bindings, chains, restFrame, keys}`), or `nil` |
+| `doc:set_rig(rig)` | replaces the rig (checked like a file); `nil` removes it |
+| `doc:auto_rig(layer[, {frame, as}])` | cuts a layer into part layers with bones; `as` is `"auto"`, `"legs"`, `"wings"` or `"fins"`; returns the notes |
+| `doc:pose_rig(frame, pose[, rest])` | draws the rest frame's parts (default: the rig's rest frame) posed into `frame` |
+| `doc:key_rig(frame, pose[, curve[, {x1, y1, x2, y2}]])` | stores a pose key; `curve` is `"linear"`, `"ease-in"`, `"ease-out"`, `"ease-in-out"`, `"stepped"` or `"bezier"` (with its four numbers) |
+| `doc:unkey_rig(frame)` | removes a key |
+| `doc:bake_rig([first, last])` | draws every keyed frame (default: first key to last) |
+| `doc:vector_shapes(layer, frame)` | the cel's shapes (an empty list when it has none) |
+| `doc:set_vector_shapes(layer, frame, shapes)` | replaces the cel's shapes and redraws it; `{}` removes them and their pixels |
+| `doc:rasterize_vectors(layer, frame)` | keeps the pixels, drops the shapes |
+| `doc:palette_locked()` | whether the palette is locked |
+| `doc:lock_palette([locked])` | locks (default) or unlocks the palette |
+| `doc:off_palette()` | how many pixels are not palette colours |
+| `doc:conform_palette()` | snaps every cel to the palette; returns the pixels changed |
+
+A pose is `{turn = {["bone name"] = degrees, ...}, dx = 0, dy = 0}`: turns are relative to the bone's
+rest turn, and `dx`, `dy` move the whole rig in pixels.
+
+```lua
+local d = ace.document()
+d:auto_rig(0, {as = "legs"})
+d:key_rig(0, {})
+d:key_rig(6, {turn = {["leg0 thigh"] = 30, body = 5}}, "ease-in-out")
+d:bake_rig()
+d:set_vector_shapes(1, 0, {{kind = "ellipse", points = {{x = 4, y = 4}, {x = 20, y = 14}},
+                           fill = {style = "radial", color = "#ffcc00", color2 = "#aa4400", from = {12, 9}, to = {20, 9}}}})
+```
 
 ## Asset tools
 

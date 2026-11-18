@@ -64,6 +64,10 @@ public:
     void setOverlay(const QPainterPath& path);
     // Rig bones drawn over everything (empty = none).
     void setBones(std::vector<BoneMark> bones);
+    // When true, a left press on a bone's joint ring or tip grabs it
+    // (boneHandle* signals) instead of reaching the tool; presses
+    // elsewhere still go to the tool.
+    void setBonesInteractive(bool on);
     // Tiled preview: neighbouring repeats of the image drawn dimmed around it.
     void setTiling(bool horizontal, bool vertical);
 
@@ -86,6 +90,12 @@ Q_SIGNALS:
     void commitRequested();
     void cancelRequested();
     void nudgeRequested(int dx, int dy);
+    // A bone handle drag (setBonesInteractive): `bone` indexes the marks
+    // given to setBones; `tail` is the tip, otherwise the joint (head).
+    // Positions are image coordinates (not rounded to pixels).
+    void boneHandlePressed(int bone, bool tail, QPointF image, Qt::KeyboardModifiers mods);
+    void boneHandleDragged(QPointF image, Qt::KeyboardModifiers mods);
+    void boneHandleReleased();
 
 protected:
     void paintEvent(QPaintEvent*) override;
@@ -106,6 +116,8 @@ private:
     QPoint pixelAt(QPointF widgetPos) const;
     QRectF imageToWidget(const QRect& r) const;
     void rebuildChecker();
+    // The bone handle under a widget position: index, or -1.
+    int boneHandleAt(QPointF widgetPos, bool& tail) const;
 
     QImage m_image;
     QImage m_underlay;
@@ -126,6 +138,8 @@ private:
     QPainterPath m_selectionPreview;
     QPainterPath m_overlay;
     std::vector<BoneMark> m_bones;
+    bool m_bonesInteractive = false;
+    bool m_boneDrag = false;
     bool m_tileX = false, m_tileY = false;
 };
 

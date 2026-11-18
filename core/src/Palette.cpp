@@ -1,6 +1,7 @@
 #include "acestudio/core/Palette.h"
 
 #include <limits>
+#include <unordered_map>
 
 namespace acestudio {
 
@@ -57,6 +58,53 @@ Palette Palette::defaultPalette() {
         (void)p.add(*Rgba8::fromHex(hex));
     }
     return p;
+}
+
+namespace {
+std::uint32_t rgbKey(Rgba8 c) noexcept {
+    return (std::uint32_t{c.r} << 16) | (std::uint32_t{c.g} << 8) | std::uint32_t{c.b};
+}
+} // namespace
+
+Rgba8 snapToPalette(const Palette& p, Rgba8 c) noexcept {
+    if (c.a == 0) return c;
+    const Rgba8* best = nullptr;
+    long bestDist = 0;
+    for (const Rgba8& q : p.colors()) {
+        if (q.a == 0) continue;
+        const long dr = long{q.r} - c.r, dg = long{q.g} - c.g, db = long{q.b} - c.b;
+        const long dist = dr * dr + dg * dg + db * db;
+        if (!best || dist < bestDist) { best = &q; bestDist = dist; }
+    }
+    return best ? Rgba8{best->r, best->g, best->b, c.a} : c;
+}
+
+std::size_t snapToPalette(const Palette& p, Image& img) {
+    if (img.isNull()) return 0;
+    std::unordered_map<std::uint32_t, Rgba8> memo;
+    std::size_t changed = 0;
+    for (Rgba8& px : img.pixels()) {
+        if (px.a == 0) continue;
+        const std::uint32_t key = rgbKey(px);
+        auto it = memo.find(key);
+        if (it == memo.end()) it = memo.emplace(key, snapToPalette(p, Rgba8{px.r, px.g, px.b, 255})).first;
+        const Rgba8 out{it->second.r, it->second.g, it->second.b, px.a};
+        if (out == px) continue;
+        px = out;
+        ++changed;
+    }
+    return changed;
+}
+
+std::size_t countOffPalette(const Palette& p, const Image& img) {
+    if (img.isNull()) return 0;
+    std::unordered_map<std::uint32_t, bool> on;
+    for (const Rgba8& q : p.colors())
+        if (q.a > 0) on[rgbKey(q)] = true;
+    std::size_t off = 0;
+    for (const Rgba8& px : img.pixels())
+        if (px.a > 0 && !on.count(rgbKey(px))) ++off;
+    return off;
 }
 
 } // namespace acestudio

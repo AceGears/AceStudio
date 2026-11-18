@@ -89,6 +89,7 @@ struct LayerSnapshot {
     std::vector<SavedCel> masks;
     std::vector<std::pair<CelKey, std::uint32_t>> links;
     std::vector<std::pair<LayerId, BoneId>> bindings;   // rig parts among the layers
+    std::vector<std::pair<CelKey, std::vector<VectorShape>>> vectors;
     std::size_t bytes = 0;
 
     static LayerSnapshot capture(const Document& d, LayerId root) {
@@ -109,6 +110,8 @@ struct LayerSnapshot {
                 if (k.layer == id) s.links.emplace_back(k, g);
             if (d.rig())
                 if (auto it = d.rig()->bindings.find(id); it != d.rig()->bindings.end()) s.bindings.emplace_back(id, it->second);
+            for (const auto& [k, shapes] : d.vectorCels())
+                if (k.layer == id) s.vectors.emplace_back(k, shapes);
         }
         std::sort(s.layers.begin(), s.layers.end(), [](auto& a, auto& b) { return a.index < b.index; });
         return s;
@@ -118,6 +121,7 @@ struct LayerSnapshot {
         for (const auto& sl : layers) (void)d.insertLayerAt(sl.layer, sl.index);
         for (const auto& sc : cels) (void)d.setCel(sc.layer, sc.frame, sc.cel);
         for (const auto& sc : masks) (void)d.setMaskCel(sc.layer, sc.frame, sc.cel);
+        for (const auto& [k, shapes] : vectors) d.setVectorShapes(k.layer, k.frame, shapes);
         if (!links.empty()) {
             auto all = d.links();
             for (const auto& [k, g] : links) all[k] = g;
@@ -222,6 +226,7 @@ Result<LayerId> Editor::addImageLayer(std::string name, Image image, LayerId abo
         parent = a->parent;
         index = *m_doc.layerIndex(above) + 1;
     }
+    if (m_doc.paletteLocked()) snapToPalette(m_doc.palette(), image);
     auto created = std::make_shared<std::optional<Layer>>();
     auto pixels = std::make_shared<const Image>(std::move(image));
     const std::size_t bytes = pixels->byteSize();
@@ -644,6 +649,19 @@ Status Editor::grouped(const std::string& label, const std::function<Status()>& 
     return st;
 }
 
+Result<std::size_t> Editor::lockAndConformPalette() {
+    std::size_t changed = 0;
+    auto st = grouped("Lock Palette", [&]() -> Status {
+        if (auto s = setPaletteLocked(true); !s) return s;
+        auto r = conformToPalette();
+        if (!r) return r.error();
+        changed = r.value();
+        return {};
+    });
+    if (!st) return st.error();
+    return changed;
+}
+
 Status Editor::removeFrames(int first, int last) {
     if (auto st = checkRange(m_doc, first, last); !st) return st;
     if (last - first + 1 >= m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "A document must keep at least one frame"};
@@ -727,6 +745,8 @@ Status Editor::removeFrame(int frame) {
     auto masks = std::make_shared<std::vector<SavedCel>>(celsAtFrame(m_doc, frame, bytes, true));
     const int duration = m_doc.frames()[static_cast<std::size_t>(frame)].durationMs;
     auto links = std::make_shared<std::map<CelKey, std::uint32_t>>(m_doc.links());
+    auto rig = std::make_shared<std::optional<Rig>>(m_doc.rig());   // keys on the frame go with it
+    auto vecs = std::make_shared<std::map<CelKey, std::vector<VectorShape>>>(m_doc.vectorCels());
     return apply(std::make_unique<FnCommand>(
         "Delete Frame", [=](Document& d) { return d.removeFrame(frame); },
         [=](Document& d) {
@@ -735,6 +755,9 @@ Status Editor::removeFrame(int frame) {
             for (const auto& sc : *masks) (void)d.setMaskCel(sc.layer, frame, sc.cel);
             (void)d.replaceTags(*tags);
             d.restoreLinks(*links);   // frame keys are back where they were
+            d.setRig(*rig);
+            for (const auto& [k, shapes] : *vecs)
+                if (k.frame == frame) d.setVectorShapes(k.layer, k.frame, shapes);
         },
         bytes));
 }
@@ -747,6 +770,7 @@ Status Editor::setCelImage(LayerId layer, int frame, Image image, int x, int y) 
     std::optional<Cel> before;
     if (const Cel* c = m_doc.cel(layer, frame)) before = *c;
     std::optional<Cel> after;
+    if (m_doc.paletteLocked()) snapToPalette(m_doc.palette(), image);
     if (!image.isNull()) after = Cel{std::move(image), x, y};
     const std::size_t bytes = (before ? celBytes(*before) : 0) + (after ? celBytes(*after) : 0);
     return apply(std::make_unique<FnCommand>(
@@ -1127,7 +1151,12 @@ Status Editor::removeTag(std::size_t index) {
 
 // ------------------------------------------------------------------ palette
 
+namespace {
+const char* const kPaletteLocked = "The palette is locked: unlock it to edit the palette";
+} // namespace
+
 Status Editor::setPaletteColor(std::size_t index, Rgba8 color) {
+    if (m_doc.paletteLocked()) return Error{ErrorCode::PermissionDenied, kPaletteLocked};
     if (index >= m_doc.palette().size()) return Error{ErrorCode::InvalidArgument, "Palette index out of range"};
     const Rgba8 old = m_doc.palette().at(index);
     return apply(std::make_unique<FnCommand>(
@@ -1136,6 +1165,7 @@ Status Editor::setPaletteColor(std::size_t index, Rgba8 color) {
 }
 
 Status Editor::addPaletteColor(Rgba8 color) {
+    if (m_doc.paletteLocked()) return Error{ErrorCode::PermissionDenied, kPaletteLocked};
     if (m_doc.palette().size() >= Palette::kMaxColors) return Error{ErrorCode::InvalidArgument, "Palette is full (256 colors)"};
     const std::size_t index = m_doc.palette().size();
     return apply(std::make_unique<FnCommand>(
@@ -1144,6 +1174,7 @@ Status Editor::addPaletteColor(Rgba8 color) {
 }
 
 Status Editor::removePaletteColor(std::size_t index) {
+    if (m_doc.paletteLocked()) return Error{ErrorCode::PermissionDenied, kPaletteLocked};
     if (index >= m_doc.palette().size()) return Error{ErrorCode::InvalidArgument, "Palette index out of range"};
     const Rgba8 old = m_doc.palette().at(index);
     return apply(std::make_unique<FnCommand>(
@@ -1152,12 +1183,60 @@ Status Editor::removePaletteColor(std::size_t index) {
 }
 
 Status Editor::replacePalette(Palette palette, const std::string& label) {
+    if (m_doc.paletteLocked()) return Error{ErrorCode::PermissionDenied, kPaletteLocked};
     if (palette.size() > Palette::kMaxColors) return Error{ErrorCode::InvalidArgument, "Palette has more than 256 colours"};
     auto before = std::make_shared<Palette>(m_doc.palette());
     auto after = std::make_shared<Palette>(std::move(palette));
     return apply(std::make_unique<FnCommand>(
         label, [=](Document& d) { d.palette() = *after; return Status{}; },
         [=](Document& d) { d.palette() = *before; }));
+}
+
+Status Editor::setPaletteLocked(bool locked) {
+    if (locked == m_doc.paletteLocked()) return {};
+    const auto& pal = m_doc.palette().colors();
+    if (locked && std::none_of(pal.begin(), pal.end(), [](Rgba8 c) { return c.a > 0; }))
+        return Error{ErrorCode::InvalidArgument, "The palette needs at least one opaque colour before it can be locked"};
+    return apply(std::make_unique<FnCommand>(
+        locked ? "Lock Palette" : "Unlock Palette",
+        [=](Document& d) -> Status {
+            d.setPaletteLocked(locked);
+            return {};
+        },
+        [=](Document& d) { d.setPaletteLocked(!locked); }, 0));
+}
+
+Result<std::size_t> Editor::conformToPalette() {
+    const auto& pal = m_doc.palette().colors();
+    if (std::none_of(pal.begin(), pal.end(), [](Rgba8 c) { return c.a > 0; }))
+        return Error{ErrorCode::InvalidArgument, "The palette has no opaque colour to conform to"};
+    auto before = std::make_shared<std::vector<std::pair<CelKey, Cel>>>();
+    auto after = std::make_shared<std::vector<std::pair<CelKey, Cel>>>();
+    std::size_t changed = 0, bytes = 0;
+    for (const auto& [key, cel] : m_doc.cels()) {
+        Cel c = cel;
+        const std::size_t n = snapToPalette(m_doc.palette(), c.image);
+        if (n == 0) continue;
+        changed += n;
+        bytes += celBytes(cel) * 2;
+        before->emplace_back(key, cel);
+        after->emplace_back(key, std::move(c));
+    }
+    if (changed == 0) return std::size_t{0};
+    // Linked cels share pixels: setting one sets them all, which is what we want.
+    auto st = apply(std::make_unique<FnCommand>(
+        "Conform to Palette",
+        [=](Document& d) -> Status {
+            for (const auto& [key, cel] : *after)
+                if (auto s = d.setCel(key.layer, key.frame, cel); !s) return s;
+            return {};
+        },
+        [=](Document& d) {
+            for (const auto& [key, cel] : *before) (void)d.setCel(key.layer, key.frame, cel);
+        },
+        bytes));
+    if (!st) return st.error();
+    return changed;
 }
 
 Status Editor::replaceDocument(Document next, const std::string& label) {
@@ -1197,6 +1276,58 @@ private:
 };
 } // namespace
 
+Status Editor::setVectorShapes(LayerId layer, int frame, std::vector<VectorShape> shapes, const std::string& label) {
+    const Layer* l = m_doc.layer(layer);
+    if (!l || l->kind != LayerKind::Raster) return Error{ErrorCode::InvalidArgument, "Vector shapes go on a raster layer"};
+    if (!m_doc.isLayerEditable(layer)) return Error{ErrorCode::PermissionDenied, "The layer is locked"};
+    if (frame < 0 || frame >= m_doc.frameCount()) return Error{ErrorCode::InvalidArgument, "Frame out of range"};
+    if (m_doc.celLink(layer, frame) != 0) return Error{ErrorCode::InvalidArgument, "The cel is linked to other frames: unlink it to draw vector shapes"};
+    if (auto st = vectors::validate(shapes); !st) return st;
+    std::optional<Cel> before;
+    if (const Cel* c = m_doc.cel(layer, frame)) before = *c;
+    std::vector<VectorShape> oldShapes;
+    if (const auto* v = m_doc.vectorShapes(layer, frame)) oldShapes = *v;
+    // The cel becomes the shapes' pixels, trimmed to what they cover.
+    std::optional<Cel> after;
+    {
+        Image full = vectors::rasterize(shapes, m_doc.width(), m_doc.height());
+        if (m_doc.paletteLocked()) snapToPalette(m_doc.palette(), full);
+        const IntRect b = full.opaqueBounds();
+        if (!b.empty()) after = Cel{full.copy(b), b.x, b.y};
+    }
+    const std::size_t bytes = (before ? celBytes(*before) : 0) + (after ? celBytes(*after) : 0);
+    return apply(std::make_unique<FnCommand>(
+        label,
+        [=](Document& d) -> Status {
+            if (after) {
+                if (auto st = d.setCel(layer, frame, *after); !st) return st;
+            } else {
+                d.clearCel(layer, frame);
+            }
+            d.setVectorShapes(layer, frame, shapes);
+            return {};
+        },
+        [=](Document& d) {
+            if (before) (void)d.setCel(layer, frame, *before);
+            else d.clearCel(layer, frame);
+            d.setVectorShapes(layer, frame, oldShapes);
+        },
+        bytes));
+}
+
+Status Editor::rasterizeVectorShapes(LayerId layer, int frame) {
+    const auto* v = m_doc.vectorShapes(layer, frame);
+    if (!v) return Error{ErrorCode::InvalidArgument, "This cel has no vector shapes"};
+    const std::vector<VectorShape> old = *v;
+    return apply(std::make_unique<FnCommand>(
+        "Rasterize Vector Shapes",
+        [=](Document& d) -> Status {
+            d.setVectorShapes(layer, frame, {});
+            return {};
+        },
+        [=](Document& d) { d.setVectorShapes(layer, frame, old); }, 0));
+}
+
 Status Editor::setRig(std::optional<Rig> rig, const std::string& label, long long mergeKey) {
     if (rig)
         if (auto st = rigs::validate(*rig, &m_doc); !st) return st;
@@ -1221,6 +1352,8 @@ Rgba8 nearestOpaque(const std::vector<Rgba8>& cols, int r, int g, int b) {
 Status Editor::convertColorMode(ColorMode mode, bool dither) {
     const ColorMode oldMode = m_doc.colorMode();
     const auto& pal = m_doc.palette().colors();
+    if (mode == ColorMode::Grayscale && m_doc.paletteLocked())
+        return Error{ErrorCode::PermissionDenied, "The palette is locked: grey tones would leave it. Unlock the palette first"};
     if (mode == ColorMode::Indexed &&
         std::none_of(pal.begin(), pal.end(), [](Rgba8 c) { return c.a > 0; }))
         return Error{ErrorCode::InvalidArgument, "The palette needs at least one opaque colour before converting to indexed"};

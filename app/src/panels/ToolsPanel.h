@@ -44,6 +44,10 @@ private:
     QWidget* m_gradBox = nullptr;
     QComboBox* m_gradShape = nullptr;
     QComboBox* m_gradDither = nullptr;
+    QWidget* m_vecBox = nullptr;
+    QCheckBox* m_vector = nullptr;
+    QComboBox* m_strokeStyle = nullptr;
+    QComboBox* m_vecFill = nullptr;
     QComboBox* m_ink = nullptr;
     QComboBox* m_tip = nullptr;
     QCheckBox* m_tipColors = nullptr;

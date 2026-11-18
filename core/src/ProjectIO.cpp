@@ -223,6 +223,20 @@ Result<Document> documentFromJson(const json& j, ZipReader& zip) {
         doc.setRig(std::move(rig).value());
     }
 
+    // Vector shapes (schema 5)
+    if (j.contains("vectors")) {
+        if (!j["vectors"].is_array()) return corrupt("Vector shapes are not a list");
+        for (const json& jv : j["vectors"]) {
+            if (!jv.is_object() || !jv.contains("layer") || !jv.contains("frame") || !jv.contains("shapes") || !jv["layer"].is_number_unsigned() ||
+                !jv["frame"].is_number_integer())
+                return corrupt("A vector cel has no layer, frame or shapes");
+            auto shapes = vectors::fromJson(jv["shapes"]);
+            if (!shapes) return shapes.error();
+            if (shapes.value().empty()) return corrupt("A vector cel has no shapes");
+            doc.setVectorShapes(jv["layer"].get<LayerId>(), jv["frame"].get<int>(), std::move(shapes).value());
+        }
+    }
+
     if (auto st = doc.validate(); !st) return st.error();
     return doc;
 }
@@ -242,6 +256,7 @@ int requiredSchemaVersion(const Document& doc) {
     }
     if (!doc.links().empty()) v = std::max(v, 3);   // schema 3: linked cels
     if (doc.rig()) v = std::max(v, 4);              // schema 4: a rig
+    if (!doc.vectorCels().empty()) v = std::max(v, 5);   // schema 5: vector shapes
     return v;
 }
 
@@ -311,6 +326,12 @@ json documentToJson(const Document& doc) {
     j["tags"] = tags;
     j["extensions"] = doc.extensions();
     if (doc.rig()) j["rig"] = rigs::toJson(*doc.rig());
+    if (!doc.vectorCels().empty()) {
+        json vec = json::array();
+        for (const auto& [k, shapes] : doc.vectorCels())
+            vec.push_back({{"layer", k.layer}, {"frame", k.frame}, {"shapes", vectors::toJson(shapes)}});
+        j["vectors"] = vec;
+    }
     return j;
 }
 

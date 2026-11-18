@@ -10,7 +10,9 @@
 #include "acestudio/core/FileUtil.h"
 #include "acestudio/core/PngCodec.h"
 #include "acestudio/core/ProjectIO.h"
+#include "acestudio/core/RigTools.h"
 #include "acestudio/core/Transform.h"
+#include "acestudio/core/Vector.h"
 #include "acestudio/core/Version.h"
 
 #include <sol/sol.hpp>
@@ -18,6 +20,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <sstream>
 #include <stdexcept>
@@ -275,6 +278,99 @@ LayerId layerArg(Editor& ed, int index) {
     return layers[static_cast<std::size_t>(index)].id;
 }
 
+// A table's key/value pairs (collected first, so nothing throws while Lua
+// walks the table).
+std::vector<std::pair<sol::object, sol::object>> tableEntries(const sol::table& t) {
+    std::vector<std::pair<sol::object, sol::object>> out;
+    t.for_each([&out](const sol::object& k, const sol::object& v) { out.emplace_back(k, v); });
+    return out;
+}
+
+// Lua values <-> JSON, for the file-form data (rigs, vector shapes).
+// Tables with keys 1..n become arrays (an empty table too), others objects
+// with string keys; whole numbers become integers.
+nlohmann::json luaToJson(const sol::object& o, int depth = 0) {
+    if (depth > 32) fail("data is nested too deeply");
+    switch (o.get_type()) {
+    case sol::type::lua_nil:
+    case sol::type::none: return nullptr;
+    case sol::type::boolean: return o.as<bool>();
+    case sol::type::number: {
+        const double d = o.as<double>();
+        if (!std::isfinite(d)) fail("numbers must be finite");
+        // Whole numbers as the JSON parser would read them: unsigned when >= 0.
+        if (d == std::floor(d) && d >= 0 && d < 9.0e15) return static_cast<unsigned long long>(d);
+        if (d == std::floor(d) && d > -9.0e15) return static_cast<long long>(d);
+        return d;
+    }
+    case sol::type::string: return o.as<std::string>();
+    case sol::type::table: {
+        const sol::table t = o.as<sol::table>();
+        const std::size_t n = t.size();
+        const auto entries = tableEntries(t);
+        const bool numeric = std::all_of(entries.begin(), entries.end(),
+                                         [](const auto& kv) { return kv.first.get_type() == sol::type::number; });
+        if (numeric && entries.size() == n) {
+            nlohmann::json a = nlohmann::json::array();
+            for (std::size_t i = 1; i <= n; ++i) a.push_back(luaToJson(t.get<sol::object>(i), depth + 1));
+            return a;
+        }
+        nlohmann::json obj = nlohmann::json::object();
+        for (const auto& [key, value] : entries) {
+            if (key.get_type() != sol::type::string) fail("a table mixes list items and named fields");
+            obj[key.as<std::string>()] = luaToJson(value, depth + 1);
+        }
+        return obj;
+    }
+    default: fail("only nil, booleans, numbers, strings and tables can be data");
+    }
+}
+
+sol::object jsonToLua(sol::state_view lv, const nlohmann::json& j) {
+    switch (j.type()) {
+    case nlohmann::json::value_t::boolean: return sol::make_object(lv, j.get<bool>());
+    case nlohmann::json::value_t::number_integer: return sol::make_object(lv, j.get<long long>());
+    case nlohmann::json::value_t::number_unsigned: return sol::make_object(lv, static_cast<long long>(j.get<unsigned long long>()));
+    case nlohmann::json::value_t::number_float: return sol::make_object(lv, j.get<double>());
+    case nlohmann::json::value_t::string: return sol::make_object(lv, j.get<std::string>());
+    case nlohmann::json::value_t::array: {
+        sol::table t = lv.create_table(static_cast<int>(j.size()), 0);
+        int i = 1;
+        for (const auto& v : j) t[i++] = jsonToLua(lv, v);
+        return t;
+    }
+    case nlohmann::json::value_t::object: {
+        sol::table t = lv.create_table();
+        for (const auto& [k, v] : j.items()) t[k] = jsonToLua(lv, v);
+        return t;
+    }
+    default: return sol::make_object(lv, sol::lua_nil);
+    }
+}
+
+// {turn = {["bone name"] = degrees, ...}, dx = 0, dy = 0} as a RigPose.
+RigPose poseArg(const Rig& rig, const sol::optional<sol::table>& t) {
+    RigPose p;
+    if (!t) return p;
+    if (auto turn = (*t)["turn"].get<sol::optional<sol::table>>()) {
+        for (const auto& [key, value] : tableEntries(*turn)) {
+            if (key.get_type() != sol::type::string || value.get_type() != sol::type::number)
+                fail("pose turn is {[\"bone name\"] = degrees, ...}");
+            const Bone* b = rig.bone(key.as<std::string>());
+            if (!b) fail("the rig has no bone \"" + key.as<std::string>() + "\"");
+            p.turn[b->id] = value.as<double>() * 3.14159265358979323846 / 180.0;
+        }
+    }
+    p.dx = (*t)["dx"].get_or(0.0);
+    p.dy = (*t)["dy"].get_or(0.0);
+    return p;
+}
+
+const Rig& rigOf(Editor& ed) {
+    if (!ed.document().rig()) fail("the document has no rig");
+    return *ed.document().rig();
+}
+
 void frameArg(Editor& ed, int frame) {
     if (frame < 0 || frame >= ed.document().frameCount()) fail("there is no frame " + std::to_string(frame));
 }
@@ -391,7 +487,7 @@ void bind(sol::state_view lua, Runtime& rt) {
     };
 
     // ---- Document
-    lua.new_usertype<LDoc>("Document", sol::no_constructor,
+    sol::usertype<LDoc> docType = lua.new_usertype<LDoc>("Document", sol::no_constructor,
         "width", sol::readonly_property([](LDoc& d) { return editorOf(d).document().width(); }),
         "height", sol::readonly_property([](LDoc& d) { return editorOf(d).document().height(); }),
         "frames", sol::readonly_property([](LDoc& d) { return editorOf(d).document().frameCount(); }),
@@ -404,6 +500,7 @@ void bind(sol::state_view lua, Runtime& rt) {
                                                     "group", l.kind == LayerKind::Group);
                 e["locked"] = l.locked;
                 e["blend"] = std::string(toString(l.blend));
+                e["id"] = static_cast<long long>(l.id);   // rigs and vector data name layers by id
                 t[i + 1] = e;
                 ++i;
             }
@@ -547,6 +644,126 @@ void bind(sol::state_view lua, Runtime& rt) {
             for (const auto& f : w.files) noteWritten(rt, f);
             return static_cast<int>(w.files.size());
         });
+    // ---- Rig (ADR-ANIM-004): the file form of docs/project-format.md
+    docType["rig"] = [](LDoc& d, sol::this_state ts) -> sol::object {
+        const auto& rig = editorOf(d).document().rig();
+        if (!rig) return sol::make_object(sol::state_view(ts), sol::lua_nil);
+        return jsonToLua(sol::state_view(ts), rigs::toJson(*rig));
+    };
+    docType["set_rig"] = [&rt](LDoc& d, sol::object data) {
+        Editor& ed = editorOf(d);
+        if (data.get_type() == sol::type::lua_nil || data.get_type() == sol::type::none) {
+            check(ed.setRig(std::nullopt, "Script: Remove Rig"));
+        } else {
+            check(ed.setRig(unwrap(rigs::fromJson(luaToJson(data))), "Script: Set Rig"));
+        }
+        touched(rt, d);
+    };
+    docType["auto_rig"] = [&rt](LDoc& d, int layer, sol::optional<sol::table> opts, sol::this_state ts) {
+        Editor& ed = editorOf(d);
+        int frame = 0;
+        rigs::AutoRigBody body = rigs::AutoRigBody::Auto;
+        if (opts) {
+            frame = (*opts)["frame"].get_or(0);
+            if (auto as = (*opts)["as"].get<sol::optional<std::string>>()) {
+                const auto b = rigs::autoRigBodyFromString(*as);
+                if (!b) fail("as must be auto, legs, wings or fins");
+                body = *b;
+            }
+        }
+        frameArg(ed, frame);
+        auto r = unwrap(rigs::autoRig(ed.document(), layerArg(ed, layer), frame, body));
+        check(ed.replaceDocument(std::move(r.document), "Script: Auto-Rig"));
+        touched(rt, d);
+        sol::state_view lv(ts);
+        sol::table notes = lv.create_table();
+        int i = 1;
+        for (const auto& n : r.notes) notes[i++] = n;
+        return notes;
+    };
+    docType["pose_rig"] = [&rt](LDoc& d, int frame, sol::optional<sol::table> pose, sol::optional<int> rest) {
+        Editor& ed = editorOf(d);
+        frameArg(ed, frame);
+        const Rig& rig = rigOf(ed);
+        const int from = rest.value_or(rig.restFrame);
+        frameArg(ed, from);
+        auto baked = unwrap(rigs::bakePose(ed.document(), from, frame, poseArg(rig, pose)));
+        check(ed.replaceDocument(std::move(baked), "Script: Pose Rig"));
+        touched(rt, d);
+    };
+    docType["key_rig"] = [&rt](LDoc& d, int frame, sol::optional<sol::table> pose, sol::optional<std::string> curveName,
+                               sol::optional<sol::table> bezier) {
+        Editor& ed = editorOf(d);
+        frameArg(ed, frame);
+        Rig rig = rigOf(ed);
+        Curve curve;
+        if (curveName) {
+            const auto type = rigs::curveFromString(*curveName);
+            if (!type) fail("unknown curve \"" + *curveName + "\"");
+            curve.type = *type;
+        }
+        if (curve.type == CurveType::Bezier) {
+            if (!bezier || bezier->size() != 4) fail("a bezier curve needs {x1, y1, x2, y2}");
+            curve.x1 = (*bezier)[1].get<double>();
+            curve.y1 = (*bezier)[2].get<double>();
+            curve.x2 = (*bezier)[3].get<double>();
+            curve.y2 = (*bezier)[4].get<double>();
+        }
+        check(rigs::setKey(rig, frame, poseArg(rig, pose), curve));
+        check(ed.setRig(std::move(rig), "Script: Set Key"));
+        touched(rt, d);
+    };
+    docType["unkey_rig"] = [&rt](LDoc& d, int frame) {
+        Editor& ed = editorOf(d);
+        Rig rig = rigOf(ed);
+        check(rigs::removeKey(rig, frame));
+        check(ed.setRig(std::move(rig), "Script: Remove Key"));
+        touched(rt, d);
+    };
+    docType["bake_rig"] = [&rt](LDoc& d, sol::optional<int> first, sol::optional<int> last) {
+        Editor& ed = editorOf(d);
+        (void)rigOf(ed);
+        auto baked = unwrap(rigs::bakeKeys(ed.document(), first.value_or(0), last.value_or(-1)));
+        check(ed.replaceDocument(std::move(baked), "Script: Bake Keys"));
+        touched(rt, d);
+    };
+
+    // ---- Vector shapes (ADR-ANIM-005): the file form of docs/project-format.md
+    docType["vector_shapes"] = [](LDoc& d, int layer, int frame, sol::this_state ts) -> sol::object {
+        Editor& ed = editorOf(d);
+        frameArg(ed, frame);
+        const auto* shapes = ed.document().vectorShapes(layerArg(ed, layer), frame);
+        sol::state_view lv(ts);
+        if (!shapes) return lv.create_table();
+        return jsonToLua(lv, vectors::toJson(*shapes));
+    };
+    docType["set_vector_shapes"] = [&rt](LDoc& d, int layer, int frame, sol::table shapes) {
+        Editor& ed = editorOf(d);
+        frameArg(ed, frame);
+        auto parsed = unwrap(vectors::fromJson(luaToJson(shapes)));
+        check(ed.setVectorShapes(layerArg(ed, layer), frame, std::move(parsed), "Script: Set Vector Shapes"));
+        touched(rt, d);
+    };
+    docType["rasterize_vectors"] = [&rt](LDoc& d, int layer, int frame) {
+        Editor& ed = editorOf(d);
+        frameArg(ed, frame);
+        check(ed.rasterizeVectorShapes(layerArg(ed, layer), frame));
+        touched(rt, d);
+    };
+
+    // ---- Palette lock (ADR-ANIM-006)
+    docType["palette_locked"] = [](LDoc& d) { return editorOf(d).document().paletteLocked(); };
+    docType["lock_palette"] = [&rt](LDoc& d, sol::optional<bool> locked) {
+        check(editorOf(d).setPaletteLocked(locked.value_or(true)));
+        touched(rt, d);
+    };
+    docType["off_palette"] = [](LDoc& d) { return static_cast<long long>(editorOf(d).document().offPalettePixels()); };
+    docType["conform_palette"] = [&rt](LDoc& d) {
+        const std::size_t n = unwrap(editorOf(d).conformToPalette());
+        if (n > 0) touched(rt, d);
+        return static_cast<long long>(n);
+    };
+
     ace["document"] = [&rt]() -> sol::object {
         (void)rt;
         return sol::nil;   // replaced below when the host has one

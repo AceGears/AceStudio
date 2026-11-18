@@ -115,5 +115,7 @@ int cmdMap(const Args& a, Output& out);
 int cmdTemplate(const Args& a, Output& out);
 int cmdRun(const Args& a, Output& out);
 int cmdRig(const Args& a, Output& out);
+int cmdVector(const Args& a, Output& out);
+int cmdPalette(const Args& a, Output& out);
 
 } // namespace acestudio::cli

@@ -314,7 +314,17 @@ void CanvasWidget::mousePressEvent(QMouseEvent* e) {
         e->accept();
         return;
     }
-    if ((e->button() == Qt::LeftButton || e->button() == Qt::RightButton) && !m_panning && !m_toolActive) {
+    if (e->button() == Qt::LeftButton && m_bonesInteractive && !m_panning && !m_toolActive && !m_boneDrag) {
+        bool tail = false;
+        const int bone = boneHandleAt(e->position(), tail);
+        if (bone >= 0) {
+            m_boneDrag = true;
+            Q_EMIT boneHandlePressed(bone, tail, widgetToImage(e->position()), e->modifiers());
+            e->accept();
+            return;
+        }
+    }
+    if ((e->button() == Qt::LeftButton || e->button() == Qt::RightButton) && !m_panning && !m_toolActive && !m_boneDrag) {
         m_toolActive = true;
         Q_EMIT toolPressed(pixelAt(e->position()), e->button(), e->modifiers());
         e->accept();
@@ -330,7 +340,12 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* e) {
         update();
     }
     const QPoint px = pixelAt(e->position());
+    if (m_boneDrag) Q_EMIT boneHandleDragged(widgetToImage(e->position()), e->modifiers());
     if (m_toolActive) Q_EMIT toolMoved(px, e->buttons(), e->modifiers());
+    if (m_bonesInteractive && !m_boneDrag && !m_toolActive && !m_panning && !m_spaceHeld && !m_handMode) {
+        bool tail = false;
+        setCursor(m_boneDrag || boneHandleAt(e->position(), tail) >= 0 ? Qt::PointingHandCursor : Qt::CrossCursor);
+    }
     Q_EMIT cursorMoved(px.x(), px.y(), px.x() >= 0 && px.y() >= 0 && px.x() < m_image.width() && px.y() < m_image.height());
 }
 
@@ -338,6 +353,11 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* e) {
     if (m_panning && (e->button() == Qt::MiddleButton || e->button() == Qt::LeftButton)) {
         m_panning = false;
         setCursor(m_spaceHeld || m_handMode ? Qt::OpenHandCursor : Qt::CrossCursor);
+        return;
+    }
+    if (m_boneDrag && e->button() == Qt::LeftButton) {
+        m_boneDrag = false;
+        Q_EMIT boneHandleReleased();
         return;
     }
     if (m_toolActive && (e->button() == Qt::LeftButton || e->button() == Qt::RightButton)) {
@@ -365,6 +385,38 @@ void CanvasWidget::setOverlay(const QPainterPath& path) {
 void CanvasWidget::setBones(std::vector<BoneMark> bones) {
     m_bones = std::move(bones);
     update();
+}
+
+void CanvasWidget::setBonesInteractive(bool on) {
+    m_bonesInteractive = on;
+    if (!on && m_boneDrag) {
+        m_boneDrag = false;
+        Q_EMIT boneHandleReleased();
+    }
+    if (!on && !m_panning && !m_spaceHeld && !m_handMode) setCursor(Qt::CrossCursor);
+}
+
+int CanvasWidget::boneHandleAt(QPointF w, bool& tail) const {
+    // Tips first (a joint often sits on its parent's tip), selected bone
+    // first, then the nearest within 7 screen pixels.
+    constexpr double kReach = 7.0;
+    int best = -1;
+    double bestScore = 1e300;
+    for (int i = 0; i < static_cast<int>(m_bones.size()); ++i) {
+        const BoneMark& b = m_bones[static_cast<std::size_t>(i)];
+        for (const bool isTail : {true, false}) {
+            const QPointF q = m_offset + (isTail ? b.tail : b.head) * m_zoom;
+            const double d = QLineF(q, w).length();
+            if (d > kReach) continue;
+            const double score = d - (b.selected ? 2.0 : 0.0) - (isTail ? 1.0 : 0.0);
+            if (score < bestScore) {
+                bestScore = score;
+                best = i;
+                tail = isTail;
+            }
+        }
+    }
+    return best;
 }
 
 void CanvasWidget::setTiling(bool horizontal, bool vertical) {

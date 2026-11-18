@@ -2,6 +2,7 @@
 
 #include "acestudio/core/Rig.h"
 
+#include <QPointF>
 #include <QPointer>
 #include <QWidget>
 
@@ -22,10 +23,15 @@ namespace acestudio::ui {
 class DocumentView;
 
 // The document's rig (ADR-ANIM-004): the bone tree, the selected bone's rest
-// geometry, limits, lock and parts, IK chains, and a working pose that can be
-// baked into the current frame. Every rig edit is one undo step (drags of a
-// value merge); the pose is not part of the document until it is baked.
-// The canvas shows the bones of the working pose.
+// geometry, limits, lock and parts, IK chains, a working pose that can be
+// baked into the current frame, and pose keys with curves (rig version 2)
+// that can be baked into every frame between them. Every rig edit is one
+// undo step (drags of a value merge); the working pose is not part of the
+// document until it is keyed or baked. On a frame change with keys, the
+// working pose becomes the keyed pose of that frame. The canvas shows the
+// bones of the working pose; with "Drag bones" on, dragging a bone's tip turns
+// it (or reaches with its IK chain), dragging a root's joint moves the
+// figure, and Ctrl+drag edits the rest bones (at the rest pose only).
 class RigPanel : public QWidget {
     Q_OBJECT
 public:
@@ -38,6 +44,8 @@ public Q_SLOTS:
     // Draws the parts of the rest frame, in the working pose, into the
     // current frame's part cels.
     void bakePose();
+    // Draws every frame from the first key to the last, posed by the keys.
+    void bakeKeys();
 
 Q_SIGNALS:
     void statusMessage(const QString& text);
@@ -58,13 +66,29 @@ private:
     void removeBone();
     void applyGeometry();
     void applyLimits();
+    void showKeys();
+    void setKey();
+    void deleteKey();
+    void loadKeyedPose();
+    int selectedKeyFrame() const;
+    void boneGrabbed(int index, bool tail, QPointF at, Qt::KeyboardModifiers mods);
+    void boneDragged(QPointF at);
+    void boneReleased();
 
     QPointer<DocumentView> m_view;
     RigPose m_pose;
     bool m_filling = false;
+    // The bone handle drag in progress on the canvas.
+    bool m_dragging = false;
+    bool m_dragTail = false;
+    bool m_dragRest = false;
+    BoneId m_dragBone = kNoBone;
+    QPointF m_dragStart;
+    RigPose m_dragPose;
 
     QTreeWidget* m_tree = nullptr;
     QPushButton* m_autoRig = nullptr;
+    QComboBox* m_rigAs = nullptr;
     QPushButton* m_addBone = nullptr;
     QPushButton* m_removeBone = nullptr;
     QPushButton* m_removeRig = nullptr;
@@ -94,9 +118,15 @@ private:
     QDoubleSpinBox* m_moveX = nullptr;
     QDoubleSpinBox* m_moveY = nullptr;
     QCheckBox* m_showBones = nullptr;
+    QCheckBox* m_dragBones = nullptr;
     QSpinBox* m_restFrame = nullptr;
     QPushButton* m_resetPose = nullptr;
     QPushButton* m_bake = nullptr;
+    QListWidget* m_keys = nullptr;
+    QComboBox* m_curve = nullptr;
+    QPushButton* m_setKey = nullptr;
+    QPushButton* m_deleteKey = nullptr;
+    QPushButton* m_bakeKeys = nullptr;
     QLabel* m_status = nullptr;
 };
 

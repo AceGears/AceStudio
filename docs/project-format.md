@@ -9,6 +9,7 @@ feature stays readable by older builds:
 | 2 | Tile mode, layer masks, clipping masks or adjustment layers |
 | 3 | Levels or Curves adjustment layers, or linked cels |
 | 4 | A rig (`"rig"` in `document.json`, below) |
+| 5 | Vector shapes on cels (`"vectors"` in `document.json`, below) |
 
 A project file is a standard ZIP archive. Any ZIP tool can open it for inspection.
 
@@ -62,7 +63,8 @@ Rules:
 - Cel `file` must equal `cels/L<layer>_F<frame>.png`; cels may only reference raster layers.
 - Blend modes: normal, multiply, screen, overlay, darken, lighten, add, subtract, difference.
 - `extensions` is a free-form object with namespaced keys (e.g. `ai`, `export`, `tileset`).
-  Readers must preserve unknown keys.
+  Readers must preserve unknown keys. `"paletteLock": true` locks the project palette
+  (ADR-ANIM-006); it needs no particular schema.
 
 ## rig (schema 4)
 
@@ -95,6 +97,62 @@ Rules:
 - A chain's `tip` is a bone that has a parent; `bend` is 1 or -1; one chain per tip.
 - At most 256 bones and 64 chains. Anything else invalid makes the file unreadable
   (`Rig: ...`), it is never partly read.
+
+### Rig version 2: rest frame and pose keys
+
+A rig with a rest frame other than 0, or with keys, is written as `"version": 2` with two more
+fields (a rig without either is still written as version 1, so older readers keep opening it):
+
+```json
+"restFrame": 0,
+"keys": [
+  { "frame": 0, "pose": { "turn": [], "dx": 0, "dy": 0 }, "curve": { "type": "ease-in-out" } },
+  { "frame": 6, "pose": { "turn": [ { "bone": 2, "angle": 0.61 } ], "dx": 0, "dy": -2 },
+    "curve": { "type": "bezier", "points": [0.42, 0, 0.58, 1] } }
+]
+```
+
+- `restFrame`: the frame whose part cels are the parts at rest; every pose and key is drawn from
+  it. It must be a frame of the document.
+- `keys`: in frame order, at most one per frame, at most 10,000, each on a frame of the document.
+  `turn` angles are radians relative to the bone's rest turn (a missing bone means 0); `dx`, `dy`
+  move the whole rig in pixels.
+- `curve.type`: `linear`, `ease-in`, `ease-out`, `ease-in-out`, `stepped` or `bezier`; it shapes
+  the frames from this key to the next. `bezier` carries `points` [x1, y1, x2, y2] with x in 0..1
+  (a CSS-style cubic easing curve). The last key's curve is unused.
+- Inserting, moving or deleting frames moves keys with their frames; a key on a deleted frame goes,
+  and a deleted rest frame falls back to frame 0.
+
+## vectors (schema 5)
+
+Present only in documents that have vector shapes (ADR-ANIM-005). The cel's pixels are stored as
+usual; the shapes are what they were drawn from.
+
+```json
+"vectors": [
+  { "layer": 3, "frame": 0, "shapes": [
+    { "kind": "path", "closed": true,
+      "points": [ { "x": 4, "y": 20, "out": [6, -16] }, { "x": 28, "y": 20, "in": [-6, -16] }, { "x": 16, "y": 30 } ],
+      "stroke": { "style": "dashed", "color": "#141414ff", "width": 1, "dash": 4, "gap": 2 },
+      "fill": { "style": "linear", "color": "#dc2828ff", "color2": "#283cdcff", "dither": true, "from": [4, 20], "to": [28, 20] } },
+    { "kind": "rectangle", "points": [ { "x": 2, "y": 2 }, { "x": 12, "y": 10 } ],
+      "stroke": { "style": "solid", "color": "#000000ff", "width": 2, "dash": 4, "gap": 2 }, "fill": { "style": "none" } }
+  ] }
+]
+```
+
+Rules:
+- `layer` is a raster layer and `frame` a frame of the document; each (layer, frame) appears once
+  and has at least one shape (at most 1,000).
+- `kind`: `path` (2 or more anchors, at most 4,096), `rectangle` or `ellipse` (exactly two opposite
+  corners, inclusive pixels). Anchor `in` / `out` are Bezier handle offsets; omitted = 0 (a corner).
+  `closed` joins the last anchor to the first; a path's fill always closes it.
+- `stroke.style`: `none`, `solid`, `dashed` or `dotted`; `width` 1–32 (a square pen); `dash` and
+  `gap` 1–256 pixels along the outline.
+- `fill.style`: `none`, `solid`, `linear` or `radial`; gradients run from `color` at `from` to
+  `color2` at `to` (radial: centre and a point on the edge), ordered-dithered when `dither`.
+- Colours are `#rrggbb` or `#rrggbbaa`. Anything invalid makes the file unreadable
+  (`Vector shapes: ...`), it is never partly read.
 
 ## Limits enforced on read
 

@@ -138,6 +138,18 @@ public:
     Status addPaletteColor(Rgba8 color);
     Status removePaletteColor(std::size_t index);
     Status replacePalette(Palette palette, const std::string& label = "Replace Palette");
+    // Palette lock (ADR-ANIM-006): while locked the four palette edits above
+    // are refused, and pixels entering the document (painting, setCelImage,
+    // image and animation layers, vector shapes) snap to the palette, alpha
+    // kept. Locking needs an opaque palette colour; it does not change
+    // existing pixels (conformToPalette does). One undo step each.
+    Status setPaletteLocked(bool locked);
+    // Snaps every cel to the palette in one undo step; the number of pixels
+    // changed (0 = nothing to do, no undo step).
+    Result<std::size_t> conformToPalette();
+    // Locks the palette and snaps every cel to it, as one undo step; the
+    // number of pixels changed.
+    Result<std::size_t> lockAndConformPalette();
 
     // Replaces the whole document in one undo step (used by scripts, which
     // edit a copy on a worker thread).
@@ -148,6 +160,14 @@ public:
     // with the rigs:: functions on a copy, then set here. With `mergeKey` >= 0,
     // consecutive calls with the same key merge into one step (a drag).
     Status setRig(std::optional<Rig> rig, const std::string& label, long long mergeKey = -1);
+
+    // ---- Vector shapes ----
+    // Replaces a cel's shapes and redraws the cel as their rasterisation
+    // (an empty list removes the shapes and clears the cel); one undo step.
+    // Refused on a linked cel.
+    Status setVectorShapes(LayerId layer, int frame, std::vector<VectorShape> shapes, const std::string& label);
+    // Keeps the cel's pixels and drops its shapes (painting stays from then on).
+    Status rasterizeVectorShapes(LayerId layer, int frame);
 
     // ---- Colour mode ----
     // Converts every cel. Indexed: pixels snap to the nearest opaque palette

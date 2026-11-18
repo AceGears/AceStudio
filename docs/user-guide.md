@@ -81,16 +81,44 @@ Add, Subtract, Difference), visibility and locks.
   close poses and separate parts are on separate layers.
 - **Rigs:** open **Window › Rig**. **Auto-Rig** (also **Animation › Auto-Rig Current Layer**)
   cuts the current layer, as drawn on the current frame, into part layers in a new group (the
-  original is hidden, not deleted) with bones and leg IK; it works on characters and animals with
-  legs. Or build a rig yourself: **Add Bone** adds a bone under the selected one, then set its
+  original is hidden, not deleted) with bones: legs with IK for characters and animals with legs,
+  wings for flyers, and the tail fin and fins for fish. The combo beside **Auto-Rig** chooses what
+  is cut (**Auto** picks from the sprite; a winged creature that also has legs needs **Wings**). Or build a rig yourself: **Add Bone** adds a bone under the selected one, then set its
   name, parent, head, length and angle, optional turn limits and lock, and **Bind Layer** to make
   the current layer move with it. To pose, select a bone and set its **Turn**, move the whole
   figure with **Move**, or pick an IK chain, set a **Target** and press **Reach**. The canvas shows
   the posed bones (the selected one in amber). Go to the frame you want and press **Bake to
   Frame**: the parts of the **Rest frame** are drawn there in the pose, in one undo step, with no
   new colours. Baking reads the rest frame every time, so it never piles up. **Rest Pose** puts
-  the bones back. Bones cannot be dragged on the canvas yet. Projects with a rig are saved as
-  schema 4.
+  the bones back. With **Drag bones on the canvas** on, drag a bone's tip to turn it (the tip of
+  an IK chain reaches instead), drag a root's joint to move the figure, and Ctrl+drag a joint or
+  tip to edit the rest bones (only at the rest pose). Presses away from the bones still paint.
+  The rest frame is saved with the rig. Projects with a rig are saved as schema 4.
+- **Palette lock:** tick **Lock palette** in the Palette panel to keep the whole project to its
+  palette. The palette can no longer be edited, loaded or replaced, and everything new snaps to the
+  nearest palette colour (alpha is kept): painting with any tool, smooth gradients, pasted and
+  imported images, generated in-betweens and motion clips, and vector shapes. Locking leaves what
+  is already drawn alone; if pixels are off the palette AceStudio offers to snap them, and
+  **Conform** does it at any time (one undo step). Merge Down with a blend mode, smooth transforms
+  and effects can still create new colours: press Conform afterwards. From the command line,
+  `acestudio-cli palette check` reports off-palette pixels (exit 1) and `palette lock|unlock|conform`
+  change a project.
+- **Vector shapes:** with Line, Rectangle, Ellipse, Polygon or Curve, tick **Keep as vector
+  shape** in the Tools panel. What you draw is kept as an editable shape on the cel and drawn
+  pixel-perfectly: choose the **Stroke** (solid, dashed, dotted or none; the brush size is its
+  width) and the **Fill** (none, solid in the other colour, or a linear or radial gradient from the
+  primary to the secondary colour, dithered or smooth as set for the Gradient tool). Polygons close
+  themselves; a curve's control points become the shape's handles. Drawing another shape redraws
+  the cel from all its shapes, so paint by hand only after **Layer › Rasterize Vector Shapes**,
+  which keeps the pixels and drops the shapes. Shapes cannot yet be selected and edited on the
+  canvas; `acestudio-cli vector show|add|clear|rasterize` works with them from the command line.
+  Projects with shapes are saved as schema 5.
+- **Rig keys:** pose the bones on a frame and press **Set Key on N**; choose a **Curve** (linear,
+  ease in, ease out, ease in and out, stepped, Bezier) for how the frames after the key move to the
+  next key. Moving to another frame loads the keyed pose of that frame (in between two keys, the
+  eased pose). **Bake Keys** draws every frame from the first key to the last from the rest frame in
+  one undo step; the rest frame itself is left alone. Keys move with their frames when you insert,
+  move or delete frames. From the command line: `acestudio-cli rig key|unkey|rest|bake`.
 
 ## 6. Export
 
