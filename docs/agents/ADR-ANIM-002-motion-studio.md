@@ -121,8 +121,22 @@ moves fading in beyond them); the leg hips follow their end. Side views only. Ve
 rises and falls at least 2 rows and more than with a stiff back, neck and tail, at most a quarter
 of its height; colours kept); the dog's walk sheet was looked at.
 
-Not done: sideways head and tail swing, leg overrides by name, six legs, fins (`RigSwim`),
-`rig motion` for four-legged rigs. Wings: section 3.7.
+Built later on 2026-11-18: `rig motion` for four-legged rigs (`rigs::keysFromMotion`, see
+`RigMotion.h`): legs paired by hind/front (from the rig's facing, read from its highest body art)
+and near/far, thighs and shins aimed along the creature legs, IK reach scaled by the straight
+top-to-foot distance, the root's height from the hips' mean, "body" turned by the back's change.
+Verified: `tests/test_rig_motion.cpp` (the test dog faces right, two hind and two front legs,
+every thigh swings, every foot lifts and lands, none below the ground, the root within 3 px;
+`--bones` refused) and a `tests/cli_smoke.cmake` step, run locally; the baked sheet was looked at.
+
+Then: auto-rig feet are held at their drawn angle (turned against their parents' total turn);
+`MotionKeysOptions::facing` (`--facing`) and `legs` (`--legs N=hind-near|hind-far|front-near|front-far`)
+override the facing and the pairing. Verified: `tests/test_rig_motion.cpp` (every foot at its rest
+angle in every key; facing left swaps hind and front; hand pairs win, near and far differ; a missing
+leg and leg pairs with a humanoid motion refused) and `tests/cli_smoke.cmake`, run locally.
+
+Not done: sideways head and tail swing, six legs, fins (`RigSwim`), head and tail bones on
+four-legged rigs (auto-rig would have to cut them from the body). Wings: section 3.7.
 
 ### 3.7 Wings from a humanoid motion (stage 3c, second part, 2026-11-18)
 
@@ -148,8 +162,15 @@ folding on the way up, the hips lifted by the downstroke.
 | `flap` preset | `core/src/MotionLibrary.cpp` | the test above (arm raised above 0.8 rad and beaten below -0.6 rad); preset count tests |
 | CLI `--body flyer`, `--wing-line`; Lua `body = "flyer"`, `wing_line`; MCP `body`/`wing_line`; Motion Studio Body box | `cli/MocapCommands.cpp`, `core/src/Script.cpp`, `mcp/AceTools.cpp`, `app/src/MotionStudioPanel.cpp` | `tests/cli_smoke.cmake` (the golden dragon: 6 frames, no issues; quad-walk and a bad wing line refused), run locally with a placeholder GIF writer; Lua, MCP and the panel are compiled (the panel by CI only), not driven by a test |
 
-Not done: wing skeletons (a bird's or bat's own wing bones), wing sweep, twist and folding, the
-tail's wave, a wing selection from Motion Studio, and fins (`RigSwim`).
+Then: the tail waves with the near wing's stroke (`flightTailColumns` and `tailColumnDy`, shared
+with `flightRender`; a loop either side of mid-stroke, a one-shot from its start, 0.3 of the span
+later at the tip, at most 0.15 of the tail's length either way); Motion Studio has a wing line and
+takes a selection made before Use Current Sprite as the wing mask. Verified: the test dragon's tail
+tip moves at least a row and at most its reach (`tests/test_wing_motion.cpp`), with the part rig,
+sprite motion and key pose tests still passing; the panel is compiled by CI only.
+
+Not done: wing skeletons (a bird's or bat's own wing bones), wing sweep, twist and folding, and
+fins (`RigSwim`).
 
 ### 3.4 Direction sets (stage 4, first part, 2026-11-18)
 

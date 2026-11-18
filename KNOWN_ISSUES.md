@@ -62,8 +62,15 @@ not been run.
   (a side view cannot show them without art drawn for it), and the head and tail bend only up and
   down by moving columns, so a long neck or tail held at a steep angle shears rather than turns. Exactly four legs reaching the floor are needed (six-legged and winged skeletons are
   refused); legs cannot be paired by hand yet, and Motion Studio's bone table lists humanoid bones
-  only. Sprites must be drawn from the side with their legs apart; `rig motion` does not take
-  four-legged motion.
+  only. Sprites must be drawn from the side with their legs apart. `rig motion` takes four-legged
+  motion on an auto-rigged four-legged sprite (since 2026-11-18; tested on the test dog): the legs,
+  the back's pitch and the body's height become keys. The rig's head and tail are not bones, so
+  they ride the body (auto-rig cuts no head or tail part). Feet keep their drawn angle to the
+  ground. Legs are paired by position (behind or ahead of the middle of the legs, then the first
+  numbered as the near one); `--legs "0=hind-near,..."` pairs them by hand, and `--bones` pairs
+  are refused for four-legged motion. The facing is read from the highest body art (the head); a
+  sprite whose tail rises higher than its head is read backwards unless `--facing left|right` is
+  given. `--facing` and `--legs` are command line only (Lua, MCP and the app do not offer them).
 - **Wings from a 3D motion** (`retarget --body flyer`, ADR-ANIM-002 section 3.7): a humanoid
   motion's arms beat a winged side view's wings (each wing turns about its shoulder as its arm
   rises and falls, the hand end bends with the elbow, the body rises and sinks with the hips).
@@ -72,11 +79,13 @@ not been run.
   skeletons (a bird's or bat's own wing bones) are not read: the motion must have humanoid arms,
   and a four-legged motion is refused. The wings are found as in Animate's flap (the part above
   the wing line, 45% of the height unless `--wing-line` or Lua's `wing_line` says otherwise); when
-  the head reaches above that line it turns with the wing, so lower the line. The command line,
-  Lua and MCP take a wing line but not a wing selection, and Motion Studio takes neither (its body
-  box only picks Wings). `--body auto` never picks wings. The wing stroke is up and down only: no
-  forward sweep, twist or folding, and the tail does not wave as in Animate's flap. Fins (a
-  swimming motion onto `RigSwim`) are not mapped.
+  the head reaches above that line it turns with the wing, so lower the line. Motion Studio takes a
+  wing line and, when the wings were selected in the document before Use Current Sprite, uses the
+  selection as the wings (compiled by CI; no Qt test drives it); the command line, Lua and MCP take
+  a wing line only. `--body auto` never picks wings. The wing stroke is up and down only: no
+  forward sweep, twist or folding. The tail waves with the stroke as in Animate's flap (a thin tail
+  behind the body only; the golden dragon's thick tail is not found as one). Fins (a swimming
+  motion onto `RigSwim`) are not mapped.
 - **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI and core only (no app page,
   Lua or MCP yet). The art is chosen, never turned or drawn: a direction with no view drawn near it
   shows the nearest view with the motion seen from the new direction, and is flagged. Mirrored

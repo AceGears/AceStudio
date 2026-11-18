@@ -23,6 +23,18 @@
 // "legN thigh|shin|foot", "armN"), the joint names of Mocap.h ("LThigh",
 // "RForearm", ... case ignored), or explicit `bones` pairs. Wings and fins
 // match nothing; they are refused.
+//
+// A four-legged motion (mocap::creatureMap finds four legs) drives a rig
+// drawn from the side with auto-rig leg names: the legs behind the middle of
+// the rig's legs (the head end, its highest art, is the front) take the
+// hind legs, the others the front, the first numbered of a pair the source
+// leg nearer the camera. A thigh follows the leg's top to its next joint, a
+// shin from there to its lowest joint (feet follow their shins); IK chains
+// reach for the foot scaled by the straight top-to-foot reach. "body" turns
+// by the back's change (hind tops to front tops), and the root rises and
+// sinks from the hips' mean height in the span. Feet (auto-rig "legN foot")
+// keep their drawn angle to the ground. Bone pairs are refused; `facing` and
+// `legs` override the facing and the pairing.
 
 #include "acestudio/core/Document.h"
 #include "acestudio/core/Mocap.h"
@@ -56,6 +68,13 @@ struct MotionKeysOptions {
     std::vector<std::pair<std::string, mocap::Bone>> bones;
     // Skeleton joint -> joint name in the motion (as retarget's --map).
     std::vector<std::pair<mocap::Bone, std::string>> mapOverrides;
+    // Four-legged motions only. `facing`: +1 the rig faces screen right, -1
+    // left, 0 read from its art (the head end rises highest). `legs`: rig leg
+    // number (auto-rig "legN") -> the motion's leg it follows, winning over
+    // the pairing by position.
+    int facing = 0;
+    enum class QuadLeg { HindNear, HindFar, FrontNear, FrontFar };
+    std::vector<std::pair<int, QuadLeg>> legs;
 };
 
 struct MotionKeysResult {

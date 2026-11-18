@@ -396,6 +396,34 @@ std::optional<FlightRig> buildFlightRig(const Image& sprite, const Subject& subj
     return out;
 }
 
+std::vector<int> flightTailColumns(const FlightRig& fr, const IntRect& bb) {
+    std::vector<int> tailColumns;
+    if (fr.headSide == 0 || fr.bodyPart < 0) return tailColumns;
+    const Mask& own = fr.rig.parts[static_cast<std::size_t>(fr.bodyPart)].own;
+    const IntRect ob = rig::bounds(own);
+    std::map<int, int> depth;
+    for (int x = ob.x; x < ob.x + ob.w; ++x) {
+        int n = 0;
+        for (int y = ob.y; y < ob.y + ob.h; ++y) n += own.get(x, y) ? 1 : 0;
+        depth[x] = n;
+    }
+    // Measured on the whole body: the head end is a part of its own, so
+    // this part alone may be little more than the tail.
+    int deepest = 0;
+    for (int x = bb.x; x < bb.x + bb.w; ++x) {
+        int n = 0;
+        for (int y = bb.y; y < bb.y + bb.h; ++y) n += fr.bodyOnly.get(x, y) ? 1 : 0;
+        deepest = std::max(deepest, n);
+    }
+    const int tip = fr.headSide > 0 ? ob.x : ob.x + ob.w - 1;
+    for (int x = tip; x >= ob.x && x < ob.x + ob.w && (x + 0.5 - fr.bodyCx) * fr.headSide < 0; x += fr.headSide) {
+        if (depth[x] * 2 >= deepest) break;
+        tailColumns.insert(tailColumns.begin(), x);
+    }
+    if (tailColumns.size() < 4) tailColumns.clear();
+    return tailColumns;
+}
+
 std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Action action, int frames, double amount,
                                     const WingSpec& spec) {
     if (action != Action::Flap && action != Action::Fly) return std::nullopt;
@@ -409,10 +437,9 @@ std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Ac
     const std::vector<WingCut>& cuts = built->cuts;
     const std::vector<FlightWing>& wp = built->wings;
     const std::size_t nearIdx = built->nearIdx;
-    const int headSide = built->headSide, rootRow = built->rootRow, skinDepth = built->skinDepth;
-    const double skinX0 = built->skinX0, skinX1 = built->skinX1, bodyCx = built->bodyCx;
+    const int rootRow = built->rootRow, skinDepth = built->skinDepth;
+    const double skinX0 = built->skinX0, skinX1 = built->skinX1;
     const bool painted = built->painted;
-    const Mask& bodyOnly = built->bodyOnly;
 
     // Motion.
     const bool fly = action == Action::Fly;
@@ -427,31 +454,7 @@ std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Ac
     // The tail: columns of the body at the end away from the head, from its
     // tip until the body gets thick (half its greatest depth). Listed root
     // first. None when the head side is unknown or the end is too short.
-    std::vector<int> tailColumns;
-    if (headSide != 0) {
-        const Mask& own = rig.parts[static_cast<std::size_t>(bodyPart)].own;
-        const IntRect ob = rig::bounds(own);
-        std::map<int, int> depth;
-        for (int x = ob.x; x < ob.x + ob.w; ++x) {
-            int n = 0;
-            for (int y = ob.y; y < ob.y + ob.h; ++y) n += own.get(x, y) ? 1 : 0;
-            depth[x] = n;
-        }
-        // Measured on the whole body: the head end is a part of its own, so
-        // this part alone may be little more than the tail.
-        int deepest = 0;
-        for (int x = bb.x; x < bb.x + bb.w; ++x) {
-            int n = 0;
-            for (int y = bb.y; y < bb.y + bb.h; ++y) n += bodyOnly.get(x, y) ? 1 : 0;
-            deepest = std::max(deepest, n);
-        }
-        const int tip = headSide > 0 ? ob.x : ob.x + ob.w - 1;
-        for (int x = tip; x >= ob.x && x < ob.x + ob.w && (x + 0.5 - bodyCx) * headSide < 0; x += headSide) {
-            if (depth[x] * 2 >= deepest) break;
-            tailColumns.insert(tailColumns.begin(), x);
-        }
-        if (tailColumns.size() < 4) tailColumns.clear();
-    }
+    const std::vector<int> tailColumns = flightTailColumns(*built, bb);
     const int tailAmp = std::max(1, iround(static_cast<double>(tailColumns.size()) * 0.15 * amount));
     std::vector<Image> frameImgs;
     std::vector<std::vector<rig::PartPose>> allPoses;
@@ -468,18 +471,8 @@ std::optional<RigClip> flightRender(const Image& sprite, const Subject& subj, Ac
             // A wave running from the root to the tip, 0.3 of a beat late at
             // the tip, growing along the tail; neighbours differ by at most a
             // pixel so the tail stays one piece.
-            const rig::Part& bp = rig.parts[static_cast<std::size_t>(bodyPart)];
-            const int left = bp.hiBox.x + 1;
-            std::vector<int> column(static_cast<std::size_t>(std::max(0, bp.hiBox.w - 2)), 0);
-            int previous = 0;
-            for (std::size_t i = 0; i < tailColumns.size(); ++i) {
-                const double u = static_cast<double>(i + 1) / static_cast<double>(tailColumns.size());
-                const int wanted = iround(tailAmp * u * std::sin(2 * kPi * (t - 0.3 * u)));
-                previous = std::clamp(wanted, previous - 1, previous + 1);
-                const int k = tailColumns[i] - left;
-                if (k >= 0 && k < static_cast<int>(column.size())) column[static_cast<std::size_t>(k)] = previous;
-            }
-            pose[static_cast<std::size_t>(bodyPart)].colDy = std::move(column);
+            pose[static_cast<std::size_t>(bodyPart)].colDy =
+                tailColumnDy(*built, tailColumns, [&](double u) { return iround(tailAmp * u * std::sin(2 * kPi * (t - 0.3 * u))); });
         }
         for (const FlightWing& w : wp) {
             const double lag = w.nearWing ? 0.0 : farLag;
