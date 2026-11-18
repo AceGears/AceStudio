@@ -94,6 +94,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Four-legged rigs have a head and a tail**: auto-rig cuts the head and the tail of a
+  four-legged side view out of the body into parts of their own, on bones from where they leave
+  the body, and `rig motion` nods the head and swings the tail with a four-legged motion's head
+  and tail. The head bone also tells which way the animal faces.
 - **Four-legged `rig motion` and wings, refined**: feet now keep their drawn angle to the ground
   instead of tilting with the leg; `--facing left|right` overrides the facing read from the art and
   `--legs "0=hind-near,1=hind-far,..."` pairs the rig's legs with the motion's by hand. Retargeted

@@ -353,8 +353,134 @@ Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, con
         }
         for (std::size_t a = 0; a < built->armParts.size() && a < subj.arms.size(); ++a)
             if (auto st = limbBone("arm" + std::to_string(a), built->armParts[a], root.value()); !st) return st.error();
+        // A four-legged side view: the body beyond the front legs (the way it
+        // faces) is the head, beyond the hind legs the tail, each a part of
+        // its own on a bone from where it leaves the body, so a motion can
+        // nod the head and swing the tail. Too small an end stays on the body.
+        int ends = 0;
+        if (subj.body == motion::Body::Quadruped && !built->front && built->bodyPart >= 0 &&
+            partLayer[static_cast<std::size_t>(built->bodyPart)] != kNoLayer) {
+            const LayerId bodyLayer = partLayer[static_cast<std::size_t>(built->bodyPart)];
+            int legMin = 1 << 30, legMax = -(1 << 30);
+            for (const auto& L : built->legs) {
+                if (L.thigh < 0 || partLayer[static_cast<std::size_t>(L.thigh)] == kNoLayer) continue;
+                const Cel* c = d.cel(partLayer[static_cast<std::size_t>(L.thigh)], frame);
+                if (!c) continue;
+                legMin = std::min(legMin, c->x);
+                legMax = std::max(legMax, c->x + c->image.width());
+            }
+            // The body's outline per column: its top and bottom rows. The
+            // trunk is the run of columns over the legs; its back is the top
+            // row and its belly the bottom row most of those columns share.
+            std::map<int, std::pair<int, int>> col;   // x -> (top, bottom)
+            if (const Cel* bc = d.cel(bodyLayer, frame))
+                for (int y = 0; y < bc->image.height(); ++y)
+                    for (int x = 0; x < bc->image.width(); ++x)
+                        if (bc->image.pixel(x, y).a) {
+                            auto [it, fresh] = col.try_emplace(bc->x + x, bc->y + y, bc->y + y);
+                            if (!fresh) {
+                                it->second.first = std::min(it->second.first, bc->y + y);
+                                it->second.second = std::max(it->second.second, bc->y + y);
+                            }
+                        }
+            std::map<int, int> tops, bottoms;
+            for (int x = legMin; x < legMax; ++x)
+                if (auto c = col.find(x); c != col.end()) {
+                    ++tops[c->second.first];
+                    ++bottoms[c->second.second];
+                }
+            auto mode = [](const std::map<int, int>& m) {
+                int best = 0, at = 0;
+                for (const auto& [v, n] : m)
+                    if (n > best) best = n, at = v;
+                return at;
+            };
+            const int backTop = mode(tops), belly = mode(bottoms);
+            for (int end = 0; end < 2 && legMin < legMax && !col.empty(); ++end) {
+                const bool head = end == 0;
+                const int outward = head ? dir : -dir;   // the way outwards from the legs
+                // E: the first column outwards from the legs whose bottom has
+                // left the belly line (the neck, or the tail's root).
+                int scan = outward > 0 ? legMax : legMin - 1;
+                while (col.count(scan) && col[scan].second >= belly - 1) scan += outward;
+                if (!col.count(scan)) continue;
+                const int edgeX = scan;
+                // Inwards from E, the columns rising above the back (the top
+                // of a head, a raised tail) belong to the end above the back line.
+                int innerX = edgeX;
+                while (col.count(innerX - outward) && col[innerX - outward].first < backTop) innerX -= outward;
+                auto inEnd = [&](int gx, int gy) {
+                    if ((gx - edgeX) * outward >= 0) return true;
+                    return (gx - innerX) * outward >= 0 && gy < backTop;
+                };
+                Cel* bc = d.cel(bodyLayer, frame);
+                if (!bc) break;
+                int total = 0;
+                IntRect r{1 << 30, 1 << 30, 0, 0};
+                int x1 = -(1 << 30), y1 = -(1 << 30);
+                double rowSum = 0;
+                int rowCount = 0;
+                const int edge = edgeX;
+                for (int y = 0; y < bc->image.height(); ++y)
+                    for (int x = 0; x < bc->image.width(); ++x) {
+                        if (bc->image.pixel(x, y).a == 0) continue;
+                        ++total;
+                        const int gx = bc->x + x, gy = bc->y + y;
+                        if (!inEnd(gx, gy)) continue;
+                        r.x = std::min(r.x, gx);
+                        r.y = std::min(r.y, gy);
+                        x1 = std::max(x1, gx + 1);
+                        y1 = std::max(y1, gy + 1);
+                        if (gx == edge) {
+                            rowSum += gy + 0.5;
+                            ++rowCount;
+                        }
+                    }
+                r.w = x1 - r.x;
+                r.h = y1 - r.y;
+                if (r.w < 2 || rowCount == 0) continue;
+                Image piece(r.w, r.h);
+                int n = 0;
+                for (int y = 0; y < r.h; ++y)
+                    for (int x = 0; x < r.w; ++x) {
+                        const int bx = r.x + x - bc->x, by = r.y + y - bc->y;
+                        const Rgba8 px = bc->image.pixel(bx, by);
+                        if (px.a == 0) continue;
+                        piece.setPixel(x, y, px);
+                        ++n;
+                    }
+                if (n < 6 || n * 50 < total) continue;   // under 2% of the body: leave it
+                for (int y = 0; y < r.h; ++y)
+                    for (int x = 0; x < r.w; ++x)
+                        if (piece.pixel(x, y).a) bc->image.setPixel(r.x + x - bc->x, r.y + y - bc->y, Rgba8::transparent());
+                const std::string nm = head ? "head" : "tail";
+                auto id = d.addLayer(nm, LayerKind::Raster, out.group);
+                if (!id) return id.error();
+                if (auto st = d.moveLayer(id.value(), *d.layerIndex(bodyLayer) + 1); !st) return st.error();
+                if (auto st = d.setCel(id.value(), frame, Cel{piece, r.x, r.y}); !st) return st.error();
+                // The bone: from where the end leaves the body to its farthest pixel.
+                // The pivot: where the end leaves the body, at the middle of its first column.
+                const motion::rig::Vec pivot{outward > 0 ? static_cast<double>(edgeX) : static_cast<double>(edgeX + 1), rowSum / rowCount};
+                motion::rig::Vec tip = pivot;
+                double best = -1;
+                for (int y = 0; y < r.h; ++y)
+                    for (int x = 0; x < r.w; ++x)
+                        if (piece.pixel(x, y).a) {
+                            const double dx = r.x + x + 0.5 - pivot.x, dy = r.y + y + 0.5 - pivot.y;
+                            if (dx * dx + dy * dy > best) {
+                                best = dx * dx + dy * dy;
+                                tip = {r.x + x + 0.5, r.y + y + 0.5};
+                            }
+                        }
+                auto bone = addBone(rig, boneFrom(nm, root.value(), pivot, tip));
+                if (!bone) return bone.error();
+                if (auto st = bindLayer(rig, id.value(), bone.value()); !st) return st.error();
+                ++ends;
+            }
+        }
         summary = std::string("Body: ") + motion::toString(subj.body) + (built->front ? " seen from the front" : "") + ", " +
-                  std::to_string(built->legs.size()) + " legs, " + std::to_string(built->armParts.size()) + " arms";
+                  std::to_string(built->legs.size()) + " legs, " + std::to_string(built->armParts.size()) + " arms" +
+                  (ends == 2 ? ", a head and a tail" : ends == 1 ? ", one end (head or tail)" : "");
     } else if (flight) {
         // The root runs from the body's middle towards the head (up when the
         // head side is unknown); the wings turn about their shoulders.
