@@ -319,12 +319,7 @@ int cmdRigMotion(const Args& a, Output& out) {
             const auto eq = item.find('=');
             const std::string num = eq == std::string::npos ? std::string() : item.substr(0, eq);
             const std::string which = eq == std::string::npos ? std::string() : item.substr(eq + 1);
-            using QL = rigs::MotionKeysOptions::QuadLeg;
-            std::optional<QL> q;
-            if (which == "hind-near") q = QL::HindNear;
-            else if (which == "hind-far") q = QL::HindFar;
-            else if (which == "front-near") q = QL::FrontNear;
-            else if (which == "front-far") q = QL::FrontFar;
+            const auto q = rigs::quadLegFromString(which);
             const bool digits = !num.empty() && num.size() <= 3 && std::all_of(num.begin(), num.end(), [](char c) { return c >= '0' && c <= '9'; });
             if (!q || !digits)
                 return out.fail(kUsage, "rig motion: --legs expects N=hind-near|hind-far|front-near|front-far pairs: '" + item + "'");

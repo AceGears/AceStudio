@@ -94,6 +94,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **`rig motion` in Lua and MCP**: `doc:rig_motion("preset:quad-walk", {facing = "left", legs =
+  {[0] = "hind-near"}, bake = true})` keys a motion onto a document's rig and returns the keyed
+  frames and what drives each bone; the MCP tool `rig_motion` runs the command line's `rig motion`
+  with every option (`facing`, `legs`, `bones`, `bake`, camera and timing).
 - **Four-legged rigs have a head and a tail**: auto-rig cuts the head and the tail of a
   four-legged side view out of the body into parts of their own, on bones from where they leave
   the body, and `rig motion` nods the head and swings the tail with a four-legged motion's head

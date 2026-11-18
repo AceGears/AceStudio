@@ -728,6 +728,63 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                      b.overwrite();
                      return fromCli(runCliConfirm(*envPtr, b.args, call));
                  }});
+    t.push_back({"rig_motion", "Key a 3D motion onto a rig",
+                 std::string("Keys a 3D skeletal motion (BVH, glTF/GLB or a preset) onto a project's rig, one pose key per "
+                             "sampled frame, adding frames as needed, and writes `out`; `bake` also draws the keyed frames. "
+                             "Rig bones match the motion's joints by name (`bones` pairs them by hand); arms keep their drawn "
+                             "pose unless `absolute_arms`. A four-legged motion (preset:quad-walk) drives auto-rig legs, head "
+                             "and tail: `facing` says which way the animal faces when it is read wrongly, `legs` pairs the "
+                             "rig's numbered legs with the motion's. Reports the keyed frames and what drives each bone.") +
+                     kPathNote,
+                 obj({{"path", str("The .acestudio file with a rig")},
+                      {"motion", motionArg},
+                      {"out", str("The .acestudio file to write")},
+                      {"view", str("Camera: auto (as the rig is drawn), front, back, right, left, front-right, front-left, "
+                                   "back-right, back-left, three-quarter, top-down or isometric")},
+                      {"turn", number("Camera turn in degrees (0 = the motion faces the viewer, 90 = faces screen right)")},
+                      {"tilt", number("Camera tilt in degrees")},
+                      {"roll", number("Camera roll in degrees")},
+                      {"perspective", boolean("Perspective camera instead of orthographic")},
+                      {"start", number("Seconds into the motion")},
+                      {"length", number("Seconds to use (0 = to the end)")},
+                      {"fps", integer("Keys per second of motion (default 12)", 1, 60)},
+                      {"frames", integer("Exactly this many keys instead of fps", 2, 240)},
+                      {"amount", number("Swing of the motion, 0.25-2 (default 1)")},
+                      {"animation", str("glTF/GLB: which animation, by index or name")},
+                      {"travel", boolean("Keep the motion's travel (default: in place)")},
+                      {"no_loop", boolean("Treat the motion as a one-shot")},
+                      {"first", integer("The first keyed frame (default: the one after the rest frame)", 0)},
+                      {"bake", boolean("Also draw the keyed frames")},
+                      {"absolute_arms", boolean("Point the arms where the motion's arms point instead of turning the drawn arms")},
+                      {"bones", str("Rig bone to motion joint pairs, \"rig bone=Joint,...\" (Joint: Hips, LThigh, RShin, LUpperArm, ...)")},
+                      {"facing", oneOf("Four-legged motion: the way the animal faces (default: read from the head bone or the art)",
+                                       {"left", "right"})},
+                      {"legs", str("Four-legged motion: rig leg number to the motion's leg, "
+                                   "\"0=hind-near,1=hind-far,2=front-near,3=front-far\"")},
+                      {"overwrite", kOverwrite}},
+                     {"path", "motion", "out"}),
+                 writes(),
+                 [envPtr](const json& a, const ToolCall& call) {
+                     ArgBuilder b{*envPtr, a, {"rig", "motion"}, {}};
+                     if (!b.path("path")) return badArgs(b.error);
+                     const std::string motion = a.value("motion", std::string());
+                     if (motion.rfind("preset:", 0) == 0) b.args.push_back(motion);
+                     else if (!b.path("motion")) return badArgs(b.error);
+                     if (!b.path("out", "--out")) return badArgs(b.error);
+                     for (const auto& [k, f] : std::vector<std::pair<std::string, const char*>>{
+                              {"view", "--view"}, {"turn", "--turn"}, {"tilt", "--tilt"}, {"roll", "--roll"}, {"start", "--start"},
+                              {"length", "--length"}, {"fps", "--fps"}, {"frames", "--frames"}, {"amount", "--amount"},
+                              {"animation", "--animation"}, {"first", "--first"}, {"bones", "--bones"}, {"facing", "--facing"},
+                              {"legs", "--legs"}})
+                         b.opt(k, f);
+                     b.flag("perspective", "--perspective");
+                     b.flag("travel", "--travel");
+                     b.flag("no_loop", "--no-loop");
+                     b.flag("bake", "--bake");
+                     b.flag("absolute_arms", "--absolute-arms");
+                     b.overwrite();
+                     return fromCli(runCliConfirm(*envPtr, b.args, call));
+                 }});
     t.push_back({"vector_show", "List a project's vector shapes",
                  std::string("Every cel's vector shapes (paths with Bezier handles, rectangles, ellipses; stroke and fill) "
                              "in the project-file format (ADR-ANIM-005).") + kPathNote,

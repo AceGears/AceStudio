@@ -43,6 +43,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <string_view>
 #include <vector>
 
 namespace acestudio::rigs {
@@ -96,5 +97,8 @@ mocap::Camera drawnCamera(const Rig& rig);
 // rig bone matches, or the keyed frames would cover the rest frame. Keys
 // already on the keyed frames are replaced; others stay.
 Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion& motion, const MotionKeysOptions& opt = {});
+
+// "hind-near", "hind-far", "front-near", "front-far"; nullopt otherwise.
+std::optional<MotionKeysOptions::QuadLeg> quadLegFromString(std::string_view s);
 
 } // namespace acestudio::rigs

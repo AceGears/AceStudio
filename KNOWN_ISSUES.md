@@ -39,7 +39,8 @@ not been run.
   can move without changing the area). Touching parts of the same colour can swap pixels; keep
   separate parts on separate layers. The work holds a second copy of the document while it runs.
 - **Motion onto a saved rig** (`rig motion`, ADR-ANIM-002 section 3.3): tested locally and in CI (core
-  and CLI smoke test); there is no button for it in the app yet (CLI only; not in Lua or MCP). Bones
+  and CLI smoke test); Lua (`doc:rig_motion`, tested locally) and MCP (`rig_motion`, which runs the CLI; compiled,
+  not called by a test) offer it too; there is no button for it in the app yet. Bones
   turn to point the way the projected skeleton points, so a limb seen end-on (a front-view walk's
   legs) barely moves and holds its last direction. Side-view legs numbered 0 and 1 are taken as
   near and far; if they come out swapped, pair them with `--bones`. Wings, fins and other
@@ -73,7 +74,7 @@ not been run.
   angle to the ground. Legs are paired by position (behind or ahead of the middle of the legs, then the first
   numbered as the near one); `--legs "0=hind-near,..."` pairs them by hand, and `--bones` pairs
   are refused for four-legged motion. The facing is read from the head bone auto-rig cut (else
-  from the highest body art); `--facing left|right` overrides it. `--facing` and `--legs` are command line only (Lua, MCP and the app do not offer them).
+  from the highest body art); `--facing left|right` overrides it. Lua and MCP take `facing` and `legs` too; the app does not.
 - **Wings from a 3D motion** (`retarget --body flyer`, ADR-ANIM-002 section 3.7): a humanoid
   motion's arms beat a winged side view's wings (each wing turns about its shoulder as its arm
   rises and falls, the hand end bends with the elbow, the body rises and sinks with the hips).

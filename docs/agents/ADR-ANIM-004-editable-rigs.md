@@ -55,7 +55,9 @@ The part rig of ADR-ANIM-001 is rebuilt from the sprite every time a clip is mad
 - (Built on 2026-11-15: Lua `doc:rig()`, `set_rig`, `auto_rig`, `pose_rig`, `key_rig`, `unkey_rig`, `bake_rig`, and the MCP tools `rig_show` and `rig_edit`, which run the CLI. Lua is tested locally and in CI; the MCP tools are compiled, not called by a test.)
 - (Built on 2026-11-17, CLI only: `rig motion` keys a BVH/glTF/preset motion onto a saved rig; see
   ADR-ANIM-002 section 3.3. Motion Studio still builds its own rig per clip, and the app has no
-  button for it yet.)
+  button for it yet. On 2026-11-18 Lua `doc:rig_motion` and the MCP tool `rig_motion` were added,
+  with every option of the command; Lua is tested in `tests/test_script.cpp`, the MCP tool is
+  compiled, not called by a test.)
 
 ## Consequences
 

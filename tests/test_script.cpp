@@ -419,3 +419,59 @@ TEST_CASE("Lua motion library and retarget", "[script][mocap]") {
     INFO(errorOf(r));
     CHECK(r);
 }
+
+TEST_CASE("Lua keys a motion onto a rig", "[script][rig][mocap]") {
+    auto r = run(R"(
+        -- The dog of the retarget test, auto-rigged.
+        local dog = ace.image(72, 48)
+        dog:rect(10, 12, 46, 14, '#966432')
+        dog:rect(52, 4, 14, 12, '#966432')
+        dog:rect(64, 9, 4, 4, '#1e1414')
+        dog:rect(4, 10, 7, 3, '#5a3c23')
+        for _, x in ipairs({14, 22, 44, 52}) do dog:rect(x, 26, 5, 20, '#966432') end
+        local function rigged()
+            local d = ace.new_document(72, 48, 1)
+            d:set_cel(0, 0, dog)
+            d:auto_rig(0, {as = 'legs'})
+            return d
+        end
+        local d = rigged()
+        assert(not pcall(function() ace.new_document(8, 8, 1):rig_motion('preset:walk') end))   -- no rig
+        local k = d:rig_motion('preset:quad-walk', {fps = 10})
+        assert(k.first == 1 and k.keys == 12 and k.last == 12, k.first .. ' ' .. k.keys)
+        assert(k.frames_added == 12, k.frames_added)
+        assert(#d:rig().keys == 12)
+        assert(d.frames == 13)
+        local right = k.matched['leg0 thigh']
+        assert(right and right:find('^hind'), tostring(right))
+
+        -- Facing left swaps hind and front; a hand pair wins.
+        d = rigged()
+        k = d:rig_motion('preset:quad-walk', {fps = 10, facing = 'left', legs = {[3] = 'hind-near'}})
+        assert(k.matched['leg0 thigh']:find('^front'), k.matched['leg0 thigh'])
+        assert(k.matched['leg3 thigh']:find('^hind'), k.matched['leg3 thigh'])
+
+        -- Baked: the keyed frames are drawn.
+        d = rigged()
+        k = d:rig_motion('preset:quad-walk', {frames = 6, bake = true})
+        assert(k.keys == 6 and d.frames == 7)
+        local drawn = 0
+        for _, l in ipairs(d:layers()) do
+            local c = d:cel(l.index, 3)
+            for y = 0, 47 do for x = 0, 71 do if c:hex(x, y):sub(8, 9) ~= '00' then drawn = drawn + 1 end end end
+        end
+        assert(drawn > 500, drawn)
+
+        -- Refusals.
+        d = rigged()
+        assert(not pcall(function() d:rig_motion('preset:quad-walk', {facing = 'up'}) end))
+        assert(not pcall(function() d:rig_motion('preset:quad-walk', {legs = {[0] = 'middle'}}) end))
+        assert(not pcall(function() d:rig_motion('preset:quad-walk', {legs = {[9] = 'hind-near'}}) end))
+        assert(not pcall(function() d:rig_motion('preset:walk', {legs = {[0] = 'hind-near'}}) end))
+        assert(not pcall(function() d:rig_motion('preset:walk', {bones = {body = 'Wing'}}) end))
+        assert(not pcall(function() d:rig_motion('preset:moonwalk') end))
+        assert(#(d:rig().keys or {}) == 0)
+    )");
+    INFO(errorOf(r));
+    CHECK(r);
+}

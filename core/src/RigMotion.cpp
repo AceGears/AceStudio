@@ -632,4 +632,13 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
     return MotionKeysResult{std::move(out), first, frames, res.framesAdded, res.camera, std::move(res.matched), std::move(res.notes)};
 }
 
+std::optional<MotionKeysOptions::QuadLeg> quadLegFromString(std::string_view s) {
+    using QL = MotionKeysOptions::QuadLeg;
+    if (s == "hind-near") return QL::HindNear;
+    if (s == "hind-far") return QL::HindFar;
+    if (s == "front-near") return QL::FrontNear;
+    if (s == "front-far") return QL::FrontFar;
+    return std::nullopt;
+}
+
 } // namespace acestudio::rigs
