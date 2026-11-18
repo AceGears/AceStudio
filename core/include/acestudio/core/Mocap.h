@@ -190,6 +190,11 @@ struct RetargetOptions {
     // Nullopt = chosen from the sprite: front for a front view, the side the
     // sprite faces for a side view.
     std::optional<Camera> camera;
+    // The turn the sprite is drawn at (degrees, as Camera::turn), when it is
+    // known (a direction set's view). Nullopt = read from the sprite (front
+    // or side). It is the camera's turn when no camera is given, and the view
+    // the "approximate view" check measures from.
+    std::optional<double> drawnTurn;
     double start = 0;            // seconds into the motion
     double length = 0;           // seconds; 0 = to the end
     int fps = 12;                // frames sampled per second of motion

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Stage 1 (audit) done. Stage 3 core (BVH import, mapping, camera, retarget onto the part rig) built and tested locally on 2026-11-15. A first Motion Studio window is in the app. Stage 3b glTF/GLB animation import built and tested locally (core); the motion library was built on 2026-11-17 (section 3.2). Everything else is planned below, not built. |
+| Status | Stage 1 (audit) done. Stage 3 core (BVH import, mapping, camera, retarget onto the part rig) built and tested locally on 2026-11-15. A first Motion Studio window is in the app. Stage 3b glTF/GLB animation import built and tested locally (core); the motion library was built on 2026-11-17 (section 3.2), direction sets on 2026-11-18 (section 3.4). Everything else is planned below, not built. |
 | Builds on | ADR-ANIM-001 (part rig: parts, hidden pixels, depth, whole-pixel/RotSprite rendering, two-bone IK) |
 | Reference | A "Bonebase"-style Aseprite extension: a 3D skeleton beside a 2D rig, with turn, tilt and roll. It was used for the concept only. No code or assets were taken from it. |
 
@@ -95,6 +95,18 @@ Matching is by name: auto-rig names (`body`, `head`, `legN thigh|shin|foot`, `ar
 (`LThigh`, ...), or `--bones` pairs. Not done: a button in Motion Studio or the Rig panel, Lua and
 MCP access, non-humanoid mapping (stage 3c).
 
+### 3.4 Direction sets (stage 4, first part, 2026-11-18)
+
+| Piece | Where | Verified |
+|---|---|---|
+| `directions::chooseView`: the drawn view nearest a camera turn, or the mirror of a view on the other side (a tie goes to drawn art); `retargetDirections`: the motion retargeted per direction onto the chosen art, the camera turned to that direction, `RetargetOptions::drawnTurn` set to the art's turn so the 30 degree "approximate view" check measures from the art actually used; `turnClip`: a turn on the spot that shows the nearest view at each step, repeats dropped; `clipsDocument`: the clips on one project, one tag each, every clip's figure centred and standing on one row | `core/include/acestudio/core/DirectionSet.h`, `core/src/DirectionSet.cpp`, `Mocap.cpp` | `tests/test_direction_set.cpp`: names and turns, choice and mirror ties, refusals, a walk in 8 directions from a front and a side view (choices, flags, notes, west matches the mirrored east by silhouette), a turn clip on one ground row, the document's tags and cels. Run locally |
+| CLI `directions <views folder> <motion> --out <project>` (`--dirs`, `--no-mirror`, `--turn-clip`, `--turn-step`, `--turn-ms`, `--name`, retarget's timing, tilt and `--map` options) | `cli/MocapCommands.cpp` | `tests/cli_smoke.cmake` direction-set section, run locally; the 8-direction walk sheet was looked at |
+
+The art is never turned: this stage stops "new view" from being an approximation only where a
+view is drawn. Not done: a turn clip that draws in-between views, reference-view slots in the
+project and the app, three-quarter-aware leg handling in retarget (three-quarter art is read as
+front or side), rig motion per direction, and Lua and MCP access.
+
 ## 4. Remaining work, staged (none of this is built, except where marked)
 
 | Stage | Scope | Notes |
@@ -102,7 +114,7 @@ MCP access, non-humanoid mapping (stage 3c).
 | 2 | Saved, editable rigs (ADR-ANIM-001 schema 4): bone tree, add/remove/rename/reparent, joint limits, IK chains, mirror, lock, undo; GUI bone overlay on the canvas | Needs the chief architect's approval for the schema bump |
 | 3b | ~~glTF/GLB animation import~~ (built, section 3.1); ~~a motion library with presets and save-as-preset~~ (built, section 3.2) | More presets (crouch, climb, cast, die) and CC0 captured clips, each licensed |
 | 3c | Non-humanoid mapping: quadruped (four legs on `buildGaitRig`'s four-leg mode), wing chains onto `RigFlight` parts, spine/tail chains onto column bends | |
-| 4 | Multi-view: a direction set (front, back, side, three-quarter art) chosen by camera turn, with a turn clip between views; reference-view slots | This is where "new view" stops being an approximation |
+| 4 | (first part built, section 3.4) Multi-view: a direction set (front, back, side, three-quarter art) chosen by camera turn, with a turn clip between views; reference-view slots | This is where "new view" stops being an approximation |
 | 5 | AI assist (optional, worker or cloud only, with an explicit cost prompt): pose estimation of the sprite for auto-rig hints, hidden-surface inpainting of parts, view generation, text-to-motion (an LLM picks and parameterises library motions; no generative model where procedural motion works) | Respect the no-cost-without-approval rule |
 | 6 | Timeline tracks: bone keyframes, curves (linear, Bezier, eases, stepped), events, blending between clips (idle→walk→run with phase match) | |
 | 7 | Mesh deformation for HD art (triangle mesh, bone weights, weight painting); pixel art keeps the rigid part path | |

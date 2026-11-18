@@ -832,16 +832,20 @@ Result<RetargetResult> retarget(const Image& sprite, const Motion& m, const Reta
     const double amount = std::clamp(opt.amount, 0.25, 2.0);
 
     // Camera: chosen from the sprite unless given.
-    const double drawnTurn = g.front ? 0 : (g.dir < 0 ? -90 : 90);
+    const bool turnKnown = opt.drawnTurn && std::isfinite(*opt.drawnTurn);
+    const double drawnTurn = turnKnown ? *opt.drawnTurn : (g.front ? 0 : (g.dir < 0 ? -90 : 90));
     res.camera = opt.camera ? *opt.camera : Camera{};
     if (!opt.camera) res.camera.turn = drawnTurn;
     const Camera& cam = res.camera;
     {
         double diff = std::abs(wrapAngle((cam.turn - drawnTurn) * kDeg)) / kDeg;
-        if (g.front) diff = std::min(diff, std::abs(wrapAngle((cam.turn - 180) * kDeg)) / kDeg);
+        // A front view read from the art may as well be a back view.
+        if (!turnKnown && g.front) diff = std::min(diff, std::abs(wrapAngle((cam.turn - 180) * kDeg)) / kDeg);
         if (diff > 30 || std::abs(cam.tilt) > 40) {
             res.approximateView = true;
-            res.notes.push_back(std::string("The sprite is drawn ") + (g.front ? "from the front" : "from the side") +
+            const std::string drawn = turnKnown ? "at turn " + std::to_string(iround(drawnTurn)) + " degrees"
+                                                : (g.front ? "from the front" : "from the side");
+            res.notes.push_back("The sprite is drawn " + drawn +
                                 "; this camera only changes how the motion is seen, the art is not turned. "
                                 "A view this far from the drawing needs art drawn for it (a reference view).");
         }

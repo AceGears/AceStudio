@@ -127,6 +127,14 @@ Add, Subtract, Difference), visibility and locks.
   the rig is drawn in. Bones are matched by their auto-rig names; pair others with
   `--bones "upper leg=LThigh,lower leg=LShin"`. Arms keep the pose you drew and swing from it; add
   `--absolute-arms` to have them point where the motion's arms point.
+- **A motion in every direction** (command line only for now): put the views you drew in a
+  folder, named by the way the character faces: `s.png` (towards you), `se.png`, `e.png` (facing
+  right), `ne.png`, `n.png` (away from you), and so on, or `front.png`, `right.png`,
+  `back-left.png`... Then `acestudio-cli directions views preset:walk --out walk8.acestudio` makes
+  the walk in 8 directions (`--dirs 4` for four, or `--dirs s,e,n`), one tag each (`walk_s`,
+  `walk_se`, ...). Missing left-facing views are the right-facing ones mirrored (`--no-mirror` to
+  stop that). A direction far from every view you drew is listed as approximate: draw that view
+  and run it again. `--turn-clip s,e` adds a turn on the spot from one direction to another.
 - **Arms auto-rig missed** (command line only for now): auto-rig finds arms only beside the legs.
   Mark others as boxes on the canvas: `acestudio-cli rig auto hero.acestudio --layer Hero --arms
   "15,10,14,22;42,20,16,22" --out rigged.acestudio`. Every pixel inside a box becomes that arm, so

@@ -44,6 +44,13 @@ not been run.
   legs) barely moves and holds its last direction. Side-view legs numbered 0 and 1 are taken as
   near and far; if they come out swapped, pair them with `--bones`. Wings, fins and other
   non-humanoid rigs match nothing and are refused. Frames added for the keys are empty until baked.
+- **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI and core only (no app page,
+  Lua or MCP yet). The art is chosen, never turned or drawn: a direction with no view drawn near it
+  shows the nearest view with the motion seen from the new direction, and is flagged. Mirrored
+  views swap the character's left and right (a sword hand, a shield); draw that side or use
+  `--no-mirror`. Views are read from file names only (no reference-view slots in a project yet).
+  The turn clip cuts between drawn views; nothing in between is drawn. Retarget reads each view's
+  legs as front or side, so three-quarter art moves like the nearer of the two.
 - **Arm boxes for auto-rig** (`rig auto --arms`): CLI and core only (no way to draw the boxes in the
   app yet; not in Lua or MCP). A box takes every pixel inside it, so torso or cape pixels in the box
   move with the arm; keep boxes tight. The arm turns about where its pixels touch the body outside

@@ -112,6 +112,7 @@ int cmdEffect(const Args& a, Output& out);
 int cmdRetarget(const Args& a, Output& out);
 int cmdMotion(const Args& a, Output& out);
 int cmdRigMotion(const Args& a, Output& out);   // "rig motion"
+int cmdDirections(const Args& a, Output& out);
 int cmdConnect(const Args& a, Output& out);
 int cmdMap(const Args& a, Output& out);
 int cmdTemplate(const Args& a, Output& out);

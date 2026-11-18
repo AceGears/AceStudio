@@ -3,6 +3,7 @@
 #include "CliCommon.h"
 
 #include "acestudio/core/AnimCodec.h"
+#include "acestudio/core/DirectionSet.h"
 #include "acestudio/core/FileUtil.h"
 #include "acestudio/core/Mocap.h"
 #include "acestudio/core/MotionLibrary.h"
@@ -12,6 +13,7 @@
 #include "acestudio/core/RigTools.h"
 #include "ProjectArgs.h"
 
+#include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <functional>
@@ -308,6 +310,133 @@ int cmdRigMotion(const Args& a, Output& out) {
                         {"matched", matched},
                         {"notes", r.notes}},
                        text);
+}
+
+// acestudio-cli directions <views folder> <motion|preset:NAME> --out <project>:
+// the motion in every direction from a direction set (DirectionSet.h).
+int cmdDirections(const Args& a, Output& out) {
+    if (a.positional.size() != 3)
+        return out.fail(kUsage, "directions: expected a folder of drawn views (s.png, se.png, e.png, ... or front.png, right.png, ...) and a motion");
+    const auto outPath = a.opt("out");
+    if (!outPath) return out.fail(kUsage, "directions: --out <project.acestudio> is required");
+    if (a.opt("view") || a.opt("turn"))
+        return out.fail(kUsage, "directions: the camera turns to each direction by itself (--view and --turn are for retarget; --tilt, --roll and --perspective work)");
+
+    // The drawn views: PNG files named after their view.
+    const fs::path folder = a.positional[1];
+    std::error_code ec;
+    if (!fs::is_directory(folder, ec)) return out.fail(kIo, "directions: " + folder.string() + " is not a folder");
+    std::vector<directions::DrawnView> views;
+    std::vector<std::string> skipped;
+    int seen = 0;
+    for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
+        if (++seen > 4096) return out.fail(kUsage, "directions: the views folder holds too many files");
+        std::string ext = it->path().extension().string();
+        for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        std::error_code fec;
+        if (ext != ".png" || !it->is_regular_file(fec)) continue;
+        const std::string stem = it->path().stem().string();
+        const auto turn = directions::viewTurn(stem);
+        if (!turn) {
+            skipped.push_back(it->path().filename().string());
+            continue;
+        }
+        if (static_cast<int>(views.size()) >= directions::kMaxViews) return out.fail(kUsage, "directions: too many views");
+        auto art = readPng(it->path());
+        if (!art) return out.fail(art.error());
+        views.push_back({stem, *turn, std::move(art).value()});
+    }
+    if (ec) return out.fail(kIo, "directions: cannot read " + folder.string() + ": " + ec.message());
+    if (views.empty())
+        return out.fail(kUsage, "directions: no view found in " + folder.string() +
+                                    " (name the PNGs s, se, e, ne, n, nw, w, sw or front, right, back-left, ...)");
+    std::sort(views.begin(), views.end(), [](const auto& x, const auto& y) { return x.turn < y.turn; });
+    if (auto st = directions::checkViews(views); !st) return out.fail(kUsage, "directions: " + st.error().message);
+
+    int code = kOk;
+    auto loaded = loadMotionArg(a, out, "directions", a.positional[2], code);
+    if (!loaded) return code;
+    MotionArgs ma;
+    if (int c = readMotionArgs(a, out, "directions", loaded->oneShot, [] { return 0.0; }, ma); c != kOk) return c;
+
+    directions::DirectionOptions o;
+    o.allowMirror = a.flags.count("no-mirror") == 0;
+    o.retarget.camera = ma.camera;   // tilt, roll, perspective; the turn is set per direction
+    o.retarget.start = ma.start;
+    o.retarget.length = ma.length;
+    o.retarget.amount = ma.amount;
+    o.retarget.fps = ma.fps;
+    o.retarget.frames = ma.frames;
+    o.retarget.inPlace = ma.inPlace;
+    o.retarget.loop = ma.loop;
+    o.retarget.mapOverrides = ma.mapOverrides;
+    // --dirs 8 (default) | 4 | s,e,n,...
+    const std::string dirs = a.opt("dirs").value_or("8");
+    if (dirs == "8" || dirs == "4") {
+        o.turns = directions::compassTurns(dirs == "8" ? 8 : 4);
+    } else {
+        for (const std::string& n : splitOn(dirs, ',')) {
+            const auto t = directions::viewTurn(n);
+            if (!t) return out.fail(kUsage, "directions: --dirs expects 8, 4 or direction names (s, se, e, ne, n, nw, w, sw): '" + n + "'");
+            o.turns.push_back(*t);
+        }
+    }
+
+    auto made = directions::retargetDirections(views, loaded->motion, o);
+    if (!made) return out.fail(made.error());
+    const std::string prefix = a.opt("name").value_or(loaded->name);
+    std::vector<directions::NamedClip> clips;
+    for (const auto& d : made.value()) clips.push_back({prefix + "_" + d.direction, &d.result.clip});
+
+    // --turn-clip FROM,TO: a turn on the spot between two directions.
+    std::optional<motion::Clip> turn;
+    if (auto tc = a.opt("turn-clip")) {
+        const auto ends = splitOn(*tc, ',');
+        const auto from = ends.size() == 2 ? directions::viewTurn(ends[0]) : std::nullopt;
+        const auto to = ends.size() == 2 ? directions::viewTurn(ends[1]) : std::nullopt;
+        if (!from || !to) return out.fail(kUsage, "directions: --turn-clip expects two direction names, e.g. s,n");
+        std::string err;
+        const double step = optDouble(a, "turn-step", err).value_or(45);
+        if (!err.empty()) return out.fail(kUsage, "directions: " + err);
+        auto t = directions::turnClip(views, *from, *to, step, optInt(a, "turn-ms").value_or(100), o.allowMirror);
+        if (!t) return out.fail(kUsage, "directions: " + t.error().message);
+        turn = std::move(t).value();
+        clips.push_back({"turn_" + ends[0] + "_" + ends[1], &*turn});
+    }
+
+    auto doc = directions::clipsDocument(clips);
+    if (!doc) return out.fail(doc.error());
+    if (int c = writeProject(a, out, doc.value(), *outPath); c != kOk) return c;
+
+    json list = json::array();
+    std::string text = "Wrote " + *outPath + " (" + std::to_string(doc.value().frameCount()) + " frames)\n";
+    std::size_t at = 0;
+    for (const auto& d : made.value()) {
+        const AnimationTag& tag = doc.value().tags()[at++];
+        list.push_back({{"direction", d.direction},
+                        {"tag", tag.name},
+                        {"turn", d.turn},
+                        {"view", views[static_cast<std::size_t>(d.choice.view)].name},
+                        {"mirrored", d.choice.mirrored},
+                        {"offBy", d.choice.offBy},
+                        {"approximateView", d.approximateView},
+                        {"firstFrame", tag.fromFrame},
+                        {"frames", d.result.clip.frames.size()},
+                        {"notes", d.result.notes}});
+        text += "  " + tag.name + ": view " + d.viewName + (d.approximateView ? " (approximate: draw this view)" : "") + "\n";
+    }
+    std::vector<std::string> viewNames;
+    for (const auto& v : views) viewNames.push_back(v.name);
+    json result = {{"path", *outPath},       {"frames", doc.value().frameCount()}, {"width", doc.value().width()},
+                   {"height", doc.value().height()}, {"directions", list},          {"views", viewNames},
+                   {"skipped", skipped}};
+    if (turn) {
+        const AnimationTag& tag = doc.value().tags().back();
+        result["turnClip"] = {{"tag", tag.name}, {"firstFrame", tag.fromFrame}, {"frames", turn->frames.size()}};
+        text += "  " + tag.name + ": " + std::to_string(turn->frames.size()) + " drawn views\n";
+    }
+    for (const auto& s : skipped) text += "skipped " + s + " (not a view name)\n";
+    return out.success(result, text);
 }
 
 // acestudio-cli motion: the motion library (built-in presets and saved ones).

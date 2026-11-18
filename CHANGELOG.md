@@ -91,6 +91,15 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Direction sets** (ADR-ANIM-002 section 3.4): `acestudio-cli directions <views folder>
+  <motion|preset:NAME> --out <project>` plays a motion in 8 (or 4, or listed) directions from the
+  views you drew, PNGs named by view (`s`, `se`, `e`, ... or `front`, `right`, `back-left`, ...).
+  Each direction uses the nearest drawn view, or the mirror of the opposite side's view, and the
+  motion is seen from that direction; a direction more than 30 degrees from every drawn view is
+  flagged so the missing view can be drawn. The result is one project with a tag per direction
+  (`walk_s`, `walk_se`, ...), every direction standing on one ground row; `--turn-clip s,n` adds a
+  turn on the spot that cuts between the drawn views. `retarget` takes the drawn turn of its
+  sprite from the direction set (`RetargetOptions::drawnTurn`) instead of guessing front or side.
 - **Arm boxes for auto-rig** (`acestudio-cli rig auto --arms "x,y,w,h;x,y,w,h"`): arms the
   silhouette analysis misses (it looks only beside the legs) can be marked as boxes; every pixel
   inside a box becomes that arm's part, turning about where the box meets the body.

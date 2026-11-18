@@ -391,6 +391,45 @@ run(1 retarget "${WORKDIR}/rigs/rogue64.png" preset:walk --animation 0 --out "${
 run(1 motion remove walk --library "${MD}")                                      # built in
 run(0 motion remove "my walk" --library "${MD}")
 run(2 motion remove "my walk" --library "${MD}")
+
+# ---- Direction sets (DirectionSet.h): a walk in eight directions from two drawn views
+set(DV "${WORKDIR}/views")
+file(COPY "${TEXTURES}/../../data/anim/rogue64.png" "${TEXTURES}/../../data/anim/knight32.png" DESTINATION "${DV}")
+file(RENAME "${DV}/rogue64.png" "${DV}/front.png")
+file(RENAME "${DV}/knight32.png" "${DV}/e.png")
+file(WRITE "${DV}/readme.png" "not a view and not a PNG either")        # skipped by its name
+run(1 directions "${DV}" preset:walk)                                         # no --out
+run(1 directions "${DV}" preset:walk --turn 30 --out "${WORKDIR}/dirs_bad.acestudio")
+run(1 directions "${DV}" preset:walk --dirs s,up --out "${WORKDIR}/dirs_bad.acestudio")
+run(1 directions "${DV}" preset:walk --turn-clip s --out "${WORKDIR}/dirs_bad.acestudio")
+run(2 directions "${WORKDIR}/no_views" preset:walk --out "${WORKDIR}/dirs_bad.acestudio")
+run(1 directions "${WORKDIR}/rigs" preset:walk --out "${WORKDIR}/dirs_bad.acestudio")  # no file named by a view
+run(0 --json directions "${DV}" preset:walk --fps 8 --turn-clip s,w --out "${WORKDIR}/dirs.acestudio")
+string(JSON n_dirs LENGTH "${LAST_OUT}" directions)
+string(JSON n_frames GET "${LAST_OUT}" frames)
+string(JSON w_view GET "${LAST_OUT}" directions 6 view)
+string(JSON w_mirror GET "${LAST_OUT}" directions 6 mirrored)
+string(JSON w_approx GET "${LAST_OUT}" directions 6 approximateView)
+string(JSON n_approx GET "${LAST_OUT}" directions 4 approximateView)
+string(JSON turn_frames GET "${LAST_OUT}" turnClip frames)
+string(JSON skipped GET "${LAST_OUT}" skipped 0)
+if(NOT n_dirs EQUAL 8 OR NOT n_frames EQUAL 66 OR NOT w_view STREQUAL "e" OR NOT w_mirror OR w_approx OR NOT n_approx
+   OR NOT turn_frames EQUAL 2 OR NOT skipped STREQUAL "readme.png")
+    message(FATAL_ERROR "directions: expected 8 walks of 8 frames and a 2-frame turn, west from the mirrored east view, north flagged: ${LAST_OUT}")
+endif()
+run(0 --json info "${WORKDIR}/dirs.acestudio")
+string(JSON n_tags LENGTH "${LAST_OUT}" tags)
+if(NOT n_tags EQUAL 9)
+    message(FATAL_ERROR "directions: expected a tag per direction and one for the turn: ${LAST_OUT}")
+endif()
+run(2 directions "${DV}" preset:walk --out "${WORKDIR}/dirs.acestudio")              # refuses to overwrite
+run(0 --json directions "${DV}" preset:jump --dirs 4 --no-mirror --name hop --out "${WORKDIR}/dirs4.acestudio")
+string(JSON w_mirror GET "${LAST_OUT}" directions 3 mirrored)
+string(JSON w_approx GET "${LAST_OUT}" directions 3 approximateView)
+string(JSON w_tag GET "${LAST_OUT}" directions 3 tag)
+if(w_mirror OR NOT w_approx OR NOT w_tag STREQUAL "hop_w")
+    message(FATAL_ERROR "directions --no-mirror: west must use drawn art, flagged: ${LAST_OUT}")
+endif()
 run(1 run "${WORKDIR}/scripts/make.lua" --save "${WORKDIR}/x.acestudio")   # --save needs --doc
 run(0 --json run "${WORKDIR}/scripts/make.lua" "#00ff00" --doc "${P}" --save "${WORKDIR}/lua_out.acestudio")
 string(JSON changed GET "${LAST_OUT}" documentChanged)

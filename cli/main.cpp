@@ -92,6 +92,11 @@ const char* kUsageText =
     "                                  onto a two-legged sprite's part rig: strip PNG + GIF,\n"
     "                                  and the projected source skeleton beside it (<name>_source.png/.gif);\n"
     "                                  preset:NAME uses the motion library (built in: idle, walk, run, jump, attack, hurt)\n"
+    "  directions <views folder> <motion|preset:NAME> --out <project.acestudio> [--dirs 8|4|s,e,n,...] [--name walk]\n"
+    "             [--no-mirror] [--turn-clip s,n [--turn-step 45] [--turn-ms 100]] [--tilt/--roll/--perspective, timing, --map]\n"
+    "                                  A direction set: PNGs named by view (s, se, e, ne, n, nw, w, sw or front, right,\n"
+    "                                  back-left, ...). Each direction uses the nearest drawn view (or its mirror) and is\n"
+    "                                  flagged when over 30 degrees from it; one tag per direction (<name>_<dir>)\n"
     "  motion list [--library <folder>]  The motion library: built-in presets and saved ones\n"
     "  motion export <preset> --out <file.bvh>   A preset as a BVH file\n"
     "  motion save <motion.bvh|.glb|.gltf> --name <preset> [--animation <index|name>]\n"
@@ -174,7 +179,7 @@ std::optional<Args> parseArgs(int argc, char** argv, std::string& err) {
         else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot" || s == "--yes" || s == "--cpu" || s == "--rotate" ||
                  s == "--no-outline" || s == "--no-merge" || s == "--square" || s == "--keep-empty" || s == "--no-bob" ||
                  s == "--remove" || s == "--dry-run" || s == "--global" || s == "--lighting" || s == "--collision" || s == "--show-grid" ||
-                 s == "--perspective" || s == "--travel" || s == "--no-loop" || s == "--bake" || s == "--absolute-arms" || s == "--loop-back" || s == "--closed" ||
+                 s == "--perspective" || s == "--travel" || s == "--no-loop" || s == "--bake" || s == "--absolute-arms" || s == "--no-mirror" || s == "--loop-back" || s == "--closed" ||
                  s == "--smooth")
             a.flags.insert(s.substr(2));
         else if (s == "-h" || s == "--help") { a.positional = {"help"}; return a; }
@@ -397,6 +402,7 @@ int main(int argc, char** argv) {
         if (cmd == "effect") return acestudio::cli::cmdEffect(*args, out);
         if (cmd == "retarget") return acestudio::cli::cmdRetarget(*args, out);
         if (cmd == "motion") return acestudio::cli::cmdMotion(*args, out);
+        if (cmd == "directions") return acestudio::cli::cmdDirections(*args, out);
         if (cmd == "connect") return acestudio::cli::cmdConnect(*args, out);
         if (cmd == "map") return acestudio::cli::cmdMap(*args, out);
         if (cmd == "run") return acestudio::cli::cmdRun(*args, out);
