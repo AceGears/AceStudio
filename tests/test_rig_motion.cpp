@@ -381,3 +381,60 @@ TEST_CASE("A four-legged motion walks an auto-rigged four-legged sprite", "[rig]
     pairs.bones = {{"leg0 thigh", mocap::Bone::LThigh}};
     CHECK_FALSE(rigs::keysFromMotion(doc, preset("quad-walk"), pairs));
 }
+
+TEST_CASE("Four-legged rig motion: level feet, facing and leg pairs by hand", "[rig][mocap][creature]") {
+    const Document doc = rigged("dog72.png");
+    rigs::MotionKeysOptions o;
+    o.fps = 10;
+    auto r = rigs::keysFromMotion(doc, preset("quad-walk"), o);
+    REQUIRE(r);
+    const Rig& rig = *r.value().document.rig();
+    // Every foot keeps its drawn angle in every key.
+    for (const RigKey& k : rig.keys) {
+        const auto w = rigs::solve(rig, k.pose);
+        for (std::size_t i = 0; i < rig.bones.size(); ++i)
+            if (rig.bones[i].name.find(" foot") != std::string::npos) {
+                CAPTURE(rig.bones[i].name, k.frame);
+                CHECK(std::abs(std::remainder(w[i].turn, 2 * 3.14159265358979)) < 1e-6);
+            }
+    }
+
+    auto pairOf = [](const rigs::MotionKeysResult& res, const std::string& bone) {
+        for (const auto& [b, what] : res.matched)
+            if (b == bone) return what;
+        return std::string();
+    };
+    // Facing left: the legs on the left are now the front legs.
+    rigs::MotionKeysOptions left = o;
+    left.facing = -1;
+    auto rl = rigs::keysFromMotion(doc, preset("quad-walk"), left);
+    REQUIRE(rl);
+    CHECK(rl.value().camera.turn == -90);
+    CHECK(pairOf(rl.value(), "leg0 thigh").rfind("front", 0) == 0);
+    CHECK(pairOf(rl.value(), "leg3 thigh").rfind("hind", 0) == 0);
+
+    // Leg pairs by hand win over the pairing by position.
+    using QL = rigs::MotionKeysOptions::QuadLeg;
+    rigs::MotionKeysOptions hand = o;
+    hand.legs = {{0, QL::FrontFar}, {3, QL::HindNear}};
+    auto rh = rigs::keysFromMotion(doc, preset("quad-walk"), hand);
+    REQUIRE(rh);
+    CHECK(pairOf(rh.value(), "leg0 thigh").rfind("front", 0) == 0);
+    CHECK(pairOf(rh.value(), "leg3 thigh").rfind("hind", 0) == 0);
+    CHECK(pairOf(rh.value(), "leg1 thigh").rfind("hind", 0) == 0);   // unchanged
+    // Near/far: the near and far front legs follow different source legs.
+    hand.legs = {{2, QL::FrontNear}, {3, QL::FrontFar}};
+    auto rn = rigs::keysFromMotion(doc, preset("quad-walk"), hand);
+    REQUIRE(rn);
+    CHECK(pairOf(rn.value(), "leg2 thigh") != pairOf(rn.value(), "leg3 thigh"));
+    hand.legs = {{2, QL::FrontFar}, {3, QL::FrontNear}};
+    auto rf = rigs::keysFromMotion(doc, preset("quad-walk"), hand);
+    REQUIRE(rf);
+    CHECK(pairOf(rf.value(), "leg2 thigh") == pairOf(rn.value(), "leg3 thigh"));
+
+    // A leg the rig does not have, and leg pairs with a humanoid motion, are refused.
+    hand.legs = {{7, QL::HindNear}};
+    CHECK_FALSE(rigs::keysFromMotion(doc, preset("quad-walk"), hand));
+    hand.legs = {{0, QL::HindNear}};
+    CHECK_FALSE(rigs::keysFromMotion(doc, preset("walk"), hand));
+}

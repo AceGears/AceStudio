@@ -127,6 +127,24 @@ TEST_CASE("A humanoid motion's arms beat a winged sprite's wings", "[mocap][wing
     // At the bottom of the stroke the wing reaches well below where it was drawn.
     CHECK(lowest >= restBottom + 8);
 
+    // The tail waves with the stroke: its tip's top row, relative to the
+    // head, moves by at least a pixel over the beat.
+    std::set<int> tipRows;
+    for (const Image& f : fr) {
+        int headTop = -1, tipX = f.width(), tipTop = -1;
+        for (int y = 0; y < f.height(); ++y)
+            for (int x = 0; x < f.width(); ++x) {
+                if (f.pixel(x, y) == kHead && headTop < 0) headTop = y;
+                if (f.pixel(x, y) == kTail && x < tipX) tipX = x;
+            }
+        for (int y = 0; y < f.height() && tipTop < 0; ++y)
+            if (f.pixel(tipX, y) == kTail) tipTop = y;
+        tipRows.insert(tipTop - headTop);
+    }
+    CHECK(tipRows.size() >= 2);
+    // At most the wave's reach either side (0.15 of the tail's 24 columns).
+    CHECK(*tipRows.rbegin() - *tipRows.begin() <= 2 * 4 + 1);
+
     // Less swing with a smaller amount.
     RetargetOptions half = flyer();
     half.amount = 0.5;

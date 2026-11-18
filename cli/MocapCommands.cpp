@@ -307,6 +307,30 @@ int cmdRigMotion(const Args& a, Output& out) {
             o.bones.emplace_back(item.substr(0, eq), *joint);
         }
 
+    // --facing left|right (four-legged motion: overrides the facing read from the art)
+    if (auto v = a.opt("facing")) {
+        if (*v == "left") o.facing = -1;
+        else if (*v == "right") o.facing = 1;
+        else return out.fail(kUsage, "rig motion: --facing expects left or right");
+    }
+    // --legs "0=hind-near,1=hind-far,2=front-near,3=front-far"
+    if (auto ls = a.opt("legs"))
+        for (const std::string& item : splitOn(*ls, ',')) {
+            const auto eq = item.find('=');
+            const std::string num = eq == std::string::npos ? std::string() : item.substr(0, eq);
+            const std::string which = eq == std::string::npos ? std::string() : item.substr(eq + 1);
+            using QL = rigs::MotionKeysOptions::QuadLeg;
+            std::optional<QL> q;
+            if (which == "hind-near") q = QL::HindNear;
+            else if (which == "hind-far") q = QL::HindFar;
+            else if (which == "front-near") q = QL::FrontNear;
+            else if (which == "front-far") q = QL::FrontFar;
+            const bool digits = !num.empty() && num.size() <= 3 && std::all_of(num.begin(), num.end(), [](char c) { return c >= '0' && c <= '9'; });
+            if (!q || !digits)
+                return out.fail(kUsage, "rig motion: --legs expects N=hind-near|hind-far|front-near|front-far pairs: '" + item + "'");
+            o.legs.emplace_back(std::stoi(num), *q);
+        }
+
     auto res = rigs::keysFromMotion(doc.value(), loaded->motion, o);
     if (!res) return out.fail(res.error());
     const rigs::MotionKeysResult& r = res.value();

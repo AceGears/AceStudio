@@ -7,7 +7,9 @@
 #include "PartRig.h"
 #include "PixelRig.h"
 
+#include <algorithm>
 #include <optional>
+#include <vector>
 
 namespace acestudio::motion::detail {
 
@@ -45,6 +47,30 @@ struct FlightRig {
     Mask bodyOnly;
 };
 std::optional<FlightRig> buildFlightRig(const Image& sprite, const Subject& subj, const WingSpec& spec, bool needPair);
+
+// The tail of a flight rig's body: its columns at the end away from the
+// head, from the tip until the body gets thick (half its greatest depth),
+// listed root first. Empty when the head side is unknown or the tail is
+// shorter than 4 columns. `bounds`: the subject's bounds.
+std::vector<int> flightTailColumns(const FlightRig& fr, const IntRect& bounds);
+
+// The body part's column offsets (PartPose::colDy) for a tail wave: each
+// tail column moves by `rows(u)` (u from 0 at the root to 1 at the tip),
+// neighbours differing by at most a pixel so the tail stays one piece.
+template <class Rows>
+std::vector<int> tailColumnDy(const FlightRig& fr, const std::vector<int>& tail, Rows rows) {
+    const rig::Part& bp = fr.rig.parts[static_cast<std::size_t>(fr.bodyPart)];
+    const int left = bp.hiBox.x + 1;
+    std::vector<int> column(static_cast<std::size_t>(std::max(0, bp.hiBox.w - 2)), 0);
+    int previous = 0;
+    for (std::size_t i = 0; i < tail.size(); ++i) {
+        const double u = static_cast<double>(i + 1) / static_cast<double>(tail.size());
+        previous = std::clamp(static_cast<int>(rows(u)), previous - 1, previous + 1);
+        const int k = tail[i] - left;
+        if (k >= 0 && k < static_cast<int>(column.size())) column[static_cast<std::size_t>(k)] = previous;
+    }
+    return column;
+}
 
 // Swimming (5c): the body bends as a chain of columns (whole pixels, length
 // kept), the tail fin beats behind the tail stalk and foreshortens, the

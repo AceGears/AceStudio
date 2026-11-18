@@ -169,7 +169,10 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
     const mocap::CreatureMap cm = mocap::creatureMap(m);
     const bool quad = cm.hasFourLegs();
     if (quad && !opt.bones.empty())
-        return bad("Bone pairs (--bones) name humanoid joints; a four-legged motion is matched by leg number only");
+        return bad("Bone pairs (--bones) name humanoid joints; pair a four-legged motion's legs with --legs");
+    if (!quad && !opt.legs.empty())
+        return bad("Leg pairs (--legs) are for four-legged motions; this motion has no four legs");
+    if (opt.facing < -1 || opt.facing > 1) return bad("The facing is left (-1), right (1) or read from the art (0)");
     const int hipsJ = quad ? cm.root : map[MB::Hips];
     if (hipsJ < 0) return bad("The motion's hips were not found; pair them with --map Hips=<joint>");
 
@@ -186,7 +189,9 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
             else if (an->part == 0) thighOf[an->n] = i;
         }
     mocap::Camera drawnCam = drawnCamera(rig);
-    if (quad && thighOf.size() >= 2) {
+    if (quad && opt.facing != 0) {
+        drawnCam.turn = opt.facing > 0 ? 90 : -90;
+    } else if (quad && thighOf.size() >= 2) {
         // A four-legged side view faces the end its art rises highest at
         // (the head): the top rows of the parts bound to the root bone, from
         // the middle of the legs. Auto-rig feet are blocks, so their bones
@@ -318,6 +323,16 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
             const bool aNear = restPr.depth[uz(cm.legs[uz(a)].joints.front())] >= restPr.depth[uz(cm.legs[uz(a + 1)].joints.front())];
             for (std::size_t k = 0; k < drawn.size(); ++k) quadLeg[drawn[k]] = (k % 2 == 0) == aNear ? a : a + 1;
         }
+    }
+    // Pairs given by hand win.
+    for (const auto& [n, which] : opt.legs) {
+        if (!legNums.count(n)) return bad("The rig has no leg " + std::to_string(n) + " (auto-rig names: 'leg0 thigh', ...)");
+        using QL = MotionKeysOptions::QuadLeg;
+        const bool hindLeg = which == QL::HindNear || which == QL::HindFar;
+        const bool nearLeg = which == QL::HindNear || which == QL::FrontNear;
+        const int a = hindLeg ? 0 : 2;
+        const bool aNear = restPr.depth[uz(cm.legs[uz(a)].joints.front())] >= restPr.depth[uz(cm.legs[uz(a + 1)].joints.front())];
+        quadLeg[n] = nearLeg == aNear ? a : a + 1;
     }
 
     // ---- Match rig bones to stretches.
@@ -557,6 +572,21 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
             fixed.insert(cu.upper);
         }
         if (!chains.empty()) aim();   // bones below a chain follow its new turns
+        // Four-legged: feet keep their drawn angle to the ground (an
+        // auto-rig foot is a block under the leg, not a bone of the motion).
+        if (quad) {
+            std::vector<double> total(rig.bones.size(), 0);
+            for (std::size_t i = 0; i < rig.bones.size(); ++i) {
+                const Bone& b = rig.bones[i];
+                const double parentTotal = b.parent != kNoBone && at.count(b.parent) ? total[at[b.parent]] : 0;
+                double own = pose.turn.count(b.id) ? pose.turn[b.id] : 0;
+                if (const auto an = autoName(b.name); an && an->leg && an->part == 2 && matchOf[i] < 0 && !b.locked) {
+                    own = -parentTotal;
+                    pose.turn[b.id] = own;
+                }
+                total[i] = parentTotal + clampTurn(b, own);
+            }
+        }
 
         // Keep turns continuous from key to key (no spins through 180 degrees).
         for (auto& [id, t] : pose.turn) {

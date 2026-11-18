@@ -71,7 +71,9 @@ public:
     ~MotionStudioPanel() override;
     // The sprite the motion is put on (cropped to its pixels); the motion,
     // camera and timing are kept.
-    void setSprite(const Image& sprite, const QString& name);
+    // `wings`: the wing pixels (a selection, cropped like the sprite), or
+    // empty to find them above the wing line.
+    void setSprite(const Image& sprite, const QString& name, const Mask& wings = {});
     bool hasSprite() const { return !m_sprite.isNull(); }
 
 Q_SIGNALS:
@@ -101,6 +103,7 @@ private:
     ::acestudio::mocap::Camera camera() const;
 
     Image m_sprite;
+    Mask m_wingMask;
     bool m_fourLegged = false;   // the sprite is four-legged: four-legged motion (legs found by shape)
     QString m_name;
     OpenFn m_open;
@@ -119,6 +122,9 @@ private:
     QPushButton* m_removePreset = nullptr;
     QComboBox* m_view = nullptr;
     QComboBox* m_body = nullptr;   // auto (from the sprite), two legs, four legs, wings
+    QDoubleSpinBox* m_wingLine = nullptr;   // wings: percent of the height the wings are above
+    QLabel* m_wingLabel = nullptr;
+    void updateWingControls();
     QSlider* m_turn = nullptr;
     QSlider* m_tilt = nullptr;
     QSlider* m_roll = nullptr;

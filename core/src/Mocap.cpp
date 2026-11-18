@@ -1114,9 +1114,28 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
     const double k = bb.h / height;
     const int maxLift = std::max(1, bb.h / 8);
 
+    // The tail waves with the stroke, as in Animate's flap: the near wing's
+    // stroke (0 at the top, 1 at the bottom of the span), later towards the tip.
+    const std::vector<int> tail = motion::detail::flightTailColumns(fr, bb);
+    const int tailAmp = std::max(1, iround(static_cast<double>(tail.size()) * 0.15 * amount));
+    std::vector<double> stroke(uz(frames), 0.0);
+    {
+        const int a = nearArm;
+        const auto& e = elev[uz(a)];
+        const double hi = *std::max_element(e.begin(), e.end()), lo = *std::min_element(e.begin(), e.end());
+        if (hi - lo >= 10 * kDeg)
+            for (int f = 0; f < frames; ++f) stroke[uz(f)] = (hi - e[uz(f)]) / (hi - lo);
+    }
+    auto strokeAt = [&](double f) {
+        int i = static_cast<int>(std::lround(f));
+        if (opt.loop) i = ((i % frames) + frames) % frames;
+        else i = std::clamp(i, 0, frames - 1);
+        // A loop swings either side of mid-stroke, a one-shot from its start.
+        return opt.loop ? 2 * (stroke[uz(i)] - 0.5) : stroke[uz(i)] - stroke[0];
+    };
     double reach = 0;
     for (const auto& c : fr.cuts) reach = std::max(reach, c.reach);
-    const int margin = static_cast<int>(std::ceil(reach)) + maxLift + 4;
+    const int margin = static_cast<int>(std::ceil(reach)) + maxLift + tailAmp + 4;
     const IntRect big{bb.x - margin, bb.y - margin, bb.w + 2 * margin, bb.h + 2 * margin};
     std::vector<Image> imgs;
     std::vector<std::vector<rg::PartPose>> poses;
@@ -1125,6 +1144,10 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
         const int dy = std::clamp(-iround(k * (at(world[uz(f)], Bone::Hips).y - neutral) * amount), -maxLift, maxLift);
         pose[uz(fr.bodyPart)].dy = dy;
         if (fr.chestPart >= 0) pose[uz(fr.chestPart)].dy = dy;
+        if (!tail.empty())
+            pose[uz(fr.bodyPart)].colDy = motion::detail::tailColumnDy(fr, tail, [&](double u) {
+                return iround(-tailAmp * u * strokeAt(f - 0.3 * u * frames));
+            });
         for (const auto& w : fr.wings) {
             const int a = w.nearWing ? nearArm : 1 - nearArm;
             const double scale = w.nearWing ? 1.0 : 0.8;

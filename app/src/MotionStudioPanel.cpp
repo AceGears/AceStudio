@@ -261,13 +261,23 @@ MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(par
     m_body->addItem(tr("Wings (the motion's arms)"), QStringLiteral("flyer"));
     m_body->setAccessibleName(tr("Sprite body"));
     m_body->setToolTip(tr("What the motion moves. Wings: each wing turns as the motion's arm rises and falls "
-                          "(try the flap preset). The wings are the part above 45% of the sprite's height."));
+                          "(try the flap preset). Select the wings in the document before Use Current Sprite for exact control."));
     mf->addRow(tr("Start:"), m_start);
     mf->addRow(tr("Length:"), m_length);
     mf->addRow(tr("Frame rate:"), m_fps);
     mf->addRow(tr("Amount:"), m_amount);
     mf->addRow(QString(), m_inPlace);
     mf->addRow(tr("Body:"), m_body);
+    m_wingLine = new QDoubleSpinBox(motionBox);
+    m_wingLine->setRange(5, 95);
+    m_wingLine->setDecimals(0);
+    m_wingLine->setSingleStep(5);
+    m_wingLine->setValue(45);
+    m_wingLine->setSuffix(tr(" % of the height"));
+    m_wingLine->setAccessibleName(tr("Wing line"));
+    m_wingLine->setToolTip(tr("Wings: the part of the sprite above this line flaps. Lower it if the head turns with a wing."));
+    m_wingLabel = new QLabel(tr("Wing line:"), motionBox);
+    mf->addRow(m_wingLabel, m_wingLine);
     top->addWidget(motionBox, 1);
 
     auto* camBox = new QGroupBox(tr("Camera"), this);
@@ -366,7 +376,12 @@ MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(par
     for (QSlider* s : {m_turn, m_tilt, m_roll}) connect(s, &QSlider::valueChanged, this, [this] { cameraEdited(); });
     connect(m_perspective, &QCheckBox::toggled, this, [this] { cameraEdited(); });
     for (QDoubleSpinBox* s : {m_start, m_length, m_amount}) connect(s, &QDoubleSpinBox::valueChanged, this, [this] { scheduleRetarget(); });
-    connect(m_body, &QComboBox::currentIndexChanged, this, [this] { scheduleRetarget(); });
+    connect(m_body, &QComboBox::currentIndexChanged, this, [this] {
+        updateWingControls();
+        scheduleRetarget();
+    });
+    connect(m_wingLine, &QDoubleSpinBox::valueChanged, this, [this] { scheduleRetarget(); });
+    updateWingControls();
     connect(m_fps, &QSpinBox::valueChanged, this, [this] { scheduleRetarget(); });
     connect(m_inPlace, &QCheckBox::toggled, this, [this] { scheduleRetarget(); });
     connect(m_source, &SkeletonView::cameraDragged, this, [this](double turn, double tilt) {
@@ -398,8 +413,18 @@ MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(par
     presetChosen();
 }
 
-void MotionStudioPanel::setSprite(const Image& sprite, const QString& name) {
+void MotionStudioPanel::updateWingControls() {
+    const bool wings = m_body->currentData().toString() == QLatin1String("flyer");
+    const bool selected = !m_wingMask.isNull();
+    m_wingLabel->setText(selected ? tr("Wings: the selection") : tr("Wing line:"));
+    m_wingLine->setEnabled(wings && !selected);
+    m_wingLabel->setEnabled(wings);
+}
+
+void MotionStudioPanel::setSprite(const Image& sprite, const QString& name, const Mask& wings) {
     m_sprite = sprite;
+    m_wingMask = wings.width() == sprite.width() && wings.height() == sprite.height() ? wings : Mask();
+    updateWingControls();
     m_name = name;
     m_fourLegged = !m_sprite.isNull() && ::acestudio::motion::analyzeSubject(m_sprite).body == ::acestudio::motion::Body::Quadruped;
     m_spriteLabel->setText(tr("Sprite: <b>%1</b> (%2 x %3)%4")
@@ -635,6 +660,8 @@ void MotionStudioPanel::retarget() {
     if (body == QLatin1String("biped")) o.body = ::acestudio::motion::Body::Biped;
     else if (body == QLatin1String("quadruped")) o.body = ::acestudio::motion::Body::Quadruped;
     else if (body == QLatin1String("flyer")) o.body = ::acestudio::motion::Body::Flyer;
+    o.wingLine = m_wingLine->value() / 100.0;
+    o.wingMask = m_wingMask;
     else o.body = m_fourLegged ? ::acestudio::motion::Body::Quadruped : ::acestudio::motion::Body::Biped;
     auto r = mc::retarget(m_sprite, *m_motion, o);
     if (!r) {

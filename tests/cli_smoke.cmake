@@ -441,6 +441,16 @@ if(NOT n_keys EQUAL 12 OR NOT LAST_OUT MATCHES "hind leg" OR NOT LAST_OUT MATCHE
     message(FATAL_ERROR "rig motion preset:quad-walk: expected 12 keys driving hind and front legs: ${LAST_OUT}")
 endif()
 run(0 rig bake "${WORKDIR}/rigs/dog_walk.acestudio" --out "${WORKDIR}/rigs/dog_baked.acestudio")
+run(0 --json rig motion "${WORKDIR}/rigs/dog_rig.acestudio" preset:quad-walk --facing left --legs "3=hind-near"
+    --out "${WORKDIR}/rigs/dog_left.acestudio")
+string(JSON leg0 GET "${LAST_OUT}" matched "leg0 thigh")
+string(JSON leg3 GET "${LAST_OUT}" matched "leg3 thigh")
+if(NOT leg0 MATCHES "^front" OR NOT leg3 MATCHES "^hind")
+    message(FATAL_ERROR "rig motion --facing left --legs: expected leg0 front and leg3 hind: ${LAST_OUT}")
+endif()
+run(1 rig motion "${WORKDIR}/rigs/dog_rig.acestudio" preset:quad-walk --facing up --out "${WORKDIR}/rigs/x.acestudio")
+run(1 rig motion "${WORKDIR}/rigs/dog_rig.acestudio" preset:quad-walk --legs "0=middle" --out "${WORKDIR}/rigs/x.acestudio")
+run(1 rig motion "${WORKDIR}/rigs/dog_rig.acestudio" preset:quad-walk --legs "9=hind-near" --out "${WORKDIR}/rigs/x.acestudio")
 run(1 retarget "${WORKDIR}/rigs/dog72.png" preset:quad-walk --body six-legged --out "${WORKDIR}/presets")
 # Wings (--body flyer): the motion's arms beat a winged sprite's wings
 file(COPY "${TEXTURES}/../../data/anim/dragon128.png" DESTINATION "${WORKDIR}/rigs")

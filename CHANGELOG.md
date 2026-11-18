@@ -94,6 +94,11 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Four-legged `rig motion` and wings, refined**: feet now keep their drawn angle to the ground
+  instead of tilting with the leg; `--facing left|right` overrides the facing read from the art and
+  `--legs "0=hind-near,1=hind-far,..."` pairs the rig's legs with the motion's by hand. Retargeted
+  wings wave a thin tail with the stroke, as Animate's flap does, and Motion Studio has a wing line
+  and uses a selection in the document as the wings.
 - **`rig motion` takes four-legged motion**: on a four-legged sprite rigged with auto-rig, a
   four-legged motion (such as `quad-walk`) becomes pose keys: hind legs follow the motion's hind
   legs and front legs its front legs, the back pitches with the motion, and the body rises and

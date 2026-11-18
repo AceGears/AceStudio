@@ -905,7 +905,14 @@ bool MainWindow::motionStudioTakeSprite() {
         QMessageBox::information(this, tr("Motion Studio"), tr("The current frame is empty."));
         return false;
     }
-    m_motionStudio->setSprite(img.copy(b), v->baseName());
+    // A selection is the wings (cropped like the sprite), as for Animate.
+    Mask wings;
+    if (const Mask* sel = v->selection()) {
+        wings = Mask(b.w, b.h);
+        for (int y = 0; y < b.h; ++y)
+            for (int x = 0; x < b.w; ++x) wings.set(x, y, sel->get(b.x + x, b.y + y));
+    }
+    m_motionStudio->setSprite(img.copy(b), v->baseName(), wings);
     return true;
 }
 
