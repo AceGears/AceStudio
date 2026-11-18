@@ -150,6 +150,10 @@ Add, Subtract, Difference), visibility and locks.
   Mark others as boxes on the canvas: `acestudio-cli rig auto hero.acestudio --layer Hero --arms
   "15,10,14,22;42,20,16,22" --out rigged.acestudio`. Every pixel inside a box becomes that arm, so
   keep each box tight around the arm and its weapon.
+- **Motion Studio as a panel:** **Animation › Motion Studio (3D Motion)…** opens a panel that floats
+  at first; drag its title bar onto the window's edge to dock it, or use **Window › Motion
+  Studio** to show and hide it. Press **Use Current Sprite** to put the same motion and camera on
+  another sprite or frame.
 - **Motion presets:** in **Animation › Motion Studio (3D Motion)…**, the **Library** row offers ready motions
   (idle, walk, run, jump, attack, hurt) next to **Load Motion…**. Jump, attack and hurt play once;
   the others loop. **Save as Preset…** keeps the loaded motion (a BVH or glTF/GLB animation) in your

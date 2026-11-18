@@ -22,7 +22,7 @@
 #include "panels/PalettePanel.h"
 #include "panels/PreviewPanel.h"
 #include "AnimationDialogs.h"
-#include "MotionStudioDialog.h"
+#include "MotionStudioPanel.h"
 #include "SpriteAnimateDialog.h"
 #include "pages/WorldBuilderPage.h"
 #include "ExportDialog.h"
@@ -287,6 +287,18 @@ void MainWindow::buildDocks() {
     m_logDock = makeDock(tr("Log"), QStringLiteral("dock.log"), m_log, Qt::BottomDockWidgetArea);
     m_previewDock = makeDock(tr("Preview"), QStringLiteral("dock.preview"), m_preview, Qt::RightDockWidgetArea);
     m_aiDock = makeDock(tr("AI Studio"), QStringLiteral("dock.ai"), m_aiPanel, Qt::RightDockWidgetArea);
+    // Motion Studio: hidden until opened from the Animation menu, then a
+    // floating window that docks like the others (its own layout state).
+    m_motionStudio = new MotionStudioPanel(
+        [this](const std::vector<Image>& frames, const std::vector<int>& durations, const std::vector<AnimationTag>& tags,
+               const QString& n) {
+            if (openAnimationAsDocument(frames, durations, n, tags)) showWorkspace(Workspace::Animation);
+        },
+        this);
+    connect(m_motionStudio, &MotionStudioPanel::currentSpriteRequested, this, [this] { (void)motionStudioTakeSprite(); });
+    m_motionDock = makeDock(tr("Motion Studio"), QStringLiteral("dock.motionStudio"), m_motionStudio, Qt::BottomDockWidgetArea);
+    m_motionDock->setFloating(true);
+    m_motionDock->hide();
     tabifyDockWidget(m_layersDock, m_aiDock);
     m_layersDock->raise();
     // Two tab groups on the right keep the column's minimum height small
@@ -676,18 +688,21 @@ void MainWindow::buildMenus() {
         animateSprite(b.empty() ? img : img.copy(b), v->baseName(), wings);
     }))->setObjectName(QStringLiteral("anim.sprite"));
     (anim->addAction(tr("&Motion Studio (3D Motion)…"), this, [this] {
-        DocumentView* v = currentView();
-        if (!v) return void(QMessageBox::information(this, tr("Motion Studio"), tr("Open a sprite first.")));
-        const Image img = v->document().composite(v->currentFrame());
-        const IntRect b = img.opaqueBounds();
-        if (b.empty()) return void(QMessageBox::information(this, tr("Motion Studio"), tr("The current frame is empty.")));
-        MotionStudioDialog dlg(img.copy(b), v->baseName(),
-                               [this](const std::vector<Image>& frames, const std::vector<int>& durations,
-                                      const std::vector<AnimationTag>& tags, const QString& n) {
-                                   if (openAnimationAsDocument(frames, durations, n, tags)) showWorkspace(Workspace::Animation);
-                               },
-                               this);
-        dlg.exec();
+        if (!motionStudioTakeSprite()) return;
+        // The first time it opens as a window of its own, sized for its two
+        // views; after that it keeps wherever it was put (floating or docked).
+        if (!m_motionDock->property("aceShown").toBool()) {
+            m_motionDock->setProperty("aceShown", true);
+            if (m_motionDock->isFloating()) {
+                const QRect area = geometry();
+                const QSize size(std::min(980, area.width() - 40), std::min(760, area.height() - 40));
+                m_motionDock->resize(size);
+                m_motionDock->move(area.center() - QPoint(size.width() / 2, size.height() / 2));
+            }
+        }
+        m_motionDock->show();
+        m_motionDock->raise();
+        m_motionDock->activateWindow();
     }))->setObjectName(QStringLiteral("anim.motionStudio"));
     (anim->addAction(tr("Generate &In-betweens…"), this, [this] {
         DocumentView* v = currentView();
@@ -840,6 +855,7 @@ void MainWindow::buildMenus() {
     QMenu* window = menuBar()->addMenu(tr("&Window"));
     for (QDockWidget* d : {m_toolsDock, m_layersDock, m_aiDock, m_propsDock, m_rigDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock})
         window->addAction(d->toggleViewAction());
+    window->addAction(m_motionDock->toggleViewAction());
     window->addSeparator();
     m_workspaceMenu = window->addMenu(tr("&Workspaces"));
     connect(m_workspaceMenu, &QMenu::aboutToShow, this, &MainWindow::rebuildWorkspaceMenu);
@@ -875,6 +891,22 @@ void MainWindow::saveWindowState() {
     (void)m_ctx.settings().set("window.state", docks.toBase64().toStdString());
     const auto& infos = workspaceInfos();
     (void)m_ctx.settings().set("ui.workspace", std::string(infos[static_cast<std::size_t>(m_workspace)].key));
+}
+
+bool MainWindow::motionStudioTakeSprite() {
+    DocumentView* v = currentView();
+    if (!v) {
+        QMessageBox::information(this, tr("Motion Studio"), tr("Open a sprite first."));
+        return false;
+    }
+    const Image img = v->document().composite(v->currentFrame());
+    const IntRect b = img.opaqueBounds();
+    if (b.empty()) {
+        QMessageBox::information(this, tr("Motion Studio"), tr("The current frame is empty."));
+        return false;
+    }
+    m_motionStudio->setSprite(img.copy(b), v->baseName());
+    return true;
 }
 
 void MainWindow::resetLayout() {
@@ -1183,7 +1215,7 @@ void MainWindow::applyBuiltinWorkspace(const QString& name) {
         m_logDock->raise();
         resizeDocks({m_aiDock}, {width() / 3}, Qt::Horizontal);
     } else if (name == QLatin1String("Minimal")) {
-        for (QDockWidget* d : {m_aiDock, m_propsDock, m_rigDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock}) d->hide();
+        for (QDockWidget* d : {m_aiDock, m_propsDock, m_rigDock, m_paletteDock, m_previewDock, m_timelineDock, m_logDock, m_motionDock}) d->hide();
     } else {   // Painting
         m_layersDock->raise();
         m_paletteDock->raise();
@@ -1272,9 +1304,13 @@ void MainWindow::addView(DocumentView* view) {
     connect(view, &DocumentView::currentLayerChanged, this, [this, view] { if (view == currentView()) updateActions(); });
     connect(view, &DocumentView::statusMessage, this, [this](const QString& m) { statusBar()->showMessage(m, 4000); });
     // Hold the next queued AI job while a stroke is in progress (profile setting).
-    connect(view->canvas(), &CanvasWidget::toolPressed, this, [this] { if (m_ai) m_ai->setDrawing(true); });
-    connect(view->canvas(), &CanvasWidget::toolReleased, this, [this] { if (m_ai) m_ai->setDrawing(false); });
-    connect(view, &QObject::destroyed, this, [this] { if (m_ai) m_ai->setDrawing(false); });
+    // The AI service is the receiver, so these die with it: while the window
+    // closes, views can be destroyed after it (the UI audit crashed on that).
+    if (AiService* ai = m_ai) {
+        connect(view->canvas(), &CanvasWidget::toolPressed, ai, [ai] { ai->setDrawing(true); });
+        connect(view->canvas(), &CanvasWidget::toolReleased, ai, [ai] { ai->setDrawing(false); });
+        connect(view, &QObject::destroyed, ai, [ai] { ai->setDrawing(false); });
+    }
     connect(view, &DocumentView::cursorMoved, this, [this](int x, int y, bool inside) {
         m_statusCursor->setText(inside ? QStringLiteral("X %1  Y %2").arg(x).arg(y) : QString());
     });

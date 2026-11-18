@@ -32,6 +32,7 @@ class AppContext;
 class DocumentView;
 class LayersPanel;
 class LogPanel;
+class MotionStudioPanel;
 class PalettePanel;
 class PreviewPanel;
 class AiPanel;
@@ -147,6 +148,7 @@ private:
     QDockWidget* m_layersDock = nullptr;
     QDockWidget* m_propsDock = nullptr;
     QDockWidget* m_rigDock = nullptr;
+    QDockWidget* m_motionDock = nullptr;   // Motion Studio: floating until docked
     QDockWidget* m_paletteDock = nullptr;
     QDockWidget* m_timelineDock = nullptr;
     QDockWidget* m_logDock = nullptr;
@@ -162,6 +164,10 @@ private:
     LayersPanel* m_layers = nullptr;
     PropertiesPanel* m_props = nullptr;
     RigPanel* m_rigPanel = nullptr;
+    MotionStudioPanel* m_motionStudio = nullptr;
+    // Gives Motion Studio the current frame of the open sprite (cropped);
+    // false with a message when there is none.
+    bool motionStudioTakeSprite();
     PalettePanel* m_palette = nullptr;
     TimelinePanel* m_timeline = nullptr;
     LogPanel* m_log = nullptr;

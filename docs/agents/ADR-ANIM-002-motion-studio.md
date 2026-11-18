@@ -46,7 +46,7 @@ FBX is not parsed: its SDK is proprietary, and reverse-engineered readers are la
 | Camera with 11 presets, roll, perspective | same | tests: facing, front/left, top-down, roll and perspective directions |
 | Retarget onto the gait rig, plus a source-skeleton clip at the same frame count | same | tests on `rogue64`: 12 frames, one size, feet on the ground within the foot stagger, ≥ 10 distinct frames, `checkClip` clean, no depth pops |
 | `acestudio-cli retarget` | `cli/MocapCommands.cpp` | Compiled locally with strict warnings only. Not run: `cli/main.cpp` needs the generated `Version.h`, so CI is the first full build. |
-| Motion Studio window (Animation > Motion Studio): a 3D view (drag turns and tilts, wheel zooms, arrow keys), a synced 2D preview, turn/tilt/roll sliders, presets, perspective, span, fps, amount, in place, bone table, notes, Open as Document | `app/src/MotionStudioDialog.*` | **Not run.** Computer use is not allowed here, and Qt is not in the local toolchain. CI compiles it, and the UI audit (`anim.motionStudio`) opens it. |
+| Motion Studio window (Animation > Motion Studio): a 3D view (drag turns and tilts, wheel zooms, arrow keys), a synced 2D preview, turn/tilt/roll sliders, presets, perspective, span, fps, amount, in place, bone table, notes, Open as Document | `app/src/MotionStudioPanel.*` | **Not run.** Computer use is not allowed here, and Qt is not in the local toolchain. CI compiles it, and the UI audit (`anim.motionStudio`) opens it. |
 
 ### 3.1 glTF/GLB import (stage 3b, first part)
 
@@ -57,7 +57,7 @@ FBX is not parsed: its SDK is proprietary, and reverse-engineered readers are la
 | Untrusted input: 64 MB (file plus external buffers), 512 joints, 16384 nodes, 4096 channels and 2^20 keyframes per channel, 200000 frames, JSON depth 64 checked before parsing; every accessor checked (`byteOffset + (count-1)*stride + elementSize` within the view, the view within the buffer, the buffer within its data), component type, type, `normalized`, byteStride; sparse accessors refused; buffers only from the GLB BIN chunk, base64 `data:` URIs or relative file names inside the file's folder (no `..`, no absolute or drive paths, no URL schemes, symlinks resolved and checked); `extensionsRequired` refused; unknown chunks, extensions and channel paths are skipped, never followed. Errors name the animation, channel, node and accessor | same | tests: truncated GLB, bad version, chunk length overflow, first chunk not JSON, accessor out of bounds, bad componentType/type/normalized/byteStride, sparse, missing bufferView, buffer shorter than declared or over the limit, bad target node and interpolation, wrong output count, times going backwards, node cycles and double parents, matrix plus TRS, `extensionsRequired`, glTF 1.0, bad skin joint, JSON nested 100000 deep, 14 unsafe or broken URIs, byte flips over the whole GLB, and every limit. A `fuzz_gltf` libFuzzer target was added (not run here: clang/libFuzzer is CI only) |
 | A Mixamo-named humanoid walk (the BVH test walk written as a GLB under a 0.01 Armature) | tests | same joints and parents as the BVH, positions equal to the BVH's in metres within 2 µm every frame, and the retarget onto `rogue64` passes the same checks as the BVH walk |
 | `acestudio-cli retarget` reads `.glb`/`.gltf`, `--animation <index|name>` | `cli/MocapCommands.cpp`, `cli/main.cpp` | Compiled locally with strict warnings only, not run |
-| Motion Studio: open filter `*.bvh *.glb *.gltf`; a file with several animations asks which one (`QInputDialog::getItem`) | `app/src/MotionStudioDialog.cpp` | **Not compiled or run locally** (no Qt here). CI compiles it |
+| Motion Studio: open filter `*.bvh *.glb *.gltf`; a file with several animations asks which one (`QInputDialog::getItem`) | `app/src/MotionStudioPanel.cpp` | **Not compiled or run locally** (no Qt here). CI compiles it |
 
 glTF limits: morph weights are ignored; `KHR_animation_pointer` and other extension-defined targets are skipped; Motion time 0 is the animation's first keyframe; a sampled frame rate other than 30 can be set in `GltfOptions::fps` (not yet in the UI or CLI).
 
@@ -73,7 +73,7 @@ The walk used in tests is generated in the test (`walkBvh`), so no third-party m
 | `writeBvh`: depth-first joints, BVH-safe unique names, values in file order; refuses several roots, no frames, values BVH cannot hold | same | round trip of a preset and of a motion with awkward names and a non-depth-first order |
 | Saved presets: BVH files in `<user data>/motions`; names are 1–64 ASCII letters, digits, spaces, `-`, `_`, not a built-in or Windows-reserved name, which also keeps every lookup inside the folder | same | save, refuse a duplicate, overwrite, list (an unreadable file is listed with its error), load, refuse `../`, remove |
 | CLI: `retarget <sprite> preset:NAME [--library DIR]` (one-shot presets do not loop); `motion list`, `motion export <preset> --out f.bvh`, `motion save <file> --name N`, `motion remove N` | `cli/MocapCommands.cpp`, `cli/main.cpp` | `tests/cli_smoke.cmake` motion section, also replayed locally against a local CLI build (GIF writing is stubbed locally) |
-| Motion Studio: Library row (presets, Save as Preset…, Remove) | `app/src/MotionStudioDialog.*` | CI build only; not used on a PC |
+| Motion Studio: Library row (presets, Save as Preset…, Remove) | `app/src/MotionStudioPanel.*` | CI build only; not used on a PC |
 
 The presets are procedural: they show the motion's shape (stride, arm swing, crouch, tuck, strike)
 without the nuance of captured motion. A sprite drawn from the front does not rise in a retarget
@@ -95,6 +95,12 @@ Matching is by name: auto-rig names (`body`, `head`, `legN thigh|shin|foot`, `ar
 (`LThigh`, ...), or `--bones` pairs. Not done: a button in Motion Studio or the Rig panel, Lua and
 MCP access, non-humanoid mapping (stage 3c).
 
+### 3.6 Dockable Motion Studio (2026-11-18)
+
+| Piece | Where | Verified |
+|---|---|---|
+| `MotionStudioPanel` (was `MotionStudioDialog`): a `QWidget` in the dock `dock.motionStudio`, floating and hidden at start, shown and raised by Animation › Motion Studio (sized 980x760 and centred the first time), in Window and hidden by the Minimal workspace; `setSprite` keeps the motion, camera and timing ("As drawn" re-reads the sprite's facing); Use Current Sprite asks the window for the current frame; Open as Document leaves the panel open; the preview stops while hidden and resumes when shown; no Alt mnemonics | `app/src/MotionStudioPanel.*`, `app/src/MainWindow.*` | CI build and UI audit only (no Qt here, and computer use is not allowed) |
+
 ### 3.5 Four-legged motion (stage 3c, first part, 2026-11-18)
 
 | Piece | Where | Verified |
@@ -102,7 +108,7 @@ MCP access, non-humanoid mapping (stage 3c).
 | `creatureMap`: legs by shape (leaf joints within 8% of the height above the floor in the rest pose, climbed up while the parent's other children stay low, so a toe and heel count once; never into the root); front and back along the longest horizontal spread of the leg tops in the first frame, the front being where the root travels or else the end nearer the highest other leaf (the head) | `core/src/Mocap.cpp`, `Mocap.h` | `tests/test_creature_motion.cpp`: the preset's four legs (hind first, forward +Z), a humanoid refused (2 legs), on the spot and turned a quarter turn the head still tells the front |
 | `retarget` with `body = Quadruped`: the gait rig's four-leg mode; drawn legs take the source leg at the same end and side (near to near by depth); each foot moves from where it is drawn by the source foot's offset from its leg top around the loop's average, scaled per leg; lift, planting, the body's sink so planted feet reach, and the hind hock bending back as the procedural gait does | same | tests: a 72x48 test dog (`tests/data/anim/dog72.png`, drawn for the tests): 12 frames, at least 6 distinct, no floating frames or mirror flips, only the sprite's colours; a humanoid motion is refused |
 | `quad-walk` preset: a four-beat walk (left hind, left front, right hind, right front), the lowest toe on the floor every frame | `core/src/MotionLibrary.cpp` | tests: four legs found, every foot lifts, travels forward |
-| CLI `--body auto|biped|quadruped` on `retarget` and `directions`; JSON `body` and `legs`; Motion Studio picks four-legged motion for four-legged sprites | `cli/MocapCommands.cpp`, `app/src/MotionStudioDialog.cpp` | `tests/cli_smoke.cmake` (run locally with a placeholder GIF writer); the dialog is compiled by CI only. The test dog's walk sheet was looked at |
+| CLI `--body auto|biped|quadruped` on `retarget` and `directions`; JSON `body` and `legs`; Motion Studio picks four-legged motion for four-legged sprites | `cli/MocapCommands.cpp`, `app/src/MotionStudioPanel.cpp` | `tests/cli_smoke.cmake` (run locally with a placeholder GIF writer); the dialog is compiled by CI only. The test dog's walk sheet was looked at |
 
 Not done: back pitch, head and tail follow-through, leg overrides by name, six legs, wings and
 fins (`RigFlight`, `RigSwim`), spine and tail chains onto column bends, `rig motion` for

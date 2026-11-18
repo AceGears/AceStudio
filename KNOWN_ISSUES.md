@@ -44,6 +44,10 @@ not been run.
   legs) barely moves and holds its last direction. Side-view legs numbered 0 and 1 are taken as
   near and far; if they come out swapped, pair them with `--bones`. Wings, fins and other
   non-humanoid rigs match nothing and are refused. Frames added for the keys are empty until baked.
+- **Motion Studio panel** (ADR-ANIM-002): compiled and opened by the CI UI audit only; it has not
+  been used on a PC since it became a dock. The panel does not follow the open document by
+  itself: press Use Current Sprite after switching sprites or frames. Its controls no longer have
+  Alt-key mnemonics (they would clash with the menu bar when docked), like the other panels.
 - **Parts that bend across a joint** (`rig skin`, ADR-ANIM-004): a part follows at most two bones
   (its own and one child); there is no painted weight map, the split is a straight line through
   the joint halfway between the two bones' directions. The bend is a linear blend, so a very sharp
@@ -75,7 +79,11 @@ not been run.
   thumbnail, library and MCP threads before exit did not stop it, so the cause is still unknown.
   The audit now installs a crash report (`app/src/selftest/CrashReport.*`) that prints the
   exception, the thread and a symbolised stack into the test output, and MSVC builds write a PDB
-  for it. Not yet known whether the app itself can crash this way when a user quits it.
+  for it. On 2026-11-18 that report named the cause: a document view destroyed during shutdown
+  told the AI service (already deleted) that drawing had stopped
+  (`AiService::setDrawing`). Those connections now belong to the AI service, so they go with it;
+  this would also have hit a user quitting with a document open. Whether this was the only cause
+  is shown only by later CI runs.
 - **Motion library** (ADR-ANIM-002 stage 3b): the presets, BVH writing and the saved-preset folder
   are tested locally and in CI, and the CLI is covered by the CLI smoke test; the Motion Studio
   Library row is built by CI only and has not been used on a PC. The presets are simple and

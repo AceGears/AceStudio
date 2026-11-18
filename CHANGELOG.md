@@ -5,6 +5,9 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 ## [0.10.0] — 2026-11-01 — Premium AI game asset studio (unreleased)
 
 ### Fixed
+- A crash while the app closed with a document open: a closing view told the AI service, already
+  deleted, that drawing had stopped. Found by the UI audit's crash report
+  (`AiService::setDrawing`); the connections now go with the AI service.
 - Background threads (Home page thumbnails, Library scans, MCP scripts) are waited for (up to
   5 s; 20 s in the UI audit) before the app shuts down, so none runs on while it is torn down.
   This did not end the UI audit's occasional crash at exit (see KNOWN_ISSUES); the audit now
@@ -91,6 +94,11 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Motion Studio is a dockable panel** (ADR-ANIM-002): **Animation › Motion Studio** now opens a
+  panel instead of a dialog that blocked the window. It opens floating the first time and docks
+  like the other panels (Window › Motion Studio shows or hides it). **Use Current Sprite** puts
+  the loaded motion on another sprite or frame without reloading the motion or resetting the
+  camera, and Open as Document keeps the panel open. Playback stops while the panel is hidden.
 - **Parts that bend across a joint** (ADR-ANIM-004): a part layer bound to one bone can also
   follow a child of that bone (`rig skin <project> --layer L --bone CHILD [--blend PX]`), so a
   one-piece arm or leg bends smoothly at the elbow or knee instead of turning rigidly. Pixels
