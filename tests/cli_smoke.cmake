@@ -191,8 +191,8 @@ run(1 rig auto "${RR}" --layer 1 --out "${WORKDIR}/rigs/again.acestudio")   # al
 # Arms the analysis missed (the rogue's raised daggers), marked as boxes
 run(1 rig auto "${RP}" --layer 1 --arms "1,2,3" --out "${WORKDIR}/rigs/arms_bad.acestudio")
 run(1 rig auto "${RP}" --layer 1 --arms "0,0,2,2" --out "${WORKDIR}/rigs/arms_bad.acestudio")        # no pixels there
-run(1 rig auto "${RP}" --layer 1 --arms "15,10,14,22;20,12,4,4" --out "${WORKDIR}/rigs/arms_bad.acestudio")   # overlap
-run(0 --json rig auto "${RP}" --layer 1 --arms "15,10,14,22;42,20,16,22" --out "${WORKDIR}/rigs/arms.acestudio")
+run(1 rig auto "${RP}" --layer 1 --arms "15,10,14,22 20,12,4,4" --out "${WORKDIR}/rigs/arms_bad.acestudio")   # overlap (spaces: CMake splits at ';')
+run(0 --json rig auto "${RP}" --layer 1 --arms "15,10,14,22 42,20,16,22" --out "${WORKDIR}/rigs/arms.acestudio")
 string(JSON arm_bones GET "${LAST_OUT}" bones)
 if(NOT arm_bones EQUAL rig_bones + 2)
     message(FATAL_ERROR "rig auto --arms made ${arm_bones} bones (without: ${rig_bones}): ${LAST_OUT}")

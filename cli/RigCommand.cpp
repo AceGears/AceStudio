@@ -7,6 +7,7 @@
 #include "acestudio/core/Rig.h"
 #include "acestudio/core/RigTools.h"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <sstream>
@@ -71,15 +72,19 @@ int rigAuto(const Args& a, Output& out) {
     if (!layer) return out.fail(kUsage, "rig auto: " + err);
     rigs::AutoRigOptions opt;
     opt.body = *kind;
-    // --arms "x,y,w,h;x,y,w,h": arms the analysis missed, in canvas pixels.
-    if (auto arms = a.opt("arms"))
-        for (const std::string& item : splitOn(*arms, ';')) {
+    // --arms "x,y,w,h;x,y,w,h" (';' or spaces between boxes): arms the
+    // analysis missed, in canvas pixels.
+    if (auto armsOpt = a.opt("arms")) {
+        std::string arms = *armsOpt;
+        std::replace(arms.begin(), arms.end(), ' ', ';');
+        for (const std::string& item : splitOn(arms, ';')) {
             const auto v = splitOn(item, ',');
             std::vector<std::optional<int>> n;
             for (const std::string& s : v) n.push_back(parseInt(s));
-            if (v.size() != 4 || !n[0] || !n[1] || !n[2] || !n[3]) return out.fail(kUsage, "rig auto: --arms wants x,y,w,h boxes separated by ';', got '" + item + "'");
+            if (v.size() != 4 || !n[0] || !n[1] || !n[2] || !n[3]) return out.fail(kUsage, "rig auto: --arms wants x,y,w,h boxes separated by ';' or spaces, got '" + item + "'");
             opt.arms.push_back({*n[0], *n[1], *n[2], *n[3]});
         }
+    }
     auto r = rigs::autoRig(doc.value(), *layer, frame, opt);
     if (!r) return out.fail(r.error());
     if (int code = writeProject(a, out, r.value().document, *outPath); code != kOk) return code;

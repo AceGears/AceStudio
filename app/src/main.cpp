@@ -135,12 +135,9 @@ int main(int argc, char* argv[]) {
         files << ctx.recentProjects().first();
     if (!auditReport.isEmpty()) {
         const int rc = runUiAudit(window, auditReport, auditProject);
-        std::fprintf(stderr, "ui-audit: waiting for %d background thread(s)
-", WorkerThreads::running());
-        if (!WorkerThreads::waitIdle(20000)) std::fprintf(stderr, "ui-audit: background threads still running at exit
-");
-        std::fprintf(stderr, "ui-audit: exiting
-");
+        std::fprintf(stderr, "ui-audit: waiting for %d background thread(s)\n", WorkerThreads::running());
+        if (!WorkerThreads::waitIdle(20000)) std::fprintf(stderr, "ui-audit: background threads still running at exit\n");
+        std::fprintf(stderr, "ui-audit: exiting\n");
         Logger::instance().flush();
         return rc;
     }
