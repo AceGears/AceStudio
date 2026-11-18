@@ -48,9 +48,13 @@ not been run.
   app yet; not in Lua or MCP). A box takes every pixel inside it, so torso or cape pixels in the box
   move with the arm; keep boxes tight. The arm turns about where its pixels touch the body outside
   the box, which is the shoulder only when the box is cut at the shoulder.
-- **Background threads at exit:** the app waits up to 5 s for thumbnail, library and MCP threads
-  before shutting down (a likely cause of the UI audit's occasional access violation). The fix
-  is built by CI; whether it ends those crashes is shown only by later CI runs.
+- **The UI audit sometimes crashes at exit (Windows CI only).** After every command has run and
+  the report is written, the app occasionally ends in an access violation while it shuts down
+  (seen on 2026-11-17 and 2026-11-18 after the "exiting" step). Waiting for the background
+  thumbnail, library and MCP threads before exit did not stop it, so the cause is still unknown.
+  The audit now installs a crash report (`app/src/selftest/CrashReport.*`) that prints the
+  exception, the thread and a symbolised stack into the test output, and MSVC builds write a PDB
+  for it. Not yet known whether the app itself can crash this way when a user quits it.
 - **Motion library** (ADR-ANIM-002 stage 3b): the presets, BVH writing and the saved-preset folder
   are tested locally and in CI, and the CLI is covered by the CLI smoke test; the Motion Studio
   Library row is built by CI only and has not been used on a PC. The presets are simple and

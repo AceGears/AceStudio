@@ -5,6 +5,7 @@
 #include "Accessibility.h"
 #include "Theme.h"
 #include "WorkerThreads.h"
+#include "selftest/CrashReport.h"
 #include "selftest/UiAudit.h"
 #include "ui/Motion.h"
 
@@ -70,7 +71,10 @@ int main(int argc, char* argv[]) {
             auditReport = QString::fromLocal8Bit(argv[i + 1]);
             if (i + 2 < argc) auditProject = QString::fromLocal8Bit(argv[i + 2]);
         }
-    if (!auditReport.isEmpty()) QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);   // so the audit can close them
+    if (!auditReport.isEmpty()) {
+        installAuditCrashReport();   // a crash prints where it happened (selftest/CrashReport.h)
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);   // so the audit can close them
+    }
     QApplication app(argc, argv);
 #ifdef _WIN32
     // Held for the life of the process: the installer's AppMutex, so Setup

@@ -10,6 +10,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# MSVC: debug information in every object file (/Z7, also in Release; no
+# shared PDB for parallel compiles to fight over), so the app's PDB can name
+# functions in a crash report.
+set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT Embedded)
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()

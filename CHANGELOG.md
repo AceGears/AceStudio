@@ -5,9 +5,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 ## [0.10.0] — 2026-11-01 — Premium AI game asset studio (unreleased)
 
 ### Fixed
-- The UI audit sometimes ended in an access violation after its last step: background threads
-  (Home page thumbnails, Library scans, MCP scripts) could still be running while the app shut
-  down. The app now waits for them (up to 5 s; 20 s in the audit) before exiting.
+- Background threads (Home page thumbnails, Library scans, MCP scripts) are waited for (up to
+  5 s; 20 s in the UI audit) before the app shuts down, so none runs on while it is torn down.
+  This did not end the UI audit's occasional crash at exit (see KNOWN_ISSUES); the audit now
+  prints a crash report with a stack trace when it happens.
 - In-betweens of a bobbing figure (a run) no longer have holes inside the shape (dark specks in
   hair or clothes): enclosed gaps that neither key has are filled with the colour their pixels
   voted for. Gaps drawn in the keys stay open.
