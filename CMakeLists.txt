@@ -14,6 +14,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # shared PDB for parallel compiles to fight over), so the app's PDB can name
 # functions in a crash report.
 set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT Embedded)
+# The debug information pushes template-heavy files (sol2 in Script.cpp)
+# past the default object format's section limit (C1128).
+add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
