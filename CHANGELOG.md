@@ -5,6 +5,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 ## [0.10.0] — 2026-11-01 — Premium AI game asset studio (unreleased)
 
 ### Fixed
+- Background threads (Home page thumbnails, Library scans, MCP scripts) are waited for (up to
+  5 s; 20 s in the UI audit) before the app shuts down, so none runs on while it is torn down.
+  This did not end the UI audit's occasional crash at exit (see KNOWN_ISSUES); the audit now
+  prints a crash report with a stack trace when it happens.
 - In-betweens of a bobbing figure (a run) no longer have holes inside the shape (dark specks in
   hair or clothes): enclosed gaps that neither key has are filled with the colour their pixels
   voted for. Gaps drawn in the keys stay open.
@@ -78,6 +82,25 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   Bake Keys draws them all from the rest frame in one undo step. Keys and the rest frame are saved
   in the rig (rig version 2; a rig without keys is still written as version 1) and follow frames
   that are inserted, moved or deleted.
+- **Motion onto a saved rig** (ADR-ANIM-002 section 3.3): `acestudio-cli rig motion <project>
+  <motion.bvh|.glb|.gltf|preset:NAME> --out <project>` turns a 3D motion into keys on the project's
+  rig, one per sampled frame (frames are added at the end as needed), which can be edited like any
+  other key and baked (`--bake` bakes them at once). Auto-rig names are matched (body, legs, arms),
+  as are bones named after skeleton joints (`LThigh`, ...); `--bones "rig bone=Joint"` pairs any
+  other. IK chains put the feet where the motion's feet are, scaled to the rig, never below its
+  ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
+  by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
+  `--absolute-arms` points them where the motion's arms point instead.
+- **Arm boxes for auto-rig** (`acestudio-cli rig auto --arms "x,y,w,h;x,y,w,h"`): arms the
+  silhouette analysis misses (it looks only beside the legs) can be marked as boxes; every pixel
+  inside a box becomes that arm's part, turning about where the box meets the body.
+- **Motion library** (ADR-ANIM-002 stage 3b). Six built-in motions made by code, so none carries
+  a licence: idle, walk, run (loops) and jump, attack, hurt (played once). Motion Studio has a
+  Library row (pick a preset, Save as Preset…, Remove); saved presets are BVH files in
+  `<user data>/motions`, and saving a glTF/GLB animation converts it to BVH.
+  `acestudio-cli retarget <sprite> preset:walk` uses a preset; `acestudio-cli motion list | export |
+  save | remove` manages the library (`--library <folder>` for another one). BVH can now be written
+  as well as read (`motion export`).
 - **Lua and MCP for rigs, vector shapes and the palette lock.** Lua: `doc:rig()`, `set_rig`,
   `auto_rig`, `pose_rig`, `key_rig`, `unkey_rig`, `bake_rig`, `vector_shapes`, `set_vector_shapes`,
   `rasterize_vectors`, `palette_locked`, `lock_palette`, `off_palette`, `conform_palette`

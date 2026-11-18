@@ -2,6 +2,7 @@
 
 #include "../DocumentView.h"
 #include "../QtBridge.h"
+#include "../WorkerThreads.h"
 
 #include "acestudio/core/AppBridge.h"
 #include "acestudio/core/Editor.h"
@@ -240,7 +241,7 @@ void AppBridgeServer::runLua(QLocalSocket* sock, const json& id, const json& par
     QPointer<AppBridgeServer> self(this);
     auto cancel = m_cancel;   // keeps the flag alive for the thread
     ++m_busy;
-    std::thread([self, o, code, copy, view, s, id, markBefore, cancel, output] {
+    std::thread([token = WorkerThreads::token(), self, o, code, copy, view, s, id, markBefore, cancel, output] {
         auto r = runScript(code, "mcp", o);
         QMetaObject::invokeMethod(qApp, [self, r = std::move(r), copy, view, s, id, markBefore, output]() mutable {
             if (!self) return;

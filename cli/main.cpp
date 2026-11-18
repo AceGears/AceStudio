@@ -85,16 +85,24 @@ const char* kUsageText =
     "  effect <sprite.png> --out <folder> [--effect auto|fire|water|sway|flag|smoke|pulse] [--style campfire|torch|furnace|raging|magic] [--frames 8]\n"
     "         [--ms 90] [--amount 1] [--seed 1]\n"
     "                                  Procedural looping effect (palette kept): strip PNG + GIF\n"
-    "  retarget <sprite.png> <motion.bvh|.glb|.gltf> --out <folder> [--view auto|front|back|right|left|front-right|...]\n"
+    "  retarget <sprite.png> <motion.bvh|.glb|.gltf|preset:NAME> --out <folder> [--view auto|front|back|right|left|front-right|...]\n"
     "           [--turn DEG --tilt DEG --roll DEG [--perspective --fov 35]] [--start S --length S] [--fps 12 | --frames N]\n"
     "           [--amount 1] [--travel] [--no-loop] [--map Bone=joint,...] [--name walk] [--animation <index|name>]\n"
     "                                  3D skeletal motion (BVH, or a glTF/GLB animation: the first unless --animation)\n"
     "                                  onto a two-legged sprite's part rig: strip PNG + GIF,\n"
-    "                                  and the projected source skeleton beside it (<name>_source.png/.gif)\n"
+    "                                  and the projected source skeleton beside it (<name>_source.png/.gif);\n"
+    "                                  preset:NAME uses the motion library (built in: idle, walk, run, jump, attack, hurt)\n"
+    "  motion list [--library <folder>]  The motion library: built-in presets and saved ones\n"
+    "  motion export <preset> --out <file.bvh>   A preset as a BVH file\n"
+    "  motion save <motion.bvh|.glb|.gltf> --name <preset> [--animation <index|name>]\n"
+    "                                  Saves a motion to the library as BVH (--force replaces one)\n"
+    "  motion remove <preset>          Deletes a saved preset\n"
     "  rig show <project>              The project's rig: bones, parts and IK chains\n"
     "  rig auto <project> --layer <name|id> --out <project> [--frame N] [--as auto|legs|wings|fins]\n"
+    "           [--arms \"x,y,w,h;x,y,w,h\"]\n"
     "                                  Cut a sprite layer into part layers with bones (legs with IK, wings\n"
-    "                                  or fins; auto picks from the analysis) (schema 4)\n"
+    "                                  or fins; auto picks from the analysis) (schema 4). --arms marks arms\n"
+    "                                  the analysis missed (canvas boxes; every pixel inside goes to the arm)\n"
     "  rig pose <project> --out <project> [--frame N] [--rest R] [--turn bone=deg,...] [--move dx,dy]\n"
     "           [--reach chain=x,y;...]\n"
     "                                  Draw the parts of rest frame R (default: the rig's rest frame), posed,\n"
@@ -106,6 +114,10 @@ const char* kUsageText =
     "  rig rest <project> --out <project> --frame N    Make frame N the rig's rest frame\n"
     "  rig bake <project> --out <project> [--from F --to L]\n"
     "                                  Draw every keyed frame (default: first key to last) from the rest frame\n"
+    "  rig motion <project> <motion.bvh|.glb|.gltf|preset:NAME> --out <project> [--first F] [--bake]\n"
+    "             [--bones \"rig bone=Joint,...\"] [--absolute-arms] [timing, view and --map options as retarget]\n"
+    "                                  Key a 3D motion onto the rig, one key per sampled frame (frames added\n"
+    "                                  as needed); arms keep their drawn pose unless --absolute-arms\n"
     "  vector show <project>           Every cel's vector shapes (schema 5)\n"
     "  vector add <project> --layer <name|id> --out <project> [--frame N]\n"
     "             (--rect x0,y0,x1,y1 | --ellipse x0,y0,x1,y1 | --path \"x,y[,inX,inY,outX,outY];...\" (';' or spaces) [--closed])\n"
@@ -162,7 +174,7 @@ std::optional<Args> parseArgs(int argc, char** argv, std::string& err) {
         else if (s == "--trim" || s == "--merge-duplicates" || s == "--pot" || s == "--yes" || s == "--cpu" || s == "--rotate" ||
                  s == "--no-outline" || s == "--no-merge" || s == "--square" || s == "--keep-empty" || s == "--no-bob" ||
                  s == "--remove" || s == "--dry-run" || s == "--global" || s == "--lighting" || s == "--collision" || s == "--show-grid" ||
-                 s == "--perspective" || s == "--travel" || s == "--no-loop" || s == "--loop-back" || s == "--closed" ||
+                 s == "--perspective" || s == "--travel" || s == "--no-loop" || s == "--bake" || s == "--absolute-arms" || s == "--loop-back" || s == "--closed" ||
                  s == "--smooth")
             a.flags.insert(s.substr(2));
         else if (s == "-h" || s == "--help") { a.positional = {"help"}; return a; }
@@ -384,6 +396,7 @@ int main(int argc, char** argv) {
         if (cmd == "inbetween") return acestudio::cli::cmdInbetween(*args, out);
         if (cmd == "effect") return acestudio::cli::cmdEffect(*args, out);
         if (cmd == "retarget") return acestudio::cli::cmdRetarget(*args, out);
+        if (cmd == "motion") return acestudio::cli::cmdMotion(*args, out);
         if (cmd == "connect") return acestudio::cli::cmdConnect(*args, out);
         if (cmd == "map") return acestudio::cli::cmdMap(*args, out);
         if (cmd == "run") return acestudio::cli::cmdRun(*args, out);

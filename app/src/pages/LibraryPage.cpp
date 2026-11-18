@@ -2,6 +2,7 @@
 
 #include "../AppContext.h"
 #include "../QtBridge.h"
+#include "../WorkerThreads.h"
 #include "../ui/Icons.h"
 
 #include "acestudio/core/AnimCodec.h"
@@ -215,7 +216,7 @@ void LibraryPage::rescan() {
     m_status->setText(tr("Scanning…"));
     QPointer<LibraryPage> self(this);
     std::weak_ptr<bool> alive = m_alive;
-    std::thread([self, alive, folders, recent, gen] {
+    std::thread([token = WorkerThreads::token(), self, alive, folders, recent, gen] {
         std::vector<QFileInfo> files;
         std::set<QString> seen;
         auto consider = [&](const QFileInfo& fi) {

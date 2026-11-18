@@ -44,11 +44,16 @@ The part rig of ADR-ANIM-001 is rebuilt from the sprite every time a clip is mad
 ## Not built (next stages)
 
 - A curve editor: the panel offers the named curves and Bezier with its default points; custom Bezier points are set with `rig key --curve bezier:x1,y1,x2,y2`. Keys are not shown on the Timeline strip.
-- Arms that the silhouette analysis does not find (it looks only beside the legs), and a rig that has both legs and wings (Wings leaves the legs in the body).
+- Arms that the silhouette analysis does not find (it looks only beside the legs) are found only
+  when marked by hand: `AutoRigOptions::arms` / `rig auto --arms` (built 2026-11-17, tested in
+  `tests/test_rig_motion.cpp` and the CLI smoke test; no app UI to draw the boxes yet). A rig that
+  has both legs and wings is not built (Wings leaves the legs in the body).
 - A swimmer's body bending: auto-rig makes it one rigid part (the swim animator bends it column by column, which a saved rig cannot yet express).
 - Skinning (rows, columns, mesh) of a part across two bones: every part is rigid on one bone.
 - (Built on 2026-11-15: Lua `doc:rig()`, `set_rig`, `auto_rig`, `pose_rig`, `key_rig`, `unkey_rig`, `bake_rig`, and the MCP tools `rig_show` and `rig_edit`, which run the CLI. Lua is tested locally and in CI; the MCP tools are compiled, not called by a test.)
-- Retargeting BVH/glTF motion onto a saved rig (Motion Studio still builds its own rig per clip).
+- (Built on 2026-11-17, CLI only: `rig motion` keys a BVH/glTF/preset motion onto a saved rig; see
+  ADR-ANIM-002 section 3.3. Motion Studio still builds its own rig per clip, and the app has no
+  button for it yet.)
 
 ## Consequences
 

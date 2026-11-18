@@ -119,6 +119,26 @@ Add, Subtract, Difference), visibility and locks.
   eased pose). **Bake Keys** draws every frame from the first key to the last from the rest frame in
   one undo step; the rest frame itself is left alone. Keys move with their frames when you insert,
   move or delete frames. From the command line: `acestudio-cli rig key|unkey|rest|bake`.
+- **Motion onto your rig** (command line only for now): `acestudio-cli rig motion hero.acestudio
+  preset:walk --out hero_walk.acestudio` keys a motion (a preset, BVH or glTF/GLB file) onto the rig
+  you made or auto-rigged, one key per frame after the rest frame (frames are added if needed).
+  Open the result, adjust keys in the Rig panel and **Bake Keys**, or add `--bake` to draw them at
+  once. `--view right` (or `--turn`) picks the side the motion is seen from; it defaults to the view
+  the rig is drawn in. Bones are matched by their auto-rig names; pair others with
+  `--bones "upper leg=LThigh,lower leg=LShin"`. Arms keep the pose you drew and swing from it; add
+  `--absolute-arms` to have them point where the motion's arms point.
+- **Arms auto-rig missed** (command line only for now): auto-rig finds arms only beside the legs.
+  Mark others as boxes on the canvas: `acestudio-cli rig auto hero.acestudio --layer Hero --arms
+  "15,10,14,22;42,20,16,22" --out rigged.acestudio`. Every pixel inside a box becomes that arm, so
+  keep each box tight around the arm and its weapon.
+- **Motion presets:** in **Animation › Motion Studio (3D Motion)…**, the **Library** row offers ready motions
+  (idle, walk, run, jump, attack, hurt) next to **Load Motion…**. Jump, attack and hurt play once;
+  the others loop. **Save as Preset…** keeps the loaded motion (a BVH or glTF/GLB animation) in your
+  library, as a BVH file in the `motions` folder of AceStudio's data folder, and **Remove** deletes a
+  saved one. The presets are simple, made-by-code motions: good for blocking out an animation, less
+  lifelike than captured motion. A sprite drawn from the front stays on the ground in a jump; a
+  side-view sprite rises. From the command line: `acestudio-cli retarget sprite.png preset:walk
+  --out folder` and `acestudio-cli motion list|export|save|remove`.
 
 ## 6. Export
 

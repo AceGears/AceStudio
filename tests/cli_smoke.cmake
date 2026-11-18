@@ -188,6 +188,16 @@ if(rig_bones LESS 5)
 endif()
 run(2 rig auto "${RP}" --layer 1 --out "${RR}")              # refuses to overwrite
 run(1 rig auto "${RR}" --layer 1 --out "${WORKDIR}/rigs/again.acestudio")   # already rigged
+# Arms the analysis missed (the rogue's raised daggers), marked as boxes
+run(1 rig auto "${RP}" --layer 1 --arms "1,2,3" --out "${WORKDIR}/rigs/arms_bad.acestudio")
+run(1 rig auto "${RP}" --layer 1 --arms "0,0,2,2" --out "${WORKDIR}/rigs/arms_bad.acestudio")        # no pixels there
+run(1 rig auto "${RP}" --layer 1 --arms "15,10,14,22 20,12,4,4" --out "${WORKDIR}/rigs/arms_bad.acestudio")   # overlap (spaces: CMake splits at ';')
+run(0 --json rig auto "${RP}" --layer 1 --arms "15,10,14,22 42,20,16,22" --out "${WORKDIR}/rigs/arms.acestudio")
+string(JSON arm_bones GET "${LAST_OUT}" bones)
+math(EXPR want_arm_bones "${rig_bones} + 2")
+if(NOT arm_bones EQUAL want_arm_bones)
+    message(FATAL_ERROR "rig auto --arms made ${arm_bones} bones (without: ${rig_bones}): ${LAST_OUT}")
+endif()
 run(0 --json info "${RR}")
 string(JSON rig_schema GET "${LAST_OUT}" schemaVersion)
 if(NOT rig_schema EQUAL 4)
@@ -238,6 +248,38 @@ run(0 render "${RK}_posed2.acestudio" --frame 2 --out "${RK}_posed2.png")
 file(SHA256 "${RK}_posed2.png" h_posed2)
 if(NOT h_baked2 STREQUAL h_posed2 OR NOT h_baked0 STREQUAL h_rigged OR h_baked1 STREQUAL h_baked0 OR h_baked1 STREQUAL h_baked2)
     message(FATAL_ERROR "rig bake: frame 2 must match the keyed pose, frame 0 stay at rest, frame 1 lie between")
+endif()
+
+# Motion keys (RigMotion.h): a preset keyed onto the rig, then baked
+run(1 rig motion "${RR}" preset:walk)                                                   # no --out
+run(1 rig motion "${RP}" preset:walk --out "${RK}_m_bad.acestudio")                     # no rig
+run(2 rig motion "${RR}" preset:moonwalk --out "${RK}_m_bad.acestudio")                 # no such preset
+run(4 rig motion "${RR}" "${WORKDIR}/rigs/moves.fbx" --out "${RK}_m_bad.acestudio")     # FBX: convert first
+run(1 rig motion "${RR}" preset:walk --first 0 --out "${RK}_m_bad.acestudio")           # covers the rest frame
+run(1 rig motion "${RR}" preset:walk --bones "nobone=LThigh" --out "${RK}_m_bad.acestudio")
+run(1 rig motion "${RR}" preset:walk --bones "body=Elbow" --out "${RK}_m_bad.acestudio")
+run(1 rig motion "${RR}" preset:walk --animation 0 --out "${RK}_m_bad.acestudio")       # a preset holds one motion
+run(0 --json rig motion "${RR}" preset:walk --fps 8 --out "${RK}_walk.acestudio")
+string(JSON mk_keys GET "${LAST_OUT}" keys)
+string(JSON mk_first GET "${LAST_OUT}" first)
+string(JSON mk_added GET "${LAST_OUT}" framesAdded)
+string(JSON mk_thigh GET "${LAST_OUT}" matched "leg0 thigh")
+if(NOT mk_keys EQUAL 8 OR NOT mk_first EQUAL 1 OR NOT mk_added EQUAL 6 OR mk_thigh STREQUAL "")
+    message(FATAL_ERROR "rig motion walk: ${LAST_OUT}")
+endif()
+run(2 rig motion "${RR}" preset:walk --fps 8 --out "${RK}_walk.acestudio")              # refuses to overwrite
+run(0 --json rig motion "${RR}" preset:jump --fps 8 --view right --bake --out "${RK}_jump.acestudio")
+string(JSON mk_baked GET "${LAST_OUT}" baked)
+string(JSON mk_last GET "${LAST_OUT}" last)
+if(NOT mk_baked OR NOT mk_last EQUAL 8)
+    message(FATAL_ERROR "rig motion jump: ${LAST_OUT}")
+endif()
+foreach(f 0 4)
+    run(0 render "${RK}_jump.acestudio" --frame ${f} --out "${RK}_jump${f}.png")
+    file(SHA256 "${RK}_jump${f}.png" h_jump${f})
+endforeach()
+if(h_jump0 STREQUAL h_jump4 OR NOT h_jump0 STREQUAL h_rigged)
+    message(FATAL_ERROR "rig motion --bake: the rest frame must stay as rigged and a jump frame differ from it")
 endif()
 
 # ---- Vector shapes (schema 5): add, show, rasterise, clear
@@ -314,6 +356,41 @@ run(0 vector add "${VD}_conformed.acestudio" --layer 1 --ellipse 2,2,20,20 --str
     --fill radial --fill-color "#ff00ff" --fill-color2 "#00ffff" --axis 11,11,20,11 --smooth --out "${VD}_locked2.acestudio")
 run(0 palette check "${VD}_locked2.acestudio")                                   # new pixels snapped
 run(0 palette unlock "${VD}_locked2.acestudio" --out "${VD}_unlocked.acestudio")
+
+# ---- Motion library: built-in presets, export, save, retarget a preset, remove
+set(MD "${WORKDIR}/motions")
+run(0 --json motion list)
+string(JSON n_presets LENGTH "${LAST_OUT}" presets)
+if(NOT n_presets EQUAL 6)
+    message(FATAL_ERROR "motion list: expected the 6 built-in presets: ${LAST_OUT}")
+endif()
+run(1 motion frobnicate)
+run(1 motion export walk)                                                       # no --out
+run(2 motion export moonwalk --out "${MD}/x.bvh")                              # no such preset
+run(0 motion export walk --out "${WORKDIR}/walk.bvh")
+run(2 motion export walk --out "${WORKDIR}/walk.bvh")                          # refuses to overwrite
+run(1 motion save "${WORKDIR}/walk.bvh")                                        # no --name
+run(1 motion save "${WORKDIR}/walk.bvh" --name walk)                            # a built-in name
+run(1 motion save "${WORKDIR}/walk.bvh" --name "../out")                        # not a preset name
+run(0 motion save "${WORKDIR}/walk.bvh" --name "my walk" --library "${MD}")
+run(1 motion save "${WORKDIR}/walk.bvh" --name "my walk" --library "${MD}")     # already saved
+run(0 motion save "${WORKDIR}/walk.bvh" --name "my walk" --library "${MD}" --force)
+run(0 --json motion list --library "${MD}")
+string(JSON n_presets LENGTH "${LAST_OUT}" presets)
+if(NOT n_presets EQUAL 7 OR NOT EXISTS "${MD}/my walk.bvh")
+    message(FATAL_ERROR "motion save: the saved preset is not listed: ${LAST_OUT}")
+endif()
+run(0 --json retarget "${WORKDIR}/rigs/rogue64.png" preset:jump --out "${WORKDIR}/presets" --fps 10)
+string(JSON n_frames GET "${LAST_OUT}" frames)
+if(n_frames LESS 8 OR NOT EXISTS "${WORKDIR}/presets/rogue64_jump.gif")
+    message(FATAL_ERROR "retarget preset:jump: expected about 10 frames (1 s at 10 fps) and a GIF: ${LAST_OUT}")
+endif()
+run(0 retarget "${WORKDIR}/rigs/rogue64.png" "preset:my walk" --library "${MD}" --out "${WORKDIR}/presets")
+run(2 retarget "${WORKDIR}/rigs/rogue64.png" preset:moonwalk --out "${WORKDIR}/presets")
+run(1 retarget "${WORKDIR}/rigs/rogue64.png" preset:walk --animation 0 --out "${WORKDIR}/presets")
+run(1 motion remove walk --library "${MD}")                                      # built in
+run(0 motion remove "my walk" --library "${MD}")
+run(2 motion remove "my walk" --library "${MD}")
 run(1 run "${WORKDIR}/scripts/make.lua" --save "${WORKDIR}/x.acestudio")   # --save needs --doc
 run(0 --json run "${WORKDIR}/scripts/make.lua" "#00ff00" --doc "${P}" --save "${WORKDIR}/lua_out.acestudio")
 string(JSON changed GET "${LAST_OUT}" documentChanged)

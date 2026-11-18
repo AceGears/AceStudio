@@ -38,6 +38,29 @@ not been run.
   key shows, so big pose changes tear; the area check flags many such frames but not all (a limb
   can move without changing the area). Touching parts of the same colour can swap pixels; keep
   separate parts on separate layers. The work holds a second copy of the document while it runs.
+- **Motion onto a saved rig** (`rig motion`, ADR-ANIM-002 section 3.3): tested locally and in CI (core
+  and CLI smoke test); there is no button for it in the app yet (CLI only; not in Lua or MCP). Bones
+  turn to point the way the projected skeleton points, so a limb seen end-on (a front-view walk's
+  legs) barely moves and holds its last direction. Side-view legs numbered 0 and 1 are taken as
+  near and far; if they come out swapped, pair them with `--bones`. Wings, fins and other
+  non-humanoid rigs match nothing and are refused. Frames added for the keys are empty until baked.
+- **Arm boxes for auto-rig** (`rig auto --arms`): CLI and core only (no way to draw the boxes in the
+  app yet; not in Lua or MCP). A box takes every pixel inside it, so torso or cape pixels in the box
+  move with the arm; keep boxes tight. The arm turns about where its pixels touch the body outside
+  the box, which is the shoulder only when the box is cut at the shoulder.
+- **The UI audit sometimes crashes at exit (Windows CI only).** After every command has run and
+  the report is written, the app occasionally ends in an access violation while it shuts down
+  (seen on 2026-11-17 and 2026-11-18 after the "exiting" step). Waiting for the background
+  thumbnail, library and MCP threads before exit did not stop it, so the cause is still unknown.
+  The audit now installs a crash report (`app/src/selftest/CrashReport.*`) that prints the
+  exception, the thread and a symbolised stack into the test output, and MSVC builds write a PDB
+  for it. Not yet known whether the app itself can crash this way when a user quits it.
+- **Motion library** (ADR-ANIM-002 stage 3b): the presets, BVH writing and the saved-preset folder
+  are tested locally and in CI, and the CLI is covered by the CLI smoke test; the Motion Studio
+  Library row is built by CI only and has not been used on a PC. The presets are simple and
+  procedural (no capture data), so they look mechanical next to real mocap. Sprites drawn from the
+  front never rise off the ground in a retarget (the jump moves the arms and legs but not the
+  height); side-view sprites do. Lua and MCP have no retarget or preset access yet.
 - **MCP tools for rigs, vector shapes and the palette lock** run the CLI commands that the CLI smoke
   test covers, but no test calls the tools themselves yet.
 - **Palette lock** (ADR-ANIM-006): the core is tested; painting, saving, the CLI and the Palette

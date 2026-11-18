@@ -2,6 +2,8 @@
 
 #include "QtBridge.h"
 
+#include "acestudio/core/MotionLibrary.h"
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -15,10 +17,12 @@
 #include <QInputDialog>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QSlider>
 #include <QSpinBox>
 #include <QSplitter>
@@ -200,6 +204,23 @@ MotionStudioDialog::MotionStudioDialog(const Image& sprite, const QString& name,
     m_motionLabel = new QLabel(tr("No motion loaded"), motionBox);
     m_motionLabel->setWordWrap(true);
     mf->addRow(load, m_motionLabel);
+    // The motion library: built-in presets and the user's saved motions.
+    auto* libRow = new QHBoxLayout;
+    m_presets = new QComboBox(motionBox);
+    m_presets->setAccessibleName(tr("Motion presets"));
+    m_presets->setToolTip(tr("Ready motions (idle, walk, run, jump, attack, hurt) and the motions you saved"));
+    m_savePreset = new QPushButton(tr("Save as Pre&set…"), motionBox);
+    m_savePreset->setAutoDefault(false);
+    m_savePreset->setToolTip(tr("Keep the loaded motion in your motion library (saved as BVH)"));
+    m_savePreset->setEnabled(false);
+    m_removePreset = new QPushButton(tr("Remove"), motionBox);
+    m_removePreset->setAutoDefault(false);
+    m_removePreset->setToolTip(tr("Delete the selected saved preset (built-in presets stay)"));
+    m_removePreset->setEnabled(false);
+    libRow->addWidget(m_presets, 1);
+    libRow->addWidget(m_savePreset);
+    libRow->addWidget(m_removePreset);
+    mf->addRow(tr("&Library:"), libRow);
     m_start = new QDoubleSpinBox(motionBox);
     m_start->setRange(0, 3600);
     m_start->setDecimals(2);
@@ -316,6 +337,10 @@ MotionStudioDialog::MotionStudioDialog(const Image& sprite, const QString& name,
     m_debounce->setInterval(120);
 
     connect(load, &QPushButton::clicked, this, &MotionStudioDialog::loadMotion);
+    connect(m_presets, &QComboBox::currentIndexChanged, this, [this] { libraryChosen(); });
+    connect(m_savePreset, &QPushButton::clicked, this, &MotionStudioDialog::saveAsPreset);
+    connect(m_removePreset, &QPushButton::clicked, this, &MotionStudioDialog::removeSavedPreset);
+    refreshPresets();
     connect(m_view, &QComboBox::currentIndexChanged, this, [this] { presetChosen(); });
     for (QSlider* s : {m_turn, m_tilt, m_roll}) connect(s, &QSlider::valueChanged, this, [this] { cameraEdited(); });
     connect(m_perspective, &QCheckBox::toggled, this, [this] { cameraEdited(); });
@@ -429,10 +454,106 @@ void MotionStudioDialog::loadMotionFile(const QString& path) {
         QMessageBox::warning(this, tr("Load Motion"), tr("This motion could not be read:\n%1").arg(QString::fromStdString(m.error().message)));
         return;
     }
-    m_motion = std::move(m).value();
+    QString motionName = QFileInfo(path).completeBaseName();
+    if (!animName.isEmpty()) motionName += QStringLiteral(" (%1)").arg(animName);
+    {
+        const QSignalBlocker b(m_presets);
+        m_presets->setCurrentIndex(0);
+    }
+    useMotion(std::move(m).value(), motionName, false);
+}
+
+void MotionStudioDialog::refreshPresets(const QString& select) {
+    const QSignalBlocker b(m_presets);
+    m_presets->clear();
+    m_presets->addItem(tr("Choose a preset…"), QString());
+    for (const mc::PresetInfo& p : mc::builtInPresets())
+        m_presets->addItem(tr("%1 (built in)").arg(QString::fromStdString(p.name)), QStringLiteral("b:") + QString::fromStdString(p.name));
+    if (auto dir = mc::defaultPresetDir()) {
+        if (auto saved = mc::savedPresets(dir.value())) {
+            for (const mc::PresetInfo& p : saved.value()) {
+                if (!p.error.empty()) continue;   // unreadable files are not offered
+                m_presets->addItem(QString::fromStdString(p.name), QStringLiteral("s:") + QString::fromStdString(p.name));
+            }
+        }
+    }
+    const int at = select.isEmpty() ? 0 : m_presets->findData(select);
+    m_presets->setCurrentIndex(std::max(0, at));
+    m_removePreset->setEnabled(m_presets->currentData().toString().startsWith(QStringLiteral("s:")));
+}
+
+void MotionStudioDialog::libraryChosen() {
+    const QString key = m_presets->currentData().toString();
+    m_removePreset->setEnabled(key.startsWith(QStringLiteral("s:")));
+    if (key.isEmpty()) return;
+    const std::string name = key.mid(2).toStdString();
+    auto dir = mc::defaultPresetDir();
+    if (!dir) {
+        QMessageBox::warning(this, tr("Motion Presets"), QString::fromStdString(dir.error().message));
+        return;
+    }
+    auto m = mc::loadPreset(name, dir.value());
+    if (!m) {
+        QMessageBox::warning(this, tr("Motion Presets"), tr("This preset could not be loaded:\n%1").arg(QString::fromStdString(m.error().message)));
+        return;
+    }
+    bool oneShot = false;
+    for (const mc::PresetInfo& p : mc::builtInPresets())
+        if (key.startsWith(QStringLiteral("b:")) && p.name == name) oneShot = !p.loops;
+    useMotion(std::move(m).value(), QString::fromStdString(name), oneShot);
+}
+
+void MotionStudioDialog::saveAsPreset() {
+    if (!m_motion) return;
+    auto dir = mc::defaultPresetDir();
+    if (!dir) {
+        QMessageBox::warning(this, tr("Save as Preset"), QString::fromStdString(dir.error().message));
+        return;
+    }
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("Save as Preset"), tr("Preset name (letters, digits, spaces, - and _):"), QLineEdit::Normal,
+                                               m_motionName, &ok)
+                             .trimmed();
+    if (!ok || name.isEmpty()) return;
+    if (auto st = mc::checkPresetName(name.toStdString()); !st) {
+        QMessageBox::warning(this, tr("Save as Preset"), QString::fromStdString(st.error().message));
+        return;
+    }
+    const std::filesystem::path file = dir.value() / (name.toStdString() + ".bvh");
+    std::error_code ec;
+    bool overwrite = false;
+    if (std::filesystem::exists(file, ec)) {
+        if (QMessageBox::question(this, tr("Save as Preset"), tr("A preset named “%1” is already saved. Replace it?").arg(name)) != QMessageBox::Yes)
+            return;
+        overwrite = true;
+    }
+    if (auto st = mc::savePreset(dir.value(), name.toStdString(), *m_motion, overwrite); !st) {
+        QMessageBox::warning(this, tr("Save as Preset"), tr("The preset could not be saved:\n%1").arg(QString::fromStdString(st.error().message)));
+        return;
+    }
+    refreshPresets(QStringLiteral("s:") + name);
+    m_motionName = name;
+}
+
+void MotionStudioDialog::removeSavedPreset() {
+    const QString key = m_presets->currentData().toString();
+    if (!key.startsWith(QStringLiteral("s:"))) return;
+    const QString name = key.mid(2);
+    if (QMessageBox::question(this, tr("Remove Preset"), tr("Delete the saved preset “%1”? This cannot be undone.").arg(name)) != QMessageBox::Yes)
+        return;
+    auto dir = mc::defaultPresetDir();
+    if (!dir) return;
+    if (auto st = mc::removePreset(dir.value(), name.toStdString()); !st)
+        QMessageBox::warning(this, tr("Remove Preset"), QString::fromStdString(st.error().message));
+    refreshPresets();
+}
+
+void MotionStudioDialog::useMotion(mc::Motion motion, const QString& name, bool oneShot) {
+    m_motion = std::move(motion);
+    m_oneShot = oneShot;
     m_map = mc::autoMap(*m_motion);
-    m_motionName = QFileInfo(path).completeBaseName();
-    if (!animName.isEmpty()) m_motionName += QStringLiteral(" (%1)").arg(animName);
+    m_motionName = name;
+    m_savePreset->setEnabled(true);
     m_motionLabel->setText(tr("%1: %2 joints, %3 frames, %4 s")
                                .arg(m_motionName)
                                .arg(m_motion->joints.size())
@@ -461,6 +582,7 @@ void MotionStudioDialog::retarget() {
     o.fps = m_fps->value();
     o.amount = m_amount->value();
     o.inPlace = m_inPlace->isChecked();
+    o.loop = !m_oneShot;   // jump, attack and hurt play once
     auto r = mc::retarget(m_sprite, *m_motion, o);
     if (!r) {
         m_result.reset();

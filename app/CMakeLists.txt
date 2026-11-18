@@ -7,6 +7,7 @@ set(CMAKE_AUTORCC ON)
 add_executable(AceStudio WIN32
     resources/app.qrc
     src/main.cpp
+    src/WorkerThreads.h
     src/ui/Icons.h
     src/ui/Icons.cpp
     src/ui/Motion.h
@@ -88,6 +89,8 @@ add_executable(AceStudio WIN32
     src/SingleInstance.cpp
     src/Accessibility.h
     src/Accessibility.cpp
+    src/selftest/CrashReport.h
+    src/selftest/CrashReport.cpp
     src/selftest/UiAudit.h
     src/selftest/UiAudit.cpp
     src/Shortcuts.h
@@ -121,6 +124,13 @@ acestudio_check_qt_licenses(AceStudio)
 
 if(WIN32)
     set_target_properties(AceStudio PROPERTIES OUTPUT_NAME "AceStudio")
+    # The UI audit's crash report walks the stack and names functions.
+    target_link_libraries(AceStudio PRIVATE dbghelp)
+endif()
+if(MSVC)
+    # A PDB beside the executable (code is optimised as before), so a crash
+    # report can name functions and lines.
+    target_link_options(AceStudio PRIVATE /DEBUG /OPT:REF /OPT:ICF)
 endif()
 acestudio_add_win_resource(AceStudio "AceStudio")
 
