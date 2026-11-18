@@ -33,7 +33,8 @@ struct PresetInfo {
     std::string error;           // saved presets that could not be read
 };
 
-// idle, walk, run, jump, attack, hurt (humanoid) and quad-walk (four-legged).
+// idle, walk, run, jump, attack, hurt, flap (humanoid; flap is for winged sprites)
+// and quad-walk (four-legged).
 std::vector<PresetInfo> builtInPresets();
 // NotFound for an unknown name.
 Result<Motion> builtInPreset(std::string_view name);

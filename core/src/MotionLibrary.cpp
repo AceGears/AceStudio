@@ -159,6 +159,25 @@ const std::vector<Key>& hurtKeys() {
     return k;
 }
 
+// Arms raised out to the side and beaten down, as wings: up at the start,
+// a fast downstroke, the forearms trailing on the way down and folding on
+// the way up, the body lifted by the downstroke. Legs tucked a little.
+Pose flap(double t) {
+    const double period = 0.5;
+    const double ph = std::fmod(t / period, 1.0);
+    // Down in the first 40% of the beat, up in the rest.
+    const double down = ph < 0.4 ? 0.5 - 0.5 * std::cos(kPi * ph / 0.4) : 0.5 + 0.5 * std::cos(kPi * (ph - 0.4) / 0.6);
+    Pose p = rest();
+    p[LArmZ] = p[RArmZ] = 150 - 125 * down;                       // 150 (overhead) .. 25 (low)
+    const double trail = ph < 0.4 ? std::sin(kPi * ph / 0.4) : -0.6 * std::sin(kPi * (ph - 0.4) / 0.6);
+    p[LFore] = p[RFore] = 10 + 35 * std::max(0.0, -trail) + 20 * std::max(0.0, trail);
+    p[Lift] = 6 * down;
+    p[Lean] = 6;
+    p[LThigh] = p[RThigh] = -12;
+    p[LKnee] = p[RKnee] = 25;
+    return p;
+}
+
 struct Builtin {
     const char* name;
     const char* description;
@@ -182,6 +201,7 @@ constexpr Builtin kBuiltins[] = {
     {"jump", "Crouch, take off, tuck, land and recover (1 s, starts and ends at rest)", 1.0, false, jump},
     {"attack", "A right-hand punch with a step: guard, wind-up, strike, recover (0.6 s)", 0.6, false, attack},
     {"hurt", "Knocked back: recoil and recover (0.5 s)", 0.5, false, hurt},
+    {"flap", "Arms beaten down and raised again like wings, two beats a second (for winged sprites)", 0.5, true, flap},
     {"quad-walk", "A four-legged walk: hind, front, hind, front, one stride in 1.2 s (for four-legged sprites)", 1.2, true, nullptr,
      quadWalk, true},
 };

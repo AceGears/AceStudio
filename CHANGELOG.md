@@ -94,6 +94,13 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Wings take 3D motion**: `retarget --body flyer` puts a humanoid motion's arms on a winged
+  sprite drawn from the side. Each wing turns about its shoulder as the matching arm rises and
+  falls (the wing as drawn is the top of the stroke), the hand end trails as the elbow bends, the
+  far wing swings a little less, and the body rises and sinks with the hips. A new built-in
+  preset, `flap`, beats the arms like wings twice a second. `--wing-line` sets where the wings
+  start, as in Animate. Lua (`body = "flyer"`, `wing_line`), the MCP `motion_retarget` tool and
+  Motion Studio's new Body box take it too.
 - **Retargeting from scripts and AI tools**: Lua gains `ace.retarget(sprite, motion, opts)` (the
   posed frames, durations and notes, from a preset or a BVH/glTF file) and `ace.motion_presets()`;
   the MCP server gains `motion_presets`, `motion_retarget` and `motion_directions`, which run the

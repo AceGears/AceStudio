@@ -387,8 +387,8 @@ run(0 palette unlock "${VD}_locked2.acestudio" --out "${VD}_unlocked.acestudio")
 set(MD "${WORKDIR}/motions")
 run(0 --json motion list)
 string(JSON n_presets LENGTH "${LAST_OUT}" presets)
-if(NOT n_presets EQUAL 7)
-    message(FATAL_ERROR "motion list: expected the 7 built-in presets: ${LAST_OUT}")
+if(NOT n_presets EQUAL 8)
+    message(FATAL_ERROR "motion list: expected the 8 built-in presets: ${LAST_OUT}")
 endif()
 run(1 motion frobnicate)
 run(1 motion export walk)                                                       # no --out
@@ -403,7 +403,7 @@ run(1 motion save "${WORKDIR}/walk.bvh" --name "my walk" --library "${MD}")     
 run(0 motion save "${WORKDIR}/walk.bvh" --name "my walk" --library "${MD}" --force)
 run(0 --json motion list --library "${MD}")
 string(JSON n_presets LENGTH "${LAST_OUT}" presets)
-if(NOT n_presets EQUAL 8 OR NOT EXISTS "${MD}/my walk.bvh")
+if(NOT n_presets EQUAL 9 OR NOT EXISTS "${MD}/my walk.bvh")
     message(FATAL_ERROR "motion save: the saved preset is not listed: ${LAST_OUT}")
 endif()
 run(0 --json retarget "${WORKDIR}/rigs/rogue64.png" preset:jump --out "${WORKDIR}/presets" --fps 10)
@@ -427,6 +427,18 @@ if(NOT body STREQUAL "quadruped" OR NOT n_frames EQUAL 12 OR NOT n_legs EQUAL 4 
 endif()
 run(1 retarget "${WORKDIR}/rigs/dog72.png" preset:walk --out "${WORKDIR}/presets")             # a humanoid has two legs
 run(1 retarget "${WORKDIR}/rigs/dog72.png" preset:quad-walk --body six-legged --out "${WORKDIR}/presets")
+# Wings (--body flyer): the motion's arms beat a winged sprite's wings
+file(COPY "${TEXTURES}/../../data/anim/dragon128.png" DESTINATION "${WORKDIR}/rigs")
+run(0 --json retarget "${WORKDIR}/rigs/dragon128.png" preset:flap --body flyer --out "${WORKDIR}/presets")
+string(JSON body GET "${LAST_OUT}" body)
+string(JSON n_frames GET "${LAST_OUT}" frames)
+string(JSON n_issues LENGTH "${LAST_OUT}" issues)
+if(NOT body STREQUAL "flyer" OR NOT n_frames EQUAL 6 OR NOT n_issues EQUAL 0
+   OR NOT EXISTS "${WORKDIR}/presets/dragon128_flap.gif")
+    message(FATAL_ERROR "retarget preset:flap --body flyer: expected 6 clean frames (0.5 s at 12 fps): ${LAST_OUT}")
+endif()
+run(1 retarget "${WORKDIR}/rigs/dragon128.png" preset:quad-walk --body flyer --out "${WORKDIR}/presets")   # no arms
+run(1 retarget "${WORKDIR}/rigs/dragon128.png" preset:flap --body flyer --wing-line 2 --out "${WORKDIR}/presets")
 run(1 motion remove walk --library "${MD}")                                      # built in
 run(0 motion remove "my walk" --library "${MD}")
 run(2 motion remove "my walk" --library "${MD}")

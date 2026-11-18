@@ -118,6 +118,7 @@ private:
     QPushButton* m_savePreset = nullptr;
     QPushButton* m_removePreset = nullptr;
     QComboBox* m_view = nullptr;
+    QComboBox* m_body = nullptr;   // auto (from the sprite), two legs, four legs, wings
     QSlider* m_turn = nullptr;
     QSlider* m_tilt = nullptr;
     QSlider* m_roll = nullptr;

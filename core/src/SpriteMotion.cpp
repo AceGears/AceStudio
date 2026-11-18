@@ -1131,8 +1131,9 @@ ClipCheck checkClip(const Clip& clip) {
                                " poses forwards and then backwards (ping-pong); the motion reverses instead of following through.");
         // A flapping wing sweeps its tip down on purpose; the rig keeps the
         // head drawn over the wings, which its own tests check part by part
-        // (ADR-ANIM-001 section 6).
-        if (clip.name != "roll" && clip.name != "flap" && clip.name != "fly") {
+        // (ADR-ANIM-001 section 6). Wings beaten by a 3D motion (retarget,
+        // body Flyer) are the same rig.
+        if (clip.name != "roll" && clip.name != "flap" && clip.name != "fly" && clip.body != Body::Flyer) {
             const TopRegionCheck top = topRegionPresence(clip.frames);
             if (!top.framesLost.empty())
                 r.issues.push_back("The top part of the sprite (head, horns or wing tip) loses " +

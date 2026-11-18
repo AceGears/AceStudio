@@ -169,15 +169,17 @@ int readMotionArgs(const Args& a, Output& out, const std::string& cmd, bool oneS
     return kOk;
 }
 
-// --body auto|biped|quadruped: the kind of figure the sprite is (auto: read
-// from the sprite; four-legged sprites take four-legged motion).
+// --body auto|biped|quadruped|flyer: the kind of figure the sprite is (auto:
+// read from the sprite; four-legged sprites take four-legged motion; flyer,
+// never picked by auto, puts the motion's arms on the sprite's wings).
 int readBody(const Args& a, Output& out, const std::string& cmd, const Image& sprite, motion::Body& body) {
     const std::string v = a.opt("body").value_or("auto");
     if (v == "biped") body = motion::Body::Biped;
     else if (v == "quadruped") body = motion::Body::Quadruped;
+    else if (v == "flyer") body = motion::Body::Flyer;
     else if (v == "auto")
         body = motion::analyzeSubject(sprite).body == motion::Body::Quadruped ? motion::Body::Quadruped : motion::Body::Biped;
-    else return out.fail(kUsage, cmd + ": --body expects auto, biped or quadruped");
+    else return out.fail(kUsage, cmd + ": --body expects auto, biped, quadruped or flyer");
     return kOk;
 }
 
@@ -212,6 +214,14 @@ int cmdRetarget(const Args& a, Output& out) {
     o.loop = ma.loop;
     o.mapOverrides = ma.mapOverrides;
     if (int c = readBody(a, out, "retarget", sprite.value(), o.body); c != kOk) return c;
+    if (auto v = a.opt("wing-line")) {
+        try {
+            o.wingLine = std::stod(*v);
+        } catch (const std::exception&) {
+            o.wingLine = -1;
+        }
+        if (!(o.wingLine > 0 && o.wingLine < 1)) return out.fail(kUsage, "retarget: --wing-line expects a fraction of the height, 0 to 1");
+    }
 
     auto res = mocap::retarget(sprite.value(), mo, o);
     if (!res) return out.fail(res.error());
@@ -249,7 +259,7 @@ int cmdRetarget(const Args& a, Output& out) {
                         {"camera", {{"turn", r.camera.turn}, {"tilt", r.camera.tilt}, {"roll", r.camera.roll}, {"perspective", r.camera.perspective}}},
                         {"approximateView", r.approximateView},
                         {"bones", mapped},
-                        {"body", o.body == motion::Body::Quadruped ? "quadruped" : "biped"},
+                        {"body", motion::toString(o.body)},
                         {"legs", legs},
                         {"notes", r.notes},
                         {"issues", chk.issues}},

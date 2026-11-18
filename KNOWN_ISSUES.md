@@ -64,6 +64,19 @@ not been run.
   refused); legs cannot be paired by hand yet, and Motion Studio's bone table lists humanoid bones
   only. Sprites must be drawn from the side with their legs apart; `rig motion` does not take
   four-legged motion.
+- **Wings from a 3D motion** (`retarget --body flyer`, ADR-ANIM-002 section 3.7): a humanoid
+  motion's arms beat a winged side view's wings (each wing turns about its shoulder as its arm
+  rises and falls, the hand end bends with the elbow, the body rises and sinks with the hips).
+  Tested on a test dragon with its wings selected and checked by eye on the 128 px golden dragon
+  with the built-in `flap` preset only; no captured bird or bat motion has been tried. Wing
+  skeletons (a bird's or bat's own wing bones) are not read: the motion must have humanoid arms,
+  and a four-legged motion is refused. The wings are found as in Animate's flap (the part above
+  the wing line, 45% of the height unless `--wing-line` or Lua's `wing_line` says otherwise); when
+  the head reaches above that line it turns with the wing, so lower the line. The command line,
+  Lua and MCP take a wing line but not a wing selection, and Motion Studio takes neither (its body
+  box only picks Wings). `--body auto` never picks wings. The wing stroke is up and down only: no
+  forward sweep, twist or folding, and the tail does not wave as in Animate's flap. Fins (a
+  swimming motion onto `RigSwim`) are not mapped.
 - **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI and core only (no app page,
   Lua or MCP yet). The art is chosen, never turned or drawn: a direction with no view drawn near it
   shows the nearest view with the motion seen from the new direction, and is flagged. Mirrored

@@ -139,6 +139,10 @@ Add, Subtract, Difference), visibility and locks.
   `acestudio-cli retarget dog.png preset:quad-walk --out out`, or **Animation › Motion Studio**
   with the sprite open. The motion's legs are found by their shape, so joint names do not matter.
   The legs, the body's height, the back's rock and the head's and tail's rise and fall follow the motion.
+- **Winged creatures**: a dragon, bird or bat drawn from the side can beat its wings to a motion's
+  arms: `acestudio-cli retarget dragon.png preset:flap --body flyer --out out`, or choose
+  **Wings** in Motion Studio's Body box. Each wing turns as the motion's arm rises and falls. If
+  the head turns with a wing, lower the wing line (`--wing-line 0.3`).
 - **A motion in every direction** (command line only for now): put the views you drew in a
   folder, named by the way the character faces: `s.png` (towards you), `se.png`, `e.png` (facing
   right), `ne.png`, `n.png` (away from you), and so on, or `front.png`, `right.png`,
@@ -156,7 +160,7 @@ Add, Subtract, Difference), visibility and locks.
   Studio** to show and hide it. Press **Use Current Sprite** to put the same motion and camera on
   another sprite or frame.
 - **Motion presets:** in **Animation › Motion Studio (3D Motion)…**, the **Library** row offers ready motions
-  (idle, walk, run, jump, attack, hurt) next to **Load Motion…**. Jump, attack and hurt play once;
+  (idle, walk, run, jump, attack, hurt, flap for wings, quad-walk for four legs) next to **Load Motion…**. Jump, attack and hurt play once;
   the others loop. **Save as Preset…** keeps the loaded motion (a BVH or glTF/GLB animation) in your
   library, as a BVH file in the `motions` folder of AceStudio's data folder, and **Remove** deletes a
   saved one. The presets are simple, made-by-code motions: good for blocking out an animation, less

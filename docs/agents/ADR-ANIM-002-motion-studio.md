@@ -121,8 +121,35 @@ moves fading in beyond them); the leg hips follow their end. Side views only. Ve
 rises and falls at least 2 rows and more than with a stiff back, neck and tail, at most a quarter
 of its height; colours kept); the dog's walk sheet was looked at.
 
-Not done: sideways head and tail swing, leg overrides by name, six legs, wings and fins
-(`RigFlight`, `RigSwim`), `rig motion` for four-legged rigs.
+Not done: sideways head and tail swing, leg overrides by name, six legs, fins (`RigSwim`),
+`rig motion` for four-legged rigs. Wings: section 3.7.
+
+### 3.7 Wings from a humanoid motion (stage 3c, second part, 2026-11-18)
+
+`RetargetOptions::body = Flyer` (`retargetFlyer` in `Mocap.cpp`) poses the flight rig that
+`flightRender` uses (`buildFlightRig`, the same wing cut, near and far wing, shoulder skin) from a
+humanoid motion instead of a procedural beat. Per frame, each source arm's elevation (the upper
+arm's angle above the horizontal, in world space, so the camera does not change it) and its elbow
+(the forearm's elevation over the upper arm's) are read. The drawn wing is the top of the stroke:
+the frame where that arm is highest. A wing's turn is `amount` times the arm's drop from there
+(clamped to -0.5..2 rad; the far wing 0.8 of it, foreshortened up to 15%), its hand bend 0.9 of
+the elbow's change (clamped to 1.2 rad). The near wing follows the source arm nearer the camera at
+the first frame. The body (and the head end drawn over the near wing) moves by the hips' height
+from neutral (the loop's mean, a one-shot's first frame), at most an eighth of the sprite's height.
+The camera defaults to the side the head faces. A four-legged motion (creatureMap finds four legs)
+is refused, as is a skeleton without hips and both arms. `checkClip` skips its top-region check for
+Flyer clips, as for Animate's flap and fly. The built-in `flap` preset (0.5 s loop) raises the arms
+out to the side to 150 degrees and beats them down to 25, the forearms trailing on the way down and
+folding on the way up, the hips lifted by the downstroke.
+
+| What | Where | Verified |
+|---|---|---|
+| `retargetFlyer`, `RetargetOptions::wingLine` / `wingMask` | `core/src/Mocap.cpp`, `Mocap.h` | `tests/test_wing_motion.cpp` (with a wing selection on a test dragon: 6 frames, the first as drawn, the wing's lowest row at least 8 rows below the drawn one and less with amount 0.5, wing pixels kept, the head untouched, only the sprite's colours; idle notes that the arms hardly move and the wing stays within 3 rows; quad-walk and a sprite without wings refused), run locally; the 128 px golden dragon's flap strip looked at |
+| `flap` preset | `core/src/MotionLibrary.cpp` | the test above (arm raised above 0.8 rad and beaten below -0.6 rad); preset count tests |
+| CLI `--body flyer`, `--wing-line`; Lua `body = "flyer"`, `wing_line`; MCP `body`/`wing_line`; Motion Studio Body box | `cli/MocapCommands.cpp`, `core/src/Script.cpp`, `mcp/AceTools.cpp`, `app/src/MotionStudioPanel.cpp` | `tests/cli_smoke.cmake` (the golden dragon: 6 frames, no issues; quad-walk and a bad wing line refused), run locally with a placeholder GIF writer; Lua, MCP and the panel are compiled (the panel by CI only), not driven by a test |
+
+Not done: wing skeletons (a bird's or bat's own wing bones), wing sweep, twist and folding, the
+tail's wave, a wing selection from Motion Studio, and fins (`RigSwim`).
 
 ### 3.4 Direction sets (stage 4, first part, 2026-11-18)
 
@@ -142,7 +169,7 @@ front or side), rig motion per direction, and Lua and MCP access.
 |---|---|---|
 | 2 | Saved, editable rigs (ADR-ANIM-001 schema 4): bone tree, add/remove/rename/reparent, joint limits, IK chains, mirror, lock, undo; GUI bone overlay on the canvas | Needs the chief architect's approval for the schema bump |
 | 3b | ~~glTF/GLB animation import~~ (built, section 3.1); ~~a motion library with presets and save-as-preset~~ (built, section 3.2) | More presets (crouch, climb, cast, die) and CC0 captured clips, each licensed |
-| 3c | (four-legged first part built, section 3.5) Non-humanoid mapping: quadruped (four legs on `buildGaitRig`'s four-leg mode), wing chains onto `RigFlight` parts, spine/tail chains onto column bends | |
+| 3c | (four-legged first part built, section 3.5; wings from humanoid arms built, section 3.7) Non-humanoid mapping: quadruped (four legs on `buildGaitRig`'s four-leg mode), wing chains onto `RigFlight` parts, spine/tail chains onto column bends | |
 | 4 | (first part built, section 3.4) Multi-view: a direction set (front, back, side, three-quarter art) chosen by camera turn, with a turn clip between views; reference-view slots | This is where "new view" stops being an approximation |
 | 5 | AI assist (optional, worker or cloud only, with an explicit cost prompt): pose estimation of the sprite for auto-rig hints, hidden-surface inpainting of parts, view generation, text-to-motion (an LLM picks and parameterises library motions; no generative model where procedural motion works) | Respect the no-cost-without-approval rule |
 | 6 | Timeline tracks: bone keyframes, curves (linear, Bezier, eases, stepped), events, blending between clips (idle→walk→run with phase match) | |
