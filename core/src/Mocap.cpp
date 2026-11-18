@@ -998,6 +998,190 @@ std::vector<int> backColumns(const rg::Part& body, const motion::detail::GaitRig
 // A four-legged motion on a four-legged sprite's gait rig: each drawn leg
 // follows the source leg on its end (hind or front) and side (near or far);
 // the body rises and sinks with the root.
+// A humanoid motion on a winged sprite: the drawn wing is the top of the
+// stroke (the arm's highest point in the span); it turns down as the arm
+// falls from there, by the same angle (times amount), the far wing a little
+// less. The hand end bends with the elbow, and the body rises and sinks
+// with the hips. Arms are matched near to near under the camera.
+Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const RetargetOptions& opt) {
+    RetargetResult res;
+    if (creatureMap(m).hasFourLegs())
+        return Error(ErrorCode::InvalidArgument, "a four-legged motion has no arms to drive the wings; use a humanoid motion such as preset:flap");
+    res.map = autoMap(m, opt.mapOverrides);
+    const BoneMap& map = res.map;
+    for (Bone b : {Bone::Hips, Bone::LUpperArm, Bone::LHand, Bone::RUpperArm, Bone::RHand})
+        if (map[b] < 0)
+            return Error(ErrorCode::InvalidArgument,
+                         "the motion's skeleton has no recognisable hips and two arms to drive the wings (map them with Bone=joint overrides)");
+    const motion::Subject subj = motion::analyzeSubject(sprite);
+    const motion::detail::WingSpec spec{std::clamp(opt.wingLine, 0.05, 0.95), 0.0, 1.0, opt.wingMask.isNull() ? nullptr : &opt.wingMask};
+    auto built = motion::detail::buildFlightRig(sprite, subj, spec, false);
+    if (!built || built->wings.empty())
+        return Error(ErrorCode::InvalidArgument, "no wings were found in the sprite (select the wings, or set the wing line)");
+    motion::detail::FlightRig& fr = *built;
+    const rg::Rig& rig = fr.rig;
+    const IntRect bb = subj.bounds;
+    const double amount = std::clamp(opt.amount, 0.25, 2.0);
+
+    // Winged sprites are drawn from the side; the head shows which way.
+    const bool turnKnown = opt.drawnTurn && std::isfinite(*opt.drawnTurn);
+    const double drawnTurn = turnKnown ? *opt.drawnTurn : (fr.headSide < 0 ? -90 : 90);
+    res.camera = opt.camera ? *opt.camera : Camera{};
+    if (!opt.camera) res.camera.turn = drawnTurn;
+    const Camera& cam = res.camera;
+    if (std::abs(wrapAngle((cam.turn - drawnTurn) * kDeg)) / kDeg > 30 || std::abs(cam.tilt) > 40) {
+        res.approximateView = true;
+        res.notes.push_back("The sprite is drawn " +
+                            (turnKnown ? "at turn " + std::to_string(iround(drawnTurn)) + " degrees" : std::string("from the side")) +
+                            "; this camera only changes how the motion is seen, the art is not turned. "
+                            "A view this far from the drawing needs art drawn for it (a reference view).");
+    }
+    if (fr.headSide == 0 && !turnKnown) res.notes.push_back("The head end was not found; the sprite is taken to face right.");
+
+    const double start = std::clamp(opt.start, 0.0, m.duration());
+    const double span = opt.length > 0 ? std::min(opt.length, m.duration() - start) : m.duration() - start;
+    if (span <= 0) return Error(ErrorCode::InvalidArgument, "the time span is empty");
+    const int fps = std::clamp(opt.fps, 1, 60);
+    const int frames = std::clamp(opt.frames > 0 ? opt.frames : std::max(2, iround(span * fps)), 2, 240);
+    const double step = opt.loop ? span / frames : (frames > 1 ? span / (frames - 1) : 0);
+
+    const std::vector<Vec3> rest = restPositions(m);
+    double restMinY = 1e300, restMaxY = -1e300;
+    for (const Vec3& q : rest) {
+        restMinY = std::min(restMinY, q.y);
+        restMaxY = std::max(restMaxY, q.y);
+    }
+    const double height = std::max(1e-6, restMaxY - restMinY);
+    auto at = [&](const std::vector<Vec3>& q, Bone b) { return q[uz(map[b])]; };
+    std::vector<std::vector<Vec3>> world;
+    double floorY = 1e300;
+    for (int f = 0; f < frames; ++f) {
+        std::vector<Vec3> w = jointPositions(m, start + f * step);
+        for (const Vec3& q : w) floorY = std::min(floorY, q.y);
+        world.push_back(std::move(w));
+    }
+    const Vec3 hips0 = at(world[0], Bone::Hips);
+    const Vec3 centre{hips0.x, floorY, hips0.z};
+    const Vec3 forward = forwardAt(m, map, world[0]);
+    std::vector<Projected> prs;
+    for (int f = 0; f < frames; ++f) {
+        std::vector<Vec3> w = world[uz(f)];
+        const Vec3 tr = horizontal(at(world[uz(f)], Bone::Hips) - hips0);
+        for (Vec3& q : w) q = q - tr;   // wings flap in place
+        prs.push_back(project(w, cam, forward, height, centre));
+    }
+
+    // Each arm's elevation (radians above horizontal) and its elbow's bend
+    // (the forearm's elevation over the upper arm's), per frame.
+    const Bone upperB[2] = {Bone::LUpperArm, Bone::RUpperArm}, foreB[2] = {Bone::LForearm, Bone::RForearm},
+               handB[2] = {Bone::LHand, Bone::RHand};
+    auto elevation = [](Vec3 v) { return std::atan2(v.y, std::hypot(v.x, v.z)); };
+    std::array<std::vector<double>, 2> elev, elbow;
+    for (int a = 0; a < 2; ++a)
+        for (int f = 0; f < frames; ++f) {
+            const auto& w = world[uz(f)];
+            const Vec3 sh = at(w, upperB[a]), hand = at(w, handB[a]);
+            if (map[foreB[a]] >= 0) {
+                const Vec3 el = at(w, foreB[a]);
+                const double up = elevation(el - sh);
+                elev[uz(a)].push_back(up);
+                elbow[uz(a)].push_back(elevation(hand - el) - up);
+            } else {
+                elev[uz(a)].push_back(elevation(hand - sh));
+                elbow[uz(a)].push_back(0.0);
+            }
+        }
+    // Near arm: the one nearer the camera at the first frame.
+    const int nearArm = prs[0].depth[uz(map[Bone::LUpperArm])] >= prs[0].depth[uz(map[Bone::RUpperArm])] ? 0 : 1;
+    std::array<int, 2> topFrame{};
+    double range = 0;
+    for (int a = 0; a < 2; ++a) {
+        const auto& e = elev[uz(a)];
+        topFrame[uz(a)] = static_cast<int>(std::max_element(e.begin(), e.end()) - e.begin());
+        range = std::max(range, *std::max_element(e.begin(), e.end()) - *std::min_element(e.begin(), e.end()));
+    }
+    if (range < 10 * kDeg) res.notes.push_back("The motion's arms hardly rise or fall; the wings barely move (try preset:flap).");
+
+    // The body's heave: the hips' height from its neutral (the loop's mean,
+    // a one-shot's first frame), in pixels of the sprite's height.
+    double neutral = 0;
+    if (opt.loop) {
+        for (int f = 0; f < frames; ++f) neutral += at(world[uz(f)], Bone::Hips).y;
+        neutral /= frames;
+    } else {
+        neutral = at(world[0], Bone::Hips).y;
+    }
+    const double k = bb.h / height;
+    const int maxLift = std::max(1, bb.h / 8);
+
+    double reach = 0;
+    for (const auto& c : fr.cuts) reach = std::max(reach, c.reach);
+    const int margin = static_cast<int>(std::ceil(reach)) + maxLift + 4;
+    const IntRect big{bb.x - margin, bb.y - margin, bb.w + 2 * margin, bb.h + 2 * margin};
+    std::vector<Image> imgs;
+    std::vector<std::vector<rg::PartPose>> poses;
+    for (int f = 0; f < frames; ++f) {
+        std::vector<rg::PartPose> pose = rig.rest();
+        const int dy = std::clamp(-iround(k * (at(world[uz(f)], Bone::Hips).y - neutral) * amount), -maxLift, maxLift);
+        pose[uz(fr.bodyPart)].dy = dy;
+        if (fr.chestPart >= 0) pose[uz(fr.chestPart)].dy = dy;
+        for (const auto& w : fr.wings) {
+            const int a = w.nearWing ? nearArm : 1 - nearArm;
+            const double scale = w.nearWing ? 1.0 : 0.8;
+            const double down = std::clamp(amount * (elev[uz(a)][uz(topFrame[uz(a)])] - elev[uz(a)][uz(f)]), -0.5, 2.0);
+            const double bend = std::clamp(amount * (elbow[uz(a)][uz(topFrame[uz(a)])] - elbow[uz(a)][uz(f)]), -1.2, 1.2);
+            rg::PartPose& q = pose[uz(w.part)];
+            q.angle = w.cut.sign * down * scale;
+            q.bend = w.cut.sign * bend * scale * 0.9;
+            q.bendRadius = w.cut.reach;
+            q.dy = dy;
+            if (w.nearWing && !fr.painted) {
+                q.skinTop = fr.rootRow;
+                q.skinDepth = fr.skinDepth;
+                q.skinX0 = fr.skinX0;
+                q.skinX1 = fr.skinX1;
+                q.skinFade = std::max(3.0, std::abs(fr.cuts.size() == 2 ? fr.cuts[1 - fr.nearIdx].shoulder.x - w.cut.shoulder.x
+                                                                        : fr.skinDepth / 2.0));
+            }
+            if (!w.nearWing) q.sx = 1.0 - 0.15 * std::clamp(down / 1.6, 0.0, 1.0);
+        }
+        imgs.push_back(rg::renderPose(rig, pose, big));
+        poses.push_back(std::move(pose));
+    }
+
+    int x0 = big.w, y0 = big.h, x1 = -1, y1 = -1;
+    for (const Image& im : imgs) {
+        const IntRect r = im.opaqueBounds();
+        if (r.empty()) continue;
+        x0 = std::min(x0, r.x);
+        y0 = std::min(y0, r.y);
+        x1 = std::max(x1, r.x + r.w);
+        y1 = std::max(y1, r.y + r.h);
+    }
+    if (x1 < 0) return Error(ErrorCode::Internal, "retarget produced empty frames");
+    const int frameMs = std::max(10, iround(1000.0 * step));
+    res.clip.name = "retarget";
+    res.clip.loops = opt.loop;
+    res.clip.body = motion::Body::Flyer;
+    res.clip.depthPops = static_cast<int>(rg::zPops(rig, poses, big).size());
+    for (const Image& im : imgs) {
+        res.clip.frames.push_back(im.copy({x0, y0, x1 - x0, y1 - y0}));
+        res.clip.durations.push_back(frameMs);
+    }
+    const int fw = x1 - x0, fh = y1 - y0;
+    const int side = std::max(fw, fh);
+    res.source.name = "source";
+    res.source.loops = opt.loop;
+    for (const Projected& pr : prs) {
+        Image img(side, side);
+        paintSkeleton(img, m, map, pr, side * 0.75, side / 2.0, side * 0.9);
+        res.source.frames.push_back(img);
+        res.source.durations.push_back(frameMs);
+    }
+    if (fr.wings.size() < 2) res.notes.push_back("Only one wing was found; it follows the nearer arm.");
+    return res;
+}
+
 Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, const RetargetOptions& opt) {
     RetargetResult res;
     res.creature = creatureMap(m);
@@ -1287,8 +1471,10 @@ Result<RetargetResult> retarget(const Image& sprite, const Motion& m, const Reta
     if (sprite.isNull() || sprite.isFullyTransparent()) return Error(ErrorCode::InvalidArgument, "the sprite has no visible pixels");
     if (m.frameCount < 1 || m.joints.empty()) return Error(ErrorCode::InvalidArgument, "the motion is empty");
     if (opt.body == motion::Body::Quadruped) return retargetQuadruped(sprite, m, opt);
+    if (opt.body == motion::Body::Flyer) return retargetFlyer(sprite, m, opt);
     if (opt.body != motion::Body::Biped)
-        return Error(ErrorCode::InvalidArgument, "motion can be put on two-legged (biped) and four-legged (quadruped) sprites only, for now");
+        return Error(ErrorCode::InvalidArgument,
+                     "motion can be put on two-legged (biped), four-legged (quadruped) and winged (flyer) sprites only, for now");
     RetargetResult res;
     res.map = autoMap(m, opt.mapOverrides);
     if (!res.map.hasLegs()) {

@@ -137,6 +137,12 @@ RigPanel::RigPanel(QWidget* parent) : QWidget(parent) {
     bindRow->addWidget(m_bind);
     bindRow->addWidget(m_unbind);
     form->addRow(QString(), bindRow);
+    // A part drawn over two bones bends at the joint with a child of its bone.
+    m_bendWith = new QComboBox;
+    m_bendWith->setAccessibleName(tr("Current layer bends with"));
+    m_bendWith->setToolTip(tr("Bend the current layer's part across the joint with a child of its bone, "
+                              "so a one-piece arm or leg bends instead of turning stiffly"));
+    form->addRow(tr("Bends with"), m_bendWith);
     root->addWidget(boneGroup);
 
     // ---- IK chains
@@ -275,6 +281,12 @@ RigPanel::RigPanel(QWidget* parent) : QWidget(parent) {
         if (!m_view || !m_view->document().rig()) return;
         const LayerId layer = m_view->currentLayer();
         edit(tr("Unbind Layer"), [&](Rig& rig) { return rigs::bindLayer(rig, layer, kNoBone); });
+    });
+    connect(m_bendWith, &QComboBox::currentIndexChanged, this, [this] {
+        if (m_filling || !m_view || !m_view->document().rig()) return;
+        const LayerId layer = m_view->currentLayer();
+        const BoneId child = static_cast<BoneId>(m_bendWith->currentData().toUInt());
+        edit(child ? tr("Bend Part Across Joint") : tr("Make Part Rigid"), [&](Rig& rig) { return rigs::skinLayer(rig, layer, child); });
     });
     connect(m_parts, &QListWidget::itemActivated, this, [this](QListWidgetItem* it) {
         if (m_view) m_view->setCurrentLayer(static_cast<LayerId>(it->data(Qt::UserRole).toUInt()));
@@ -485,6 +497,19 @@ void RigPanel::showBone() {
                                                       m_parts, m_bind, m_turn, m_addChain})
         w->setEnabled(b != nullptr);
     m_unbind->setEnabled(m_view && rig && rig->bindings.count(m_view->currentLayer()));
+    // The current layer's bend: offered when it is bound and its bone has children.
+    m_bendWith->clear();
+    m_bendWith->addItem(tr("(none: rigid)"), 0u);
+    if (m_view && rig) {
+        const LayerId cur = m_view->currentLayer();
+        if (const auto bound = rig->bindings.find(cur); bound != rig->bindings.end()) {
+            for (const Bone& o : rig->bones)
+                if (o.parent == bound->second) m_bendWith->addItem(qs(o.name), o.id);
+            const auto sk = rig->skins.find(cur);
+            m_bendWith->setCurrentIndex(std::max(0, m_bendWith->findData(sk == rig->skins.end() ? 0u : sk->second.bone)));
+        }
+    }
+    m_bendWith->setEnabled(m_bendWith->count() > 1);
     m_parent->clear();
     m_parts->clear();
     if (b) {
@@ -504,7 +529,10 @@ void RigPanel::showBone() {
         m_locked->setChecked(b->locked);
         for (LayerId l : rig->parts(id)) {
             const Layer* layer = m_view->document().layer(l);
-            auto* it = new QListWidgetItem(layer ? qs(layer->name) : tr("Layer %1").arg(l));
+            QString label = layer ? qs(layer->name) : tr("Layer %1").arg(l);
+            if (const auto sk = rig->skins.find(l); sk != rig->skins.end())
+                if (const Bone* c = rig->bone(sk->second.bone)) label += tr(" (bends with %1)").arg(qs(c->name));
+            auto* it = new QListWidgetItem(label);
             it->setData(Qt::UserRole, l);
             m_parts->addItem(it);
         }

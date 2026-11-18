@@ -186,8 +186,10 @@ ts:write("ground.png", {engines = "godot,unity,tiled", names = {"sand", "grass",
 `opts`: `view` (`auto`, `front`, `back`, `right`, `left`, `front-right`, … as the CLI's `--view`),
 `turn`, `tilt`, `roll` (degrees), `perspective`, `start` and `length` (seconds), `fps` (default 12)
 or `frames`, `amount` (0.25 to 2), `travel` (keep the motion's travel), `loop` (one-shot presets
-default to false), `body` (`auto`, `biped` or `quadruped`; auto reads the sprite). A humanoid
-motion on a four-legged sprite, an unknown preset, view or body, and other file types are errors.
+default to false), `body` (`auto`, `biped`, `quadruped` or `flyer`; auto reads the sprite and never
+picks `flyer`), `wing_line` (flyer: the wings are above this fraction of the height, default 0.45).
+A humanoid motion on a four-legged sprite, a four-legged motion on wings, an unknown preset, view
+or body, and other file types are errors.
 The frames count against the script's memory limit.
 
 ```lua

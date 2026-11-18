@@ -926,7 +926,8 @@ void bind(sol::state_view lua, Runtime& rt) {
         return t;
     };
     // ace.retarget(sprite, "preset:walk" | "motion.bvh" | "motion.glb", {view=, turn=, tilt=, roll=,
-    //   perspective=, start=, length=, fps=, frames=, amount=, travel=, loop=, body="auto"|"biped"|"quadruped"})
+    //   perspective=, start=, length=, fps=, frames=, amount=, travel=, loop=, body="auto"|"biped"|"quadruped"|"flyer",
+    //   wing_line=})
     ace["retarget"] = [&rt](const LImage& sprite, const std::string& source, sol::optional<sol::table> opts, sol::this_state ts) {
         mocap::Motion motion;
         bool oneShot = false;
@@ -968,12 +969,14 @@ void bind(sol::state_view lua, Runtime& rt) {
             o.inPlace = !t["travel"].get_or(false);
             o.loop = t["loop"].get_or(o.loop);
             body = t["body"].get_or(std::string("auto"));
+            o.wingLine = std::clamp(t["wing_line"].get_or(0.45), 0.05, 0.95);
         }
         if (body == "auto")
             o.body = motion::analyzeSubject(sprite.img).body == motion::Body::Quadruped ? motion::Body::Quadruped : motion::Body::Biped;
         else if (body == "biped") o.body = motion::Body::Biped;
         else if (body == "quadruped") o.body = motion::Body::Quadruped;
-        else fail("body is \"auto\", \"biped\" or \"quadruped\"");
+        else if (body == "flyer") o.body = motion::Body::Flyer;
+        else fail("body is \"auto\", \"biped\", \"quadruped\" or \"flyer\"");
         mocap::RetargetResult r = unwrap(mocap::retarget(sprite.img, motion, o));
         std::size_t bytes = 0;
         for (const Image& f : r.clip.frames) bytes += f.byteSize();
@@ -986,7 +989,7 @@ void bind(sol::state_view lua, Runtime& rt) {
         }
         for (std::size_t i = 0; i < r.notes.size(); ++i) notes[i + 1] = r.notes[i];
         return lv.create_table_with("frames", frames, "durations", durations, "notes", notes, "loops", r.clip.loops, "body",
-                                    std::string(o.body == motion::Body::Quadruped ? "quadruped" : "biped"), "approximate_view",
+                                    std::string(motion::toString(o.body)), "approximate_view",
                                     r.approximateView, "turn", r.camera.turn);
     };
     ace["write_uikit"] = [&rt](const std::string& path, sol::optional<sol::table> opts) {

@@ -94,6 +94,13 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Wings take 3D motion**: `retarget --body flyer` puts a humanoid motion's arms on a winged
+  sprite drawn from the side. Each wing turns about its shoulder as the matching arm rises and
+  falls (the wing as drawn is the top of the stroke), the hand end trails as the elbow bends, the
+  far wing swings a little less, and the body rises and sinks with the hips. A new built-in
+  preset, `flap`, beats the arms like wings twice a second. `--wing-line` sets where the wings
+  start, as in Animate. Lua (`body = "flyer"`, `wing_line`), the MCP `motion_retarget` tool and
+  Motion Studio's new Body box take it too.
 - **Retargeting from scripts and AI tools**: Lua gains `ace.retarget(sprite, motion, opts)` (the
   posed frames, durations and notes, from a preset or a BVH/glTF file) and `ace.motion_presets()`;
   the MCP server gains `motion_presets`, `motion_retarget` and `motion_directions`, which run the
@@ -115,7 +122,8 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   before the joint follow the parent bone, pixels past it the child, and a band either side of the
   joint mixes the two. Drawn with the same 8x Scale2x sampling as turned parts, so only the
   sprite's colours appear; at rest, or when both bones turn together, the part is drawn exactly as
-  a rigid one. Rigs that use this are saved as rig version 3 (others stay as they were).
+  a rigid one. Rigs that use this are saved as rig version 3 (others stay as they were). In the
+  Rig panel, Bends with sets it for the current layer, and the parts list marks bent parts.
 - **Four-legged motion** (ADR-ANIM-002 section 3.5): `retarget` puts a four-legged motion on a
   four-legged sprite (`--body auto`, the default, picks this for sprites read as four-legged; also
   in Motion Studio and `directions`). The motion's legs are found by shape, not by name: chains of

@@ -216,7 +216,7 @@ MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(par
     auto* libRow = new QHBoxLayout;
     m_presets = new QComboBox(motionBox);
     m_presets->setAccessibleName(tr("Motion presets"));
-    m_presets->setToolTip(tr("Ready motions (idle, walk, run, jump, attack, hurt) and the motions you saved"));
+    m_presets->setToolTip(tr("Ready motions (idle, walk, run, jump, attack, hurt; flap for wings; quad-walk for four legs) and the motions you saved"));
     m_savePreset = new QPushButton(tr("Save as Preset…"), motionBox);
     m_savePreset->setAutoDefault(false);
     m_savePreset->setToolTip(tr("Keep the loaded motion in your motion library (saved as BVH)"));
@@ -252,11 +252,22 @@ MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(par
     m_amount->setAccessibleName(tr("Motion amount"));
     m_inPlace = new QCheckBox(tr("In place (no travel)"), motionBox);
     m_inPlace->setChecked(true);
+    // What the motion drives: read from the sprite, or chosen. Wings are
+    // never read from the sprite; a winged side view takes the motion's arms.
+    m_body = new QComboBox(motionBox);
+    m_body->addItem(tr("From the sprite"), QStringLiteral("auto"));
+    m_body->addItem(tr("Two legs"), QStringLiteral("biped"));
+    m_body->addItem(tr("Four legs"), QStringLiteral("quadruped"));
+    m_body->addItem(tr("Wings (the motion's arms)"), QStringLiteral("flyer"));
+    m_body->setAccessibleName(tr("Sprite body"));
+    m_body->setToolTip(tr("What the motion moves. Wings: each wing turns as the motion's arm rises and falls "
+                          "(try the flap preset). The wings are the part above 45% of the sprite's height."));
     mf->addRow(tr("Start:"), m_start);
     mf->addRow(tr("Length:"), m_length);
     mf->addRow(tr("Frame rate:"), m_fps);
     mf->addRow(tr("Amount:"), m_amount);
     mf->addRow(QString(), m_inPlace);
+    mf->addRow(tr("Body:"), m_body);
     top->addWidget(motionBox, 1);
 
     auto* camBox = new QGroupBox(tr("Camera"), this);
@@ -355,6 +366,7 @@ MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(par
     for (QSlider* s : {m_turn, m_tilt, m_roll}) connect(s, &QSlider::valueChanged, this, [this] { cameraEdited(); });
     connect(m_perspective, &QCheckBox::toggled, this, [this] { cameraEdited(); });
     for (QDoubleSpinBox* s : {m_start, m_length, m_amount}) connect(s, &QDoubleSpinBox::valueChanged, this, [this] { scheduleRetarget(); });
+    connect(m_body, &QComboBox::currentIndexChanged, this, [this] { scheduleRetarget(); });
     connect(m_fps, &QSpinBox::valueChanged, this, [this] { scheduleRetarget(); });
     connect(m_inPlace, &QCheckBox::toggled, this, [this] { scheduleRetarget(); });
     connect(m_source, &SkeletonView::cameraDragged, this, [this](double turn, double tilt) {
@@ -619,7 +631,11 @@ void MotionStudioPanel::retarget() {
     o.amount = m_amount->value();
     o.inPlace = m_inPlace->isChecked();
     o.loop = !m_oneShot;   // jump, attack and hurt play once
-    o.body = m_fourLegged ? ::acestudio::motion::Body::Quadruped : ::acestudio::motion::Body::Biped;
+    const QString body = m_body->currentData().toString();
+    if (body == QLatin1String("biped")) o.body = ::acestudio::motion::Body::Biped;
+    else if (body == QLatin1String("quadruped")) o.body = ::acestudio::motion::Body::Quadruped;
+    else if (body == QLatin1String("flyer")) o.body = ::acestudio::motion::Body::Flyer;
+    else o.body = m_fourLegged ? ::acestudio::motion::Body::Quadruped : ::acestudio::motion::Body::Biped;
     auto r = mc::retarget(m_sprite, *m_motion, o);
     if (!r) {
         m_result.reset();

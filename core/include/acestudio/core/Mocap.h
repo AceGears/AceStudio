@@ -231,7 +231,14 @@ struct RetargetOptions {
     // Biped: a humanoid motion on a two-legged sprite. Quadruped: a
     // four-legged motion (creatureMap) on a four-legged sprite; its legs
     // follow the motion's legs and the body rises and sinks with it.
+    // Flyer: a humanoid motion on a winged sprite; each wing turns about its
+    // shoulder as the motion's arm rises and falls, the hand end trails as
+    // the elbow bends, and the body rises and sinks with the hips.
     motion::Body body = motion::Body::Biped;
+    // Flyer only: which pixels are wings, as motion::Options (the part above
+    // `wingLine` of the opaque height, or exactly `wingMask` when set).
+    double wingLine = 0.45;
+    Mask wingMask;
     std::vector<std::pair<Bone, std::string>> mapOverrides;
 };
 
