@@ -94,6 +94,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Retargeting from scripts and AI tools**: Lua gains `ace.retarget(sprite, motion, opts)` (the
+  posed frames, durations and notes, from a preset or a BVH/glTF file) and `ace.motion_presets()`;
+  the MCP server gains `motion_presets`, `motion_retarget` and `motion_directions`, which run the
+  CLI's `motion list`, `retarget` and `directions`.
 - **Four-legged bodies move with the motion**: the back now rocks with the motion (the front and
   back of the body rise and sink with the source's shoulders and hips), and the drawn head and
   tail bend up and down with the source's head and tail. Head and tail are found by shape, like
