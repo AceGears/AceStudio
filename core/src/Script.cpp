@@ -196,20 +196,21 @@ mocap::Motion scriptMotion(Runtime& rt, const std::string& source, bool& oneShot
 std::optional<mocap::Camera> cameraOpts(const sol::table& t, bool& turnGiven) {
     std::optional<mocap::Camera> cam;
     turnGiven = false;
-    if (sol::optional<std::string> v = t["view"]; v && *v != "auto") {
+    // std::string keys: GCC misreads sol2's string-literal keys here (-Warray-bounds).
+    if (auto v = t.get<sol::optional<std::string>>(std::string("view")); v && *v != "auto") {
         cam = mocap::cameraPreset(*v);
         if (!cam) fail("unknown view '" + *v + "'");
         turnGiven = true;
     }
     for (const char* k : {"turn", "tilt", "roll"})
-        if (sol::optional<double> v = t[k]) {
+        if (auto v = t.get<sol::optional<double>>(std::string(k))) {
             if (!std::isfinite(*v)) fail(std::string(k) + " must be a number of degrees");
             if (!cam) cam = mocap::Camera{};
             const std::string key = k;
             (key == "turn" ? cam->turn : key == "tilt" ? cam->tilt : cam->roll) = *v;
             if (key == "turn") turnGiven = true;
         }
-    if (sol::optional<bool> v = t["perspective"]; v && *v) {
+    if (auto v = t.get<sol::optional<bool>>(std::string("perspective")); v && *v) {
         if (!cam) cam = mocap::Camera{};
         cam->perspective = true;
     }
