@@ -129,6 +129,7 @@ whole numbers are integers, and a list is a table with keys 1..n. Every change i
 | `doc:key_rig(frame, pose[, curve[, {x1, y1, x2, y2}]])` | stores a pose key; `curve` is `"linear"`, `"ease-in"`, `"ease-out"`, `"ease-in-out"`, `"stepped"` or `"bezier"` (with its four numbers) |
 | `doc:unkey_rig(frame)` | removes a key |
 | `doc:bake_rig([first, last])` | draws every keyed frame (default: first key to last) |
+| `doc:rig_motion(motion[, opts])` | keys a 3D motion onto the rig, one key per sampled frame, adding frames as needed; returns `{first, last, keys, frames_added, matched = {["rig bone"] = "what drives it"}, notes}` |
 | `doc:vector_shapes(layer, frame)` | the cel's shapes (an empty list when it has none) |
 | `doc:set_vector_shapes(layer, frame, shapes)` | replaces the cel's shapes and redraws it; `{}` removes them and their pixels |
 | `doc:rasterize_vectors(layer, frame)` | keeps the pixels, drops the shapes |
@@ -174,6 +175,21 @@ ts:write("ground.png", {engines = "godot,unity,tiled", names = {"sand", "grass",
 | `ace.atlas({{name=, image=}, …}[, {padding, extrude, trim, rotate, max}])` | `{image, sprites = {{name, x, y, w, h, rotated}}, json}` |
 | `ace.slice(image[, {background, tolerance, merge, grid = "WxH"\|"auto"}])` | list of `{name, x, y, w, h}` |
 | `ace.write_uikit(path[, {scale, rounded, base, light, dark, outline, accent, text, engines, overwrite}])` | writes the UI kit; returns the file count |
+
+`doc:rig_motion` takes a `motion` as `ace.retarget` does (below) and the same `view`, `turn`, `tilt`,
+`roll`, `perspective`, `start`, `length`, `fps`, `frames`, `amount`, `travel` and `loop` options,
+plus `first` (the first keyed frame; default the one after the rest frame), `bake` (also draw the
+keyed frames), `absolute_arms`, `bones = {["rig bone"] = "Joint"}` (Joint: `Hips`, `LThigh`,
+`RShin`, `LUpperArm`, ...), and for four-legged motion `facing` (`"left"` or `"right"`) and
+`legs = {[0] = "hind-near", [1] = "hind-far", [2] = "front-near", [3] = "front-far"}`.
+A tilt or roll without a view or turn keeps the side the rig is drawn from.
+
+```lua
+local d = ace.document()
+d:auto_rig(0, {as = "legs"})
+local k = d:rig_motion("preset:quad-walk", {fps = 10, facing = "right"})
+print(k.keys .. " keys from frame " .. k.first, k.matched["leg0 thigh"])
+```
 
 ### 3D motion onto a sprite
 

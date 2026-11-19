@@ -12,6 +12,7 @@
 #include "acestudio/core/MotionLibrary.h"
 #include "acestudio/core/PngCodec.h"
 #include "acestudio/core/ProjectIO.h"
+#include "acestudio/core/RigMotion.h"
 #include "acestudio/core/RigTools.h"
 #include "acestudio/core/Transform.h"
 #include "acestudio/core/Vector.h"
@@ -171,6 +172,49 @@ fs::path resolvePath(Runtime& rt, const std::string& p) {
         if (r == root.end()) return path;
     }
     fail("the script may not use files outside the allowed folders: " + p);
+}
+
+// ---------------------------------------------------------------- motion
+
+// The motion ace.retarget and doc:rig_motion take: "preset:NAME" or a
+// .bvh/.glb/.gltf file. oneShot: a built-in preset that plays once.
+mocap::Motion scriptMotion(Runtime& rt, const std::string& source, bool& oneShot) {
+    oneShot = false;
+    if (source.rfind("preset:", 0) == 0) {
+        const std::string name = source.substr(7);
+        auto dir = mocap::defaultPresetDir();
+        mocap::Motion m = unwrap(mocap::loadPreset(name, dir ? dir.value() : fs::path()));
+        for (const auto& pr : mocap::builtInPresets())
+            if (pr.name == name) oneShot = !pr.loops;
+        return m;
+    }
+    return unwrap(mocap::loadMotion(resolvePath(rt, source)));
+}
+
+// The camera options view, turn, tilt, roll and perspective; nullopt when
+// none is given. turnGiven: a view or a turn was given.
+std::optional<mocap::Camera> cameraOpts(const sol::table& t, bool& turnGiven) {
+    std::optional<mocap::Camera> cam;
+    turnGiven = false;
+    // std::string keys: GCC misreads sol2's string-literal keys here (-Warray-bounds).
+    if (auto v = t.get<sol::optional<std::string>>(std::string("view")); v && *v != "auto") {
+        cam = mocap::cameraPreset(*v);
+        if (!cam) fail("unknown view '" + *v + "'");
+        turnGiven = true;
+    }
+    for (const char* k : {"turn", "tilt", "roll"})
+        if (auto v = t.get<sol::optional<double>>(std::string(k))) {
+            if (!std::isfinite(*v)) fail(std::string(k) + " must be a number of degrees");
+            if (!cam) cam = mocap::Camera{};
+            const std::string key = k;
+            (key == "turn" ? cam->turn : key == "tilt" ? cam->tilt : cam->roll) = *v;
+            if (key == "turn") turnGiven = true;
+        }
+    if (auto v = t.get<sol::optional<bool>>(std::string("perspective")); v && *v) {
+        if (!cam) cam = mocap::Camera{};
+        cam->perspective = true;
+    }
+    return cam;
 }
 
 // A path the script writes to: inside the allowed folders.
@@ -722,6 +766,79 @@ void bind(sol::state_view lua, Runtime& rt) {
         check(ed.setRig(std::move(rig), "Script: Remove Key"));
         touched(rt, d);
     };
+    // doc:rig_motion("preset:walk" | "motion.bvh" | "motion.glb", {view=, turn=, tilt=, roll=,
+    //   perspective=, start=, length=, fps=, frames=, amount=, travel=, loop=, first=,
+    //   absolute_arms=, bake=, bones = {["rig bone"] = "Joint"}, facing = "left"|"right",
+    //   legs = {[0] = "hind-near", [1] = "hind-far", ...}}) -> {first=, last=, keys=,
+    //   frames_added=, matched = {["rig bone"] = "what drives it"}, notes = {...}}
+    docType["rig_motion"] = [&rt](LDoc& d, const std::string& source, sol::optional<sol::table> opts, sol::this_state ts) {
+        Editor& ed = editorOf(d);
+        const mocap::Camera drawn = rigs::drawnCamera(rigOf(ed));
+        bool oneShot = false;
+        const mocap::Motion motion = scriptMotion(rt, source, oneShot);
+        rigs::MotionKeysOptions o;
+        o.loop = !oneShot;
+        bool bake = false;
+        if (opts) {
+            const sol::table& t = *opts;
+            bool turnGiven = false;
+            o.camera = cameraOpts(t, turnGiven);
+            if (o.camera && !turnGiven) o.camera->turn = drawn.turn;   // a tilt alone keeps the drawn side
+            o.start = std::max(0.0, t["start"].get_or(0.0));
+            o.length = std::max(0.0, t["length"].get_or(0.0));
+            o.fps = std::clamp(t["fps"].get_or(12), 1, 60);
+            o.frames = std::clamp(t["frames"].get_or(0), 0, 240);
+            o.amount = std::clamp(t["amount"].get_or(1.0), 0.25, 2.0);
+            o.inPlace = !t["travel"].get_or(false);
+            o.loop = t["loop"].get_or(o.loop);
+            o.armsFromDrawing = !t["absolute_arms"].get_or(false);
+            bake = t["bake"].get_or(false);
+            if (sol::optional<int> f = t["first"]) {
+                if (*f < 0) fail("first must be a frame number");
+                o.first = *f;
+            }
+            if (auto bs = t["bones"].get<sol::optional<sol::table>>())
+                for (const auto& [key, value] : tableEntries(*bs)) {
+                    if (key.get_type() != sol::type::string || value.get_type() != sol::type::string)
+                        fail("bones is {[\"rig bone\"] = \"Joint\", ...} (Joint: Hips, LThigh, RShin, LUpperArm, ...)");
+                    const auto joint = mocap::boneFromString(value.as<std::string>());
+                    if (!joint) fail("unknown joint \"" + value.as<std::string>() + "\" (Hips, LThigh, RShin, LUpperArm, ...)");
+                    o.bones.emplace_back(key.as<std::string>(), *joint);
+                }
+            if (sol::optional<std::string> f = t["facing"]) {
+                if (*f == "left") o.facing = -1;
+                else if (*f == "right") o.facing = 1;
+                else fail("facing must be \"left\" or \"right\"");
+            }
+            if (auto ls = t["legs"].get<sol::optional<sol::table>>())
+                for (const auto& [key, value] : tableEntries(*ls)) {
+                    const bool whole = key.get_type() == sol::type::number && key.as<double>() == std::floor(key.as<double>()) &&
+                                       key.as<double>() >= 0 && key.as<double>() < 1000;
+                    const auto q = value.get_type() == sol::type::string ? rigs::quadLegFromString(value.as<std::string>()) : std::nullopt;
+                    if (!whole || !q) fail("legs is {[0] = \"hind-near\", [1] = \"hind-far\", [2] = \"front-near\", [3] = \"front-far\"}");
+                    o.legs.emplace_back(static_cast<int>(key.as<double>()), *q);
+                }
+        }
+        auto r = unwrap(rigs::keysFromMotion(ed.document(), motion, o));
+        const int last = r.first + r.count - 1;
+        if (bake) check(ed.replaceDocument(unwrap(rigs::bakeKeys(r.document, r.first, last)), "Script: Rig Motion"));
+        else check(ed.replaceDocument(std::move(r.document), "Script: Rig Motion"));
+        touched(rt, d);
+        sol::state_view lv(ts);
+        sol::table res = lv.create_table();
+        res["first"] = r.first;
+        res["last"] = last;
+        res["keys"] = r.count;
+        res["frames_added"] = r.framesAdded;
+        sol::table matched = lv.create_table();
+        for (const auto& [bone, what] : r.matched) matched[bone] = what;
+        res["matched"] = matched;
+        sol::table notes = lv.create_table();
+        int i = 1;
+        for (const auto& n : r.notes) notes[i++] = n;
+        res["notes"] = notes;
+        return res;
+    };
     docType["bake_rig"] = [&rt](LDoc& d, sol::optional<int> first, sol::optional<int> last) {
         Editor& ed = editorOf(d);
         (void)rigOf(ed);
@@ -929,38 +1046,15 @@ void bind(sol::state_view lua, Runtime& rt) {
     //   perspective=, start=, length=, fps=, frames=, amount=, travel=, loop=, body="auto"|"biped"|"quadruped"|"flyer",
     //   wing_line=})
     ace["retarget"] = [&rt](const LImage& sprite, const std::string& source, sol::optional<sol::table> opts, sol::this_state ts) {
-        mocap::Motion motion;
         bool oneShot = false;
-        if (source.rfind("preset:", 0) == 0) {
-            const std::string name = source.substr(7);
-            auto dir = mocap::defaultPresetDir();
-            motion = unwrap(mocap::loadPreset(name, dir ? dir.value() : fs::path()));
-            for (const auto& p : mocap::builtInPresets())
-                if (p.name == name) oneShot = !p.loops;
-        } else {
-            motion = unwrap(mocap::loadMotion(resolvePath(rt, source)));
-        }
+        const mocap::Motion motion = scriptMotion(rt, source, oneShot);
         mocap::RetargetOptions o;
         o.loop = !oneShot;
         std::string body = "auto";
         if (opts) {
             const sol::table& t = *opts;
-            std::optional<mocap::Camera> cam;
-            if (sol::optional<std::string> v = t["view"]; v && *v != "auto") {
-                cam = mocap::cameraPreset(*v);
-                if (!cam) fail("unknown view '" + *v + "'");
-            }
-            for (const char* k : {"turn", "tilt", "roll"})
-                if (sol::optional<double> v = t[k]) {
-                    if (!std::isfinite(*v)) fail(std::string(k) + " must be a number of degrees");
-                    if (!cam) cam = mocap::Camera{};
-                    (std::string(k) == "turn" ? cam->turn : std::string(k) == "tilt" ? cam->tilt : cam->roll) = *v;
-                }
-            if (sol::optional<bool> v = t["perspective"]; v && *v) {
-                if (!cam) cam = mocap::Camera{};
-                cam->perspective = true;
-            }
-            o.camera = cam;
+            bool turnGiven = false;
+            o.camera = cameraOpts(t, turnGiven);
             o.start = std::max(0.0, t["start"].get_or(0.0));
             o.length = std::max(0.0, t["length"].get_or(0.0));
             o.fps = std::clamp(t["fps"].get_or(12), 1, 60);
