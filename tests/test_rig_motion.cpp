@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <map>
+#include <string>
 
 using namespace acestudio;
 
@@ -505,4 +507,88 @@ TEST_CASE("Auto-rig cuts a four-legged sprite's head and tail, and a motion nods
         CHECK(hi - lo < 1.0);    // a nod and a swing, not a spin
     }
     CHECK(rigs::bakeKeys(r.value().document));
+}
+
+namespace {
+
+// A four-legged animal with a long neck and a long tail, facing right.
+Image longEnds() {
+    Image s(96, 56);
+    const Rgba8 coat{150, 110, 60, 255}, dark{70, 45, 25, 255};
+    s.fillRect({24, 22, 40, 12}, coat);                              // body
+    for (int x : {24, 33, 48, 57}) s.fillRect({x, 34, 7, 20}, coat);  // legs (a foot is at least a twelfth of the width)
+    s.fillRect({6, 22, 18, 3}, dark);                                // tail
+    for (int i = 0; i < 12; ++i) s.fillRect({64 + i, 22 - i, 1, 6}, coat);   // neck, rising
+    s.fillRect({74, 6, 10, 7}, coat);                                // head
+    return s;
+}
+
+} // namespace
+
+TEST_CASE("A long neck and a long tail get a second bone and curve with a four-legged motion", "[rig][mocap][creature]") {
+    const Image sprite = longEnds();
+    auto base = Document::create(sprite.width() + 40, sprite.height() + 20).value();
+    const LayerId hero = base.addLayer("Hero").value();
+    REQUIRE(base.setCel(hero, 0, Cel{sprite, 20, 10}));
+    auto rigRes = rigs::autoRig(base, hero, 0, rigs::AutoRigBody::Legs);
+    INFO((rigRes ? std::string() : rigRes.error().message));
+    REQUIRE(rigRes);
+    const Document doc = rigRes.value().document;
+    const Rig& rig = *doc.rig();
+    const Bone* neck = rig.bone("neck");
+    const Bone* head = rig.bone("head");
+    const Bone* tail = rig.bone("tail");
+    const Bone* tip = rig.bone("tail tip");
+    REQUIRE(neck);
+    REQUIRE(head);
+    REQUIRE(tail);
+    REQUIRE(tip);
+    CHECK(head->parent == neck->id);
+    CHECK(tip->parent == tail->id);
+    CHECK(neck->x > tail->x);   // it faces right
+    // Each end is one part, bound to the near bone and bending with the far one.
+    int skinned = 0;
+    for (const auto& [layer, skin] : rig.skins) {
+        const BoneId own = rig.bindings.at(layer);
+        if ((own == neck->id && skin.bone == head->id) || (own == tail->id && skin.bone == tip->id)) ++skinned;
+    }
+    CHECK(skinned == 2);
+    // Nothing is lost.
+    int drawn = 0, parts = 0;
+    for (const Rgba8& p : sprite.pixels()) drawn += p.a ? 1 : 0;
+    for (const auto& [l, b] : rig.bindings)
+        if (const Cel* c = doc.cel(l, 0))
+            for (const Rgba8& p : c->image.pixels()) parts += p.a ? 1 : 0;
+    CHECK(parts == drawn);
+
+    rigs::MotionKeysOptions o;
+    o.fps = 10;
+    auto r = rigs::keysFromMotion(doc, preset("quad-walk"), o);
+    REQUIRE(r);
+    std::map<std::string, std::string> what(r.value().matched.begin(), r.value().matched.end());
+    CHECK(what["neck"].rfind("neck", 0) == 0);
+    CHECK(what["head"].find("against the neck") != std::string::npos);
+    CHECK(what["tail tip"].find("trails") != std::string::npos);
+    const Rig& keyed = *r.value().document.rig();
+    REQUIRE(keyed.keys.size() >= 6);
+    double tipLo = 1e9, tipHi = -1e9, tailLo = 1e9, tailHi = -1e9;
+    bool sameShape = true;
+    for (const RigKey& k : keyed.keys) {
+        const double n = turnOf(keyed, k.pose, "neck"), h = turnOf(keyed, k.pose, "head");
+        CHECK(std::abs(h + 0.5 * n) < 1e-6);   // the head goes half-way back
+        const double t = turnOf(keyed, k.pose, "tail"), u = turnOf(keyed, k.pose, "tail tip");
+        tipLo = std::min(tipLo, u);
+        tipHi = std::max(tipHi, u);
+        tailLo = std::min(tailLo, t);
+        tailHi = std::max(tailHi, t);
+        if (std::abs(u - 0.8 * t) > 0.01) sameShape = false;
+    }
+    CHECK(tailHi - tailLo > 0.05);
+    CHECK(tipHi - tipLo > 0.04);        // the tip swings too
+    CHECK(tipHi - tipLo < 1.0);
+    CHECK_FALSE(sameShape);             // later than the tail, not with it
+    CHECK(rigs::bakeKeys(r.value().document));
+    // dog72's short ends stay one bone each.
+    CHECK(rigged("dog72.png").rig()->bone("neck") == nullptr);
+    CHECK(rigged("dog72.png").rig()->bone("tail tip") == nullptr);
 }

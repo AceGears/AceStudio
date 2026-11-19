@@ -143,7 +143,7 @@ Add, Subtract, Difference), visibility and locks.
   `acestudio-cli rig motion dog_rig.acestudio preset:quad-walk --out dog_walk.acestudio`. If it
   reads the animal backwards, add `--facing right` (or `left`); `--legs "0=hind-near,1=hind-far"`
   pairs legs by hand. Auto-rig cuts the head and tail into parts of their own, so the motion
-  nods the head and swings the tail.
+  nods the head and swings the tail; a long neck or tail gets a joint in its middle and bends there.
 - **Winged creatures**: a dragon, bird or bat drawn from the side can beat its wings to a motion's
   arms: `acestudio-cli retarget dragon.png preset:flap --body flyer --out out`, or choose
   **Wings** in Motion Studio's Body box. Each wing turns as the motion's arm rises and falls. If

@@ -94,6 +94,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Long necks and tails bend**: auto-rig gives a long neck or tail of a four-legged side view a
+  second bone from its middle on (`neck` and `head`, `tail` and `tail tip`) and bends the part
+  across the joint; `rig motion` makes the tail's tip trail the tail and keeps the head half
+  level as the neck nods.
 - **`rig motion` in Lua and MCP**: `doc:rig_motion("preset:quad-walk", {facing = "left", legs =
   {[0] = "hind-near"}, bake = true})` keys a motion onto a document's rig and returns the keyed
   frames and what drives each bone; the MCP tool `rig_motion` runs the command line's `rig motion`

@@ -357,7 +357,7 @@ Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, con
         // faces) is the head, beyond the hind legs the tail, each a part of
         // its own on a bone from where it leaves the body, so a motion can
         // nod the head and swing the tail. Too small an end stays on the body.
-        int ends = 0;
+        int ends = 0, bent = 0;
         if (subj.body == motion::Body::Quadruped && !built->front && built->bodyPart >= 0 &&
             partLayer[static_cast<std::size_t>(built->bodyPart)] != kNoLayer) {
             const LayerId bodyLayer = partLayer[static_cast<std::size_t>(built->bodyPart)];
@@ -472,15 +472,46 @@ Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, con
                                 tip = {r.x + x + 0.5, r.y + y + 0.5};
                             }
                         }
-                auto bone = addBone(rig, boneFrom(nm, root.value(), pivot, tip));
+                // A long end (a neck, a long tail: at least 8 px and 2.5 times
+                // its mean thickness) gets a second bone from its middle on,
+                // and the part bends across that joint: "neck" then "head",
+                // "tail" then "tail tip".
+                const double reachLen = std::sqrt(std::max(best, 0.0));
+                const bool bends = reachLen >= 8 && reachLen * reachLen >= 2.5 * n;
+                motion::rig::Vec mid{(pivot.x + tip.x) / 2, (pivot.y + tip.y) / 2};
+                if (bends) {
+                    // The joint: the middle of the art half-way along, not of the chord (a raised tail curves).
+                    const double ux = (tip.x - pivot.x) / reachLen, uy = (tip.y - pivot.y) / reachLen;
+                    double sx = 0, sy = 0;
+                    int cnt = 0;
+                    for (int y = 0; y < r.h; ++y)
+                        for (int x = 0; x < r.w; ++x)
+                            if (piece.pixel(x, y).a) {
+                                const double px = r.x + x + 0.5, py = r.y + y + 0.5;
+                                if (std::abs((px - pivot.x) * ux + (py - pivot.y) * uy - reachLen / 2) > 1.0) continue;
+                                sx += px;
+                                sy += py;
+                                ++cnt;
+                            }
+                    if (cnt) mid = {sx / cnt, sy / cnt};
+                }
+                auto bone = addBone(rig, boneFrom(bends && head ? "neck" : nm, root.value(), pivot, bends ? mid : tip));
                 if (!bone) return bone.error();
                 if (auto st = bindLayer(rig, id.value(), bone.value()); !st) return st.error();
+                if (bends) {
+                    auto tipBone = addBone(rig, boneFrom(head ? "head" : "tail tip", bone.value(), mid, tip));
+                    if (!tipBone) return tipBone.error();
+                    // A wide band (a quarter of the length either side), so the bend reads as a curve.
+                    if (auto st = skinLayer(rig, id.value(), tipBone.value(), reachLen / 4); !st) return st.error();
+                    ++bent;
+                }
                 ++ends;
             }
         }
         summary = std::string("Body: ") + motion::toString(subj.body) + (built->front ? " seen from the front" : "") + ", " +
                   std::to_string(built->legs.size()) + " legs, " + std::to_string(built->armParts.size()) + " arms" +
-                  (ends == 2 ? ", a head and a tail" : ends == 1 ? ", one end (head or tail)" : "");
+                  (ends == 2 ? ", a head and a tail" : ends == 1 ? ", one end (head or tail)" : "") +
+                  (bent ? " (" + std::to_string(bent) + " long, bending in the middle)" : "");
     } else if (flight) {
         // The root runs from the body's middle towards the head (up when the
         // head side is unknown); the wings turn about their shoulders.

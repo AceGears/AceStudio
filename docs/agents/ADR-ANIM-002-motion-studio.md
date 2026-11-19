@@ -147,8 +147,20 @@ Verified: `tests/test_rig_motion.cpp` (the test dog's nose all in the head layer
 colour in the tail layer, no pixel lost; both turn by more than 0.05 and less than 1 rad over the
 walk; the keys bake), run locally; the baked walk was looked at.
 
-Not done: sideways head and tail swing, curving necks and tails (they turn as one piece), six
-legs, fins (`RigSwim`). Wings: section 3.7.
+Then: long ends bend. An end whose reach (pivot to farthest pixel) is at least 8 px and whose
+reach squared is at least 2.5 times its pixel count gets two bones: the first to the middle of the
+art half-way along the reach, the second ("head" on "neck", "tail tip" on "tail") from there to the
+tip; the one part layer is skinned across the joint with a band of a quarter of the reach either
+side (`rigs::skinLayer`). `keysFromMotion` matches "neck" as it matched "head", and treats the far
+bones as followers: "tail tip" turns by 0.8 of the tail's change `round(0.15 * frames)` keys
+earlier (wrapping in a loop, held at the start of a one-shot); "head" turns by -0.5 of the neck's
+own turn. Verified: `tests/test_rig_motion.cpp` (a drawn animal with a long neck and tail gets the
+four bones and two skins and loses no pixel; the head's turn is -0.5 of the neck's in every key;
+the tip swings, and not in step with the tail; the keys bake; the test dog's short ends stay one
+bone each), run locally; the baked walk was looked at.
+
+Not done: sideways head and tail swing, a curve through more than one joint (a skin follows one
+child bone), six legs, fins (`RigSwim`). Wings: section 3.7.
 
 ### 3.7 Wings from a humanoid motion (stage 3c, second part, 2026-11-18)
 
