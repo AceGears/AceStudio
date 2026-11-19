@@ -189,7 +189,7 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
             else if (an->part == 0) thighOf[an->n] = i;
         }
     mocap::Camera drawnCam = drawnCamera(rig);
-    const Bone* headBone = rig.bone("head");
+    const Bone* headBone = rig.bone("neck") ? rig.bone("neck") : rig.bone("head");
     double legMid = 0;
     for (const auto& [n, i] : thighOf) legMid += rest[i].headX;
     if (!thighOf.empty()) legMid /= static_cast<double>(thighOf.size());
@@ -350,6 +350,13 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
     }
     std::vector<Match> matches;
     std::vector<int> matchOf(rig.bones.size(), -1);
+    // The far bone of a long end (auto-rig's "head" on a "neck", "tail tip"
+    // on a "tail") follows its parent's turn instead of a stretch of its own.
+    struct Follower {
+        std::size_t bone, parent;
+        bool trails;   // the tail's tip trails; the head keeps half level
+    };
+    std::vector<Follower> followers;
     for (std::size_t i = 0; i < rig.bones.size(); ++i) {
         const Bone& b = rig.bones[i];
         std::optional<Stretch> st;
@@ -360,6 +367,11 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
             Match mt;
             mt.bone = i;
             const std::string n = lower(b.name);
+            const std::string parentName = b.parent != kNoBone && at.count(b.parent) ? lower(rig.bones[at[b.parent]].name) : std::string();
+            if (((n == "head" && parentName == "neck") || (n == "tail tip" && parentName == "tail")) && !b.locked) {
+                followers.push_back({i, at[b.parent], n != "head"});
+                continue;
+            }
             if (auto an = autoName(b.name); an && an->leg && an->part < 2 && quadLeg.count(an->n)) {
                 const mocap::CreatureLeg& leg = cm.legs[uz(quadLeg[an->n])];
                 if (leg.joints.size() < 2 || (an->part == 1 && leg.joints.size() < 3)) continue;
@@ -368,16 +380,15 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
                 mt.fromBone = an->part == 0 ? MB::LThigh : MB::LShin;
                 mt.toBone = an->part == 0 ? MB::LShin : MB::LFoot;
                 mt.label = std::string(leg.hind ? "hind" : "front") + " leg " + m.joints[uz(mt.from)].name + " -> " + m.joints[uz(mt.to)].name;
-            } else if ((n == "head" && cm.head >= 0) || (n == "tail" && cm.tail >= 0)) {
-                // The head turns by the change of the line from the front
-                // legs' top to the head's end (a nod), the tail by the line
-                // from the hind legs' top to its tip.
-                const bool head = n == "head";
+            } else if (((n == "head" || n == "neck") && cm.head >= 0) || (n == "tail" && cm.tail >= 0)) {
+                // The head (or the neck that carries it) turns by the change
+                // of the line from the front legs' top to the head's end (a
+                // nod), the tail by the line from the hind legs' top to its tip.
+                const bool head = n != "tail";
                 mt.from = cm.legs[head ? 2 : 0].joints.front();
                 mt.to = head ? cm.head : cm.tail;
                 mt.relative = true;
-                mt.label = std::string(head ? "head " : "tail ") + m.joints[uz(mt.from)].name + " -> " + m.joints[uz(mt.to)].name +
-                           " (turns by its change)";
+                mt.label = n + " " + m.joints[uz(mt.from)].name + " -> " + m.joints[uz(mt.to)].name + " (turns by its change)";
             } else if ((n == "body" || n == "torso" || n == "spine") && cm.legs[0].joints.size() && cm.legs[2].joints.size()) {
                 mt.from = cm.legs[0].joints.front();
                 mt.to = cm.legs[2].joints.front();
@@ -605,6 +616,22 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
             }
         }
 
+        // Long ends curve: the tail's tip repeats the tail's swing a little
+        // later (it trails), the head turns half-way back against its neck.
+        for (const Follower& fo : followers) {
+            if (matchOf[fo.parent] < 0) continue;
+            double own = 0;
+            if (fo.trails) {
+                const Match& pm = matches[uz(matchOf[fo.parent])];
+                const int lag = std::clamp(static_cast<int>(std::lround(0.15 * frames)), 1, frames);
+                const int from = opt.loop ? (f - lag + frames) % frames : std::max(0, f - lag);
+                if (const std::optional<double> d = direction(pm, from)) own = 0.8 * wrap(*d - pm.ref) * amount;
+            } else if (auto pt = pose.turn.find(rig.bones[fo.parent].id); pt != pose.turn.end()) {
+                own = -0.5 * pt->second;
+            }
+            pose.turn[rig.bones[fo.bone].id] = own;
+        }
+
         // Keep turns continuous from key to key (no spins through 180 degrees).
         for (auto& [id, t] : pose.turn) {
             const std::size_t i = at[id];
@@ -624,6 +651,12 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
     std::size_t unmatched = 0;
     for (std::size_t i = 0; i < rig.bones.size(); ++i)
         if (matchOf[i] < 0) ++unmatched;
+    for (const Follower& fo : followers)
+        if (matchOf[fo.parent] >= 0) {
+            --unmatched;
+            res.matched.emplace_back(rig.bones[fo.bone].name,
+                                     fo.trails ? "trails the tail (its swing, a little later)" : "half-way back against the neck");
+        }
     if (unmatched)
         res.notes.push_back(std::to_string(unmatched) + " bone(s) match nothing in the motion and follow their parents.");
 

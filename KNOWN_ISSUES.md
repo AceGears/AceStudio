@@ -67,8 +67,15 @@ not been run.
   motion on an auto-rigged four-legged sprite (since 2026-11-18; tested on the test dog): the legs,
   the back's pitch and the body's height become keys. Auto-rig cuts the head and the tail of a
   four-legged side view into parts of their own (since 2026-11-18), and the motion nods the head
-  and raises and lowers the tail; they are rigid parts turned at one joint, so a long neck or
-  tail does not curve, and the joint can show a notch when it turns far. The cut follows the
+  and raises and lowers the tail; a short end is a rigid part turned at one joint, and the joint
+  can show a notch when it turns far. A long end (at least 8 px and 2.5 times its mean thickness)
+  gets a second bone from its middle on ("neck" then "head", "tail" then "tail tip") and bends
+  across that joint (since 2026-11-18): the tail's tip repeats the tail's swing 0.15 of the cycle
+  later, the head turns half-way back against the neck. That is one bend, not a curve through
+  several joints, and it is tested on a drawn test animal only (rectangles; no generated sprite).
+  A long neck with a big head can fail the thickness test and stay rigid. A long tail also widens
+  the sprite, and feet narrower than a twelfth of its width are not read as legs, so thin-legged
+  long-tailed animals may not auto-rig as four-legged at all. The cut follows the
   body's outline (where the belly line ends, and what rises above the back next to it), tested on
   the test dog only; an end smaller than 2% of the body stays on the body. Feet keep their drawn
   angle to the ground. Legs are paired by position (behind or ahead of the middle of the legs, then the first
