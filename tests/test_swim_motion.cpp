@@ -272,3 +272,39 @@ TEST_CASE("A motion's fin joints paddle a fish's fins", "[mocap][swim]") {
     for (const std::string& n : w.value().notes) riding = riding || n.find("fin(s) only ride the body") != std::string::npos;
     CHECK(riding);
 }
+
+TEST_CASE("A fin along the belly bends with the body's columns", "[mocap][swim]") {
+    // A long low fin under the rear of the body.
+    Image s = fish();
+    s.fillRect({24, 28, 18, 5}, kLower);
+    // The swim preset without its fin joints: nothing paddles, the fins only ride.
+    Motion swim = preset("swim");
+    for (Joint& j : swim.joints)
+        if (j.name.find("Pectoral") != std::string::npos || j.name.find("Dorsal") != std::string::npos) j.name = "X" + std::to_string(&j - swim.joints.data());
+    auto r = retarget(s, swim, swimmer());
+    REQUIRE(r);
+    // The fin's lowest row at its first and last columns: a rigid fin keeps
+    // their difference; one that follows the body's columns does not.
+    auto slope = [&](const Image& f) {
+        int x0 = f.width(), x1 = -1;
+        for (int y = 0; y < f.height(); ++y)
+            for (int x = 0; x < f.width(); ++x)
+                if (f.pixel(x, y) == kLower) {
+                    x0 = std::min(x0, x);
+                    x1 = std::max(x1, x);
+                }
+        auto bottom = [&](int x) {
+            int b = -1;
+            for (int y = 0; y < f.height(); ++y)
+                if (f.pixel(x, y) == kLower) b = y;
+            return b;
+        };
+        return x1 < 0 ? 0 : bottom(x1) - bottom(x0);
+    };
+    int lo = 1000, hi = -1000;
+    for (const Image& f : r.value().clip.frames) {
+        lo = std::min(lo, slope(f));
+        hi = std::max(hi, slope(f));
+    }
+    CHECK(hi - lo >= 2);
+}

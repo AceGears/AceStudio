@@ -254,6 +254,14 @@ std::optional<RigClip> swimRigRender(const Image& sprite, const Subject& subj, A
             rig::PartPose& fq = pose[static_cast<std::size_t>(fn.part)];
             fq.dy = hover + dyAt(fn.root.x);
             fq.dx = surge;
+            // A fin lies along the body: each of its columns goes with the
+            // body's column there, so no part of it shows past a bent belly.
+            {
+                const rig::Part& fp = rig.parts[static_cast<std::size_t>(fn.part)];
+                fq.colDy.assign(static_cast<std::size_t>(std::max(0, fp.hiBox.w - 2)), 0);
+                for (std::size_t c = 0; c < fq.colDy.size(); ++c)
+                    fq.colDy[c] = dyAt(fp.hiBox.x + 1 + static_cast<double>(c) + 0.5) - dyAt(fn.root.x);
+            }
             // Fins paddle on their own phases; lower fins more than the
             // dorsal fin, which mostly follows the body.
             const double finPhase = 2 * kPi * (t * (idle ? 1 : beats) + 0.25 * static_cast<double>(i) + fn.u * 0.5);

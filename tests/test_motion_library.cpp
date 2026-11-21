@@ -38,7 +38,7 @@ Motion presetOrFail(const char* name) {
 
 TEST_CASE("Built-in humanoid presets map to a full humanoid and keep their timing", "[mocap][library]") {
     const auto list = builtInPresets();
-    REQUIRE(list.size() == 10);
+    REQUIRE(list.size() == 11);
     for (const PresetInfo& p : list) {
         CAPTURE(p.name);
         CHECK(p.builtIn);

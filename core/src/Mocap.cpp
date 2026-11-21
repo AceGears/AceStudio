@@ -881,15 +881,16 @@ CreatureMap creatureMap(const Motion& m) {
             }
         if (!merged && leg.length > 0.1 * height) legs.push_back(std::move(leg));
     }
-    if (legs.size() != 4) {
-        cm.notes.push_back("found " + std::to_string(legs.size()) + " leg(s) reaching the floor; a four-legged motion needs four");
+    if (legs.size() != 4 && legs.size() != 6 && legs.size() != 8) {
+        cm.notes.push_back("found " + std::to_string(legs.size()) +
+                           " leg(s) reaching the floor; a four-legged motion needs four (six or eight are read too)");
         return cm;
     }
     // Front and back lie along the longest horizontal spread of the leg tops,
     // measured in the first frame (the rest pose leaves out the root's turn).
     const std::vector<Vec3> p0 = jointPositions(m, 0), p1 = jointPositions(m, m.duration());
     Vec3 c{};
-    for (const CreatureLeg& l : legs) c = c + horizontal(p0[uz(l.joints.front())]) * 0.25;
+    for (const CreatureLeg& l : legs) c = c + horizontal(p0[uz(l.joints.front())]) * (1.0 / static_cast<double>(legs.size()));
     double sxx = 0, sxz = 0, szz = 0;
     for (const CreatureLeg& l : legs) {
         const Vec3 d = horizontal(p0[uz(l.joints.front())]) - c;
@@ -924,6 +925,13 @@ CreatureMap creatureMap(const Motion& m) {
         }
     }
     if (sign < 0) std::reverse(legs.begin(), legs.end());
+    // The two furthest back are the hind pair, the two furthest forward the
+    // front pair; any between them are middle pairs.
+    std::vector<CreatureLeg> middle(legs.begin() + 2, legs.end() - 2);
+    legs.erase(legs.begin() + 2, legs.end() - 2);
+    if (!middle.empty())
+        cm.notes.push_back("the skeleton has " + std::to_string(4 + middle.size()) + " legs: " + std::to_string(middle.size() / 2) +
+                           " middle pair(s) between the hind and front legs");
     for (std::size_t i = 0; i < 4; ++i) legs[i].hind = i < 2;
     Vec3 hindC{}, frontC{};
     for (std::size_t i = 0; i < 4; ++i) (i < 2 ? hindC : frontC) = (i < 2 ? hindC : frontC) + horizontal(p0[uz(legs[i].joints.front())]) * 0.5;
@@ -937,6 +945,8 @@ CreatureMap creatureMap(const Motion& m) {
         bool inLeg = false;
         for (const CreatureLeg& l : legs)
             inLeg = inLeg || std::find(l.joints.begin(), l.joints.end(), static_cast<int>(i)) != l.joints.end();
+        for (const CreatureLeg& l : middle)
+            inLeg = inLeg || std::find(l.joints.begin(), l.joints.end(), static_cast<int>(i)) != l.joints.end();
         if (inLeg) continue;
         const double along = dot(horizontal(p0[i]) - c, cm.forward);
         if (along > headAt) {
@@ -949,6 +959,7 @@ CreatureMap creatureMap(const Motion& m) {
         }
     }
     cm.legs = std::move(legs);
+    cm.middle = std::move(middle);
     return cm;
 }
 
@@ -1640,7 +1651,13 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
         for (std::size_t i = 0; i < sr.fins.size(); ++i) {
             const motion::detail::SwimFin& fn = sr.fins[i];
             rg::PartPose& fq = pose[uz(fn.part)];
-            fq.dy = dyAt(fn.root.x);   // the fins ride the body
+            fq.dy = dyAt(fn.root.x);   // the fins ride the body, column by column
+            {
+                const rg::Part& fp = rig.parts[uz(fn.part)];
+                fq.colDy.assign(uz(std::max(0, fp.hiBox.w - 2)), 0);
+                for (std::size_t c = 0; c < fq.colDy.size(); ++c)
+                    fq.colDy[c] = dyAt(fp.hiBox.x + 1 + static_cast<double>(c) + 0.5) - dyAt(fn.root.x);
+            }
             // and paddle about their roots (0.35 rad at most: further, and the
             // root drawn behind the body would show past its edge): toward the tail (at +dir) is
             // anticlockwise for a fin hanging down, clockwise for one standing up.
@@ -1752,14 +1769,15 @@ Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, c
     }
     const double height = std::max(1e-6, restMaxY - restMinY);
     const int root = cm.root;
-    auto footOf = [&](int s) { return cm.legs[uz(s)].joints.back(); };
-    auto topOf = [&](int s) { return cm.legs[uz(s)].joints.front(); };
+    auto footOf = [&](int s) { return cm.leg(uz(s)).joints.back(); };
+    auto topOf = [&](int s) { return cm.leg(uz(s)).joints.front(); };
+    const int srcLegs = static_cast<int>(cm.legCount());
 
     std::vector<std::vector<Vec3>> world;
     double floorY = 1e300;
     for (int f = 0; f < frames; ++f) {
         std::vector<Vec3> w = jointPositions(m, start + f * step);
-        for (int s = 0; s < 4; ++s) floorY = std::min(floorY, w[uz(footOf(s))].y);
+        for (int s = 0; s < srcLegs; ++s) floorY = std::min(floorY, w[uz(footOf(s))].y);
         world.push_back(std::move(w));
     }
     const Vec3 root0 = world[0][uz(root)];
@@ -1778,9 +1796,35 @@ Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, c
     // Drawn legs to source legs: same end, near to near.
     const std::size_t nLegs = g.legs.size();
     std::vector<int> src(nLegs, -1);
+    // With middle pairs in the motion and more than four legs drawn (from
+    // the side), the drawn legs are grouped from the back forward: the first
+    // group takes the hind pair, the last the front pair, those between
+    // the middle pairs.
+    const std::size_t srcPairs = cm.legCount() / 2;
+    std::vector<int> pairOf(nLegs, -1);   // the source pair's first leg, when grouped
+    if (srcPairs > 2 && nLegs > 4 && !g.front) {
+        std::vector<std::size_t> order(nLegs);
+        for (std::size_t i = 0; i < nLegs; ++i) order[i] = i;
+        std::sort(order.begin(), order.end(), [&](std::size_t x, std::size_t y) { return g.legs[x].hip.x * g.dir < g.legs[y].hip.x * g.dir; });
+        const std::size_t groups = std::min(srcPairs, nLegs / 2);
+        for (std::size_t rank = 0; rank < nLegs; ++rank) {
+            const std::size_t grp = rank * groups / nLegs;
+            int first = 0;
+            if (grp + 1 == groups) first = 2;
+            else if (grp > 0)
+                first = 4 + 2 * static_cast<int>(std::clamp<long>(std::lround(static_cast<double>(grp * (srcPairs - 1)) / static_cast<double>(groups - 1)) - 1, 0,
+                                                                  static_cast<long>(srcPairs) - 3));
+            pairOf[order[rank]] = first;
+        }
+        res.notes.push_back("The motion has " + std::to_string(cm.legCount()) + " legs and the sprite " + std::to_string(nLegs) +
+                            ": they are paired from the back forward.");
+    } else if (srcPairs > 2) {
+        res.notes.push_back("The motion has " + std::to_string(cm.legCount()) + " legs; the sprite's " + std::to_string(nLegs) +
+                            " take its hind and front pairs (the middle legs are not used).");
+    }
     for (std::size_t i = 0; i < nLegs; ++i) {
         const auto& L = g.legs[i];
-        const int a = L.hind ? 0 : 2, b = a + 1;
+        const int a = pairOf[i] >= 0 ? pairOf[i] : (L.hind ? 0 : 2), b = a + 1;
         const bool aNearer = restPr.depth[uz(topOf(a))] >= restPr.depth[uz(topOf(b))];
         int want = (L.nearLeg == aNearer) ? a : b;
         for (std::size_t j = 0; j < i; ++j)
@@ -1794,7 +1838,7 @@ Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, c
     for (std::size_t i = 0; i < nLegs; ++i) {
         const auto& L = g.legs[i];
         const double drawn = g.front ? std::max(1.0, L.ankle.y - L.hip.y) : L.l1 + L.l2;
-        k[i] = drawn / std::max(1e-6, cm.legs[uz(src[i])].length / height);
+        k[i] = drawn / std::max(1e-6, cm.leg(uz(src[i])).length / height);
         kMean += k[i] / static_cast<double>(nLegs);
         const int used = opt.loop ? frames : 1;
         for (int f = 0; f < used; ++f) neutral[i] += (prs[uz(f)].x[uz(footOf(src[i]))] - prs[uz(f)].x[uz(topOf(src[i]))]) / used;
@@ -1855,7 +1899,7 @@ Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, c
         for (std::size_t i = 0; i < nLegs; ++i) {
             const auto& L = g.legs[i];
             const int s = src[i];
-            const CreatureLeg& sl = cm.legs[uz(s)];
+            const CreatureLeg& sl = cm.leg(uz(s));
             const double off = pr.x[uz(footOf(s))] - pr.x[uz(topOf(s))];
             FootT& t = ft[i];
             t.x = L.ankle.x + k[i] * (off - neutral[i]) * amount;
@@ -1879,7 +1923,7 @@ Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, c
                     low = i;
                 }
             }
-            if (lowH < 0.15 * cm.legs[uz(src[low])].length) {
+            if (lowH < 0.15 * cm.leg(uz(src[low])).length) {
                 ft[low].planted = true;
                 ++planted;
             }

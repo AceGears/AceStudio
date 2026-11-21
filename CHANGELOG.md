@@ -94,10 +94,18 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Six legs**: motions whose skeleton stands on six (or eight) legs are read: `retarget --body
+  quadruped` and `rig motion` pair a six-legged sprite's or auto-rig's legs with the motion's hind,
+  middle and front pairs from the back forward. On four drawn legs the middle pairs are left out;
+  a four-legged motion still drives six drawn legs. New built-in preset `hex-walk` (an insect's
+  alternating tripod, 0.6 s loop).
 - **Wing bones**: `retarget --body flyer` now reads a skeleton's own wings (two chains of joints
   named wing) instead of needing humanoid arms; the drawn wings then also fold on the way up and
   sweep. A winged four-legged skeleton is no longer refused. New built-in preset `wingbeat` (a
   bird's skeleton, 0.6 s loop); presets say `winged` in Lua's `ace.motion_presets()`.
+- **Fins follow the body's bend**: on a swimming fish (Animate's swim and `retarget --body
+  swimmer`) each fin's columns now move with the body's columns next to them instead of the fin
+  riding in one piece, which showed a thin line under the goldfish's belly as the tail lifted.
 - **Fins paddle on motion-driven fish**: with `retarget --body swimmer`, a motion's fin joints
   (off the spine, named fin, flipper, pectoral, pelvic or dorsal) turn the sprite's other fins
   about their roots. The `swim` preset gains two pectoral fins that paddle in turn and a dorsal

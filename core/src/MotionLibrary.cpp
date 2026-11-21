@@ -193,6 +193,7 @@ struct Builtin {
 Motion quadWalk();
 Motion swim();
 Motion wingbeat();
+Motion hexWalk();
 
 Pose jump(double t) { return keyed(jumpKeys(), t); }
 Pose attack(double t) { return keyed(attackKeys(), t); }
@@ -212,6 +213,8 @@ constexpr Builtin kBuiltins[] = {
      true, nullptr, swim, false, true},
     {"wingbeat", "A bird's wingbeat on its own wing bones: down spread, up folded and swept back, 0.6 s (for winged sprites, --body flyer)",
      0.6, true, nullptr, wingbeat, false, false, true},
+    {"hex-walk", "A six-legged walk: three legs step while the other three stand, 0.6 s (for six-legged sprites and rigs)", 0.6, true,
+     nullptr, hexWalk, true},
 };
 
 const Builtin* findBuiltin(std::string_view name) {
@@ -416,6 +419,93 @@ Motion quadWalk() {
         const std::vector<Vec3> w = jointPositions(m, f * m.frameTime);
         double lowest = 1e300;
         for (int i = 0; i < 4; ++i) lowest = std::min(lowest, w[uz(toes[i])].y);
+        m.values[uz(f) * uz(m.channelCount) + 1] -= lowest;
+    }
+    return m;
+}
+
+// ---- The six-legged preset ---------------------------------------------------------
+
+// An insect-like walker, Y up, facing +Z, its back level: Hips (the root, the
+// abdomen's front), a thorax and a head forward, the abdomen back; three
+// pairs of legs along the thorax, each three bones and a toe end. The gait
+// is the alternating tripod: the left hind, right middle and left front legs
+// step together while the other three stand.
+Motion hexWalk() {
+    Motion m;
+    auto add = [&](std::string name, int parent, Vec3 offset, bool root = false, bool end = false) {
+        Joint j;
+        j.name = end ? m.joints[uz(parent)].name + "_end" : std::move(name);
+        j.parent = parent;
+        j.offset = offset;
+        j.endSite = end;
+        if (root)
+            j.channels = {Channel::Xposition, Channel::Yposition, Channel::Zposition, Channel::Zrotation, Channel::Xrotation, Channel::Yrotation};
+        else if (!end)
+            j.channels = {Channel::Zrotation, Channel::Xrotation, Channel::Yrotation};
+        j.firstChannel = m.channelCount;
+        m.channelCount += static_cast<int>(j.channels.size());
+        m.joints.push_back(std::move(j));
+        return static_cast<int>(m.joints.size()) - 1;
+    };
+    constexpr double kUpper = 12, kLower = 12, kTarsus = 6;
+    const int hips = add("Hips", -1, {0, 0, 0}, true);
+    const int thorax = add("Thorax", hips, {0, 0, 4});
+    const int neck = add("Neck", thorax, {0, 2, 28});
+    const int head = add("Head", neck, {0, 2, 6});
+    add({}, head, {0, 0, 8}, false, true);
+    const int abdomen = add("Abdomen", hips, {0, 2, -6});
+    const int abdomen1 = add("Abdomen1", abdomen, {0, 0, -14});
+    add({}, abdomen1, {0, -2, -12}, false, true);
+    // Legs: [0] left hind, [1] right hind, [2] left middle, [3] right
+    // middle, [4] left front, [5] right front (left is +X when facing +Z).
+    int upper[6], lower[6], foot[6], toes[6];
+    const char* const rows[3] = {"Hind", "Middle", "Front"};
+    for (int i = 0; i < 6; ++i) {
+        const double sx = i % 2 == 0 ? 1 : -1;
+        const std::string pre = std::string(i % 2 == 0 ? "Left" : "Right") + rows[i / 2];
+        upper[i] = add(pre + "Thigh", thorax, {5 * sx, -3, 12.0 * (i / 2)});
+        lower[i] = add(pre + "Shin", upper[i], {0, -kUpper, 0});
+        foot[i] = add(pre + "Foot", lower[i], {0, -kLower, 0});
+        toes[i] = add(pre + "Toe", foot[i], {0, -kTarsus, 0});
+        add({}, toes[i], {0, 0, 3}, false, true);
+    }
+    constexpr double period = 0.6, stride = 20;
+    constexpr double phase[6] = {0.0, 0.5, 0.5, 0.0, 0.0, 0.5};
+    const double speed = 4 * (kUpper + kLower + kTarsus) * std::sin(stride * kDeg) / period;
+    const int steps = static_cast<int>(std::lround(period * kFps));
+    m.frameCount = steps;
+    m.frameTime = 1.0 / kFps;
+    m.values.assign(uz(m.frameCount) * uz(m.channelCount), 0.0);
+    for (int f = 0; f < m.frameCount; ++f) {
+        const double t = static_cast<double>(f) / kFps;
+        double* v = &m.values[uz(f) * uz(m.channelCount)];
+        auto rot = [&](int joint, double x, double y, double z) {
+            const int c = m.joints[uz(joint)].firstChannel;
+            v[c] = z;
+            v[c + 1] = x;
+            v[c + 2] = y;
+        };
+        for (int i = 0; i < 6; ++i) {
+            const double ph = 2 * kPi * (t / period + phase[i]);
+            const double a = -10 - stride * std::sin(ph);
+            const double b = 20 + 40 * std::max(0.0, std::cos(ph));
+            rot(upper[i], a, 0, 0);
+            rot(lower[i], b, 0, 0);
+            rot(foot[i], -(a + b), 0, 0);   // the last bone stays upright
+        }
+        v[0] = 0;
+        v[1] = kUpper + kLower + kTarsus + 3;   // near; set exactly below
+        v[2] = speed * t;
+        // The body sways once a stride, the head and abdomen bob twice.
+        rot(thorax, 0, 2 * std::sin(2 * kPi * t / period), 0);
+        rot(neck, 5 * std::sin(2 * kPi * 2 * t / period + 0.8), 0, 0);
+        rot(abdomen, 4 * std::sin(2 * kPi * 2 * t / period + 1.6), -3 * std::sin(2 * kPi * t / period), 0);
+    }
+    for (int f = 0; f < m.frameCount; ++f) {
+        const std::vector<Vec3> w = jointPositions(m, f * m.frameTime);
+        double lowest = 1e300;
+        for (int i = 0; i < 6; ++i) lowest = std::min(lowest, w[uz(toes[i])].y);
         m.values[uz(f) * uz(m.channelCount) + 1] -= lowest;
     }
     return m;

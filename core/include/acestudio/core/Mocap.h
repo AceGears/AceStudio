@@ -168,18 +168,26 @@ struct CreatureLeg {
 struct CreatureMap {
     int root = -1;
     std::vector<CreatureLeg> legs;   // hind legs first, then front legs
+    // A six- or eight-legged skeleton's other legs: the pairs between the
+    // hind and front ones, from the back forward, two per pair.
+    std::vector<CreatureLeg> middle;
     Vec3 forward{0, 0, 1};           // horizontal, from the hind legs to the front legs
     // The other ends, found by shape too: the head is the end furthest
     // forward (ahead of the middle), the tail the end furthest back (behind
     // the hind legs). -1 when there is none.
     int head = -1, tail = -1;
     std::vector<std::string> notes;
-    bool hasFourLegs() const { return legs.size() == 4; }
+    bool hasFourLegs() const { return legs.size() == 4; }   // a hind and a front pair (and maybe middle ones)
+    // Leg `i` of all of them: 0-3 are `legs`, 4 and up are `middle`.
+    std::size_t legCount() const { return legs.size() + middle.size(); }
+    const CreatureLeg& leg(std::size_t i) const { return i < legs.size() ? legs[i] : middle[i - legs.size()]; }
 };
 // Names are not used: the legs are the chains ending near the floor (a toe
 // and heel under one foot count once), the front pair is the one the root
 // travels towards, or else the one nearer the highest other end (the head).
-// Anything but four legs is reported in `notes` and gives no legs.
+// Four, six or eight legs are taken (the hind and front pairs go to `legs`,
+// the rest to `middle`); any other count is reported in `notes` and gives
+// no legs.
 CreatureMap creatureMap(const Motion& m);
 
 // ---- Camera ----------------------------------------------------------------------

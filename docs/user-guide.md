@@ -140,7 +140,8 @@ Add, Subtract, Difference), visibility and locks.
 - **Four-legged animals**: a sprite drawn from the side on four legs takes four-legged motion,
   such as the built-in `quad-walk` or a BVH or glTF animal clip:
   `acestudio-cli retarget dog.png preset:quad-walk --out out`, or **Animation › Motion Studio**
-  with the sprite open. The motion's legs are found by their shape, so joint names do not matter.
+  with the sprite open.   The motion's legs are found by their shape, so joint names do not matter. A motion on six legs (try `preset:hex-walk`) walks a sprite or rig drawn with six legs the same way, pairing
+  the legs from the back forward; on four drawn legs its middle pair is left out.
   The legs, the body's height, the back's rock and the head's and tail's rise and fall follow the motion.
   To keep editable keys instead, auto-rig the sprite and run
   `acestudio-cli rig motion dog_rig.acestudio preset:quad-walk --out dog_walk.acestudio`. If it
@@ -176,7 +177,7 @@ Add, Subtract, Difference), visibility and locks.
   Studio** to show and hide it. Press **Use Current Sprite** to put the same motion and camera on
   another sprite or frame.
 - **Motion presets:** in **Animation › Motion Studio (3D Motion)…**, the **Library** row offers ready motions
-  (idle, walk, run, jump, attack, hurt, flap and wingbeat for wings, swim for fish, quad-walk for four legs) next to **Load Motion…**. Jump, attack and hurt play once;
+  (idle, walk, run, jump, attack, hurt, flap and wingbeat for wings, swim for fish, quad-walk for four legs, hex-walk for six) next to **Load Motion…**. Jump, attack and hurt play once;
   the others loop. **Save as Preset…** keeps the loaded motion (a BVH or glTF/GLB animation) in your
   library, as a BVH file in the `motions` folder of AceStudio's data folder, and **Remove** deletes a
   saved one. The presets are simple, made-by-code motions: good for blocking out an animation, less
