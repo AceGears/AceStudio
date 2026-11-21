@@ -97,6 +97,9 @@ struct RigKey {
 // follows `bone`, a child of that bone. Pixels before the joint follow the
 // parent, pixels past it the child, and a band `blend` pixels either side of
 // the joint (0 = a fifth of the shorter bone, at least 1.5) mixes the two.
+// `bone` may also be a bone further down (a grandchild, ...): the part then
+// bends at every joint on the way to it, following each bone in turn (a
+// spine, a tail). At most kMaxSkinChain bones below the part's own.
 struct Skin {
     BoneId bone = kNoBone;
     double blend = 0;
@@ -110,7 +113,9 @@ struct Rig {
     // 1: bones, bindings, chains. 2: adds the rest frame and keys. 3: adds
     // skins. Each is written only when used, so older readers open rigs
     // that do not need the newer parts.
-    static constexpr int kVersion = 4;
+    // 5: a skin through more than one joint.
+    static constexpr int kVersion = 5;
+    static constexpr int kMaxSkinChain = 16;
     static constexpr double kMinStretch = 0.1, kMaxStretch = 4.0;
 
     std::vector<Bone> bones;              // parents before children
@@ -169,6 +174,10 @@ Status bindLayer(Rig& rig, LayerId layer, BoneId bone);   // kNoBone unbinds (an
 // Bends a bound part across the joint with `child`, a child of its bone
 // (kNoBone makes it rigid again). `blend` as Skin::blend.
 Status skinLayer(Rig& rig, LayerId layer, BoneId child, double blend = 0);
+// The bones a skinned part follows below its own bone, nearest first (one
+// for a skin across a single joint); empty when `to` is not below `from`
+// within kMaxSkinChain bones.
+std::vector<BoneId> skinChain(const Rig& rig, BoneId from, BoneId to);
 Status addChain(Rig& rig, IkChain chain);
 Status removeChain(Rig& rig, std::size_t index);
 

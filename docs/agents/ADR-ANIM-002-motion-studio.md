@@ -184,7 +184,7 @@ bones": five stretch mixes within 0.0001 px, the knee's side kept, out of reach 
 stretched length, a limited knee), with the rig, rig motion, skin and key pose tests, run locally.
 
 Not done: which way a swung part points (toward and away look the same), a head turning to look,
-a curve through more than one joint (a skin follows one child bone). Wings: section 3.7. Fins: section 3.8.
+a curve through more than one joint on an auto-rig (a skin can follow a chain since 2026-11-21, ADR-ANIM-004, but auto-rig makes none). Wings: section 3.7. Fins: section 3.8.
 
 Six legs (2026-11-21). `creatureMap` takes four, six or eight floor-reaching legs: sorted along the
 body, the two furthest back are the hind pair and the two furthest forward the front pair

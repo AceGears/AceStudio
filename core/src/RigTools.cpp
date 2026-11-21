@@ -36,34 +36,43 @@ struct BoneMove {
     }
 };
 
-// A part bent across the joint between its bone `ma` and a child bone `mb`
-// (all in the part's own coordinates). Every source point p goes to
-// (1 - w) A(p) + w B(p), w rising smoothly from 0 to 1 across a band
-// `blend` wide either side of the joint, measured along the direction
-// halfway between the two bones at rest. Drawn by inverse mapping: each
-// output pixel solves for its source point by Newton's method, started from
-// where either bone alone would put it; where the bent part folds over
-// itself the point nearer the child (drawn on top) wins. Colours come from
-// the part's 8x Scale2x copy, as rotated parts do.
-Image renderSkinned(const motion::rig::Part& p, const BoneMove& ma, const BoneMove& mb, double jx, double jy, double nx, double ny,
-                    double blend, int w, int h) {
+// A joint a skinned part bends at (in the part's own coordinates): the
+// weight of the bone past it rises smoothly from 0 to 1 across a band
+// `blend` wide either side of (x, y), measured along (nx, ny), the
+// direction halfway between the two bones at rest.
+struct SkinJoint {
+    double x = 0, y = 0, nx = 1, ny = 0, blend = 1.5;
+};
+
+// A part bent along a chain of bones: `moves[0]` is its own bone, the
+// others the bones below it in turn, `joints[i]` the joint between
+// moves[i] and moves[i + 1]. With w_i the weight of joint i, a source point
+// p goes to the sum of c_k M_k(p), c_0 = 1 - w_0, c_k = w_(k-1) - w_k, the
+// last c = the last w: across one joint that is (1 - w) A(p) + w B(p).
+// Drawn by inverse mapping: each output pixel solves for its source point
+// by Newton's method, started from where each bone alone would put it (and
+// half-way between neighbours); where the bent part folds over itself the
+// point further down the chain (drawn on top) wins. Colours come from the
+// part's 8x Scale2x copy, as rotated parts do.
+Image renderSkinned(const motion::rig::Part& p, const std::vector<BoneMove>& moves, const std::vector<SkinJoint>& joints, int w, int h) {
     Image out(w, h);
-    if (p.hiBox.empty()) return out;
+    if (p.hiBox.empty() || moves.size() < 2 || joints.size() + 1 != moves.size()) return out;
     constexpr int kUp = 8;
-    auto weight = [&](double x, double y, double& dw) {
-        const double k = ((x - jx) * nx + (y - jy) * ny + blend) / (2 * blend);
+    const std::size_t n = joints.size();
+    auto weight = [&](const SkinJoint& j, double x, double y, double& dw) {
+        const double k = ((x - j.x) * j.nx + (y - j.y) * j.ny + j.blend) / (2 * j.blend);
         if (k <= 0 || k >= 1) {
             dw = 0;
             return k <= 0 ? 0.0 : 1.0;
         }
-        dw = 6 * k * (1 - k) / (2 * blend);
+        dw = 6 * k * (1 - k) / (2 * j.blend);
         return k * k * (3 - 2 * k);
     };
-    // The output reaches no further than where both bones put the part.
+    // The output reaches no further than where the bones put the part.
     double x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18;
-    for (const BoneMove* m : {&ma, &mb})
+    for (const BoneMove& m : moves)
         for (int k = 0; k < 4; ++k) {
-            const motion::rig::Vec q = m->apply(k & 1 ? p.hiBox.x + p.hiBox.w : p.hiBox.x, k & 2 ? p.hiBox.y + p.hiBox.h : p.hiBox.y);
+            const motion::rig::Vec q = m.apply(k & 1 ? p.hiBox.x + p.hiBox.w : p.hiBox.x, k & 2 ? p.hiBox.y + p.hiBox.h : p.hiBox.y);
             x0 = std::min(x0, q.x);
             y0 = std::min(y0, q.y);
             x1 = std::max(x1, q.x);
@@ -76,30 +85,49 @@ Image renderSkinned(const motion::rig::Part& p, const BoneMove& ma, const BoneMo
         const int hy = static_cast<int>(std::floor((y - p.hiBox.y) * kUp));
         return p.hi.contains(hx, hy) ? p.hi.pixel(hx, hy) : Rgba8{};
     };
+    std::vector<double> wj(n), dwj(n);
+    std::vector<motion::rig::Vec> at(n + 1), starts;
     for (int oy = iy0; oy <= iy1; ++oy)
         for (int ox = ix0; ox <= ix1; ++ox) {
             const double tx = ox + 0.5, ty = oy + 0.5;
             Rgba8 best{};
             double bestW = -1;
-            const motion::rig::Vec starts[3] = {ma.invert(tx, ty), mb.invert(tx, ty),
-                                                {0.5 * (ma.invert(tx, ty).x + mb.invert(tx, ty).x), 0.5 * (ma.invert(tx, ty).y + mb.invert(tx, ty).y)}};
+            // Each bone's own answer, then half-way between neighbours.
+            starts.clear();
+            for (const BoneMove& m : moves) starts.push_back(m.invert(tx, ty));
+            for (std::size_t k = 0; k < n; ++k) starts.push_back({0.5 * (starts[k].x + starts[k + 1].x), 0.5 * (starts[k].y + starts[k + 1].y)});
             for (motion::rig::Vec q : starts) {
                 bool ok = false;
                 double wq = 0;
                 for (int it = 0; it < 24; ++it) {
-                    double dw = 0;
-                    wq = weight(q.x, q.y, dw);
-                    const motion::rig::Vec a = ma.apply(q.x, q.y), b = mb.apply(q.x, q.y);
-                    const double gx = (1 - wq) * a.x + wq * b.x - tx, gy = (1 - wq) * a.y + wq * b.y - ty;
+                    for (std::size_t k = 0; k < n; ++k) wj[k] = weight(joints[k], q.x, q.y, dwj[k]);
+                    for (std::size_t k = 0; k <= n; ++k) at[k] = moves[k].apply(q.x, q.y);
+                    // The blend and its Jacobian: the mixed maps, plus each
+                    // change of weight carrying the point between two bones.
+                    double px = 0, py = 0, j00 = 0, j01 = 0, j10 = 0, j11 = 0;
+                    for (std::size_t k = 0; k <= n; ++k) {
+                        const double c = (k == 0 ? 1.0 : wj[k - 1]) - (k == n ? 0.0 : wj[k]);
+                        px += c * at[k].x;
+                        py += c * at[k].y;
+                        j00 += c * moves[k].xx;
+                        j01 += c * moves[k].xy;
+                        j10 += c * moves[k].yx;
+                        j11 += c * moves[k].yy;
+                    }
+                    wq = 0;
+                    for (std::size_t k = 0; k < n; ++k) {
+                        const double ex = at[k + 1].x - at[k].x, ey = at[k + 1].y - at[k].y;
+                        j00 += ex * dwj[k] * joints[k].nx;
+                        j01 += ex * dwj[k] * joints[k].ny;
+                        j10 += ey * dwj[k] * joints[k].nx;
+                        j11 += ey * dwj[k] * joints[k].ny;
+                        wq += wj[k];
+                    }
+                    const double gx = px - tx, gy = py - ty;
                     if (gx * gx + gy * gy < 1e-8) {
                         ok = true;
                         break;
                     }
-                    // Jacobian of the blend: the mixed rotations plus the
-                    // change of weight carrying the point between the bones.
-                    const double ex = b.x - a.x, ey = b.y - a.y;
-                    const double j00 = (1 - wq) * ma.xx + wq * mb.xx + ex * dw * nx, j01 = (1 - wq) * ma.xy + wq * mb.xy + ex * dw * ny;
-                    const double j10 = (1 - wq) * ma.yx + wq * mb.yx + ey * dw * nx, j11 = (1 - wq) * ma.yy + wq * mb.yy + ey * dw * ny;
                     const double det = j00 * j11 - j01 * j10;
                     if (std::abs(det) < 1e-9) break;
                     double sx = (j11 * gx - j01 * gy) / det, sy = (-j10 * gx + j00 * gy) / det;
@@ -614,34 +642,50 @@ Result<Document> bakePose(const Document& doc, int restFrame, int frame, const R
             pp.sy = -sa * bw.xy + ca * bw.yy;
             pp.shear = std::abs(pp.sy) > 1e-9 ? (ca * bw.xy + sa * bw.yy) / pp.sy : 0;
         }
-        // A part bent across a joint, unless its two bones turn together
-        // (then it is rigid, drawn exactly as other parts).
-        std::size_t ci = rig.bones.size();
+        // A part bent across a joint (or along a chain of them), unless
+        // its bones turn together (then it is rigid, drawn exactly as other parts).
+        std::vector<std::size_t> chain;   // the bones below its own that it follows
         if (const auto sk = rig.skins.find(layerId); sk != rig.skins.end())
-            for (ci = 0; ci < rig.bones.size() && rig.bones[ci].id != sk->second.bone; ++ci) {}
-        bool bent = ci < rig.bones.size() && std::abs(std::remainder(world[ci].turn - bw.turn, 2 * kPi)) > 1e-9;
-        if (ci < rig.bones.size() && (bw.stretched || world[ci].stretched)) {
-            const BoneWorld& cw = world[ci];
-            bent = std::max({std::abs(cw.xx - bw.xx), std::abs(cw.xy - bw.xy), std::abs(cw.yx - bw.yx), std::abs(cw.yy - bw.yy)}) > 1e-9;
+            for (BoneId id : skinChain(rig, b.id, sk->second.bone))
+                for (std::size_t k = 0; k < rig.bones.size(); ++k)
+                    if (rig.bones[k].id == id) chain.push_back(k);
+        bool bent = false;
+        {
+            const BoneWorld* before = &bw;
+            for (std::size_t ci : chain) {
+                const BoneWorld& cw = world[ci];
+                bent = bent || std::abs(std::remainder(cw.turn - before->turn, 2 * kPi)) > 1e-9;
+                if (before->stretched || cw.stretched)
+                    bent = bent || std::max({std::abs(cw.xx - before->xx), std::abs(cw.xy - before->xy), std::abs(cw.yx - before->yx),
+                                             std::abs(cw.yy - before->yy)}) > 1e-9;
+                before = &cw;
+            }
         }
         Image out;
         if (bent) {
-            const Bone& kid = rig.bones[ci];
-            const BoneWorld& cw = world[ci];
-            // Whole-pixel moves as rigid parts make, the child keeping its
-            // exact place relative to the parent.
+            // Whole-pixel moves as rigid parts make, the bones below keeping
+            // their exact places relative to the part's own.
             const double rx = std::round(pp.dx) - pp.dx, ry = std::round(pp.dy) - pp.dy;
-            const BoneMove ma(bw, b.x - box.x, b.y - box.y, bw.headX + rx - box.x, bw.headY + ry - box.y);
-            const BoneMove mb(cw, kid.x - box.x, kid.y - box.y, cw.headX + rx - box.x, cw.headY + ry - box.y);
-            double nx = std::cos(b.angle) + std::cos(kid.angle), ny = std::sin(b.angle) + std::sin(kid.angle);
-            if (std::hypot(nx, ny) < 1e-6) {
-                nx = std::cos(b.angle);
-                ny = std::sin(b.angle);
+            std::vector<BoneMove> moves;
+            std::vector<SkinJoint> joints;
+            moves.emplace_back(bw, b.x - box.x, b.y - box.y, bw.headX + rx - box.x, bw.headY + ry - box.y);
+            const Bone* above = &b;
+            for (std::size_t ci : chain) {
+                const Bone& kid = rig.bones[ci];
+                const BoneWorld& cw = world[ci];
+                moves.emplace_back(cw, kid.x - box.x, kid.y - box.y, cw.headX + rx - box.x, cw.headY + ry - box.y);
+                double nx = std::cos(above->angle) + std::cos(kid.angle), ny = std::sin(above->angle) + std::sin(kid.angle);
+                if (std::hypot(nx, ny) < 1e-6) {
+                    nx = std::cos(above->angle);
+                    ny = std::sin(above->angle);
+                }
+                const double nl = std::hypot(nx, ny);
+                double blend = rig.skins.at(layerId).blend;
+                if (blend <= 0) blend = std::max(1.5, 0.2 * std::min(above->length, kid.length));
+                joints.push_back({kid.x - box.x, kid.y - box.y, nx / nl, ny / nl, blend});
+                above = &kid;
             }
-            const double nl = std::hypot(nx, ny);
-            double blend = rig.skins.at(layerId).blend;
-            if (blend <= 0) blend = std::max(1.5, 0.2 * std::min(b.length, kid.length));
-            out = renderSkinned(one.parts[0], ma, mb, kid.x - box.x, kid.y - box.y, nx / nl, ny / nl, blend, box.w, box.h);
+            out = renderSkinned(one.parts[0], moves, joints, box.w, box.h);
         } else {
             out = motion::rig::renderPose(one, {pp}, {0, 0, box.w, box.h});
         }

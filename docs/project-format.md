@@ -152,6 +152,13 @@ field (rigs without one keep their lower version):
   parts and its children are scaled along its rest direction about its head, before its turn.
   Between keys it is interpolated like a turn.
 
+### Rig version 5: parts bent along a chain
+
+A rig with a bent part whose `bone` (in `skins`, version 3) is further below the part's own bone
+than a child is written as `"version": 5`. The fields are those of version 3: `bone` is then a
+bone at most 16 joints below the part's own, and the part bends at every joint on the way.
+Readers of versions 1 to 4 refuse such a rig ("saved by a newer AceStudio").
+
 ## vectors (schema 5)
 
 Present only in documents that have vector shapes (ADR-ANIM-005). The cel's pixels are stored as

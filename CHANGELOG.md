@@ -105,6 +105,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - **IK with stretched bones no longer stops short**: with a stretched upper bone the solve could
   settle on a straight leg just short of a target a bent leg reaches; it now starts again from
   bent poses and keeps the nearest.
+- **Parts bend along a chain of bones**: `rig skin --bone` (and MCP `rig_edit` skin, Lua
+  `set_rig`) now takes a bone further down than a child: the part bends at every joint on the way
+  (a tail, a spine). Bends across a single joint are drawn exactly as before. Such rigs are saved
+  as rig version 5.
 - **Wing joints by hand**: `retarget` and `rig motion` take `--wings JointA,JointB` (Lua
   `wings = {"JointA", "JointB"}`, MCP `wings`): the two joints a skeleton's wings start at, for
   skeletons whose wing joints are not named wing. The wings then beat, fold and sweep with those

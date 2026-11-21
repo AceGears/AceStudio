@@ -51,7 +51,13 @@ The part rig of ADR-ANIM-001 is rebuilt from the sprite every time a clip is mad
   has both legs and wings is not built (Wings leaves the legs in the body).
 - A swimmer's body bending: auto-rig makes it one rigid part (the swim animator bends it column by column, which a saved rig cannot yet express).
 - Skinning across more than two bones, painted weights or a mesh. (Built on 2026-11-18: a part
-  bends across the joint with one child of its bone, `Rig::skins`, rig version 3; see below.)
+  bends across the joint with one child of its bone, `Rig::skins`, rig version 3; see below.
+  Since 2026-11-21 `Skin::bone` may be any bone below the part's own within 16 joints
+  (`rigs::skinChain`); the part then follows every bone on the way: a point goes to the sum of
+  c_k M_k(p) with c_0 = 1 - w_0, c_k = w_(k-1) - w_k, last c = last w, w_i the smooth weight of
+  joint i (`renderSkinned`, `RigTools.cpp`). One joint gives the old formula, and its output is
+  unchanged (the same hash over 297 poses before and after). Saved as rig version 5 only when a
+  skin goes through more than one joint.)
 - (Built on 2026-11-15: Lua `doc:rig()`, `set_rig`, `auto_rig`, `pose_rig`, `key_rig`, `unkey_rig`, `bake_rig`, and the MCP tools `rig_show` and `rig_edit`, which run the CLI. Lua is tested locally and in CI; the MCP tools are compiled, not called by a test.)
 - (Built on 2026-11-17, CLI only: `rig motion` keys a BVH/glTF/preset motion onto a saved rig; see
   ADR-ANIM-002 section 3.3. Motion Studio still builds its own rig per clip, and the app has no
