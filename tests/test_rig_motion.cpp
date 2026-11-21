@@ -836,10 +836,12 @@ TEST_CASE("A wing motion beats and folds an auto-rigged flyer's wings", "[rig][m
     // Baked, every frame keeps most of the dragon's pixels (no part is lost or torn away).
     {
         std::size_t restCount = 0;
-        for (const Rgba8& p : baked.value().composite(0).pixels()) restCount += p.a ? 1 : 0;
+        const Image restImg = baked.value().composite(0);
+        for (const Rgba8& p : restImg.pixels()) restCount += p.a ? 1 : 0;
         for (int f = res.first; f < res.first + res.count; ++f) {
             std::size_t count = 0;
-            for (const Rgba8& p : baked.value().composite(f).pixels()) count += p.a ? 1 : 0;
+            const Image im = baked.value().composite(f);
+            for (const Rgba8& p : im.pixels()) count += p.a ? 1 : 0;
             CHECK(count * 10 >= restCount * 6);
             CHECK(count * 10 <= restCount * 12);
         }
