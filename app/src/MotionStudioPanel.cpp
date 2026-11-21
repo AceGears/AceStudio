@@ -14,6 +14,7 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <initializer_list>
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QKeyEvent>
@@ -280,6 +281,21 @@ MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(par
     m_wingLine->setToolTip(tr("Wings: the part of the sprite above this line flaps. Lower it if the head turns with a wing."));
     m_wingLabel = new QLabel(tr("Wing line:"), motionBox);
     mf->addRow(m_wingLabel, m_wingLine);
+    auto* wingJoints = new QWidget(motionBox);
+    auto* wj = new QHBoxLayout(wingJoints);
+    wj->setContentsMargins(0, 0, 0, 0);
+    m_wingJointA = new QComboBox(wingJoints);
+    m_wingJointB = new QComboBox(wingJoints);
+    m_wingJointA->setAccessibleName(tr("First wing joint"));
+    m_wingJointB->setAccessibleName(tr("Second wing joint"));
+    for (QComboBox* c : {m_wingJointA, m_wingJointB}) {
+        c->setToolTip(tr("Wings: the motion's two joints the wings start at, for a skeleton whose wing joints are not named wing. "
+                         "Leave both on Automatic to use joints named wing, else the arms."));
+        c->addItem(tr("Automatic"), QString());
+        wj->addWidget(c, 1);
+    }
+    m_wingJointsLabel = new QLabel(tr("Wing joints:"), motionBox);
+    mf->addRow(m_wingJointsLabel, wingJoints);
     top->addWidget(motionBox, 1);
 
     auto* camBox = new QGroupBox(tr("Camera"), this);
@@ -383,6 +399,10 @@ MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(par
         scheduleRetarget();
     });
     connect(m_wingLine, &QDoubleSpinBox::valueChanged, this, [this] { scheduleRetarget(); });
+    for (QComboBox* c : {m_wingJointA, m_wingJointB})
+        connect(c, &QComboBox::currentIndexChanged, this, [this] {
+            if (!m_syncing) scheduleRetarget();
+        });
     updateWingControls();
     connect(m_fps, &QSpinBox::valueChanged, this, [this] { scheduleRetarget(); });
     connect(m_inPlace, &QCheckBox::toggled, this, [this] { scheduleRetarget(); });
@@ -421,6 +441,28 @@ void MotionStudioPanel::updateWingControls() {
     m_wingLabel->setText(selected ? tr("Wings: the selection") : tr("Wing line:"));
     m_wingLine->setEnabled(wings && !selected);
     m_wingLabel->setEnabled(wings);
+    for (QWidget* w : std::initializer_list<QWidget*>{m_wingJointA, m_wingJointB, m_wingJointsLabel}) w->setEnabled(wings && m_motion.has_value());
+}
+
+// The wing joint boxes list the motion's joints that have a joint below them.
+void MotionStudioPanel::fillWingJoints() {
+    const bool was = m_syncing;
+    m_syncing = true;
+    for (QComboBox* c : {m_wingJointA, m_wingJointB}) {
+        c->clear();
+        c->addItem(tr("Automatic"), QString());
+        if (!m_motion) continue;
+        for (std::size_t j = 0; j < m_motion->joints.size(); ++j) {
+            bool hasChild = false;
+            for (const auto& o : m_motion->joints) hasChild = hasChild || o.parent == static_cast<int>(j);
+            if (hasChild && !m_motion->joints[j].endSite) {
+                const QString name = QString::fromStdString(m_motion->joints[j].name);
+                c->addItem(name, name);
+            }
+        }
+    }
+    m_syncing = was;
+    updateWingControls();
 }
 
 void MotionStudioPanel::setSprite(const Image& sprite, const QString& name, const Mask& wings) {
@@ -636,6 +678,7 @@ void MotionStudioPanel::useMotion(mc::Motion motion, const QString& name, bool o
                                .arg(m_motion->duration(), 0, 'f', 2));
     m_start->setMaximum(m_motion->duration());
     m_length->setMaximum(m_motion->duration());
+    fillWingJoints();
     m_bones->clear();
     for (int b = 0; b < mc::kBoneCount; ++b) {
         const int j = m_map.joint[static_cast<std::size_t>(b)];
@@ -667,6 +710,9 @@ void MotionStudioPanel::retarget() {
     else o.body = mc::autoBody(m_sprite, *m_motion, &whyBody);   // wings or fish when the motion's skeleton says so
     o.wingLine = m_wingLine->value() / 100.0;
     o.wingMask = m_wingMask;
+    // Both wing joints picked: the wings start there (as --wings A,B does).
+    const QString wingA = m_wingJointA->currentData().toString(), wingB = m_wingJointB->currentData().toString();
+    if (o.body == ::acestudio::motion::Body::Flyer && !wingA.isEmpty() && !wingB.isEmpty()) o.wingRoots = {wingA.toStdString(), wingB.toStdString()};
     auto r = mc::retarget(m_sprite, *m_motion, o);
     if (!r) {
         m_result.reset();
@@ -680,6 +726,8 @@ void MotionStudioPanel::retarget() {
     if (m_result->approximateView)
         notes << tr("<b>Approximate view.</b> The camera is far from the view the sprite is drawn in; the art is not turned.");
     if (!whyBody.empty()) notes << QString::fromStdString(whyBody).toHtmlEscaped();
+    if (o.body == ::acestudio::motion::Body::Flyer && wingA.isEmpty() != wingB.isEmpty())
+        notes << tr("Pick both wing joints to set them by hand; with one on Automatic the wings are found by name.");
     for (const std::string& n : m_result->notes) notes << QString::fromStdString(n).toHtmlEscaped();
     for (const std::string& i : ::acestudio::motion::checkClip(m_result->clip).issues) notes << tr("Check: %1").arg(QString::fromStdString(i).toHtmlEscaped());
     if (notes.isEmpty()) notes << tr("No problems found.");

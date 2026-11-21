@@ -124,6 +124,11 @@ private:
     QComboBox* m_body = nullptr;   // auto (from the sprite), two legs, four legs, wings
     QDoubleSpinBox* m_wingLine = nullptr;   // wings: percent of the height the wings are above
     QLabel* m_wingLabel = nullptr;
+    // Wings: the motion's two joints the wings start at ("" = found by name, else the arms).
+    QComboBox* m_wingJointA = nullptr;
+    QComboBox* m_wingJointB = nullptr;
+    QLabel* m_wingJointsLabel = nullptr;
+    void fillWingJoints();
     void updateWingControls();
     QSlider* m_turn = nullptr;
     QSlider* m_tilt = nullptr;
