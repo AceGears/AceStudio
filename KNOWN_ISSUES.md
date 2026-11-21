@@ -61,8 +61,11 @@ not been run.
   open). There is no painted weight map: each split is a straight line through the joint halfway
   between the two bones' directions, so the chain should run along the part and its joints should
   not sit closer together than the part is thick. A chain was tested locally on a striped strip
-  on four bones (curled each way and in an S: one piece, no holes) and those were looked at; it
-  has not been tried on real art. The rig panel's Bends with box still lists children only. The bend is a linear blend, so a very sharp
+  on four bones (curled each way and in an S: one piece, no holes) and those were looked at; on
+  real art it has only been seen on one fish (the fish57 fixture's body on two spine bones). The
+  rig panel's Bends with box lists the bones further down too ("tail 3 (through 3 joints)") and
+  keeps the part's blend width when the bone is changed; that panel code is compiled by CI only,
+  nobody has clicked it. The bend is a linear blend, so a very sharp
   bend (past about 120 degrees) pinches the inside of the joint. Command line, the MCP
   `rig_edit` tool, Lua (`doc:rig()` / `set_rig` carry it in the rig's `skins`) and the rig panel's
   Bends with box (compiled and audited by CI; no Qt test drives it). Auto-rig makes

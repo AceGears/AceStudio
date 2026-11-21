@@ -133,7 +133,8 @@ Add, Subtract, Difference), visibility and locks.
 - **Bending a part at a joint**: a part drawn in one piece over two bones (an arm over the upper
   arm and forearm) can bend at the joint instead of turning stiffly:
   `acestudio-cli rig skin hero.acestudio --layer arm --bone forearm --out hero.acestudio --force`,
-  or, in the Rig panel, select the arm layer and pick the forearm in **Bends with**.
+  or, in the Rig panel, select the arm layer and pick the forearm in **Bends with**. For a tail or spine drawn as one part, bind it to the
+  first bone and pick the last one ("... (through N joints)"): it bends at every joint on the way.
   The part must be bound to the forearm's parent bone. `--blend` sets how many pixels either side
   of the joint are mixed (0, the default, picks a fifth of the shorter bone); `--bone none` makes
   the part rigid again.

@@ -105,6 +105,8 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - **IK with stretched bones no longer stops short**: with a stretched upper bone the solve could
   settle on a straight leg just short of a target a bent leg reaches; it now starts again from
   bent poses and keeps the nearest.
+- **Rig panel**: **Bends with** also lists bones further down the chain, and changing it keeps
+  the part's blend width.
 - **Rigged fish bend**: `rig auto --as fins` now gives the body a spine (`body`, `spine 1`, ...)
   that the body part bends along, and `rig motion` runs the motion's wave down it as well as
   moving the fins.
