@@ -254,6 +254,45 @@ Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, c
     if (tailBone)
         for (const Bone& b : rig.bones)
             if (b.parent == tailBone->id && !b.locked && lower(b.name) == "tail tip") tailTip = &b;
+    // The motion's tail: a joint named tail whose parent is not, down to the
+    // end of its chain. Its rise and fall (the change of its elevation from
+    // the mean) turns the rig's tail; a tail that does not rise or fall in
+    // the motion (or a motion without one) leaves the made-up wave.
+    std::vector<double> tailRise;
+    if (tailBone) {
+        int from = -1;
+        for (std::size_t j = 0; j < m.joints.size() && from < 0; ++j) {
+            const int p = m.joints[j].parent;
+            if (!m.joints[j].endSite && lower(m.joints[j].name).find("tail") != std::string::npos &&
+                !(p >= 0 && lower(m.joints[uz(p)].name).find("tail") != std::string::npos))
+                from = static_cast<int>(j);
+        }
+        int to = from;
+        for (bool more = from >= 0; more;) {
+            more = false;
+            for (std::size_t j = 0; j < m.joints.size() && !more; ++j)
+                if (m.joints[j].parent == to) {
+                    to = static_cast<int>(j);
+                    more = true;
+                }
+        }
+        if (from >= 0 && to != from) {
+            double mean = 0, lo = 1e9, hi = -1e9;
+            for (int f = 0; f < frames; ++f) {
+                const std::vector<Vec3> w = mocap::jointPositions(m, start + f * step);
+                const Vec3 d = sub(w[uz(to)], w[uz(from)]);
+                tailRise.push_back(std::atan2(d.y, std::hypot(d.x, d.z)));
+                mean += tailRise.back() / frames;
+                lo = std::min(lo, tailRise.back());
+                hi = std::max(hi, tailRise.back());
+            }
+            if (hi - lo < 0.02) tailRise.clear();
+            else {
+                for (double& e : tailRise) e -= opt.loop ? mean : tailRise.front();
+                res.matched.emplace_back(tailBone->name, "tail " + m.joints[uz(from)].name + " -> " + m.joints[uz(to)].name + " (turns by its rise and fall)");
+            }
+        }
+    }
     double least = 1, creaseMost = 0;
     for (int f = 0; f < frames; ++f) {
         RigPose pose;
@@ -294,7 +333,19 @@ Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, c
         }
         // The tail waves with the beat, as the flight animator's does: the
         // tip later than the root. (Not read from the motion.)
-        if (tailBone) {
+        if (tailBone && !tailRise.empty()) {
+            // A tail pointing screen left rises by turning clockwise. The tip
+            // follows a frame late and bends a little further.
+            const std::size_t bi = static_cast<std::size_t>(tailBone - rig.bones.data());
+            const double sign = rest[bi].tailX - rest[bi].headX < 0 ? 1.0 : -1.0;
+            const double a = clampTurn(*tailBone, sign * std::clamp(amount * tailRise[uz(f)], -0.5, 0.5));
+            if (a != 0.0) pose.turn[tailBone->id] = a;
+            if (tailTip) {
+                const int before = f > 0 ? f - 1 : opt.loop ? frames - 1 : 0;
+                const double b = clampTurn(*tailTip, sign * std::clamp(0.6 * amount * tailRise[uz(before)], -0.4, 0.4));
+                if (b != 0.0) pose.turn[tailTip->id] = b;
+            }
+        } else if (tailBone) {
             const double t = opt.loop ? static_cast<double>(f) / frames : static_cast<double>(f) / (frames - 1);
             const double a = clampTurn(*tailBone, 0.12 * amount * std::sin(2 * kPi * (t - 0.1)));
             if (a != 0.0) pose.turn[tailBone->id] = a;
@@ -305,7 +356,9 @@ Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, c
         }
         if (auto st = setKey(keyed, first + f, pose, Curve{}); !st) return st.error();
     }
-    if (tailBone) res.notes.push_back("The tail waves with the beat (it is not read from the motion).");
+    if (tailBone)
+        res.notes.push_back(tailRise.empty() ? "The tail waves with the beat (the motion has no tail that rises and falls)."
+                                             : "The tail rises and falls with the motion's tail.");
     res.notes.push_back(std::string("Wings: the rig's ") + (wings.size() == 1 ? "wing follows" : "wings follow") + " the motion's " +
                         (ws.own ? "own wing bones" : "arms") + "; a wing is as drawn at the top of the stroke.");
     if (creaseMost > 0)

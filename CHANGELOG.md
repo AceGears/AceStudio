@@ -106,7 +106,8 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   settle on a straight leg just short of a target a bent leg reaches; it now starts again from
   bent poses and keeps the nearest.
 - **Rigged flyers get a tail**: `rig auto --as wings` cuts the tail into a part on its own bone
-  and `rig motion` waves it with the beat.
+  and `rig motion` moves it: by the motion's own tail when it has one, else a small wave with the
+  beat.
 - **No hole under a rigged wing**: auto-rig keeps a copy of each wing's root in the body part, so
   a wing lifted off the back leaves no gap.
 - **Rigged wings crease**: `rig auto --as wings` gives each wing a tip bone its part bends with,
