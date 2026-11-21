@@ -792,7 +792,7 @@ TEST_CASE("A wing motion beats and folds an auto-rigged flyer's wings", "[rig][m
     const rigs::MotionKeysResult& res = r.value();
     for (const auto& n : res.notes) UNSCOPED_INFO(n);
     CHECK(res.count == 7);   // 0.6 s at 12 fps
-    CHECK(res.matched.size() == wingNames.size());
+    CHECK(res.matched.size() == wingNames.size() + 1);   // the wings, and the tail from the motion's tail
     bool own = false, folds = false;
     for (const auto& n : res.notes) {
         own = own || n.find("own wing bones") != std::string::npos;
@@ -861,9 +861,10 @@ TEST_CASE("A wing motion beats and folds an auto-rigged flyer's wings", "[rig][m
         CHECK(lo < -0.05);
         CHECK(hi > 0.05);
         CHECK(hi - lo < 0.4);
-        bool waves = false;
-        for (const auto& n : res.notes) waves = waves || n.find("tail waves") != std::string::npos;
-        CHECK(waves);
+        // wingbeat has a tail of its own, and the rig's tail follows it.
+        bool follows = false;
+        for (const auto& n : res.notes) follows = follows || n.find("tail rises and falls with the motion") != std::string::npos;
+        CHECK(follows);
     }
     REQUIRE(res.document.validate());
     auto baked = rigs::bakeKeys(res.document);
@@ -886,9 +887,23 @@ TEST_CASE("A wing motion beats and folds an auto-rigged flyer's wings", "[rig][m
     auto fl = rigs::keysFromMotion(doc, preset("flap"), {});
     INFO((fl ? std::string() : fl.error().message));
     REQUIRE(fl);
-    bool arms = false;
-    for (const auto& n : fl.value().notes) arms = arms || n.find("motion's arms") != std::string::npos;
+    bool arms = false, madeUp = false;
+    for (const auto& n : fl.value().notes) {
+        arms = arms || n.find("motion's arms") != std::string::npos;
+        madeUp = madeUp || n.find("tail waves with the beat") != std::string::npos;   // flap is a humanoid: no tail
+    }
     CHECK(arms);
+    CHECK(madeUp);
+    {
+        double lo = 1e9, hi = -1e9;
+        for (const RigKey& k : fl.value().document.rig()->keys) {
+            const double t = turnOf(*fl.value().document.rig(), k.pose, "tail");
+            lo = std::min(lo, t);
+            hi = std::max(hi, t);
+        }
+        CHECK(lo < -0.05);
+        CHECK(hi > 0.05);
+    }
     for (const RigKey& k : fl.value().document.rig()->keys) CHECK(k.pose.stretch.empty());
     auto range = [&](const rigs::MotionKeysResult& kr) {
         double lo = 1e9, hi = -1e9;
