@@ -173,6 +173,14 @@ unstretched bake unchanged), `tests/test_rig_motion.cpp` (a 60 degree wag shorte
 more than 10%, is as drawn at some key, bakes at least 2 px narrower, half the amount gives half
 the shortening), a Lua case and CLI smoke lines, run locally; a baked wag was looked at.
 
+IK and stretch (2026-11-21). `rigs::reach` used the bones' rest lengths. When the chain's tip is
+stretched (its own factor or any ancestor's), it now starts from the lengths as posed and refines
+the two turns by damped least squares against the solved tip (numeric Jacobian, at most 40 steps,
+a step kept only if it comes nearer; limits and locks clamp every step). Unstretched poses return
+before that, unchanged. Verified: `tests/test_rig.cpp` ("IK reaches its target with stretched
+bones": five stretch mixes within 0.001 px, the knee's side kept, out of reach straight at the
+stretched length, a limited knee), with the rig, rig motion, skin and key pose tests, run locally.
+
 Not done: which way a swung part points (toward and away look the same), a head turning to look,
 a curve through more than one joint (a skin follows one child bone). Wings: section 3.7. Fins: section 3.8.
 

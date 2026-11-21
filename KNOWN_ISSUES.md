@@ -64,7 +64,8 @@ not been run.
   the part does not pass in front of or behind the body. Changes under 2% are left out, so the
   `quad-walk` preset's head does not change and its tail shortens by 8% at most on the test
   animal. A loop's most side-on moment counts as the drawn length, a one-shot's first frame. IK
-  ignores stretch (stretch a leg bone and its chain no longer reaches its target). The rig
+  reaches its target with stretched bones (since 2026-11-21; it ignored stretch before): tested
+  locally on a two-bone leg with either bone, both, or the bone above stretched. The rig
   panel has no stretch control (keys made by `rig motion`, the command line, Lua or MCP keep
   their stretch when edited there; that panel code is compiled by CI, no Qt test drives it).
   `retarget --body quadruped` (no rig) does not do this.

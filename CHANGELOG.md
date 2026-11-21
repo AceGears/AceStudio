@@ -94,6 +94,9 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **IK with stretched bones**: an IK chain now reaches its target when its bones, or a bone above
+  them, are stretched in the pose (it solved for the unstretched lengths before, so the foot
+  missed). Poses without stretch solve exactly as before.
 - **Automatic body from the motion**: `retarget` without `--body` (also Lua's `ace.retarget` and
   Motion Studio's Automatic) now animates the sprite as a flyer when the motion's skeleton has wing
   bones and as a swimmer when it has no legs, and says so in a note; before, both needed `--body`.

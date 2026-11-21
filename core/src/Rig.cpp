@@ -431,10 +431,21 @@ Status reach(const Rig& rig, RigPose& pose, std::size_t chain, double targetX, d
             if (rig.bones[i].id == upper->parent) baseTurn = world[i].turn;
     // Segment 1: upper head to tip head (they need not touch); segment 2: the tip.
     const double r1 = std::atan2(tip->y - upper->y, tip->x - upper->x);
-    const double l1 = std::hypot(tip->x - upper->x, tip->y - upper->y);
-    const double l2 = tip->length;
+    double l1 = std::hypot(tip->x - upper->x, tip->y - upper->y);
+    double l2 = tip->length;
     const double r2 = tip->angle;
     const double hx = world[ui].headX, hy = world[ui].headY;
+    // Stretched bones (RigPose::stretch, here or above): the lengths as
+    // posed start the solve, and the turns are then refined against the
+    // real tip below, since a stretched parent maps its children unevenly.
+    std::size_t ti = 0;
+    for (std::size_t i = 0; i < rig.bones.size(); ++i)
+        if (rig.bones[i].id == tip->id) ti = i;
+    const bool stretched = world[ti].stretched;
+    if (stretched) {
+        l1 = std::hypot(world[ti].headX - hx, world[ti].headY - hy);
+        l2 = std::hypot(world[ti].tailX - world[ti].headX, world[ti].tailY - world[ti].headY);
+    }
     const double tx = targetX - hx, ty = targetY - hy;
     const double base = std::atan2(ty, tx);
     double a1 = base;
@@ -450,6 +461,52 @@ Status reach(const Rig& rig, RigPose& pose, std::size_t chain, double targetX, d
     const double jx = hx + l1 * std::cos(ja), jy = hy + l1 * std::sin(ja);
     const double a2 = std::atan2(targetY - jy, targetX - jx);
     pose.turn[tip->id] = clampTurn(*tip, wrap(a2 - r2 - (baseTurn + upperTurn)));
+    if (!stretched) return {};
+    // Damped least squares on the two turns: the tip's tail to the target
+    // (or as near as the chain gets). A step is kept only if it comes nearer.
+    auto miss = [&](double tu, double tt, double& ex, double& ey) {
+        RigPose p = pose;
+        p.turn[upper->id] = tu;
+        p.turn[tip->id] = tt;
+        const std::vector<BoneWorld> w = solve(rig, p);
+        ex = w[ti].tailX - targetX;
+        ey = w[ti].tailY - targetY;
+        return ex * ex + ey * ey;
+    };
+    double tu = pose.turn[upper->id], tt = pose.turn[tip->id];
+    double ex = 0, ey = 0;
+    double err = miss(tu, tt, ex, ey);
+    double damp = 1e-3;
+    for (int it = 0; it < 40 && err > 1e-10; ++it) {
+        constexpr double h = 1e-5;
+        double ax = 0, ay = 0, bx = 0, by = 0;
+        miss(tu + h, tt, ax, ay);
+        miss(tu, tt + h, bx, by);
+        const double j00 = (ax - ex) / h, j10 = (ay - ey) / h, j01 = (bx - ex) / h, j11 = (by - ey) / h;
+        // (JtJ + damp) d = -Jt e
+        const double m00 = j00 * j00 + j10 * j10 + damp, m01 = j00 * j01 + j10 * j11, m11 = j01 * j01 + j11 * j11 + damp;
+        const double g0 = -(j00 * ex + j10 * ey), g1 = -(j01 * ex + j11 * ey);
+        const double det = m00 * m11 - m01 * m01;
+        if (!(std::abs(det) > 1e-18)) break;
+        const double nu = clampTurn(*upper, tu + (g0 * m11 - g1 * m01) / det), nt = clampTurn(*tip, tt + (g1 * m00 - g0 * m01) / det);
+        double nx = 0, ny = 0;
+        const double nerr = miss(nu, nt, nx, ny);
+        if (std::isfinite(nerr) && nerr < err) {
+            const bool small = err - nerr < 1e-12;
+            tu = nu;
+            tt = nt;
+            ex = nx;
+            ey = ny;
+            err = nerr;
+            damp = std::max(1e-9, damp * 0.3);
+            if (small) break;
+        } else {
+            damp *= 8;
+            if (damp > 1e6) break;
+        }
+    }
+    pose.turn[upper->id] = wrap(tu);
+    pose.turn[tip->id] = wrap(tt);
     return {};
 }
 
