@@ -43,8 +43,14 @@ not been run.
   not called by a test) offer it too; there is no button for it in the app yet. Bones
   turn to point the way the projected skeleton points, so a limb seen end-on (a front-view walk's
   legs) barely moves and holds its last direction. Side-view legs numbered 0 and 1 are taken as
-  near and far; if they come out swapped, pair them with `--bones`. Wings, fins and other
-  non-humanoid rigs match nothing and are refused. Frames added for the keys are empty until baked.
+  near and far; if they come out swapped, pair them with `--bones`. A wing rig (`rig auto --as wings`) is keyed
+  from the motion's wings (since 2026-11-21): its own wing bones (`preset:wingbeat`), else its
+  arms (`preset:flap`); the wings beat about their shoulders and, with own wing bones, are drawn
+  shorter as they fold. Tested locally on the dragon fixture, and its baked frames were looked at.
+  Each wing falls toward the tail, except one drawn pointing forward more than up, which falls on
+  its own side; on the dragon that makes its near wing go the other way from `retarget --body
+  flyer`. No sweep, no wrist crease, and the tail does not wave. Fins and other non-humanoid rigs
+  match nothing and are refused. Frames added for the keys are empty until baked.
 - **Motion Studio panel** (ADR-ANIM-002): compiled and opened by the CI UI audit only; it has not
   been used on a PC since it became a dock. The panel does not follow the open document by
   itself: press Use Current Sprite after switching sprites or frames. Its controls no longer have

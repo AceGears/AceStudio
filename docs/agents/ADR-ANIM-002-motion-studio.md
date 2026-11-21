@@ -284,6 +284,22 @@ dragon's strip was looked at. The test does not separate sweep from the turn (bo
 toward the tail), and the golden dragon's wings are drawn out to the side, so sweep has not been
 looked at on real art.
 
+Wing rigs (2026-11-21). `keysFromMotion` hands a rig that has bones named "wing", "near wing" or
+"far wing" and no numbered legs or arms to `wingKeys` (`RigMotion.cpp`). The source is
+`mocap::wingSource`: the two longest chains of joints named wing (shoulder and farthest joint),
+else the map's arms. Per key and wing: the turn is the fall of the source wing's elevation from
+its top frame (a loop) or first frame (a one-shot), times the amount, within -0.5 to 2 rad, 0.8 of
+it for the far wing, signed so the tip falls toward the tail (a wing drawn pointing forward more
+than up falls on its own side); with own wing bones the stretch is 1 minus the amount times the
+loss of shoulder-to-tip reach since that frame, over the longest reach (0.55 to 1.1, left out
+under 2%). The near wing takes the right wing of a rig facing right. The root moves by the source
+root's rise and fall, at most a quarter of a wing. Verified: `tests/test_rig_motion.cpp` ("A wing
+motion beats and folds an auto-rigged flyer's wings": 7 keys on the dragon, each wing beating more
+than 0.6 rad, as drawn at one key, shortened to between 55% and 95%, its tip lower and further
+toward the tail than drawn, keys bake; flap drives without stretch; half the amount beats less;
+bone pairs refused), a CLI smoke line, run locally; the dragon's baked frames were looked at.
+Not done on a rig: sweep, the tail's wave, fins.
+
 Not done: wing bones not named wing, a crease at the wrist, sweep on a wing drawn out to the side,
 twist.
 

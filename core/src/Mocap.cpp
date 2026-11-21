@@ -2062,6 +2062,55 @@ Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, c
 
 } // namespace
 
+WingSource wingSource(const Motion& m, const BoneMap& map) {
+    WingSource ws;
+    const std::size_t nj = m.joints.size();
+    const std::vector<Vec3> rest = restPositions(m);
+    std::vector<char> named(nj, 0);
+    for (std::size_t j = 0; j < nj; ++j) {
+        std::string n = m.joints[j].name;
+        for (char& ch : n) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        named[j] = !m.joints[j].endSite && n.find("wing") != std::string::npos;
+    }
+    struct Found {
+        int shoulder, tip;
+        double reach;
+    };
+    std::vector<Found> chains;
+    for (std::size_t j = 0; j < nj; ++j) {
+        const int p = m.joints[j].parent;
+        if (!named[j] || (p >= 0 && uz(p) < nj && named[uz(p)])) continue;
+        Found fd{static_cast<int>(j), -1, 0};
+        for (std::size_t k = j + 1; k < nj; ++k) {
+            int a = m.joints[k].parent;
+            while (a > fd.shoulder) a = m.joints[uz(a)].parent;
+            if (a != fd.shoulder) continue;
+            const double l = len(rest[k] - rest[j]);
+            if (l > fd.reach) {
+                fd.reach = l;
+                fd.tip = static_cast<int>(k);
+            }
+        }
+        if (fd.tip >= 0 && fd.reach > 1e-9) chains.push_back(fd);
+    }
+    std::stable_sort(chains.begin(), chains.end(), [](const Found& a, const Found& b) { return a.reach > b.reach; });
+    if (chains.size() >= 2) {
+        const bool firstLeft = rest[uz(chains[0].tip)].x >= rest[uz(chains[1].tip)].x;
+        for (int i = 0; i < 2; ++i) {
+            const Found& fd = chains[uz(firstLeft ? i : 1 - i)];
+            ws.shoulder[i] = fd.shoulder;
+            ws.tip[i] = fd.tip;
+        }
+        ws.own = true;
+        return ws;
+    }
+    ws.shoulder[0] = map[Bone::LUpperArm];
+    ws.tip[0] = map[Bone::LHand];
+    ws.shoulder[1] = map[Bone::RUpperArm];
+    ws.tip[1] = map[Bone::RHand];
+    return ws;
+}
+
 motion::Body autoBody(const Image& sprite, const Motion& m, std::string* why) {
     const bool spriteQuad = !sprite.isNull() && !sprite.isFullyTransparent() && motion::analyzeSubject(sprite).body == motion::Body::Quadruped;
     if (m.joints.empty()) return spriteQuad ? motion::Body::Quadruped : motion::Body::Biped;

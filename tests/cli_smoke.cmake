@@ -483,6 +483,21 @@ if(NOT body STREQUAL "flyer" OR NOT n_frames EQUAL 6 OR NOT n_issues EQUAL 0
     message(FATAL_ERROR "retarget preset:flap --body flyer: expected 6 clean frames (0.5 s at 12 fps): ${LAST_OUT}")
 endif()
 run(1 retarget "${WORKDIR}/rigs/dragon128.png" preset:quad-walk --body flyer --out "${WORKDIR}/presets")   # no arms
+# A wing rig takes the motion's wings as keys
+file(WRITE "${WORKDIR}/rigs/dragon.lua" [=[
+local s = ace.load_png("dragon128.png")
+local d = ace.new_document(s.width + 40, s.height + 40)
+d:set_cel(0, 0, s, 20, 20)
+d:save("dragon.acestudio")
+]=])
+run(0 run "${WORKDIR}/rigs/dragon.lua")
+run(0 rig auto "${WORKDIR}/rigs/dragon.acestudio" --layer 1 --as wings --out "${WORKDIR}/rigs/dragon_rig.acestudio")
+run(0 --json rig motion "${WORKDIR}/rigs/dragon_rig.acestudio" preset:wingbeat --out "${WORKDIR}/rigs/dragon_beat.acestudio")
+string(JSON n_keys GET "${LAST_OUT}" keys)
+if(NOT n_keys EQUAL 7 OR NOT LAST_OUT MATCHES "own wing bones" OR NOT LAST_OUT MATCHES "fold on the way up")
+    message(FATAL_ERROR "rig motion preset:wingbeat on a wing rig: expected 7 keys that beat and fold: ${LAST_OUT}")
+endif()
+run(0 rig bake "${WORKDIR}/rigs/dragon_beat.acestudio" --out "${WORKDIR}/rigs/dragon_baked.acestudio")
 run(1 retarget "${WORKDIR}/rigs/dragon128.png" preset:flap --body flyer --wing-line 2 --out "${WORKDIR}/presets")
 # A skeleton's own wing bones (preset:wingbeat has no arms)
 run(0 --json retarget "${WORKDIR}/rigs/dragon128.png" preset:wingbeat --body flyer --out "${WORKDIR}/presets")

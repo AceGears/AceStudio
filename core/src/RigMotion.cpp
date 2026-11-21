@@ -128,6 +128,153 @@ struct Match {
     double shownRef = 0, least = 1;
 };
 
+// A flyer rig (auto-rig's "wing", or "near wing" and "far wing", on a
+// "body"): the motion's wings (its own wing bones, else its arms) beat the
+// wing bones about their shoulders, as retarget --body flyer does. A wing
+// is as drawn at the top of the stroke (a loop) or in the first frame (a
+// one-shot) and turns down by the fall of the source wing's elevation; with
+// the skeleton's own wing bones it is also drawn shorter as the source wing
+// folds. The body rises and falls a little with the motion's root.
+Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, const MotionKeysOptions& opt, const std::vector<std::size_t>& wingBones) {
+    const Rig& rig = *doc.rig();
+    const double amount = std::clamp(opt.amount, 0.25, 2.0);
+    if (!opt.bones.empty() || !opt.legs.empty()) return bad("Bone and leg pairs (--bones, --legs) do not apply to a wing rig: its wings follow the motion's wings or arms");
+    const mocap::BoneMap map = mocap::autoMap(m, opt.mapOverrides);
+    const mocap::WingSource ws = mocap::wingSource(m, map);
+    if (!ws.found())
+        return bad("The motion has nothing to drive the rig's wings: no two chains of joints named wing and no two arms "
+                   "(try preset:wingbeat or preset:flap)");
+    const double start = std::clamp(opt.start, 0.0, m.duration());
+    const double span = opt.length > 0 ? std::min(opt.length, m.duration() - start) : m.duration() - start;
+    if (span <= 0) return bad("The time span is empty");
+    const int fps = std::clamp(opt.fps, 1, 60);
+    const int frames = std::clamp(opt.frames > 0 ? opt.frames : std::max(2, static_cast<int>(std::lround(span * fps))), 2, 240);
+    const double step = opt.loop ? span / frames : span / (frames - 1);
+    const int first = opt.first >= 0 ? opt.first : rig.restFrame + 1;
+    if (first > 100000) return bad("The first frame is out of range");
+    const int last = first + frames - 1;
+    if (rig.restFrame >= first && rig.restFrame <= last)
+        return bad("The keys would cover the rest frame " + std::to_string(rig.restFrame) + "; start after it (--first)");
+
+    // The source wings over the span: elevation and reach, and the root's height.
+    int rootJ = 0;
+    for (std::size_t j = 0; j < m.joints.size(); ++j)
+        if (m.joints[j].parent < 0) {
+            rootJ = static_cast<int>(j);
+            break;
+        }
+    std::vector<double> elev[2], reach[2], rootY;
+    double longest[2] = {0, 0};
+    for (int f = 0; f < frames; ++f) {
+        const std::vector<Vec3> w = mocap::jointPositions(m, start + f * step);
+        rootY.push_back(w[uz(rootJ)].y);
+        for (int a = 0; a < 2; ++a) {
+            const Vec3 d = sub(w[uz(ws.tip[a])], w[uz(ws.shoulder[a])]);
+            elev[a].push_back(std::atan2(d.y, std::hypot(d.x, d.z)));
+            reach[a].push_back(len(d));
+            longest[a] = std::max(longest[a], len(d));
+        }
+    }
+    int top[2] = {0, 0};
+    if (opt.loop)
+        for (int a = 0; a < 2; ++a)
+            for (int f = 1; f < frames; ++f)
+                if (elev[a][uz(f)] > elev[a][uz(top[a])]) top[a] = f;
+    double rootMean = rootY[0];
+    if (opt.loop) {
+        rootMean = 0;
+        for (double y : rootY) rootMean += y / frames;
+    }
+
+    // The rig: which way it faces (the body bone points to the head), and
+    // which source wing each wing bone takes (the near wing is the one on
+    // the viewer's side: the right wing of a rig facing screen right).
+    const std::vector<BoneWorld> rest = solve(rig, RigPose{});
+    double facing = opt.facing != 0 ? opt.facing : 1;
+    if (opt.facing == 0)
+        if (const Bone* body = rig.bone("body"); body && std::abs(std::cos(body->angle)) > 0.5) facing = std::cos(body->angle) < 0 ? -1 : 1;
+    struct Wing {
+        std::size_t bone;
+        int src;
+        double sign, scale;
+    };
+    std::vector<Wing> wings;
+    double wingLen = 0;
+    struct {
+        int framesAdded = 0;
+        mocap::Camera camera;
+        std::vector<std::pair<std::string, std::string>> matched;
+        std::vector<std::string> notes;
+    } res;
+    for (std::size_t i : wingBones) {
+        const Bone& b = rig.bones[i];
+        if (b.locked) continue;
+        const bool farWing = lower(b.name).find("far") != std::string::npos;
+        const int nearSrc = facing > 0 ? 1 : 0;
+        Wing w{i, farWing ? 1 - nearSrc : nearSrc, 1, farWing ? 0.8 : 1.0};
+        // A wing falls toward the tail (as retarget's wings do): anticlockwise
+        // on screen for a rig facing right. Only a wing drawn pointing
+        // forward more than up or down turns the other way, so it still falls.
+        const double dx = rest[i].tailX - rest[i].headX, dy = rest[i].tailY - rest[i].headY;
+        w.sign = dx * facing > 0 && std::abs(dy) < std::abs(dx) ? facing : -facing;
+        wings.push_back(w);
+        wingLen += b.length / static_cast<double>(wingBones.size());
+        res.matched.emplace_back(b.name, std::string(ws.own ? "wing " : "arm ") + m.joints[uz(ws.shoulder[w.src])].name + " -> " +
+                                             m.joints[uz(ws.tip[w.src])].name + " (turns by its rise and fall)");
+    }
+    if (wings.empty()) return bad("The rig's wing bones are locked");
+    const double srcLen = 0.5 * (longest[0] + longest[1]);
+    const double px = srcLen > 1e-9 ? wingLen / srcLen : 0;   // pixels per source unit
+
+    Document out = doc;
+    const int ms = std::clamp(static_cast<int>(std::lround(1000.0 / fps)), 10, 65535);
+    while (out.frameCount() <= last) {
+        auto f = out.insertFrame(out.frameCount(), ms);
+        if (!f) return f.error();
+        ++res.framesAdded;
+    }
+    Rig keyed = rig;
+    std::erase_if(keyed.keys, [&](const RigKey& key) { return key.frame >= first && key.frame <= last; });
+    double least = 1;
+    for (int f = 0; f < frames; ++f) {
+        RigPose pose;
+        pose.dy = std::clamp(-px * (rootY[uz(f)] - rootMean) * amount, -wingLen / 4, wingLen / 4);
+        for (const Wing& w : wings) {
+            const Bone& b = rig.bones[w.bone];
+            const int a = w.src;
+            const double down = std::clamp(amount * (elev[a][uz(top[a])] - elev[a][uz(f)]), -0.5, 2.0);
+            const double turn = clampTurn(b, w.sign * down * w.scale);
+            if (turn != 0.0) pose.turn[b.id] = turn;
+            if (ws.own && longest[a] > 1e-9) {
+                const double fold = (reach[a][uz(top[a])] - reach[a][uz(f)]) / longest[a];
+                const double s = std::clamp(1.0 - amount * fold, 0.55, 1.1);
+                if (std::abs(s - 1.0) >= 0.02) {
+                    pose.stretch[b.id] = s;
+                    least = std::min(least, s);
+                }
+            }
+        }
+        if (auto st = setKey(keyed, first + f, pose, Curve{}); !st) return st.error();
+    }
+    res.notes.push_back(std::string("Wings: the rig's ") + (wings.size() == 1 ? "wing follows" : "wings follow") + " the motion's " +
+                        (ws.own ? "own wing bones" : "arms") + "; a wing is as drawn at the top of the stroke.");
+    if (least < 0.98)
+        res.notes.push_back("The wings fold on the way up: they are drawn up to " + std::to_string(static_cast<int>(std::lround((1 - least) * 100))) + "% shorter.");
+    if (!ws.own) res.notes.push_back("With a motion's arms the wings only rise and fall: no folding.");
+    std::size_t unmatched = 0;
+    for (const Bone& b : rig.bones) {
+        bool isWing = false;
+        for (const Wing& w : wings) isWing = isWing || rig.bones[w.bone].id == b.id;
+        if (!isWing && b.parent != kNoBone) ++unmatched;
+    }
+    if (unmatched) res.notes.push_back(std::to_string(unmatched) + " bone(s) match nothing in the motion and follow their parents.");
+    res.camera = opt.camera ? *opt.camera : mocap::Camera{};
+    if (!opt.camera) res.camera.turn = facing < 0 ? -90 : 90;
+    out.setRig(std::move(keyed));
+    if (auto st = out.validate(); !st) return st.error();
+    return MotionKeysResult{std::move(out), first, frames, res.framesAdded, res.camera, std::move(res.matched), std::move(res.notes)};
+}
+
 } // namespace
 
 mocap::Camera drawnCamera(const Rig& rig) {
@@ -161,6 +308,18 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
     if (m.frameCount < 1 || m.joints.empty()) return bad("The motion has no frames");
     if (!std::isfinite(opt.amount) || !std::isfinite(opt.start) || !std::isfinite(opt.length)) return bad("An option is not a number");
     const double amount = std::clamp(opt.amount, 0.25, 2.0);
+
+    // A wing rig (auto-rig's wings: no numbered legs or arms) goes its own way.
+    {
+        std::vector<std::size_t> wingBones;
+        bool limbs = false;
+        for (std::size_t i = 0; i < rig.bones.size(); ++i) {
+            const std::string n = lower(rig.bones[i].name);
+            if (n == "wing" || n == "near wing" || n == "far wing") wingBones.push_back(i);
+            limbs = limbs || autoName(rig.bones[i].name).has_value();
+        }
+        if (!wingBones.empty() && !limbs) return wingKeys(doc, m, opt, wingBones);
+    }
 
     struct {
         int framesAdded = 0;

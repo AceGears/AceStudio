@@ -738,7 +738,8 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                              "Rig bones match the motion's joints by name (`bones` pairs them by hand); arms keep their drawn "
                              "pose unless `absolute_arms`. A four-legged motion (preset:quad-walk) drives auto-rig legs, head "
                              "and tail: `facing` says which way the animal faces when it is read wrongly, `legs` pairs the "
-                             "rig's numbered legs with the motion's. Reports the keyed frames and what drives each bone.") +
+                             "rig's numbered legs with the motion's. A wing rig (rig_auto as wings) is keyed from the motion's wing "
+                             "bones or arms (preset:wingbeat, preset:flap). Reports the keyed frames and what drives each bone.") +
                      kPathNote,
                  obj({{"path", str("The .acestudio file with a rig")},
                       {"motion", motionArg},
