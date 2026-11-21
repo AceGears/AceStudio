@@ -135,7 +135,7 @@ not been run.
   the head reaches above that line it turns with the wing, so lower the line. Motion Studio takes a
   wing line and, when the wings were selected in the document before Use Current Sprite, uses the
   selection as the wings (compiled by CI; no Qt test drives it); the command line, Lua and MCP take
-  a wing line only. `--body auto` (and Motion Studio's Automatic) picks wings only when the motion's skeleton has two chains of joints named wing (since 2026-11-21): a humanoid motion such as `flap` still needs `--body flyer`. With a humanoid motion's arms the wing stroke is up and down only: no
+  a wing line only. `--body auto` (and Motion Studio's Automatic) picks wings only when the motion's skeleton has two chains of joints named wing (since 2026-11-21): a humanoid motion such as `flap` still needs `--body flyer`. A skeleton whose wing joints have other names passes for one with arms (no folding or sweep) unless the two joints its wings start at are given (`--wings JointA,JointB`, since 2026-11-21; Lua and MCP `wings`; no field in Motion Studio); wings are not found by shape. With a humanoid motion's arms the wing stroke is up and down only: no
   forward sweep, twist or folding. The tail waves with the stroke as in Animate's flap (a thin tail
   behind the body only; the golden dragon's thick tail is not found as one).
 - **Fish from a 3D motion** (`retarget --body swimmer`, since 2026-11-20): the motion's spine (the
@@ -160,10 +160,13 @@ not been run.
   skeleton's picture. A skeleton with no head and tail names is guessed (the stiller end is the
   head), and a humanoid motion bends a fish by its head-to-foot chain, which rarely looks like
   swimming. The wave is read in one plane only (the one the spine moves in more). `rig motion`
-  does not drive an auto-rig made with `--as fins`. The Motion Studio choice (Fish) is compiled
+  on an auto-rig made with `--as fins` (since 2026-11-21) turns the tail fin and paddles the other
+  fins but does not bend the body, which is one rigid part there: a fish keyed this way swims
+  stiffer than the same fish through `retarget --body swimmer`. Tested locally on a drawn fish;
+  the test fish's baked frames were looked at once. The Motion Studio choice (Fish) is compiled
   by CI; no Qt test drives it.
-- **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI, core and MCP (`motion_directions`); no app page
-  or Lua yet. The art is chosen, never turned or drawn: a direction with no view drawn near it
+- **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI, core, MCP (`motion_directions`) and Lua
+  (`ace.directions` and `ace.turn_clip`, which return the clips); no app page yet. The art is chosen, never turned or drawn: a direction with no view drawn near it
   shows the nearest view with the motion seen from the new direction, and is flagged. Mirrored
   views swap the character's left and right (a sword hand, a shield); draw that side or use
   `--no-mirror`. Views are read from file names only (no reference-view slots in a project yet).

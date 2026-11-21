@@ -1006,9 +1006,36 @@ std::vector<int> backColumns(const rg::Part& body, const motion::detail::GaitRig
     return out;
 }
 
-// A four-legged motion on a four-legged sprite's gait rig: each drawn leg
-// follows the source leg on its end (hind or front) and side (near or far);
-// the body rises and sinks with the root.
+// The joints a wing starts at: the two named in `given` (joint names, case
+// does not matter), else every joint named "wing" whose parent is not.
+Result<std::vector<int>> wingRootJoints(const Motion& m, const std::vector<std::string>& given) {
+    auto lowered = [](std::string n) {
+        for (char& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return n;
+    };
+    const std::size_t nj = m.joints.size();
+    std::vector<int> roots;
+    if (!given.empty()) {
+        if (given.size() != 2) return Error(ErrorCode::InvalidArgument, "the wings are given as two joint names, one for each wing");
+        for (const std::string& g : given) {
+            int found = -1;
+            for (std::size_t j = 0; j < nj && found < 0; ++j)
+                if (!m.joints[j].endSite && lowered(m.joints[j].name) == lowered(g)) found = static_cast<int>(j);
+            if (found < 0) return Error(ErrorCode::InvalidArgument, "the motion has no joint named '" + g + "' to start a wing at");
+            if (!roots.empty() && roots.front() == found) return Error(ErrorCode::InvalidArgument, "the two wings are given the same joint '" + g + "'");
+            roots.push_back(found);
+        }
+        return roots;
+    }
+    std::vector<char> named(nj, 0);
+    for (std::size_t j = 0; j < nj; ++j) named[j] = !m.joints[j].endSite && lowered(m.joints[j].name).find("wing") != std::string::npos;
+    for (std::size_t j = 0; j < nj; ++j) {
+        const int p = m.joints[j].parent;
+        if (named[j] && !(p >= 0 && uz(p) < nj && named[uz(p)])) roots.push_back(static_cast<int>(j));
+    }
+    return roots;
+}
+
 // A humanoid motion on a winged sprite: the drawn wing is the top of the
 // stroke (the arm's highest point in the span); it turns down as the arm
 // falls from there, by the same angle (times amount), the far wing a little
@@ -1028,15 +1055,10 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
     std::vector<WingChain> wingChains;
     {
         const std::size_t nj = m.joints.size();
-        std::vector<char> named(nj, 0);
-        for (std::size_t j = 0; j < nj; ++j) {
-            std::string n = m.joints[j].name;
-            for (char& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            named[j] = !m.joints[j].endSite && n.find("wing") != std::string::npos;
-        }
-        for (std::size_t j = 0; j < nj; ++j) {
-            const int p = m.joints[j].parent;
-            if (!named[j] || (p >= 0 && named[uz(p)])) continue;
+        auto roots = wingRootJoints(m, opt.wingRoots);
+        if (!roots) return roots.error();
+        for (int rootJoint : roots.value()) {
+            const std::size_t j = uz(rootJoint);
             WingChain wc;
             wc.shoulder = static_cast<int>(j);
             for (std::size_t k = j + 1; k < nj; ++k) {
@@ -1062,6 +1084,8 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
         }
         std::stable_sort(wingChains.begin(), wingChains.end(), [](const WingChain& a, const WingChain& b) { return a.reach > b.reach; });
         if (wingChains.size() > 2) wingChains.resize(2);
+        if (!opt.wingRoots.empty() && wingChains.size() != 2)
+            return Error(ErrorCode::InvalidArgument, "a joint given as a wing has no joint below it: name the joint the wing starts at");
     }
     const bool ownWings = wingChains.size() == 2;
     if (!ownWings) {
@@ -1345,23 +1369,9 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
     return res;
 }
 
-// A motion's spine on a fish-like sprite (the swim rig of RigSwim.cpp). The
-// spine is the chain from the joint named head to the one named tail (the
-// longest chain of the skeleton when it has no such names). Its sideways
-// (or up-and-down) wave, measured from the head, bends the body column by
-// column; the tail fin turns as the chain's end turns against the stalk.
-Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, const RetargetOptions& opt) {
-    RetargetResult res;
-    res.map.joint.fill(-1);
-    const motion::Subject subj = motion::analyzeSubject(sprite);
-    auto built = motion::detail::buildSwimRig(sprite, subj, motion::SwimStyle::Auto);
-    if (!built) return Error(ErrorCode::InvalidArgument, "the sprite is too small to bend as a swimmer (8 by 4 pixels at least)");
-    motion::detail::SwimRig& sr = *built;
-    const rg::Rig& rig = sr.rig;
-    const IntRect bb = subj.bounds;
-    const double amount = std::clamp(opt.amount, 0.25, 2.0);
-    const int dir = sr.dir;
-
+// Reads a swimming motion: see SwimSource.
+Result<SwimSource> readSwim(const Motion& m, const RetargetOptions& opt) {
+    SwimSource out;
     // The spine chain, head first.
     const std::vector<Vec3> rest = restPositions(m);
     const std::size_t nj = m.joints.size();
@@ -1486,30 +1496,11 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
         std::vector<std::vector<double>> other = offsets(side2);
         if (swingOf(other) > swingOf(wave)) wave = std::move(other);
     }
-    if (swingOf(wave) < 0.02) res.notes.push_back("The motion's spine hardly bends; the body barely moves (try preset:swim).");
-    // The wave at `u` along the chain in frame f, as a fraction of the chain's length.
-    auto waveAt = [&](int f, double u) {
-        u = std::clamp(u, 0.0, 1.0);
-        std::size_t i = 1;
-        while (i + 1 < chain.size() && along[i] < u) ++i;
-        const double a = along[i - 1], b = along[i];
-        const double t = b > a ? std::clamp((u - a) / (b - a), 0.0, 1.0) : 0.0;
-        return wave[uz(f)][i - 1] * (1 - t) + wave[uz(f)][i] * t;
-    };
-
+    if (swingOf(wave) < 0.02) out.notes.push_back("The motion's spine hardly bends; the body barely moves (try preset:swim).");
     // Fin joints: branches off the spine named as fins. Each gives a turn
     // per frame: how far its direction (to its farthest joint) swings toward
     // the tail, or up and down when it moves more that way, from its neutral.
-    struct FinDrive {
-        std::string name;
-        bool top = false;          // points up from the spine (a dorsal fin)
-        double u = 0;              // where it joins, 0 head .. 1 tail
-        std::vector<double> turn;  // toward the tail is positive
-        // Its length as seen from the side over its longest in the span (a
-        // loop) or its first frame: under 1 while it points toward or away
-        // from the viewer. Empty when it is never seen long enough to tell.
-        std::vector<double> shown;
-    };
+    using FinDrive = SwimFinSource;
     std::vector<FinDrive> finDrives;
     {
         std::vector<int> chainAt(nj, -1);
@@ -1548,8 +1539,8 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
                 // Across the body where it joins: toward or away from a viewer at its side.
                 const Vec3 across = cross(norm(w[uz(after)] - w[uz(before)]), upv);
                 if (len(across) > 1e-6) {
-                    const double out = dot(d, norm(across));
-                    seen[uz(f)] = std::sqrt(std::max(0.0, 1.0 - out * out));
+                    const double away = dot(d, norm(across));
+                    seen[uz(f)] = std::sqrt(std::max(0.0, 1.0 - away * away));
                 }
                 back[uz(f)] = dot(d, norm(w[uz(after)] - w[uz(before)]));   // against the spine where it joins
                 rise[uz(f)] = dot(d, upv);
@@ -1572,7 +1563,7 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
             FinDrive fd;
             fd.name = m.joints[j].name;
             fd.top = up0 > 0 && up0 >= len(lateral);
-            fd.u = std::min(1.0, along[ci] / (sr.tailPart >= 0 && sr.stalk >= 0 ? 0.8 : 1.0));
+            fd.u = along[ci];
             // A lower fin lifting folds back against the body; a dorsal fin lifting stands up.
             for (int f = 0; f < frames; ++f)
                 fd.turn.push_back(backSwing >= riseSwing ? std::asin(std::clamp(back[uz(f)], -1.0, 1.0))
@@ -1586,6 +1577,54 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
             if (std::max(backSwing, riseSwing) >= 0.02 || !fd.shown.empty()) finDrives.push_back(std::move(fd));
         }
     }
+    out.frames = frames;
+    out.step = step;
+    out.chain = std::move(chain);
+    out.along = std::move(along);
+    out.byName = byName;
+    out.chainLen = chainLen;
+    out.wave = std::move(wave);
+    out.fins = std::move(finDrives);
+    out.world = std::move(world);
+    out.floorY = floorY;
+    out.axis = axis;
+    return out;
+}
+
+// A motion's spine on a fish-like sprite (the swim rig of RigSwim.cpp). The
+// spine is the chain from the joint named head to the one named tail (the
+// longest chain of the skeleton when it has no such names). Its sideways
+// (or up-and-down) wave, measured from the head, bends the body column by
+// column; the tail fin turns as the chain's end turns against the stalk.
+Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, const RetargetOptions& opt) {
+    RetargetResult res;
+    res.map.joint.fill(-1);
+    const motion::Subject subj = motion::analyzeSubject(sprite);
+    auto built = motion::detail::buildSwimRig(sprite, subj, motion::SwimStyle::Auto);
+    if (!built) return Error(ErrorCode::InvalidArgument, "the sprite is too small to bend as a swimmer (8 by 4 pixels at least)");
+    motion::detail::SwimRig& sr = *built;
+    const rg::Rig& rig = sr.rig;
+    const IntRect bb = subj.bounds;
+    const double amount = std::clamp(opt.amount, 0.25, 2.0);
+    const int dir = sr.dir;
+
+    auto read = readSwim(m, opt);
+    if (!read) return read.error();
+    const SwimSource& sw = read.value();
+    for (const std::string& n : sw.notes) res.notes.push_back(n);
+    const std::vector<int>& chain = sw.chain;
+    const double chainLen = sw.chainLen;
+    const bool byName = sw.byName;
+    const int frames = sw.frames;
+    const double step = sw.step;
+    const std::vector<std::vector<Vec3>>& world = sw.world;
+    const double floorY = sw.floorY;
+    const Vec3 axis = sw.axis;
+    auto waveAt = [&](int f, double u) { return sw.waveAt(f, u); };
+    // Where a fin joins, along the body in front of the tail fin.
+    using FinDrive = SwimFinSource;
+    std::vector<FinDrive> finDrives = sw.fins;
+    for (FinDrive& fd : finDrives) fd.u = std::min(1.0, fd.u / (sr.tailPart >= 0 && sr.stalk >= 0 ? 0.8 : 1.0));
     // Each drawn fin takes the nearest fin joint of its kind (top or lower).
     std::vector<int> driveOf(sr.fins.size(), -1);
     for (std::size_t i = 0; i < sr.fins.size(); ++i)
@@ -1630,9 +1669,7 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
     std::vector<double> finTurn(uz(frames), 0.0);
     double finPeak = 0;
     for (int f = 0; f < frames; ++f) {
-        const double before = std::atan((waveAt(f, stalkU) - waveAt(f, stalkU - 0.2)) / 0.2);
-        const double after = std::atan((waveAt(f, 1.0) - waveAt(f, stalkU)) / std::max(0.05, 1.0 - stalkU));
-        finTurn[uz(f)] = std::clamp((after - before) * amount, -0.6, 0.6);
+        finTurn[uz(f)] = std::clamp((hasFin ? sw.tailTurn(f, stalkU) : 0.0) * amount, -0.6, 0.6);
         finPeak = std::max(finPeak, std::abs(finTurn[uz(f)]));
     }
     const int margin = maxBend + std::max(4, bb.h / 4) + 2;
@@ -2062,25 +2099,39 @@ Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, c
 
 } // namespace
 
-WingSource wingSource(const Motion& m, const BoneMap& map) {
+double SwimSource::waveAt(int f, double u) const {
+    if (f < 0 || f >= frames || chain.size() < 2) return 0;
+    u = std::clamp(u, 0.0, 1.0);
+    std::size_t i = 1;
+    while (i + 1 < chain.size() && along[i] < u) ++i;
+    const double a = along[i - 1], b = along[i];
+    const double t = b > a ? std::clamp((u - a) / (b - a), 0.0, 1.0) : 0.0;
+    return wave[uz(f)][i - 1] * (1 - t) + wave[uz(f)][i] * t;
+}
+
+double SwimSource::tailTurn(int f, double stalkU) const {
+    stalkU = std::clamp(stalkU, 0.3, 0.95);
+    const double before = std::atan((waveAt(f, stalkU) - waveAt(f, stalkU - 0.2)) / 0.2);
+    const double after = std::atan((waveAt(f, 1.0) - waveAt(f, stalkU)) / std::max(0.05, 1.0 - stalkU));
+    return after - before;
+}
+
+Result<SwimSource> swimSource(const Motion& m, const RetargetOptions& opt) { return readSwim(m, opt); }
+
+WingSource wingSource(const Motion& m, const BoneMap& map, const std::vector<std::string>& given) {
     WingSource ws;
     const std::size_t nj = m.joints.size();
     const std::vector<Vec3> rest = restPositions(m);
-    std::vector<char> named(nj, 0);
-    for (std::size_t j = 0; j < nj; ++j) {
-        std::string n = m.joints[j].name;
-        for (char& ch : n) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-        named[j] = !m.joints[j].endSite && n.find("wing") != std::string::npos;
-    }
+    const auto roots = wingRootJoints(m, given);
+    if (!roots) return ws;
     struct Found {
         int shoulder, tip;
         double reach;
     };
     std::vector<Found> chains;
-    for (std::size_t j = 0; j < nj; ++j) {
-        const int p = m.joints[j].parent;
-        if (!named[j] || (p >= 0 && uz(p) < nj && named[uz(p)])) continue;
-        Found fd{static_cast<int>(j), -1, 0};
+    for (int rootJoint : roots.value()) {
+        const std::size_t j = uz(rootJoint);
+        Found fd{rootJoint, -1, 0};
         for (std::size_t k = j + 1; k < nj; ++k) {
             int a = m.joints[k].parent;
             while (a > fd.shoulder) a = m.joints[uz(a)].parent;
@@ -2104,6 +2155,7 @@ WingSource wingSource(const Motion& m, const BoneMap& map) {
         ws.own = true;
         return ws;
     }
+    if (!given.empty()) return ws;   // a given joint has nothing below it
     ws.shoulder[0] = map[Bone::LUpperArm];
     ws.tip[0] = map[Bone::LHand];
     ws.shoulder[1] = map[Bone::RUpperArm];

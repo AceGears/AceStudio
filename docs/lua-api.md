@@ -198,6 +198,8 @@ print(k.keys .. " keys from frame " .. k.first, k.matched["leg0 thigh"])
 | Function | |
 |---|---|
 | `ace.motion_presets()` | list of `{name, description, seconds, loops, built_in, four_legged, swimmer, winged}`: the built-in presets and the motions saved in the user's motion library (`four_legged` is also true for the six-legged `hex-walk`) |
+| `ace.directions(views, motion[, opts])` | the motion in every direction, each on the nearest drawn view: `views` is `{s = image, e = image, ...}` (names as the `directions` command: `s`, `se`, `e`, `ne`, `n`, `nw`, `w`, `sw` or `front`, `right`, `back-left`, ...); `opts` takes `dirs` (8, 4 or a list of names; default 8), `mirror` (default true) and the timing, `tilt`, `roll`, `perspective` and `body` options of `ace.retarget` (not `view` or `turn`). Returns a list of `{direction, turn, view, mirrored, off_by, approximate_view, frames, durations, notes, loops}` |
+| `ace.turn_clip(views, from, to[, {step, ms, mirror}])` | a turn on the spot between two directions, the short way round, cutting between the drawn views every `step` degrees (default 45), each frame held `ms` (default 100): `{frames, durations, loops}` |
 | `ace.retarget(sprite, motion[, opts])` | `{frames = {images}, durations = {ms}, notes = {text}, loops, body, approximate_view, turn}` |
 
 `motion` is `"preset:NAME"` or a `.bvh`, `.glb` or `.gltf` file (inside the script's folders).
@@ -206,7 +208,9 @@ print(k.keys .. " keys from frame " .. k.first, k.matched["leg0 thigh"])
 or `frames`, `amount` (0.25 to 2), `travel` (keep the motion's travel), `loop` (one-shot presets
 default to false), `body` (`auto`, `biped`, `quadruped`, `flyer` or `swimmer`; auto picks flyer for a motion with wing bones, swimmer for one with no legs, else reads
 the sprite's legs; `swimmer` bends a fish-like side view with the motion's spine, try
-`"preset:swim"`), `wing_line` (flyer: the wings are above this fraction of the height, default 0.45).
+`"preset:swim"`), `wing_line` (flyer: the wings are above this fraction of the height, default 0.45), `wings`
+(`{"JointA", "JointB"}`: the two joints the skeleton's wings start at, when they are not named
+wing; it means a flyer unless `body` is given; `doc:rig_motion` and `ace.directions` take it too).
 A humanoid motion on a four-legged sprite, a four-legged motion on wings, an unknown preset, view
 or body, and other file types are errors.
 The frames count against the script's memory limit.

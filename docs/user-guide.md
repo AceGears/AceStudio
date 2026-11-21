@@ -143,8 +143,12 @@ Add, Subtract, Difference), visibility and locks.
   with the sprite open.   The motion's legs are found by their shape, so joint names do not matter. A motion on six legs (try `preset:hex-walk`) walks a sprite or rig drawn with six legs the same way, pairing
   the legs from the back forward; on four drawn legs its middle pair is left out.
   The legs, the body's height, the back's rock and the head's and tail's rise and fall follow the motion.
+  When a skeleton's wing joints are not named wing, give the two joints the wings start at:
+  `--wings L_Humerus,R_Humerus` (on `retarget` and `rig motion`).
   A winged sprite rigged with `rig auto --as wings` takes `rig motion ... preset:wingbeat` (or
-  `preset:flap`) the same way.
+  `preset:flap`) the same way. A fish rigged with `rig auto --as fins` takes `rig motion ...
+  preset:swim`: the tail fin and the other fins move, the body does not bend (for a bending body
+  use `retarget --body swimmer`).
   To keep editable keys instead, auto-rig the sprite and run
   `acestudio-cli rig motion dog_rig.acestudio preset:quad-walk --out dog_walk.acestudio`. If it
   reads the animal backwards, add `--facing right` (or `left`); `--legs "0=hind-near,1=hind-far"`

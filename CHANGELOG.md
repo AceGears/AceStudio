@@ -97,6 +97,22 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - **Wing rigs take motion**: `rig motion` on a rig made with `rig auto --as wings` now keys the
   wing bones from the motion's own wing bones (`preset:wingbeat`: beat and fold) or its arms
   (`preset:flap`: beat only), instead of refusing. Core: `mocap::wingSource`.
+- **Direction sets from scripts**: Lua gains `ace.directions(views, motion, opts)`: a motion in
+  eight, four or named directions, each on the nearest drawn view (or its mirror), as the
+  `directions` command makes them, and `ace.turn_clip(views, from, to)` for a turn on the spot.
+- **Arm boxes from scripts and AI tools**: `doc:auto_rig` takes `arms = {{x, y, w, h}, ...}` and
+  the MCP `rig_edit` tool takes `arms`, as `rig auto --arms` does.
+- **IK with stretched bones no longer stops short**: with a stretched upper bone the solve could
+  settle on a straight leg just short of a target a bent leg reaches; it now starts again from
+  bent poses and keeps the nearest.
+- **Wing joints by hand**: `retarget` and `rig motion` take `--wings JointA,JointB` (Lua
+  `wings = {"JointA", "JointB"}`, MCP `wings`): the two joints a skeleton's wings start at, for
+  skeletons whose wing joints are not named wing. The wings then beat, fold and sweep with those
+  chains instead of passing for arms. With `retarget` it means `--body flyer` unless a body is given.
+- **Fin rigs take motion**: `rig motion` on a rig made with `rig auto --as fins` now keys the
+  tail fin from the end of the motion's spine and the other fins from its fin joints
+  (`preset:swim`), instead of finding nothing to match. The body stays rigid. Core:
+  `mocap::swimSource`.
 - **Fins foreshorten**: with `retarget --body swimmer`, a fin whose joint swings toward or away
   from the viewer is drawn shorter there (down to half its length), and a note says by how much.
 - **Rig panel: Length**: the Pose group has a Length box (10 to 400%) for the selected bone's

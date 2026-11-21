@@ -8,6 +8,7 @@
 #include "acestudio/core/Document.h"
 #include "acestudio/core/Editor.h"
 #include "acestudio/core/FileUtil.h"
+#include "acestudio/core/DirectionSet.h"
 #include "acestudio/core/Mocap.h"
 #include "acestudio/core/MotionLibrary.h"
 #include "acestudio/core/PngCodec.h"
@@ -193,6 +194,22 @@ mocap::Motion scriptMotion(Runtime& rt, const std::string& source, bool& oneShot
 
 // The camera options view, turn, tilt, roll and perspective; nullopt when
 // none is given. turnGiven: a view or a turn was given.
+// wings = {"JointA", "JointB"}: the joints a skeleton's wings start at.
+std::vector<std::string> wingRootsOpt(const sol::table& t) {
+    std::vector<std::string> roots;
+    const sol::object w = t.get<sol::object>(std::string("wings"));
+    if (w.get_type() == sol::type::lua_nil) return roots;
+    if (w.get_type() != sol::type::table) fail("wings is {\"JointA\", \"JointB\"}: the joints the skeleton's wings start at");
+    const sol::table list = w.as<sol::table>();
+    for (std::size_t i = 1; i <= list.size(); ++i) {
+        const auto n = list[i].get<sol::optional<std::string>>();
+        if (!n) fail("wings is {\"JointA\", \"JointB\"}: the joints the skeleton's wings start at");
+        roots.push_back(*n);
+    }
+    if (roots.size() != 2) fail("wings is {\"JointA\", \"JointB\"}: the joints the skeleton's wings start at");
+    return roots;
+}
+
 std::optional<mocap::Camera> cameraOpts(const sol::table& t, bool& turnGiven) {
     std::optional<mocap::Camera> cam;
     turnGiven = false;
@@ -255,6 +272,24 @@ struct LImage {
     Image img;
     Charge charge;
 };
+
+// The drawn views ace.directions and ace.turn_clip take: {s = image, e = image, ...}.
+std::vector<directions::DrawnView> drawnViews(const sol::table& drawn) {
+    std::vector<directions::DrawnView> views;
+    for (const auto& kv : drawn) {
+        if (kv.first.get_type() != sol::type::string || !kv.second.is<LImage>())
+            fail("views is a table of view name = image (s, se, e, ne, n, nw, w, sw or front, right, back-left, ...)");
+        const std::string name = kv.first.as<std::string>();
+        const auto turn = directions::viewTurn(name);
+        if (!turn) fail("unknown view '" + name + "' (s, se, e, ne, n, nw, w, sw or front, right, back-left, ...)");
+        if (static_cast<int>(views.size()) >= directions::kMaxViews) fail("too many views");
+        views.push_back({name, *turn, kv.second.as<const LImage&>().img});
+    }
+    if (views.empty()) fail("views is a table of view name = image; it is empty");
+    std::sort(views.begin(), views.end(), [](const auto& x, const auto& y) { return x.turn < y.turn; });
+    check(directions::checkViews(views));
+    return views;
+}
 
 struct LDoc {
     Editor* ed = nullptr;
@@ -817,6 +852,7 @@ void bind(sol::state_view lua, Runtime& rt) {
             o.inPlace = !t["travel"].get_or(false);
             o.loop = t["loop"].get_or(o.loop);
             o.armsFromDrawing = !t["absolute_arms"].get_or(false);
+            o.wingRoots = wingRootsOpt(t);
             bake = t["bake"].get_or(false);
             if (sol::optional<int> f = t["first"]) {
                 if (*f < 0) fail("first must be a frame number");
@@ -1089,9 +1125,11 @@ void bind(sol::state_view lua, Runtime& rt) {
             o.loop = t["loop"].get_or(o.loop);
             body = t["body"].get_or(std::string("auto"));
             o.wingLine = std::clamp(t["wing_line"].get_or(0.45), 0.05, 0.95);
+            o.wingRoots = wingRootsOpt(t);
         }
         std::string whyBody;
-        if (body == "auto") o.body = mocap::autoBody(sprite.img, motion, &whyBody);
+        if (body == "auto" && !o.wingRoots.empty()) o.body = motion::Body::Flyer;   // wing joints given by hand
+        else if (body == "auto") o.body = mocap::autoBody(sprite.img, motion, &whyBody);
         else if (body == "biped") o.body = motion::Body::Biped;
         else if (body == "quadruped") o.body = motion::Body::Quadruped;
         else if (body == "flyer") o.body = motion::Body::Flyer;
@@ -1112,6 +1150,108 @@ void bind(sol::state_view lua, Runtime& rt) {
         return lv.create_table_with("frames", frames, "durations", durations, "notes", notes, "loops", r.clip.loops, "body",
                                     std::string(motion::toString(o.body)), "approximate_view",
                                     r.approximateView, "turn", r.camera.turn);
+    };
+    // ace.directions({s = image, e = image, ...}, motion, {dirs = 8 | 4 | {"s", "e", ...}, mirror = true,
+    //   tilt=, roll=, perspective=, start=, length=, fps=, frames=, amount=, travel=, loop=,
+    //   body="auto"|"biped"|"quadruped"|"flyer"|"swimmer"}): the motion in every direction, each on the
+    // nearest drawn view (DirectionSet.h).
+    ace["directions"] = [&rt](const sol::table& drawn, const std::string& source, sol::optional<sol::table> opts, sol::this_state ts) {
+        const std::vector<directions::DrawnView> views = drawnViews(drawn);
+        bool oneShot = false;
+        const mocap::Motion motion = scriptMotion(rt, source, oneShot);
+        directions::DirectionOptions o;
+        o.retarget.loop = !oneShot;
+        o.turns = directions::compassTurns(8);
+        std::string body = "auto";
+        if (opts) {
+            const sol::table& t = *opts;
+            bool turnGiven = false;
+            o.retarget.camera = cameraOpts(t, turnGiven);
+            if (turnGiven) fail("the camera turns to each direction by itself (view and turn are for ace.retarget; tilt, roll and perspective work)");
+            o.retarget.start = std::max(0.0, t["start"].get_or(0.0));
+            o.retarget.length = std::max(0.0, t["length"].get_or(0.0));
+            o.retarget.fps = std::clamp(t["fps"].get_or(12), 1, 60);
+            o.retarget.frames = std::clamp(t["frames"].get_or(0), 0, 240);
+            o.retarget.amount = std::clamp(t["amount"].get_or(1.0), 0.25, 2.0);
+            o.retarget.inPlace = !t["travel"].get_or(false);
+            o.retarget.loop = t["loop"].get_or(o.retarget.loop);
+            o.allowMirror = t["mirror"].get_or(true);
+            o.retarget.wingRoots = wingRootsOpt(t);
+            body = t["body"].get_or(std::string("auto"));
+            const sol::object dirs = t.get<sol::object>(std::string("dirs"));
+            if (dirs.get_type() == sol::type::number) {
+                const int n = dirs.as<int>();
+                if (n != 4 && n != 8) fail("dirs is 8, 4 or a list of direction names");
+                o.turns = directions::compassTurns(n);
+            } else if (dirs.get_type() == sol::type::table) {
+                o.turns.clear();
+                const sol::table list = dirs.as<sol::table>();
+                for (std::size_t i = 1; i <= list.size(); ++i) {
+                    const auto n = list[i].get<sol::optional<std::string>>();
+                    const auto turn = n ? directions::viewTurn(*n) : std::nullopt;
+                    if (!turn) fail("dirs is 8, 4 or a list of direction names (s, se, e, ne, n, nw, w, sw)");
+                    o.turns.push_back(*turn);
+                }
+            } else if (dirs.get_type() != sol::type::lua_nil) {
+                fail("dirs is 8, 4 or a list of direction names");
+            }
+        }
+        // As the directions command: a body read from the first view's art.
+        if (body == "auto")
+            o.retarget.body = motion::analyzeSubject(views.front().art).body == motion::Body::Quadruped ? motion::Body::Quadruped : motion::Body::Biped;
+        else if (body == "biped") o.retarget.body = motion::Body::Biped;
+        else if (body == "quadruped") o.retarget.body = motion::Body::Quadruped;
+        else if (body == "flyer") o.retarget.body = motion::Body::Flyer;
+        else if (body == "swimmer") o.retarget.body = motion::Body::Swimmer;
+        else fail("body is \"auto\", \"biped\", \"quadruped\", \"flyer\" or \"swimmer\"");
+        const std::vector<directions::DirectionClip> made = unwrap(directions::retargetDirections(views, motion, o));
+        std::size_t bytes = 0;
+        for (const directions::DirectionClip& d : made)
+            for (const Image& f : d.result.clip.frames) bytes += f.byteSize();
+        ensureRoom(bytes);
+        sol::state_view lv(ts);
+        sol::table out = lv.create_table();
+        for (std::size_t k = 0; k < made.size(); ++k) {
+            const directions::DirectionClip& d = made[k];
+            sol::table frames = lv.create_table(), durations = lv.create_table(), notes = lv.create_table();
+            for (std::size_t i = 0; i < d.result.clip.frames.size(); ++i) {
+                frames[i + 1] = LImage{d.result.clip.frames[i]};
+                durations[i + 1] = i < d.result.clip.durations.size() ? d.result.clip.durations[i] : 100;
+            }
+            for (std::size_t i = 0; i < d.result.notes.size(); ++i) notes[i + 1] = d.result.notes[i];
+            out[k + 1] = lv.create_table_with("direction", d.direction, "turn", d.turn, "view", d.viewName, "mirrored", d.choice.mirrored, "off_by",
+                                              d.choice.offBy, "approximate_view", d.approximateView, "frames", frames, "durations", durations,
+                                              "notes", notes, "loops", d.result.clip.loops);
+        }
+        return out;
+    };
+    // ace.turn_clip(views, "s", "n", {step = 45, ms = 100, mirror = true}): a turn on the spot, the
+    // short way round, cutting between the drawn views.
+    ace["turn_clip"] = [](const sol::table& drawn, const std::string& from, const std::string& to, sol::optional<sol::table> opts,
+                          sol::this_state ts) {
+        const std::vector<directions::DrawnView> views = drawnViews(drawn);
+        const auto a = directions::viewTurn(from), b = directions::viewTurn(to);
+        if (!a || !b) fail("turn_clip takes two direction names (s, se, e, ne, n, nw, w, sw)");
+        double step = 45;
+        int ms = 100;
+        bool mirror = true;
+        if (opts) {
+            step = (*opts)["step"].get_or(45.0);
+            ms = (*opts)["ms"].get_or(100);
+            mirror = (*opts)["mirror"].get_or(true);
+        }
+        if (!std::isfinite(step)) fail("step must be a number of degrees");
+        const motion::Clip clip = unwrap(directions::turnClip(views, *a, *b, step, ms, mirror));
+        std::size_t bytes = 0;
+        for (const Image& f : clip.frames) bytes += f.byteSize();
+        ensureRoom(bytes);
+        sol::state_view lv(ts);
+        sol::table frames = lv.create_table(), durations = lv.create_table();
+        for (std::size_t i = 0; i < clip.frames.size(); ++i) {
+            frames[i + 1] = LImage{clip.frames[i]};
+            durations[i + 1] = i < clip.durations.size() ? clip.durations[i] : ms;
+        }
+        return lv.create_table_with("frames", frames, "durations", durations, "loops", clip.loops);
     };
     ace["write_uikit"] = [&rt](const std::string& path, sol::optional<sol::table> opts) {
         UiTheme th;

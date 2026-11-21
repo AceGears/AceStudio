@@ -251,6 +251,10 @@ struct RetargetOptions {
     double wingLine = 0.45;
     Mask wingMask;
     std::vector<std::pair<Bone, std::string>> mapOverrides;
+    // Flyer: the skeleton's two wing roots by joint name (case does not
+    // matter; each needs a joint below it), for wings whose joints are not
+    // named "wing". Empty: joints named wing, else the arms.
+    std::vector<std::string> wingRoots;
 };
 
 struct RetargetResult {
@@ -265,6 +269,43 @@ struct RetargetResult {
 
 Result<RetargetResult> retarget(const Image& sprite, const Motion& m, const RetargetOptions& opt = {});
 
+// A swimming motion read for a fish drawn from the side. The spine is the
+// chain from the joint named head to the one named tail (the skeleton's
+// longest chain without such names). `wave` is its offset across the body
+// (in the direction it moves in more), from the head and from its neutral
+// shape (a loop's mean, a one-shot's first frame), as a fraction of the
+// chain's length. A fin is a branch off the spine named fin, flipper,
+// pectoral, pelvic or dorsal that moves.
+struct SwimFinSource {
+    std::string name;
+    bool top = false;          // points up from the spine (a dorsal fin)
+    double u = 0;              // where it joins the spine, 0 head .. 1 tail
+    std::vector<double> turn;  // per frame, radians; toward the tail is positive
+    // Per frame, its length as seen from the side over its longest in the
+    // span (a loop) or its first frame. Empty when it does not change.
+    std::vector<double> shown;
+};
+struct SwimSource {
+    int frames = 0;
+    double step = 0;                        // seconds between frames
+    std::vector<int> chain;                 // joints, head first
+    std::vector<double> along;              // per chain joint, 0 head .. 1 tail
+    bool byName = false;
+    double chainLen = 0;
+    std::vector<std::vector<double>> wave;  // [frame][chain joint]
+    std::vector<SwimFinSource> fins;
+    std::vector<std::vector<Vec3>> world;   // [frame][joint]
+    double floorY = 0;
+    Vec3 axis;                              // head to tail at rest
+    std::vector<std::string> notes;
+    double waveAt(int frame, double u) const;
+    // The chain's end against the body before `stalkU` (radians, down positive).
+    double tailTurn(int frame, double stalkU = 0.8) const;
+};
+// Uses start, length, fps, frames and loop of `opt`. Fails when the
+// skeleton has no spine of three joints.
+Result<SwimSource> swimSource(const Motion& m, const RetargetOptions& opt = {});
+
 // What can drive a pair of wings: the skeleton's own wing bones (the two
 // longest chains of joints named "wing": the chain's first joint and its
 // farthest joint), else the humanoid arms of `map` (upper arm and hand,
@@ -275,7 +316,9 @@ struct WingSource {
     bool own = false;
     bool found() const { return shoulder[0] >= 0 && shoulder[1] >= 0 && tip[0] >= 0 && tip[1] >= 0; }
 };
-WingSource wingSource(const Motion& m, const BoneMap& map);
+// With `roots` (RetargetOptions::wingRoots) the wings start at those joints,
+// and nothing is found when they are not two joints with joints below them.
+WingSource wingSource(const Motion& m, const BoneMap& map, const std::vector<std::string>& roots = {});
 
 // The body kind "auto" stands for, from the motion first and the sprite
 // second: Flyer when the skeleton has two chains of joints named wing

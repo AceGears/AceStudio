@@ -89,6 +89,7 @@ const char* kUsageText =
     "           [--turn DEG --tilt DEG --roll DEG [--perspective --fov 35]] [--start S --length S] [--fps 12 | --frames N]\n"
     "           [--amount 1] [--travel] [--no-loop] [--map Bone=joint,...] [--name walk] [--animation <index|name>]\n"
     "           [--body auto|biped|quadruped|flyer|swimmer] [--wing-line 0.45]\n"
+    "           [--wings JointA,JointB]   (the joints the skeleton's wings start at, when not named wing)\n"
     "                                  3D skeletal motion (BVH, or a glTF/GLB animation: the first unless --animation)\n"
     "                                  onto a two-legged sprite's part rig, or a four-legged motion (legs found by shape)\n"
     "                                  onto a four-legged sprite (--body auto: by the sprite's legs; a motion with wing bones picks flyer, one with no legs swimmer), or with --body flyer\n"

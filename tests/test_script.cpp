@@ -417,6 +417,13 @@ TEST_CASE("Lua motion library and retarget", "[script][mocap]") {
         assert(not pcall(ace.retarget, dog, 'preset:walk'))
         assert(not pcall(ace.retarget, dog, 'preset:moonwalk'))
         assert(not pcall(ace.retarget, dog, 'preset:quad-walk', {body = 'six-legged'}))
+        -- Wing joints by hand: two joint names of the motion; they mean a flyer.
+        assert(not pcall(ace.retarget, dog, 'preset:wingbeat', {wings = {'LeftWing'}}))
+        assert(not pcall(ace.retarget, dog, 'preset:wingbeat', {wings = 'LeftWing,RightWing'}))
+        assert(not pcall(ace.retarget, dog, 'preset:wingbeat', {wings = {'LeftWing', 'Feather'}}))
+        -- Two good joints make it a flyer unless a body is asked for by name.
+        assert(ace.retarget(dog, 'preset:wingbeat', {wings = {'leftwing', 'RightWing'}, fps = 5}).body == 'flyer')
+        assert(ace.retarget(dog, 'preset:quad-walk', {wings = {'Hips', 'Chest'}, body = 'quadruped', fps = 4}).body == 'quadruped')
         assert(not pcall(ace.retarget, dog, 'preset:quad-walk', {view = 'sideways'}))
         assert(not pcall(ace.retarget, dog, 'motion.fbx'))
         -- A fish: the swim preset's spine bends it.
@@ -522,6 +529,59 @@ TEST_CASE("Lua auto-rig takes arm boxes", "[script][rig]") {
         assert(not pcall(function() fresh():auto_rig(0, {arms = {{1, 2, 3}}}) end))
         assert(not pcall(function() fresh():auto_rig(0, {arms = {'8,4,6,14'}}) end))
         assert(not pcall(function() fresh():auto_rig(0, {arms = {{8, 4, 6, 14}, {10, 6, 6, 14}}}) end))
+    )");
+    INFO(errorOf(r));
+    CHECK(r);
+}
+
+TEST_CASE("Lua makes a motion in every direction from drawn views", "[script][mocap][directions]") {
+    auto r = run(R"(
+        -- A figure from the front and from its right side (the side view has a nose).
+        local function man(side)
+            local m = ace.image(32, 48)
+            m:rect(11, 14, 10, 16, '#3c5a96')
+            m:rect(11, 4, 10, 10, '#e6b48c')
+            m:rect(11, 30, 4, 16, '#28283c')
+            m:rect(17, 30, 4, 16, '#28283c')
+            if side then m:rect(21, 8, 2, 2, '#c8966e') else
+                m:rect(7, 14, 4, 14, '#e6b48c')
+                m:rect(21, 14, 4, 14, '#e6b48c')
+            end
+            return m
+        end
+        local views = {s = man(false), e = man(true)}
+        local all = ace.directions(views, 'preset:walk', {fps = 8})
+        assert(#all == 8, #all)
+        local by = {}
+        for _, d in ipairs(all) do
+            by[d.direction] = d
+            assert(#d.frames >= 4 and #d.frames == #d.durations and d.loops, d.direction)
+            assert(type(d.notes) == 'table')
+        end
+        assert(by.s.view == 's' and not by.s.mirrored and by.s.off_by == 0, by.s.view)
+        assert(by.e.view == 'e' and not by.e.mirrored)
+        assert(by.w.mirrored and by.w.view:find('mirrored'), by.w.view)   -- the east view, flipped
+        assert(by.n.off_by >= 90 and by.n.approximate_view)             -- no back view drawn
+        -- Four directions, named ones, and no mirrors.
+        assert(#ace.directions(views, 'preset:walk', {dirs = 4, fps = 6}) == 4)
+        local two = ace.directions(views, 'preset:walk', {dirs = {'e', 'w'}, mirror = false, fps = 6})
+        assert(#two == 2 and two[2].direction == 'w' and not two[2].mirrored)
+        -- A turn on the spot from front to right: both drawn views, in order, one size.
+        local turn = ace.turn_clip(views, 's', 'e')
+        assert(#turn.frames >= 2 and #turn.frames == #turn.durations and not turn.loops, #turn.frames)
+        assert(turn.durations[1] == 100)
+        assert(turn.frames[1].width == turn.frames[#turn.frames].width)
+        assert(ace.turn_clip(views, 's', 'e', {ms = 60}).durations[1] == 60)
+        assert(not pcall(ace.turn_clip, views, 's', 'up'))
+        assert(not pcall(ace.turn_clip, {}, 's', 'e'))
+        -- Refusals.
+        assert(not pcall(ace.directions, {}, 'preset:walk'))
+        assert(not pcall(ace.directions, {up = man(false)}, 'preset:walk'))
+        assert(not pcall(ace.directions, {s = 'front.png'}, 'preset:walk'))
+        assert(not pcall(ace.directions, views, 'preset:walk', {dirs = 6}))
+        assert(not pcall(ace.directions, views, 'preset:walk', {dirs = {'up'}}))
+        assert(not pcall(ace.directions, views, 'preset:walk', {turn = 30}))
+        assert(not pcall(ace.directions, views, 'preset:moonwalk'))
     )");
     INFO(errorOf(r));
     CHECK(r);

@@ -118,6 +118,7 @@ struct MotionArgs {
     int fps = 12, frames = 0;
     bool inPlace = true, loop = true;
     std::vector<std::pair<mocap::Bone, std::string>> mapOverrides;
+    std::vector<std::string> wingRoots;   // --wings JointA,JointB
 };
 int readMotionArgs(const Args& a, Output& out, const std::string& cmd, bool oneShot, const std::function<double()>& drawnTurn, MotionArgs& o) {
     std::string err;
@@ -165,6 +166,13 @@ int readMotionArgs(const Args& a, Output& out, const std::string& cmd, bool oneS
             if (comma == std::string::npos) break;
             s = comma + 1;
         }
+    }
+    // --wings JointA,JointB: the skeleton's two wing roots, by joint name
+    if (auto w = a.opt("wings")) {
+        const std::size_t comma = w->find(',');
+        if (comma == std::string::npos || comma == 0 || comma + 1 >= w->size() || w->find(',', comma + 1) != std::string::npos)
+            return out.fail(kUsage, cmd + ": --wings expects the two joints the wings start at, e.g. --wings L_Humerus,R_Humerus");
+        o.wingRoots = {w->substr(0, comma), w->substr(comma + 1)};
     }
     return kOk;
 }
@@ -218,8 +226,14 @@ int cmdRetarget(const Args& a, Output& out) {
     o.inPlace = ma.inPlace;
     o.loop = ma.loop;
     o.mapOverrides = ma.mapOverrides;
+    o.wingRoots = ma.wingRoots;
     std::string whyBody;
     if (int c = readBody(a, out, "retarget", sprite.value(), o.body, &mo, &whyBody); c != kOk) return c;
+    // Wing joints given by hand mean a flyer unless a body is asked for.
+    if (!o.wingRoots.empty() && a.opt("body").value_or("auto") == "auto") {
+        o.body = motion::Body::Flyer;
+        whyBody.clear();
+    }
     if (auto v = a.opt("wing-line")) {
         try {
             o.wingLine = std::stod(*v);
@@ -300,6 +314,7 @@ int cmdRigMotion(const Args& a, Output& out) {
     o.inPlace = ma.inPlace;
     o.loop = ma.loop;
     o.mapOverrides = ma.mapOverrides;
+    o.wingRoots = ma.wingRoots;
     o.armsFromDrawing = a.flags.count("absolute-arms") == 0;
     if (a.opt("first")) {
         const auto f = optInt(a, "first");
@@ -426,6 +441,7 @@ int cmdDirections(const Args& a, Output& out) {
     o.retarget.inPlace = ma.inPlace;
     o.retarget.loop = ma.loop;
     o.retarget.mapOverrides = ma.mapOverrides;
+    o.retarget.wingRoots = ma.wingRoots;
     if (int c = readBody(a, out, "directions", views.front().art, o.retarget.body); c != kOk) return c;
     // --dirs 8 (default) | 4 | s,e,n,...
     const std::string dirs = a.opt("dirs").value_or("8");

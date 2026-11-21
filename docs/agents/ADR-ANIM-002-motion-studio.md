@@ -302,10 +302,36 @@ toward the tail than drawn, keys bake; flap drives without stretch; half the amo
 bone pairs refused), a CLI smoke line, run locally; the dragon's baked frames were looked at.
 Not done on a rig: sweep, the tail's wave, fins.
 
-Not done: wing bones not named wing, a crease at the wrist, sweep on a wing drawn out to the side,
+Wing joints by hand (2026-11-21). `RetargetOptions::wingRoots` and `MotionKeysOptions::wingRoots`
+(two joint names, case-insensitive) replace the search for joints named wing in `retargetFlyer`
+and `wingSource` (`wingRootJoints`, `Mocap.cpp`): the chains start at those joints. Refused: not
+two names, an unknown joint, the same joint twice, a joint with nothing below it. CLI `--wings
+A,B` on `retarget`, `directions` and `rig motion`; Lua `wings`; MCP `wings`. Wings are not found
+by shape: a wing chain and an arm look alike in a skeleton (a renamed wing chain already passes
+for an arm in `autoMap`), so the joints are named by the user. Verified:
+`tests/test_wing_motion.cpp` (the wingbeat skeleton with its wings renamed gives, with the joints
+given, the frames of the named skeleton; four refusals), `tests/test_rig_motion.cpp` (the same
+keys on the dragon's wing rig), Lua refusals, CLI smoke lines, run locally. Not done: a field in
+Motion Studio; the MCP option has no test.
+
+Not done: wings found without names or help, a crease at the wrist, sweep on a wing drawn out to the side,
 twist.
 
 ### 3.8 Fins from a motion's spine (2026-11-20)
+
+Fin rigs (2026-11-21). The reading of a swimming motion moved out of `retargetSwimmer` into
+`mocap::swimSource` (`SwimSource`: the spine chain, its wave per frame, the fin joints' turns and
+shown lengths, `waveAt`, `tailTurn`); the retarget's frames are unchanged (the same hash over 144
+frames and their notes before and after, on the two test fish with three presets, looped and
+not). `keysFromMotion` hands a rig with bones named "tail fin", "dorsal fin..." or "ventral
+fin..." and no wings or numbered limbs to `finKeys` (`RigMotion.cpp`): the tail fin turns by
+`tailTurn` at 0.8 of the spine (times the amount, within 0.6 rad), every other fin takes the
+nearest fin joint of its kind by where its bone's head lies along the body bone and turns by that
+joint's turn (within 0.35 rad), with the joint's shown length as the bone's stretch. The body bone
+is not keyed. Verified: `tests/test_rig_motion.cpp` ("A swimming motion turns an auto-rigged
+fish's tail fin and paddles its fins"), CLI smoke lines, run locally; the fish57 fixture's baked
+frames were looked at. Not done: bending the body of a rig (it would need the body cut into
+segments or a skin), the root's rise and fall.
 
 `mocap::retarget` with `Body::Swimmer` (`retargetSwimmer`, `core/src/Mocap.cpp`) poses the swim
 rig (`buildSwimRig`, `RigSwim.cpp`: body, tail fin past the stalk, other fins). The spine is the
