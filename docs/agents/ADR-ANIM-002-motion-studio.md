@@ -281,6 +281,13 @@ mean column moves 1 to 6 px and is further toward the tail when the motion's fin
 moves less; pixel counts within a quarter; a one-shot starts as drawn; a walk leaves the fins
 riding and says so), run locally; the goldfish strip was looked at beside one with paddling off.
 
+Fins bend with the body (2026-11-21). A fin rode its root column in one piece, so a long fin under
+a lifting tail stayed behind and showed as a line past the belly. Both swims (`RigSwim.cpp`,
+`retargetSwimmer`) now give each fin column the body's offset at that column less the offset at
+the fin's root (`PartPose::colDy`). Verified: `tests/test_swim_motion.cpp` ("A fin along the belly
+bends with the body's columns"), the swim, sprite motion, part rig, pixel rig and key pose tests,
+run locally; the goldfish strip was looked at again and the line is gone.
+
 Not done: left and right fins told apart, fins foreshortened as they flap, a wave in two planes,
 fins on `rig motion`.
 

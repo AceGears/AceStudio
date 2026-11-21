@@ -1640,7 +1640,13 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
         for (std::size_t i = 0; i < sr.fins.size(); ++i) {
             const motion::detail::SwimFin& fn = sr.fins[i];
             rg::PartPose& fq = pose[uz(fn.part)];
-            fq.dy = dyAt(fn.root.x);   // the fins ride the body
+            fq.dy = dyAt(fn.root.x);   // the fins ride the body, column by column
+            {
+                const rg::Part& fp = rig.parts[uz(fn.part)];
+                fq.colDy.assign(uz(std::max(0, fp.hiBox.w - 2)), 0);
+                for (std::size_t c = 0; c < fq.colDy.size(); ++c)
+                    fq.colDy[c] = dyAt(fp.hiBox.x + 1 + static_cast<double>(c) + 0.5) - dyAt(fn.root.x);
+            }
             // and paddle about their roots (0.35 rad at most: further, and the
             // root drawn behind the body would show past its edge): toward the tail (at +dir) is
             // anticlockwise for a fin hanging down, clockwise for one standing up.

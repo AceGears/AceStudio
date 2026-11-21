@@ -126,9 +126,9 @@ not been run.
   the nearest joint of its kind (on the back, or lower), so a left and a right fin drawn apart
   are not told apart, and with no such joint (or one that does not move) the fins only ride the
   body. A fin turns about its root by at most 0.35 rad and is never foreshortened. Tested
-  locally on a drawn fish; looked at on the goldfish. On the goldfish a fin under the tail end
-  shows a thin line past the belly while the tail lifts (it did before paddling too): the fins
-  are drawn behind the body and ride it in one piece. The sprite must be a side view; the camera only changes the source
+  locally on a drawn fish; looked at on the goldfish. A fin now bends with the body's columns
+  under it (since 2026-11-21), in Animate's swim too: it used to ride in one piece, which left a
+  thin line past the goldfish's belly while the tail lifted. The sprite must be a side view; the camera only changes the source
   skeleton's picture. A skeleton with no head and tail names is guessed (the stiller end is the
   head), and a humanoid motion bends a fish by its head-to-foot chain, which rarely looks like
   swimming. The wave is read in one plane only (the one the spine moves in more). `rig motion`

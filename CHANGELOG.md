@@ -98,6 +98,9 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   named wing) instead of needing humanoid arms; the drawn wings then also fold on the way up and
   sweep. A winged four-legged skeleton is no longer refused. New built-in preset `wingbeat` (a
   bird's skeleton, 0.6 s loop); presets say `winged` in Lua's `ace.motion_presets()`.
+- **Fins follow the body's bend**: on a swimming fish (Animate's swim and `retarget --body
+  swimmer`) each fin's columns now move with the body's columns next to them instead of the fin
+  riding in one piece, which showed a thin line under the goldfish's belly as the tail lifted.
 - **Fins paddle on motion-driven fish**: with `retarget --body swimmer`, a motion's fin joints
   (off the spine, named fin, flipper, pectoral, pelvic or dorsal) turn the sprite's other fins
   about their roots. The `swim` preset gains two pectoral fins that paddle in turn and a dorsal
