@@ -66,8 +66,8 @@ not been run.
   animal. A loop's most side-on moment counts as the drawn length, a one-shot's first frame. IK
   reaches its target with stretched bones (since 2026-11-21; it ignored stretch before): tested
   locally on a two-bone leg with either bone, both, or the bone above stretched. The rig
-  panel has no stretch control (keys made by `rig motion`, the command line, Lua or MCP keep
-  their stretch when edited there; that panel code is compiled by CI, no Qt test drives it).
+  panel's **Length** box sets a bone's stretch (since 2026-11-21): that panel code is compiled by
+  CI only; no Qt test drives it and it has not been tried by hand.
   `retarget --body quadruped` (no rig) does not do this.
 - **Four-legged motion** (`retarget --body quadruped`, ADR-ANIM-002 section 3.5): tested on a
   drawn test dog and the `quad-walk` preset only, not on captured animal motion. The legs, the body's

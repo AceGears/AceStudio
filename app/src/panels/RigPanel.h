@@ -116,6 +116,7 @@ private:
     QDoubleSpinBox* m_targetY = nullptr;
     QPushButton* m_reach = nullptr;
     QDoubleSpinBox* m_turn = nullptr;
+    QDoubleSpinBox* m_stretch = nullptr;   // the selected bone's drawn length, % of its own (RigPose::stretch)
     QDoubleSpinBox* m_moveX = nullptr;
     QDoubleSpinBox* m_moveY = nullptr;
     QCheckBox* m_showBones = nullptr;

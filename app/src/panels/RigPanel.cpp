@@ -178,6 +178,11 @@ RigPanel::RigPanel(QWidget* parent) : QWidget(parent) {
     auto* pose = new QFormLayout(poseGroup);
     m_turn = spin(-360, 360, 5, 1, QStringLiteral("°"), tr("Turn of the selected bone"));
     pose->addRow(tr("Turn"), m_turn);
+    m_stretch = spin(Rig::kMinStretch * 100, Rig::kMaxStretch * 100, 5, 0, QStringLiteral(" %"), tr("Drawn length of the selected bone"));
+    m_stretch->setValue(100);
+    m_stretch->setToolTip(tr("How long the bone is drawn in this pose, as a share of its own length. "
+                             "Under 100% it looks as if it points toward or away from you; its parts and child bones follow."));
+    pose->addRow(tr("Length"), m_stretch);
     m_moveX = spin(-32768, 32768, 1, 0, tr(" px"), tr("Move X"));
     m_moveY = spin(-32768, 32768, 1, 0, tr(" px"), tr("Move Y"));
     auto* move = new QHBoxLayout;
@@ -328,6 +333,14 @@ RigPanel::RigPanel(QWidget* parent) : QWidget(parent) {
         const BoneId id = selectedBone();
         if (m_filling || !id) return;
         m_pose.turn[id] = toRad(deg);
+        updateOverlay();
+    });
+    connect(m_stretch, &QDoubleSpinBox::valueChanged, this, [this](double percent) {
+        const BoneId id = selectedBone();
+        if (m_filling || !id) return;
+        // 100% is the bone as drawn: kept out of the pose, as a turn of 0 is.
+        if (percent == 100.0) m_pose.stretch.erase(id);
+        else m_pose.stretch[id] = rigs::clampStretch(percent / 100.0);
         updateOverlay();
     });
     for (QDoubleSpinBox* s : {m_moveX, m_moveY})
@@ -497,7 +510,7 @@ void RigPanel::showBone() {
     const Bone* b = rig && id ? rig->bone(id) : nullptr;
     m_filling = true;   // every field's handler ignores changes made here
     for (QWidget* w : std::initializer_list<QWidget*>{m_name, m_parent, m_x, m_y, m_length, m_angle, m_moveChildren, m_limited, m_locked,
-                                                      m_parts, m_bind, m_turn, m_addChain})
+                                                      m_parts, m_bind, m_turn, m_stretch, m_addChain})
         w->setEnabled(b != nullptr);
     m_unbind->setEnabled(m_view && rig && rig->bindings.count(m_view->currentLayer()));
     // The current layer's bend: offered when it is bound and its bone has children.
@@ -541,9 +554,12 @@ void RigPanel::showBone() {
         }
         const auto t = m_pose.turn.find(id);
         m_turn->setValue(toDeg(rigs::clampTurn(*b, t == m_pose.turn.end() ? 0.0 : t->second)));
+        const auto st = m_pose.stretch.find(id);
+        m_stretch->setValue(st == m_pose.stretch.end() ? 100.0 : rigs::clampStretch(st->second) * 100.0);
     } else {
         m_name->clear();
         m_turn->setValue(0);
+        m_stretch->setValue(100);
     }
     m_min->setEnabled(b && b->limited);
     m_max->setEnabled(b && b->limited);

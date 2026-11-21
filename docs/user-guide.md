@@ -120,7 +120,7 @@ Add, Subtract, Difference), visibility and locks.
   one undo step; the rest frame itself is left alone. Keys move with their frames when you insert,
   move or delete frames. From the command line: `acestudio-cli rig key|unkey|rest|bake`;
   `--stretch "tail=0.7"` on `rig pose` or `rig key` draws a bone shorter, as when it points toward
-  you (the rig panel has no control for it yet). `rig motion` does this by itself for a
+  you; in the Rig panel that is **Length** under **Turn** (100% is the bone as drawn). `rig motion` does this by itself for a
   four-legged rig's head, neck and tail when the motion swings them sideways.
 - **Motion onto your rig** (command line only for now): `acestudio-cli rig motion hero.acestudio
   preset:walk --out hero_walk.acestudio` keys a motion (a preset, BVH or glTF/GLB file) onto the rig
