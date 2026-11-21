@@ -699,6 +699,8 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                       {"layer", kLayer},
                       {"frame", integer("Frame index, 0-based", 0)},
                       {"as", oneOf("auto: what to cut (default auto)", {"auto", "legs", "wings", "fins"})},
+                      {"arms", str("auto: arms the analysis missed, as boxes in canvas pixels \"x,y,w,h;x,y,w,h\" (at most 4, "
+                                   "not overlapping; every pixel of the layer inside a box becomes that arm)")},
                       {"rest", integer("pose: the frame whose parts are drawn (default: the rig's rest frame)", 0)},
                       {"turn", str("pose/key: bone turns, \"bone=degrees,...\"")},
                       {"move", str("pose/key: whole-rig move, \"dx,dy\"")},
@@ -719,6 +721,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                      b.opt("layer", "--layer");
                      b.opt("frame", "--frame");
                      b.opt("as", "--as");
+                     b.opt("arms", "--arms");
                      b.opt("rest", "--rest");
                      b.opt("turn", "--turn");
                      b.opt("move", "--move");
@@ -738,7 +741,8 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                              "Rig bones match the motion's joints by name (`bones` pairs them by hand); arms keep their drawn "
                              "pose unless `absolute_arms`. A four-legged motion (preset:quad-walk) drives auto-rig legs, head "
                              "and tail: `facing` says which way the animal faces when it is read wrongly, `legs` pairs the "
-                             "rig's numbered legs with the motion's. Reports the keyed frames and what drives each bone.") +
+                             "rig's numbered legs with the motion's. A wing rig (rig_edit auto, as wings) is keyed from the motion's wing "
+                             "bones or arms (preset:wingbeat, preset:flap). Reports the keyed frames and what drives each bone.") +
                      kPathNote,
                  obj({{"path", str("The .acestudio file with a rig")},
                       {"motion", motionArg},

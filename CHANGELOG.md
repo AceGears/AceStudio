@@ -94,6 +94,20 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Wing rigs take motion**: `rig motion` on a rig made with `rig auto --as wings` now keys the
+  wing bones from the motion's own wing bones (`preset:wingbeat`: beat and fold) or its arms
+  (`preset:flap`: beat only), instead of refusing. Core: `mocap::wingSource`.
+- **Fins foreshorten**: with `retarget --body swimmer`, a fin whose joint swings toward or away
+  from the viewer is drawn shorter there (down to half its length), and a note says by how much.
+- **Rig panel: Length**: the Pose group has a Length box (10 to 400%) for the selected bone's
+  stretch, next to Turn; keys set from the panel carry it.
+- **IK with stretched bones**: an IK chain now reaches its target when its bones, or a bone above
+  them, are stretched in the pose (it solved for the unstretched lengths before, so the foot
+  missed). Poses without stretch solve exactly as before.
+- **Automatic body from the motion**: `retarget` without `--body` (also Lua's `ace.retarget` and
+  Motion Studio's Automatic) now animates the sprite as a flyer when the motion's skeleton has wing
+  bones and as a swimmer when it has no legs, and says so in a note; before, both needed `--body`.
+  Humanoid and legged motions choose as before. Core: `mocap::autoBody`.
 - **Six legs**: motions whose skeleton stands on six (or eight) legs are read: `retarget --body
   quadruped` and `rig motion` pair a six-legged sprite's or auto-rig's legs with the motion's hind,
   middle and front pairs from the back forward. On four drawn legs the middle pairs are left out;

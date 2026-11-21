@@ -308,3 +308,60 @@ TEST_CASE("A fin along the belly bends with the body's columns", "[mocap][swim]"
     }
     CHECK(hi - lo >= 2);
 }
+
+TEST_CASE("A fin swung toward the viewer is drawn shorter", "[mocap][swim]") {
+    const Image s = finnedFish();
+    // The preset's pectoral fins also swing out to the side and back (a
+    // turn about the up axis), once a beat.
+    Motion m = preset("swim");
+    for (const char* name : {"PectoralFinL", "PectoralFinR"}) {
+        const int j = m.find(name);
+        REQUIRE(j >= 0);
+        const Joint& fin = m.joints[static_cast<std::size_t>(j)];
+        int yAt = -1;
+        for (std::size_t c = 0; c < fin.channels.size(); ++c)
+            if (fin.channels[c] == Channel::Yrotation) yAt = fin.firstChannel + static_cast<int>(c);
+        REQUIRE(yAt >= 0);
+        const double side = std::string(name) == "PectoralFinL" ? 1 : -1;
+        for (int f = 0; f < m.frameCount; ++f)
+            m.values[static_cast<std::size_t>(f) * static_cast<std::size_t>(m.channelCount) + static_cast<std::size_t>(yAt)] +=
+                side * 70 * (0.5 - 0.5 * std::cos(2 * 3.14159265358979 * f / m.frameCount));
+    }
+    auto count = [](const Image& f, Rgba8 c) {
+        int n = 0;
+        for (const Rgba8& p : f.pixels()) n += p == c ? 1 : 0;
+        return n;
+    };
+    const int lower0 = count(s, kLower), upper0 = count(s, kUpper);
+    auto fewest = [&](const RetargetResult& res, Rgba8 c) {
+        int n = 1 << 30;
+        for (const Image& f : res.clip.frames) n = std::min(n, count(f, c));
+        return n;
+    };
+    auto r = retarget(s, m, swimmer());
+    REQUIRE(r);
+    bool said = false;
+    for (const std::string& n : r.value().notes) {
+        INFO(n);
+        said = said || (n.find("A fin swings toward or away from the viewer") != std::string::npos && n.find("% shorter") != std::string::npos);
+    }
+    CHECK(said);
+    const int low = fewest(r.value(), kLower);
+    CHECK(low * 100 <= lower0 * 85);             // the lower fin shortens
+    CHECK(low * 100 >= lower0 * 40);             // never under half its length (and a turn's rounding)
+    CHECK(fewest(r.value(), kUpper) * 4 >= upper0 * 3);   // the back fin does not
+    int most = 0;
+    for (const Image& f : r.value().clip.frames) most = std::max(most, count(f, kLower));
+    CHECK(most * 100 >= lower0 * 90);            // at its longest it is as drawn
+
+    // Half the amount: half the shortening. The plain preset: none, and no note.
+    RetargetOptions half = swimmer();
+    half.amount = 0.5;
+    auto h = retarget(s, m, half);
+    REQUIRE(h);
+    CHECK(fewest(h.value(), kLower) > low);
+    auto plain = retarget(s, preset("swim"), swimmer());
+    REQUIRE(plain);
+    for (const std::string& n : plain.value().notes) CHECK(n.find("shorter") == std::string::npos);
+    CHECK(fewest(plain.value(), kLower) * 100 >= lower0 * 75);
+}

@@ -1505,6 +1505,10 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
         bool top = false;          // points up from the spine (a dorsal fin)
         double u = 0;              // where it joins, 0 head .. 1 tail
         std::vector<double> turn;  // toward the tail is positive
+        // Its length as seen from the side over its longest in the span (a
+        // loop) or its first frame: under 1 while it points toward or away
+        // from the viewer. Empty when it is never seen long enough to tell.
+        std::vector<double> shown;
     };
     std::vector<FinDrive> finDrives;
     {
@@ -1537,10 +1541,16 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
             const Vec3 lateral = d0 - axis * dot(d0, axis) - upv * up0;
             const std::size_t ci = uz(chainAt[uz(p)]);
             const int before = chain[ci > 0 ? ci - 1 : ci], after = chain[ci + 1 < chain.size() ? ci + 1 : ci];
-            std::vector<double> back(uz(frames), 0.0), rise(uz(frames), 0.0);
+            std::vector<double> back(uz(frames), 0.0), rise(uz(frames), 0.0), seen(uz(frames), 1.0);
             for (int f = 0; f < frames; ++f) {
                 const std::vector<Vec3>& w = world[uz(f)];
                 const Vec3 d = norm(w[uz(to)] - w[uz(from)]);
+                // Across the body where it joins: toward or away from a viewer at its side.
+                const Vec3 across = cross(norm(w[uz(after)] - w[uz(before)]), upv);
+                if (len(across) > 1e-6) {
+                    const double out = dot(d, norm(across));
+                    seen[uz(f)] = std::sqrt(std::max(0.0, 1.0 - out * out));
+                }
                 back[uz(f)] = dot(d, norm(w[uz(after)] - w[uz(before)]));   // against the spine where it joins
                 rise[uz(f)] = dot(d, upv);
             }
@@ -1567,7 +1577,13 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
             for (int f = 0; f < frames; ++f)
                 fd.turn.push_back(backSwing >= riseSwing ? std::asin(std::clamp(back[uz(f)], -1.0, 1.0))
                                                          : std::asin(std::clamp(rise[uz(f)], -1.0, 1.0)) * (fd.top ? -1 : 1));
-            if (std::max(backSwing, riseSwing) >= 0.02) finDrives.push_back(std::move(fd));
+            const double longest = opt.loop ? *std::max_element(seen.begin(), seen.end()) : seen[0];
+            if (longest >= 0.25)
+                for (int f = 0; f < frames; ++f) fd.shown.push_back(std::clamp(seen[uz(f)] / longest, 0.0, 1.25));
+            double shortens = 0;
+            for (double v : fd.shown) shortens = std::max(shortens, std::abs(v - 1.0));
+            if (shortens < 0.02) fd.shown.clear();
+            if (std::max(backSwing, riseSwing) >= 0.02 || !fd.shown.empty()) finDrives.push_back(std::move(fd));
         }
     }
     // Each drawn fin takes the nearest fin joint of its kind (top or lower).
@@ -1621,6 +1637,7 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
     }
     const int margin = maxBend + std::max(4, bb.h / 4) + 2;
     const IntRect big{bb.x - margin, bb.y - margin, bb.w + 2 * margin, bb.h + 2 * margin};
+    double finShortest = 1.0;   // the shortest a fin is drawn, as a share of its drawn length
     std::vector<Image> imgs;
     std::vector<std::vector<rg::PartPose>> poses;
     for (int f = 0; f < frames; ++f) {
@@ -1661,8 +1678,20 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
             // and paddle about their roots (0.35 rad at most: further, and the
             // root drawn behind the body would show past its edge): toward the tail (at +dir) is
             // anticlockwise for a fin hanging down, clockwise for one standing up.
-            if (driveOf[i] >= 0)
-                fq.angle = std::clamp(finDrives[uz(driveOf[i])].turn[uz(f)] * amount, -0.35, 0.35) * (fn.top ? dir : -dir);
+            if (driveOf[i] >= 0) {
+                const FinDrive& fd = finDrives[uz(driveOf[i])];
+                fq.angle = std::clamp(fd.turn[uz(f)] * amount, -0.35, 0.35) * (fn.top ? dir : -dir);
+                // Swung toward or away from the viewer: drawn shorter along
+                // its length (down or up from its root, or along the body).
+                if (!fd.shown.empty()) {
+                    const double sc = std::clamp(1.0 + (fd.shown[uz(f)] - 1.0) * amount, 0.5, 1.25);
+                    if (std::abs(sc - 1.0) >= 0.02) {
+                        const rg::Part& fp = rig.parts[uz(fn.part)];
+                        (fp.hiBox.h >= fp.hiBox.w ? fq.sy : fq.sx) = sc;
+                        finShortest = std::min(finShortest, sc);
+                    }
+                }
+            }
         }
         imgs.push_back(rg::renderPose(rig, pose, big));
         poses.push_back(std::move(pose));
@@ -1711,6 +1740,9 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
             if (paddling.find(n) == std::string::npos) paddling += (paddling.empty() ? "" : ", ") + n;
         }
         if (!paddling.empty()) res.notes.push_back("Fins: " + std::to_string(sr.fins.size() - riding) + " paddle with " + paddling + ".");
+        if (finShortest < 0.98)
+            res.notes.push_back("A fin swings toward or away from the viewer: it is drawn up to " + std::to_string(iround((1 - finShortest) * 100)) +
+                                "% shorter there.");
         if (riding)
             res.notes.push_back(std::to_string(riding) + " fin(s) only ride the body: the motion has no moving fin joint of their kind off its spine "
                                 "(joints named fin, flipper, pectoral, pelvic or dorsal; preset:swim has them).");
@@ -2029,6 +2061,86 @@ Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, c
 }
 
 } // namespace
+
+WingSource wingSource(const Motion& m, const BoneMap& map) {
+    WingSource ws;
+    const std::size_t nj = m.joints.size();
+    const std::vector<Vec3> rest = restPositions(m);
+    std::vector<char> named(nj, 0);
+    for (std::size_t j = 0; j < nj; ++j) {
+        std::string n = m.joints[j].name;
+        for (char& ch : n) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        named[j] = !m.joints[j].endSite && n.find("wing") != std::string::npos;
+    }
+    struct Found {
+        int shoulder, tip;
+        double reach;
+    };
+    std::vector<Found> chains;
+    for (std::size_t j = 0; j < nj; ++j) {
+        const int p = m.joints[j].parent;
+        if (!named[j] || (p >= 0 && uz(p) < nj && named[uz(p)])) continue;
+        Found fd{static_cast<int>(j), -1, 0};
+        for (std::size_t k = j + 1; k < nj; ++k) {
+            int a = m.joints[k].parent;
+            while (a > fd.shoulder) a = m.joints[uz(a)].parent;
+            if (a != fd.shoulder) continue;
+            const double l = len(rest[k] - rest[j]);
+            if (l > fd.reach) {
+                fd.reach = l;
+                fd.tip = static_cast<int>(k);
+            }
+        }
+        if (fd.tip >= 0 && fd.reach > 1e-9) chains.push_back(fd);
+    }
+    std::stable_sort(chains.begin(), chains.end(), [](const Found& a, const Found& b) { return a.reach > b.reach; });
+    if (chains.size() >= 2) {
+        const bool firstLeft = rest[uz(chains[0].tip)].x >= rest[uz(chains[1].tip)].x;
+        for (int i = 0; i < 2; ++i) {
+            const Found& fd = chains[uz(firstLeft ? i : 1 - i)];
+            ws.shoulder[i] = fd.shoulder;
+            ws.tip[i] = fd.tip;
+        }
+        ws.own = true;
+        return ws;
+    }
+    ws.shoulder[0] = map[Bone::LUpperArm];
+    ws.tip[0] = map[Bone::LHand];
+    ws.shoulder[1] = map[Bone::RUpperArm];
+    ws.tip[1] = map[Bone::RHand];
+    return ws;
+}
+
+motion::Body autoBody(const Image& sprite, const Motion& m, std::string* why) {
+    const bool spriteQuad = !sprite.isNull() && !sprite.isFullyTransparent() && motion::analyzeSubject(sprite).body == motion::Body::Quadruped;
+    if (m.joints.empty()) return spriteQuad ? motion::Body::Quadruped : motion::Body::Biped;
+    // Wing chains, as retargetFlyer finds them: a joint named wing whose
+    // parent is not, with something below it.
+    const std::size_t nj = m.joints.size();
+    std::vector<char> named(nj, 0), hasChild(nj, 0);
+    for (std::size_t j = 0; j < nj; ++j) {
+        std::string n = m.joints[j].name;
+        for (char& ch : n) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        named[j] = !m.joints[j].endSite && n.find("wing") != std::string::npos;
+        const int p = m.joints[j].parent;
+        if (p >= 0 && uz(p) < nj) hasChild[uz(p)] = 1;
+    }
+    int wings = 0;
+    for (std::size_t j = 0; j < nj; ++j) {
+        const int p = m.joints[j].parent;
+        if (named[j] && hasChild[j] && !(p >= 0 && uz(p) < nj && named[uz(p)])) ++wings;
+    }
+    const bool fourLegs = creatureMap(m).hasFourLegs();
+    if (wings >= 2 && !(spriteQuad && fourLegs)) {
+        if (why) *why = "The motion's skeleton has wing bones: the sprite is animated as a flyer (--body flyer).";
+        return motion::Body::Flyer;
+    }
+    if (!fourLegs && wings < 2 && !autoMap(m).hasLegs()) {
+        if (why) *why = "The motion's skeleton has no legs: the sprite is animated as a swimmer (--body swimmer).";
+        return motion::Body::Swimmer;
+    }
+    return spriteQuad ? motion::Body::Quadruped : motion::Body::Biped;
+}
 
 Result<RetargetResult> retarget(const Image& sprite, const Motion& m, const RetargetOptions& opt) {
     if (sprite.isNull() || sprite.isFullyTransparent()) return Error(ErrorCode::InvalidArgument, "the sprite has no visible pixels");

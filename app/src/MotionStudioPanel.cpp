@@ -255,7 +255,7 @@ MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(par
     // What the motion drives: read from the sprite, or chosen. Wings are
     // never read from the sprite; a winged side view takes the motion's arms.
     m_body = new QComboBox(motionBox);
-    m_body->addItem(tr("From the sprite"), QStringLiteral("auto"));
+    m_body->addItem(tr("Automatic"), QStringLiteral("auto"));
     m_body->addItem(tr("Two legs"), QStringLiteral("biped"));
     m_body->addItem(tr("Four legs"), QStringLiteral("quadruped"));
     m_body->addItem(tr("Wings (the motion's arms)"), QStringLiteral("flyer"));
@@ -658,12 +658,13 @@ void MotionStudioPanel::retarget() {
     o.amount = m_amount->value();
     o.inPlace = m_inPlace->isChecked();
     o.loop = !m_oneShot;   // jump, attack and hurt play once
+    std::string whyBody;
     const QString body = m_body->currentData().toString();
     if (body == QLatin1String("biped")) o.body = ::acestudio::motion::Body::Biped;
     else if (body == QLatin1String("quadruped")) o.body = ::acestudio::motion::Body::Quadruped;
     else if (body == QLatin1String("flyer")) o.body = ::acestudio::motion::Body::Flyer;
     else if (body == QLatin1String("swimmer")) o.body = ::acestudio::motion::Body::Swimmer;
-    else o.body = m_fourLegged ? ::acestudio::motion::Body::Quadruped : ::acestudio::motion::Body::Biped;
+    else o.body = mc::autoBody(m_sprite, *m_motion, &whyBody);   // wings or fish when the motion's skeleton says so
     o.wingLine = m_wingLine->value() / 100.0;
     o.wingMask = m_wingMask;
     auto r = mc::retarget(m_sprite, *m_motion, o);
@@ -678,6 +679,7 @@ void MotionStudioPanel::retarget() {
     QStringList notes;
     if (m_result->approximateView)
         notes << tr("<b>Approximate view.</b> The camera is far from the view the sprite is drawn in; the art is not turned.");
+    if (!whyBody.empty()) notes << QString::fromStdString(whyBody).toHtmlEscaped();
     for (const std::string& n : m_result->notes) notes << QString::fromStdString(n).toHtmlEscaped();
     for (const std::string& i : ::acestudio::motion::checkClip(m_result->clip).issues) notes << tr("Check: %1").arg(QString::fromStdString(i).toHtmlEscaped());
     if (notes.isEmpty()) notes << tr("No problems found.");

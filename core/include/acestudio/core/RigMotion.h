@@ -21,8 +21,12 @@
 //
 // Rig bones are matched by name: auto-rig names ("body", "head",
 // "legN thigh|shin|foot", "armN"), the joint names of Mocap.h ("LThigh",
-// "RForearm", ... case ignored), or explicit `bones` pairs. Wings and fins
-// match nothing; they are refused.
+// "RForearm", ... case ignored), or explicit `bones` pairs. Fins match nothing; they
+// are refused. A wing rig (auto-rig's "wing", or "near wing" and "far wing",
+// with no numbered legs or arms) is keyed from the motion's wings instead:
+// its own wing bones, else its arms (mocap::wingSource). Each wing bone is
+// as drawn at the top of the stroke and turns by the fall of the source
+// wing's elevation; own wing bones also shorten it as they fold (stretch).
 //
 // A six- or eight-legged motion on a rig with more than four legs pairs
 // them from the back forward instead (hind, middle..., front); on four legs

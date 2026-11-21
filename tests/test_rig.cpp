@@ -710,3 +710,60 @@ TEST_CASE("Baking a stretched bone draws its part shorter, in the sprite's colou
     REQUIRE(plain);
     CHECK(plain.value().composite(1) == d.composite(0));
 }
+
+TEST_CASE("IK reaches its target with stretched bones", "[rig][keys]") {
+    Leg l = makeLeg();
+    REQUIRE(rigs::addChain(l.rig, IkChain{"leg", l.shin, 1}));
+    auto ankle = [&](const RigPose& p) {
+        const auto w = rigs::solve(l.rig, p);
+        return w[indexOf(l.rig, l.shin)];
+    };
+    // Each of the chain's bones, both, and the bone above them, stretched.
+    // (The second case starts on a straight leg just short of the target:
+    // the search has to start again from a bent one.)
+    struct Case {
+        double hip, thigh, shin, x, y;
+    };
+    for (const Case& c : {Case{1, 1, 1.5, 18, 24}, Case{1, 0.7, 1, 16, 22}, Case{1, 1.4, 0.6, 5, 27}, Case{0.8, 1, 1, 15, 23},
+                          Case{1.3, 0.8, 1.2, 14, 26}}) {
+        CAPTURE(c.hip, c.thigh, c.shin, c.x, c.y);
+        RigPose pose;
+        if (c.hip != 1) pose.stretch[l.hip] = c.hip;
+        if (c.thigh != 1) pose.stretch[l.thigh] = c.thigh;
+        if (c.shin != 1) pose.stretch[l.shin] = c.shin;
+        pose.turn[l.hip] = 0.2;
+        REQUIRE(rigs::reach(l.rig, pose, 0, c.x, c.y));
+        const auto a = ankle(pose);
+        CHECK(a.tailX == Approx(c.x).margin(1e-4));
+        CHECK(a.tailY == Approx(c.y).margin(1e-4));
+        CHECK(pose.turn[l.hip] == 0.2);
+        // The stretches are kept as given.
+        CHECK(pose.stretch.count(l.shin) == (c.shin != 1 ? 1u : 0u));
+    }
+    // The knee keeps its side: bend +1 lies clockwise of hip->target, as unstretched.
+    for (int bend : {1, -1}) {
+        l.rig.chains[0].bend = bend;
+        RigPose pose;
+        pose.stretch[l.shin] = 1.3;
+        REQUIRE(rigs::reach(l.rig, pose, 0, 18, 24));
+        const auto a = ankle(pose);
+        CHECK(a.tailX == Approx(18).margin(1e-3));
+        const double cross = (18 - 10) * (a.headY - 10) - (24 - 10) * (a.headX - 10);
+        CHECK((cross > 0) == (bend > 0));
+    }
+    l.rig.chains[0].bend = 1;
+    // Out of reach: straight toward the target at the stretched length (10 + 10 * 1.5).
+    RigPose far;
+    far.stretch[l.shin] = 1.5;
+    REQUIRE(rigs::reach(l.rig, far, 0, 10, 100));
+    auto a = ankle(far);
+    CHECK(a.tailX == Approx(10).margin(0.05));
+    CHECK(a.tailY == Approx(35).margin(0.05));
+    // A limited knee stops short and nothing goes wrong.
+    REQUIRE(rigs::setLimits(l.rig, l.shin, true, -0.1, 0.1));
+    RigPose limited;
+    limited.stretch[l.thigh] = 0.8;
+    REQUIRE(rigs::reach(l.rig, limited, 0, 18, 18));
+    CHECK(std::abs(limited.turn[l.shin]) <= 0.1 + 1e-12);
+    CHECK(std::isfinite(limited.turn[l.thigh]));
+}

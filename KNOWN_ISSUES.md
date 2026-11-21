@@ -43,8 +43,14 @@ not been run.
   not called by a test) offer it too; there is no button for it in the app yet. Bones
   turn to point the way the projected skeleton points, so a limb seen end-on (a front-view walk's
   legs) barely moves and holds its last direction. Side-view legs numbered 0 and 1 are taken as
-  near and far; if they come out swapped, pair them with `--bones`. Wings, fins and other
-  non-humanoid rigs match nothing and are refused. Frames added for the keys are empty until baked.
+  near and far; if they come out swapped, pair them with `--bones`. A wing rig (`rig auto --as wings`) is keyed
+  from the motion's wings (since 2026-11-21): its own wing bones (`preset:wingbeat`), else its
+  arms (`preset:flap`); the wings beat about their shoulders and, with own wing bones, are drawn
+  shorter as they fold. Tested locally on the dragon fixture, and its baked frames were looked at.
+  Each wing falls toward the tail, except one drawn pointing forward more than up, which falls on
+  its own side; on the dragon that makes its near wing go the other way from `retarget --body
+  flyer`. No sweep, no wrist crease, and the tail does not wave. Fins and other non-humanoid rigs
+  match nothing and are refused. Frames added for the keys are empty until baked.
 - **Motion Studio panel** (ADR-ANIM-002): compiled and opened by the CI UI audit only; it has not
   been used on a PC since it became a dock. The panel does not follow the open document by
   itself: press Use Current Sprite after switching sprites or frames. Its controls no longer have
@@ -64,9 +70,15 @@ not been run.
   the part does not pass in front of or behind the body. Changes under 2% are left out, so the
   `quad-walk` preset's head does not change and its tail shortens by 8% at most on the test
   animal. A loop's most side-on moment counts as the drawn length, a one-shot's first frame. IK
-  ignores stretch (stretch a leg bone and its chain no longer reaches its target). The rig
-  panel has no stretch control (keys made by `rig motion`, the command line, Lua or MCP keep
-  their stretch when edited there; that panel code is compiled by CI, no Qt test drives it).
+  reaches its target with stretched bones (since 2026-11-21; it ignored stretch before): tested
+  locally on a two-bone leg with either bone, both, or the bone above stretched. A stretched
+  upper bone bends the reach out of round, so the search can settle on a straight leg just short
+  of a target a more bent leg reaches; it then starts again with the lower bone turned either way
+  and keeps the nearest result (found when the Linux build failed that test). Very near the edge
+  of reach the knee can end on the other side from the chain's bend (42 of 13,884 reached targets
+  in a local scan). The rig
+  panel's **Length** box sets a bone's stretch (since 2026-11-21): that panel code is compiled by
+  CI only; no Qt test drives it and it has not been tried by hand.
   `retarget --body quadruped` (no rig) does not do this.
 - **Four-legged motion** (`retarget --body quadruped`, ADR-ANIM-002 section 3.5): tested on a
   drawn test dog and the `quad-walk` preset only, not on captured animal motion. The legs, the body's
@@ -80,8 +92,9 @@ not been run.
   legs drawn (sprite or auto-rig) the drawn legs are paired from the back forward by where they
   stand; on four drawn legs the middle pairs are left out, and a four-legged motion on six drawn
   legs drives them by halves (a note says which). Six legs are tested with the built-in `hex-walk`
-  preset on a blocky drawn ant only (looked at too): no captured insect or spider motion, and
-  eight legs have not been tried at all. A middle leg's knee bends the way the nearer end's does,
+  preset on a blocky drawn ant only (looked at too): no captured insect or spider motion. Eight
+  legs are tested only with a made-up skeleton (the six-legged one with a pair added) on a blocky
+  eight-legged sprite, by a test: not looked at, and not on a rig. A middle leg's knee bends the way the nearer end's does,
   and legs splayed out to the sides (a spider seen from above) are not shown: the view is a side
   view. `--body auto` and Motion Studio treat a six-legged sprite as four-legged; legs cannot be paired by hand yet, and Motion Studio's bone table lists humanoid bones
   only. Sprites must be drawn from the side with their legs apart. `rig motion` takes four-legged
@@ -122,18 +135,25 @@ not been run.
   the head reaches above that line it turns with the wing, so lower the line. Motion Studio takes a
   wing line and, when the wings were selected in the document before Use Current Sprite, uses the
   selection as the wings (compiled by CI; no Qt test drives it); the command line, Lua and MCP take
-  a wing line only. `--body auto` never picks wings. With a humanoid motion's arms the wing stroke is up and down only: no
+  a wing line only. `--body auto` (and Motion Studio's Automatic) picks wings only when the motion's skeleton has two chains of joints named wing (since 2026-11-21): a humanoid motion such as `flap` still needs `--body flyer`. With a humanoid motion's arms the wing stroke is up and down only: no
   forward sweep, twist or folding. The tail waves with the stroke as in Animate's flap (a thin tail
   behind the body only; the golden dragon's thick tail is not found as one).
 - **Fish from a 3D motion** (`retarget --body swimmer`, since 2026-11-20): the motion's spine (the
   chain from a joint named head to one named tail, else the skeleton's longest chain) bends the
   body column by column and turns the tail fin; `preset:swim` is a fish skeleton made for it.
-  Tested locally on a drawn fish and looked at on the goldfish fixture. `--body auto` never picks
-  it. The other fins paddle with the motion's fin joints (since 2026-11-20): joints off the
+  Tested locally on a drawn fish and looked at on the goldfish fixture. `--body auto` picks it only when the motion's skeleton has no legs at all (since 2026-11-21;
+  the sprite's shape is not asked, so a legless motion on a sprite that is no fish is still tried
+  as one): a humanoid motion on a fish needs `--body swimmer`. `directions` keeps the old rule
+  (by the sprite's legs only). The other fins paddle with the motion's fin joints (since 2026-11-20): joints off the
   spine named fin, flipper, pectoral, pelvic or dorsal, as `preset:swim` has; a drawn fin takes
   the nearest joint of its kind (on the back, or lower), so a left and a right fin drawn apart
-  are not told apart, and with no such joint (or one that does not move) the fins only ride the
-  body. A fin turns about its root by at most 0.35 rad and is never foreshortened. Tested
+  are not told apart (pairing them by side was tried on 2026-11-21 and dropped: the fin finder
+  also returns stray pieces, so the pairs came out arbitrary), and with no such joint (or one that does not move) the fins only ride the
+  body. A fin turns about its root by at most 0.35 rad. A fin whose joint swings toward or away from
+  the viewer is drawn shorter along its length (since 2026-11-21; down to half, against its
+  longest moment in a loop or a one-shot's first frame, and a note says by how much): tested
+  locally on a drawn fish with a made-up sideways fin swing, not looked at, and `preset:swim`'s
+  fins do not swing that way. Tested
   locally on a drawn fish; looked at on the goldfish. A fin now bends with the body's columns
   under it (since 2026-11-21), in Animate's swim too: it used to ride in one piece, which left a
   thin line past the goldfish's belly while the tail lifted. The sprite must be a side view; the camera only changes the source
@@ -142,15 +162,15 @@ not been run.
   swimming. The wave is read in one plane only (the one the spine moves in more). `rig motion`
   does not drive an auto-rig made with `--as fins`. The Motion Studio choice (Fish) is compiled
   by CI; no Qt test drives it.
-- **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI and core only (no app page,
-  Lua or MCP yet). The art is chosen, never turned or drawn: a direction with no view drawn near it
+- **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI, core and MCP (`motion_directions`); no app page
+  or Lua yet. The art is chosen, never turned or drawn: a direction with no view drawn near it
   shows the nearest view with the motion seen from the new direction, and is flagged. Mirrored
   views swap the character's left and right (a sword hand, a shield); draw that side or use
   `--no-mirror`. Views are read from file names only (no reference-view slots in a project yet).
   The turn clip cuts between drawn views; nothing in between is drawn. Retarget reads each view's
   legs as front or side, so three-quarter art moves like the nearer of the two.
-- **Arm boxes for auto-rig** (`rig auto --arms`): CLI and core only (no way to draw the boxes in the
-  app yet; not in Lua or MCP). A box takes every pixel inside it, so torso or cape pixels in the box
+- **Arm boxes for auto-rig** (`rig auto --arms`): CLI, core, Lua (`auto_rig`'s `arms`) and MCP
+  (`rig_edit`'s `arms`); no way to draw the boxes in the app yet. The MCP option is not covered by a test. A box takes every pixel inside it, so torso or cape pixels in the box
   move with the arm; keep boxes tight. The arm turns about where its pixels touch the body outside
   the box, which is the shoulder only when the box is cut at the shoulder.
 - **The UI audit sometimes crashes at exit (Windows CI only).** After every command has run and

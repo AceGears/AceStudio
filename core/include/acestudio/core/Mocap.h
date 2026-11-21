@@ -265,6 +265,27 @@ struct RetargetResult {
 
 Result<RetargetResult> retarget(const Image& sprite, const Motion& m, const RetargetOptions& opt = {});
 
+// What can drive a pair of wings: the skeleton's own wing bones (the two
+// longest chains of joints named "wing": the chain's first joint and its
+// farthest joint), else the humanoid arms of `map` (upper arm and hand,
+// [0] left, [1] right). -1 when there is neither. Own wings are ordered
+// left first by their rest position (+X is left for a skeleton facing +Z).
+struct WingSource {
+    int shoulder[2] = {-1, -1}, tip[2] = {-1, -1};
+    bool own = false;
+    bool found() const { return shoulder[0] >= 0 && shoulder[1] >= 0 && tip[0] >= 0 && tip[1] >= 0; }
+};
+WingSource wingSource(const Motion& m, const BoneMap& map);
+
+// The body kind "auto" stands for, from the motion first and the sprite
+// second: Flyer when the skeleton has two chains of joints named wing
+// (unless both it and the sprite stand on four legs), Swimmer when the
+// skeleton has no legs at all (no four legs by shape, no humanoid legs),
+// else Quadruped for a four-legged sprite and Biped for the rest. A
+// humanoid motion never picks Flyer or Swimmer: ask for those by name.
+// `why`, when given, gets a sentence for the user if the motion decided.
+motion::Body autoBody(const Image& sprite, const Motion& m, std::string* why = nullptr);
+
 // The projected skeleton as a picture: left side blue, right side red, spine
 // yellow, on transparent, `size` pixels square, for a side-by-side preview.
 Image drawSkeleton(const Motion& m, const BoneMap& map, const Camera& cam, double seconds, int size, bool inPlace = true);

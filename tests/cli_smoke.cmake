@@ -483,6 +483,21 @@ if(NOT body STREQUAL "flyer" OR NOT n_frames EQUAL 6 OR NOT n_issues EQUAL 0
     message(FATAL_ERROR "retarget preset:flap --body flyer: expected 6 clean frames (0.5 s at 12 fps): ${LAST_OUT}")
 endif()
 run(1 retarget "${WORKDIR}/rigs/dragon128.png" preset:quad-walk --body flyer --out "${WORKDIR}/presets")   # no arms
+# A wing rig takes the motion's wings as keys
+file(WRITE "${WORKDIR}/rigs/dragon.lua" [=[
+local s = ace.load_png("dragon128.png")
+local d = ace.new_document(s.width + 40, s.height + 40)
+d:set_cel(0, 0, s, 20, 20)
+d:save("dragon.acestudio")
+]=])
+run(0 run "${WORKDIR}/rigs/dragon.lua")
+run(0 rig auto "${WORKDIR}/rigs/dragon.acestudio" --layer 1 --as wings --out "${WORKDIR}/rigs/dragon_rig.acestudio")
+run(0 --json rig motion "${WORKDIR}/rigs/dragon_rig.acestudio" preset:wingbeat --out "${WORKDIR}/rigs/dragon_beat.acestudio")
+string(JSON n_keys GET "${LAST_OUT}" keys)
+if(NOT n_keys EQUAL 7 OR NOT LAST_OUT MATCHES "own wing bones" OR NOT LAST_OUT MATCHES "fold on the way up")
+    message(FATAL_ERROR "rig motion preset:wingbeat on a wing rig: expected 7 keys that beat and fold: ${LAST_OUT}")
+endif()
+run(0 rig bake "${WORKDIR}/rigs/dragon_beat.acestudio" --out "${WORKDIR}/rigs/dragon_baked.acestudio")
 run(1 retarget "${WORKDIR}/rigs/dragon128.png" preset:flap --body flyer --wing-line 2 --out "${WORKDIR}/presets")
 # A skeleton's own wing bones (preset:wingbeat has no arms)
 run(0 --json retarget "${WORKDIR}/rigs/dragon128.png" preset:wingbeat --body flyer --out "${WORKDIR}/presets")
@@ -501,6 +516,18 @@ if(NOT body STREQUAL "swimmer" OR NOT n_frames EQUAL 8 OR NOT n_issues EQUAL 0 O
     message(FATAL_ERROR "retarget preset:swim --body swimmer: expected 8 clean frames (0.8 s at 10 fps): ${LAST_OUT}")
 endif()
 run(1 retarget "${WORKDIR}/rigs/fish57.png" preset:swim --body eel --out "${WORKDIR}/presets")
+# Without --body the motion's skeleton decides: no legs is a swimmer, wing bones a flyer.
+run(0 --json retarget "${WORKDIR}/rigs/fish57.png" preset:swim --fps 10 --out "${WORKDIR}/presets/auto")
+string(JSON body GET "${LAST_OUT}" body)
+if(NOT body STREQUAL "swimmer" OR NOT LAST_OUT MATCHES "has no legs")
+    message(FATAL_ERROR "retarget preset:swim (auto): expected a swimmer and a note saying why: ${LAST_OUT}")
+endif()
+run(0 --json retarget "${WORKDIR}/rigs/dragon128.png" preset:wingbeat --out "${WORKDIR}/presets/auto")
+string(JSON body GET "${LAST_OUT}" body)
+if(NOT body STREQUAL "flyer" OR NOT LAST_OUT MATCHES "has wing bones")
+    message(FATAL_ERROR "retarget preset:wingbeat (auto): expected a flyer and a note saying why: ${LAST_OUT}")
+endif()
+run(1 retarget "${WORKDIR}/rigs/fish57.png" preset:walk --out "${WORKDIR}/presets/auto")   # a humanoid motion: two legs, as before
 run(1 motion remove walk --library "${MD}")                                      # built in
 run(0 motion remove "my walk" --library "${MD}")
 run(2 motion remove "my walk" --library "${MD}")

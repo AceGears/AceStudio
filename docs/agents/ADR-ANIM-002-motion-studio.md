@@ -173,6 +173,16 @@ unstretched bake unchanged), `tests/test_rig_motion.cpp` (a 60 degree wag shorte
 more than 10%, is as drawn at some key, bakes at least 2 px narrower, half the amount gives half
 the shortening), a Lua case and CLI smoke lines, run locally; a baked wag was looked at.
 
+IK and stretch (2026-11-21). `rigs::reach` used the bones' rest lengths. When the chain's tip is
+stretched (its own factor or any ancestor's), it now starts from the lengths as posed and refines
+the two turns by damped least squares against the solved tip (central-difference Jacobian, at most
+200 steps, a step kept only if it comes nearer, the damping raised tenfold when one does not;
+limits and locks clamp every step). The first version (forward differences, 40 steps, stopping on
+a small gain) stopped 0.02 px short under GCC in CI; this one reaches 1e-7 px locally. Unstretched poses return
+before that, unchanged. Verified: `tests/test_rig.cpp` ("IK reaches its target with stretched
+bones": five stretch mixes within 0.0001 px, the knee's side kept, out of reach straight at the
+stretched length, a limited knee), with the rig, rig motion, skin and key pose tests, run locally.
+
 Not done: which way a swung part points (toward and away look the same), a head turning to look,
 a curve through more than one joint (a skin follows one child bone). Wings: section 3.7. Fins: section 3.8.
 
@@ -197,8 +207,23 @@ matched hind, hind, middle, middle, front, front from the back, each swinging, k
 notes for four-on-six and six-on-four), Lua and CLI smoke lines, run locally; the ant's strip and
 baked rig frames were looked at.
 
-Not done: eight legs tried, captured insect motion, a middle leg's own knee direction, legs
+Eight legs: a test copies the preset's middle pair half-way to the front pair and checks the two
+middle pairs in order, 7 moving frames on a drawn eight-legged sprite and on the ant (three groups);
+not looked at, not on a rig.
+
+Not done: captured insect motion, a middle leg's own knee direction, legs
 splayed sideways, `--body auto` telling six legs from four.
+
+Automatic body (2026-11-21). `mocap::autoBody(sprite, motion, why)`: Flyer when the skeleton has
+two or more wing chain roots (a joint named wing, with a child, whose parent is not named wing),
+unless both the skeleton and the sprite stand on four legs; Swimmer when the skeleton has no four
+legs by shape and `autoMap` finds no humanoid legs; else Quadruped for a sprite `analyzeSubject`
+calls four-legged, Biped otherwise. Used by the CLI's `retarget`, Lua's `ace.retarget` and Motion
+Studio's Automatic; `directions` keeps the sprite-only rule. The reason is the first note.
+Verified: `tests/test_creature_motion.cpp` (every humanoid preset and flap by the sprite, wingbeat
+a flyer, swim a swimmer, a winged four-legged skeleton walks a four-legged sprite and flies
+another), CLI smoke lines on the dragon and goldfish, run locally. Motion Studio's part is
+compiled by CI only. Not done: asking the sprite's shape (wings or fins drawn) as well.
 
 ### 3.7 Wings from a humanoid motion (stage 3c, second part, 2026-11-18)
 
@@ -261,6 +286,22 @@ dragon's strip was looked at. The test does not separate sweep from the turn (bo
 toward the tail), and the golden dragon's wings are drawn out to the side, so sweep has not been
 looked at on real art.
 
+Wing rigs (2026-11-21). `keysFromMotion` hands a rig that has bones named "wing", "near wing" or
+"far wing" and no numbered legs or arms to `wingKeys` (`RigMotion.cpp`). The source is
+`mocap::wingSource`: the two longest chains of joints named wing (shoulder and farthest joint),
+else the map's arms. Per key and wing: the turn is the fall of the source wing's elevation from
+its top frame (a loop) or first frame (a one-shot), times the amount, within -0.5 to 2 rad, 0.8 of
+it for the far wing, signed so the tip falls toward the tail (a wing drawn pointing forward more
+than up falls on its own side); with own wing bones the stretch is 1 minus the amount times the
+loss of shoulder-to-tip reach since that frame, over the longest reach (0.55 to 1.1, left out
+under 2%). The near wing takes the right wing of a rig facing right. The root moves by the source
+root's rise and fall, at most a quarter of a wing. Verified: `tests/test_rig_motion.cpp` ("A wing
+motion beats and folds an auto-rigged flyer's wings": 7 keys on the dragon, each wing beating more
+than 0.6 rad, as drawn at one key, shortened to between 55% and 95%, its tip lower and further
+toward the tail than drawn, keys bake; flap drives without stretch; half the amount beats less;
+bone pairs refused), a CLI smoke line, run locally; the dragon's baked frames were looked at.
+Not done on a rig: sweep, the tail's wave, fins.
+
 Not done: wing bones not named wing, a crease at the wrist, sweep on a wing drawn out to the side,
 twist.
 
@@ -312,7 +353,17 @@ the fin's root (`PartPose::colDy`). Verified: `tests/test_swim_motion.cpp` ("A f
 bends with the body's columns"), the swim, sprite motion, part rig, pixel rig and key pose tests,
 run locally; the goldfish strip was looked at again and the line is gone.
 
-Not done: left and right fins told apart, fins foreshortened as they flap, a wave in two planes,
+Fin foreshortening (2026-11-21). Per frame a fin drive also keeps how long the fin looks from the
+side: with `out` the part of its direction across the body (the spine where it joins, crossed with
+up), sqrt(1 - out^2), over the longest in a loop or the first frame of a one-shot (skipped when
+that is under 0.25, and when it never changes by 2%). The drawn fin's `PartPose::sy` (a fin taller
+than wide) or `sx` is 1 + (ratio - 1) x amount, within 0.5 to 1.25, left alone under 2%. Verified:
+`tests/test_swim_motion.cpp` ("A fin swung toward the viewer is drawn shorter": the preset with a
+70 degree sideways swing added to its pectoral fins loses 15% to 60% of the lower fin's pixels at
+its shortest, is as drawn at its longest, half the amount shortens less, the back fin and the plain
+preset do not), run locally. Not looked at.
+
+Not done: left and right fins told apart, a wave in two planes,
 fins on `rig motion`.
 
 ### 3.4 Direction sets (stage 4, first part, 2026-11-18)

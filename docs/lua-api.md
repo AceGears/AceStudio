@@ -124,7 +124,7 @@ whole numbers are integers, and a list is a table with keys 1..n. Every change i
 |---|---|
 | `doc:rig()` | the rig (`{version, nextId, bones, bindings, chains, restFrame, keys}`), or `nil` |
 | `doc:set_rig(rig)` | replaces the rig (checked like a file); `nil` removes it |
-| `doc:auto_rig(layer[, {frame, as}])` | cuts a layer into part layers with bones; `as` is `"auto"`, `"legs"`, `"wings"` or `"fins"`; returns the notes |
+| `doc:auto_rig(layer[, {frame, as, arms}])` | cuts a layer into part layers with bones; `as` is `"auto"`, `"legs"`, `"wings"` or `"fins"`; `arms` is a list of `{x, y, w, h}` boxes in canvas pixels around arms the analysis missed (at most 4, not overlapping); returns the notes |
 | `doc:pose_rig(frame, pose[, rest])` | draws the rest frame's parts (default: the rig's rest frame) posed into `frame` |
 | `doc:key_rig(frame, pose[, curve[, {x1, y1, x2, y2}]])` | stores a pose key; `curve` is `"linear"`, `"ease-in"`, `"ease-out"`, `"ease-in-out"`, `"stepped"` or `"bezier"` (with its four numbers) |
 | `doc:unkey_rig(frame)` | removes a key |
@@ -204,8 +204,8 @@ print(k.keys .. " keys from frame " .. k.first, k.matched["leg0 thigh"])
 `opts`: `view` (`auto`, `front`, `back`, `right`, `left`, `front-right`, … as the CLI's `--view`),
 `turn`, `tilt`, `roll` (degrees), `perspective`, `start` and `length` (seconds), `fps` (default 12)
 or `frames`, `amount` (0.25 to 2), `travel` (keep the motion's travel), `loop` (one-shot presets
-default to false), `body` (`auto`, `biped`, `quadruped`, `flyer` or `swimmer`; auto reads the sprite and never
-picks `flyer` or `swimmer`; `swimmer` bends a fish-like side view with the motion's spine, try
+default to false), `body` (`auto`, `biped`, `quadruped`, `flyer` or `swimmer`; auto picks flyer for a motion with wing bones, swimmer for one with no legs, else reads
+the sprite's legs; `swimmer` bends a fish-like side view with the motion's spine, try
 `"preset:swim"`), `wing_line` (flyer: the wings are above this fraction of the height, default 0.45).
 A humanoid motion on a four-legged sprite, a four-legged motion on wings, an unknown preset, view
 or body, and other file types are errors.

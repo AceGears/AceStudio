@@ -91,7 +91,7 @@ const char* kUsageText =
     "           [--body auto|biped|quadruped|flyer|swimmer] [--wing-line 0.45]\n"
     "                                  3D skeletal motion (BVH, or a glTF/GLB animation: the first unless --animation)\n"
     "                                  onto a two-legged sprite's part rig, or a four-legged motion (legs found by shape)\n"
-    "                                  onto a four-legged sprite (--body auto picks by the sprite), or with --body flyer\n"
+    "                                  onto a four-legged sprite (--body auto: by the sprite's legs; a motion with wing bones picks flyer, one with no legs swimmer), or with --body flyer\n"
     "                                  the motion's arms onto a winged side view's wings, or with --body swimmer\n"
     "                                  the motion's spine onto a fish-like side view: strip PNG + GIF,\n"
     "                                  and the projected source skeleton beside it (<name>_source.png/.gif);\n"

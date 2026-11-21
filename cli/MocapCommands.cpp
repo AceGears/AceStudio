@@ -169,17 +169,21 @@ int readMotionArgs(const Args& a, Output& out, const std::string& cmd, bool oneS
     return kOk;
 }
 
-// --body auto|biped|quadruped|flyer: the kind of figure the sprite is (auto:
-// read from the sprite; four-legged sprites take four-legged motion; flyer,
-// never picked by auto, puts the motion's arms on the sprite's wings).
-int readBody(const Args& a, Output& out, const std::string& cmd, const Image& sprite, motion::Body& body) {
+// --body auto|biped|quadruped|flyer|swimmer: the kind of figure the sprite
+// is. auto reads it from the motion and the sprite (mocap::autoBody) when a
+// motion is given: wing bones pick flyer, a legless skeleton swimmer, else a
+// four-legged sprite takes four-legged motion. `why` gets a note when the
+// motion decided. Without a motion, auto is by the sprite's legs only.
+int readBody(const Args& a, Output& out, const std::string& cmd, const Image& sprite, motion::Body& body,
+             const mocap::Motion* mo = nullptr, std::string* why = nullptr) {
     const std::string v = a.opt("body").value_or("auto");
     if (v == "biped") body = motion::Body::Biped;
     else if (v == "quadruped") body = motion::Body::Quadruped;
     else if (v == "flyer") body = motion::Body::Flyer;
     else if (v == "swimmer") body = motion::Body::Swimmer;
     else if (v == "auto")
-        body = motion::analyzeSubject(sprite).body == motion::Body::Quadruped ? motion::Body::Quadruped : motion::Body::Biped;
+        body = mo ? mocap::autoBody(sprite, *mo, why)
+                  : (motion::analyzeSubject(sprite).body == motion::Body::Quadruped ? motion::Body::Quadruped : motion::Body::Biped);
     else return out.fail(kUsage, cmd + ": --body expects auto, biped, quadruped, flyer or swimmer");
     return kOk;
 }
@@ -214,7 +218,8 @@ int cmdRetarget(const Args& a, Output& out) {
     o.inPlace = ma.inPlace;
     o.loop = ma.loop;
     o.mapOverrides = ma.mapOverrides;
-    if (int c = readBody(a, out, "retarget", sprite.value(), o.body); c != kOk) return c;
+    std::string whyBody;
+    if (int c = readBody(a, out, "retarget", sprite.value(), o.body, &mo, &whyBody); c != kOk) return c;
     if (auto v = a.opt("wing-line")) {
         try {
             o.wingLine = std::stod(*v);
@@ -226,7 +231,9 @@ int cmdRetarget(const Args& a, Output& out) {
 
     auto res = mocap::retarget(sprite.value(), mo, o);
     if (!res) return out.fail(res.error());
-    const mocap::RetargetResult& r = res.value();
+    mocap::RetargetResult made = std::move(res).value();
+    if (!whyBody.empty()) made.notes.insert(made.notes.begin(), whyBody);
+    const mocap::RetargetResult& r = made;
 
     const fs::path dir = *outDir;
     std::error_code ec;

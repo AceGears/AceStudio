@@ -719,17 +719,31 @@ void bind(sol::state_view lua, Runtime& rt) {
     docType["auto_rig"] = [&rt](LDoc& d, int layer, sol::optional<sol::table> opts, sol::this_state ts) {
         Editor& ed = editorOf(d);
         int frame = 0;
-        rigs::AutoRigBody body = rigs::AutoRigBody::Auto;
+        rigs::AutoRigOptions ao;
         if (opts) {
             frame = (*opts)["frame"].get_or(0);
             if (auto as = (*opts)["as"].get<sol::optional<std::string>>()) {
                 const auto b = rigs::autoRigBodyFromString(*as);
                 if (!b) fail("as must be auto, legs, wings or fins");
-                body = *b;
+                ao.body = *b;
+            }
+            // arms = {{x, y, w, h}, ...}: arms the analysis missed, in canvas pixels.
+            if (auto arms = (*opts)["arms"].get<sol::optional<sol::table>>()) {
+                for (std::size_t i = 1; i <= arms->size(); ++i) {
+                    const auto box = (*arms)[i].get<sol::optional<sol::table>>();
+                    if (!box || box->size() != 4) fail("arms is a list of {x, y, w, h} boxes");
+                    int v[4];
+                    for (int k = 0; k < 4; ++k) {
+                        const auto n = (*box)[k + 1].get<sol::optional<int>>();
+                        if (!n) fail("arms is a list of {x, y, w, h} boxes");
+                        v[k] = *n;
+                    }
+                    ao.arms.push_back({v[0], v[1], v[2], v[3]});
+                }
             }
         }
         frameArg(ed, frame);
-        auto r = unwrap(rigs::autoRig(ed.document(), layerArg(ed, layer), frame, body));
+        auto r = unwrap(rigs::autoRig(ed.document(), layerArg(ed, layer), frame, ao));
         check(ed.replaceDocument(std::move(r.document), "Script: Auto-Rig"));
         touched(rt, d);
         sol::state_view lv(ts);
@@ -1076,14 +1090,15 @@ void bind(sol::state_view lua, Runtime& rt) {
             body = t["body"].get_or(std::string("auto"));
             o.wingLine = std::clamp(t["wing_line"].get_or(0.45), 0.05, 0.95);
         }
-        if (body == "auto")
-            o.body = motion::analyzeSubject(sprite.img).body == motion::Body::Quadruped ? motion::Body::Quadruped : motion::Body::Biped;
+        std::string whyBody;
+        if (body == "auto") o.body = mocap::autoBody(sprite.img, motion, &whyBody);
         else if (body == "biped") o.body = motion::Body::Biped;
         else if (body == "quadruped") o.body = motion::Body::Quadruped;
         else if (body == "flyer") o.body = motion::Body::Flyer;
         else if (body == "swimmer") o.body = motion::Body::Swimmer;
         else fail("body is \"auto\", \"biped\", \"quadruped\", \"flyer\" or \"swimmer\"");
         mocap::RetargetResult r = unwrap(mocap::retarget(sprite.img, motion, o));
+        if (!whyBody.empty()) r.notes.insert(r.notes.begin(), whyBody);
         std::size_t bytes = 0;
         for (const Image& f : r.clip.frames) bytes += f.byteSize();
         ensureRoom(bytes);

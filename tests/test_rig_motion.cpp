@@ -745,3 +745,98 @@ TEST_CASE("A six-legged motion walks an auto-rigged six-legged sprite", "[rig][m
     CHECK(unused);
     for (const auto& [bone, what] : d4.value().matched) CHECK(what.rfind("middle", 0) != 0);
 }
+
+TEST_CASE("A wing motion beats and folds an auto-rigged flyer's wings", "[rig][mocap][wings]") {
+    auto sprite = readPng(fixture("dragon128.png"));
+    REQUIRE(sprite);
+    auto doc0 = Document::create(sprite.value().width() + 40, sprite.value().height() + 40).value();
+    const LayerId hero = doc0.addLayer("Dragon").value();
+    REQUIRE(doc0.setCel(hero, 0, Cel{sprite.value(), 20, 20}));
+    auto ar = rigs::autoRig(doc0, hero, 0, rigs::AutoRigBody::Wings);
+    REQUIRE(ar);
+    const Document doc = ar.value().document;
+    std::vector<std::string> wingNames;
+    for (const Bone& b : doc.rig()->bones)
+        if (b.name.find("wing") != std::string::npos) wingNames.push_back(b.name);
+    REQUIRE_FALSE(wingNames.empty());
+
+    auto r = rigs::keysFromMotion(doc, preset("wingbeat"), {});
+    INFO((r ? std::string() : r.error().message));
+    REQUIRE(r);
+    const rigs::MotionKeysResult& res = r.value();
+    for (const auto& n : res.notes) UNSCOPED_INFO(n);
+    CHECK(res.count == 7);   // 0.6 s at 12 fps
+    CHECK(res.matched.size() == wingNames.size());
+    bool own = false, folds = false;
+    for (const auto& n : res.notes) {
+        own = own || n.find("own wing bones") != std::string::npos;
+        folds = folds || n.find("fold on the way up") != std::string::npos;
+    }
+    CHECK(own);
+    CHECK(folds);
+    const Rig& rig = *res.document.rig();
+    REQUIRE(rig.keys.size() == 7);
+    for (const std::string& name : wingNames) {
+        INFO(name);
+        const Bone* b = rig.bone(name);
+        REQUIRE(b);
+        double lo = 1e9, hi = -1e9, shortest = 1;
+        int asDrawn = 0;
+        for (const RigKey& k : rig.keys) {
+            const double t = turnOf(rig, k.pose, name.c_str());
+            lo = std::min(lo, t);
+            hi = std::max(hi, t);
+            const auto st = k.pose.stretch.find(b->id);
+            const double s = st == k.pose.stretch.end() ? 1.0 : st->second;
+            shortest = std::min(shortest, s);
+            asDrawn += t == 0.0 && s == 1.0 ? 1 : 0;
+        }
+        CHECK(hi - lo > 0.6);        // it beats
+        CHECK(asDrawn >= 1);         // the top of the stroke is the drawing
+        CHECK(shortest < 0.95);      // folded on the way up
+        CHECK(shortest >= 0.55);
+        // The tip goes down on screen from the drawing, and toward the tail
+        const auto rest = rigs::solve(rig, RigPose{});
+        std::size_t bi = 0;
+        for (std::size_t i = 0; i < rig.bones.size(); ++i)
+            if (rig.bones[i].id == b->id) bi = i;
+        // (the dragon faces right: its tail is on the left).
+        double lowest = -1e9, leftMost = 1e9;
+        for (const RigKey& k : rig.keys) {
+            const auto w = rigs::solve(rig, k.pose);
+            lowest = std::max(lowest, w[bi].tailY - w[bi].headY);
+            leftMost = std::min(leftMost, w[bi].tailX - w[bi].headX);
+        }
+        CHECK(lowest > (rest[bi].tailY - rest[bi].headY) + 0.25 * b->length);
+        CHECK(leftMost < (rest[bi].tailX - rest[bi].headX) - 0.25 * b->length);   // toward the tail
+    }
+    REQUIRE(res.document.validate());
+    auto baked = rigs::bakeKeys(res.document);
+    REQUIRE(baked);
+
+    // Arms drive the wings too (no folding); half the amount beats less; pairs are refused.
+    auto fl = rigs::keysFromMotion(doc, preset("flap"), {});
+    INFO((fl ? std::string() : fl.error().message));
+    REQUIRE(fl);
+    bool arms = false;
+    for (const auto& n : fl.value().notes) arms = arms || n.find("motion's arms") != std::string::npos;
+    CHECK(arms);
+    for (const RigKey& k : fl.value().document.rig()->keys) CHECK(k.pose.stretch.empty());
+    auto range = [&](const rigs::MotionKeysResult& kr) {
+        double lo = 1e9, hi = -1e9;
+        for (const RigKey& k : kr.document.rig()->keys) {
+            const double t = turnOf(*kr.document.rig(), k.pose, wingNames.front().c_str());
+            lo = std::min(lo, t);
+            hi = std::max(hi, t);
+        }
+        return hi - lo;
+    };
+    rigs::MotionKeysOptions half;
+    half.amount = 0.5;
+    auto hr = rigs::keysFromMotion(doc, preset("wingbeat"), half);
+    REQUIRE(hr);
+    CHECK(range(hr.value()) < 0.7 * range(res));
+    rigs::MotionKeysOptions pairs;
+    pairs.bones = {{wingNames.front(), mocap::Bone::LUpperArm}};
+    CHECK_FALSE(rigs::keysFromMotion(doc, preset("wingbeat"), pairs));
+}

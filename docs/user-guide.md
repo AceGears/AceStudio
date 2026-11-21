@@ -120,7 +120,7 @@ Add, Subtract, Difference), visibility and locks.
   one undo step; the rest frame itself is left alone. Keys move with their frames when you insert,
   move or delete frames. From the command line: `acestudio-cli rig key|unkey|rest|bake`;
   `--stretch "tail=0.7"` on `rig pose` or `rig key` draws a bone shorter, as when it points toward
-  you (the rig panel has no control for it yet). `rig motion` does this by itself for a
+  you; in the Rig panel that is **Length** under **Turn** (100% is the bone as drawn). `rig motion` does this by itself for a
   four-legged rig's head, neck and tail when the motion swings them sideways.
 - **Motion onto your rig** (command line only for now): `acestudio-cli rig motion hero.acestudio
   preset:walk --out hero_walk.acestudio` keys a motion (a preset, BVH or glTF/GLB file) onto the rig
@@ -143,6 +143,8 @@ Add, Subtract, Difference), visibility and locks.
   with the sprite open.   The motion's legs are found by their shape, so joint names do not matter. A motion on six legs (try `preset:hex-walk`) walks a sprite or rig drawn with six legs the same way, pairing
   the legs from the back forward; on four drawn legs its middle pair is left out.
   The legs, the body's height, the back's rock and the head's and tail's rise and fall follow the motion.
+  A winged sprite rigged with `rig auto --as wings` takes `rig motion ... preset:wingbeat` (or
+  `preset:flap`) the same way.
   To keep editable keys instead, auto-rig the sprite and run
   `acestudio-cli rig motion dog_rig.acestudio preset:quad-walk --out dog_walk.acestudio`. If it
   reads the animal backwards, add `--facing right` (or `left`); `--legs "0=hind-near,1=hind-far"`
