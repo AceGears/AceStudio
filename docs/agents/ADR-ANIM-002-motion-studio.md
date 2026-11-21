@@ -160,7 +160,7 @@ the tip swings, and not in step with the tail; the keys bake; the test dog's sho
 bone each), run locally; the baked walk was looked at.
 
 Not done: sideways head and tail swing, a curve through more than one joint (a skin follows one
-child bone), six legs, fins (`RigSwim`). Wings: section 3.7.
+child bone), six legs. Wings: section 3.7. Fins: section 3.8.
 
 ### 3.7 Wings from a humanoid motion (stage 3c, second part, 2026-11-18)
 
@@ -193,8 +193,32 @@ takes a selection made before Use Current Sprite as the wing mask. Verified: the
 tip moves at least a row and at most its reach (`tests/test_wing_motion.cpp`), with the part rig,
 sprite motion and key pose tests still passing; the panel is compiled by CI only.
 
-Not done: wing skeletons (a bird's or bat's own wing bones), wing sweep, twist and folding, and
-fins (`RigSwim`).
+Not done: wing skeletons (a bird's or bat's own wing bones), wing sweep, twist and folding.
+
+### 3.8 Fins from a motion's spine (2026-11-20)
+
+`mocap::retarget` with `Body::Swimmer` (`retargetSwimmer`, `core/src/Mocap.cpp`) poses the swim
+rig (`buildSwimRig`, `RigSwim.cpp`: body, tail fin past the stalk, other fins). The spine is the
+joint path from the first joint whose name contains "head" to the last whose name contains
+"tail"; without both, the skeleton's longest rest-pose path (from the head when one is named;
+else the end that moves less across the path is the head). Per frame each chain joint's offset
+from the head joint, across the rest axis, is taken in the one of two perpendicular directions
+that swings more, divided by the chain's length, and measured from its neutral (a loop's mean, a
+one-shot's first frame). The body's columns take that wave (0 to 0.8 of the chain runs head to
+stalk when there is a tail fin, else the whole chain), in whole pixels, neighbours at most one
+apart, at most 35% of the height. The tail fin rides the stalk and turns by the chain's slope
+after 0.8 against its slope before (at most 0.6 rad), narrowing through the middle of its sweep
+as Animate's swim does; the other fins ride their columns. Built-in preset `swim`
+(`MotionLibrary.cpp`): Head (root), five spine joints yawing 3 to 22 degrees with a phase lag of
+0.1 to 0.7 cycles, 0.8 s. `PresetInfo::swimmer` marks it. The clip check skips the top-region
+test for these clips (the back moves down with the wave).
+
+Verified: `tests/test_swim_motion.cpp` (the preset's tail end sweeps while the head stays; on a
+drawn fish the tail fin's mean row moves 3 px or more, the eye 1 px or less, pixel count within
+10%, only the sprite's colours, more amount gives more sweep; a one-shot starts as drawn; a
+6 by 3 sprite is refused), a Lua case and the CLI smoke test on `fish57.png`, run locally; the
+goldfish strip was looked at. Not done: paddling fins, a wave in two planes, fins on
+`rig motion`.
 
 ### 3.4 Direction sets (stage 4, first part, 2026-11-18)
 

@@ -216,7 +216,7 @@ MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(par
     auto* libRow = new QHBoxLayout;
     m_presets = new QComboBox(motionBox);
     m_presets->setAccessibleName(tr("Motion presets"));
-    m_presets->setToolTip(tr("Ready motions (idle, walk, run, jump, attack, hurt; flap for wings; quad-walk for four legs) and the motions you saved"));
+    m_presets->setToolTip(tr("Ready motions (idle, walk, run, jump, attack, hurt; flap for wings; swim for fish; quad-walk for four legs) and the motions you saved"));
     m_savePreset = new QPushButton(tr("Save as Preset…"), motionBox);
     m_savePreset->setAutoDefault(false);
     m_savePreset->setToolTip(tr("Keep the loaded motion in your motion library (saved as BVH)"));
@@ -259,9 +259,11 @@ MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(par
     m_body->addItem(tr("Two legs"), QStringLiteral("biped"));
     m_body->addItem(tr("Four legs"), QStringLiteral("quadruped"));
     m_body->addItem(tr("Wings (the motion's arms)"), QStringLiteral("flyer"));
+    m_body->addItem(tr("Fish (the motion's spine)"), QStringLiteral("swimmer"));
     m_body->setAccessibleName(tr("Sprite body"));
     m_body->setToolTip(tr("What the motion moves. Wings: each wing turns as the motion's arm rises and falls "
-                          "(try the flap preset). Select the wings in the document before Use Current Sprite for exact control."));
+                          "(try the flap preset). Select the wings in the document before Use Current Sprite for exact control. "
+                          "Fish: the body bends and the tail fin turns as the motion's spine does (try the swim preset)."));
     mf->addRow(tr("Start:"), m_start);
     mf->addRow(tr("Length:"), m_length);
     mf->addRow(tr("Frame rate:"), m_fps);
@@ -660,6 +662,7 @@ void MotionStudioPanel::retarget() {
     if (body == QLatin1String("biped")) o.body = ::acestudio::motion::Body::Biped;
     else if (body == QLatin1String("quadruped")) o.body = ::acestudio::motion::Body::Quadruped;
     else if (body == QLatin1String("flyer")) o.body = ::acestudio::motion::Body::Flyer;
+    else if (body == QLatin1String("swimmer")) o.body = ::acestudio::motion::Body::Swimmer;
     else o.body = m_fourLegged ? ::acestudio::motion::Body::Quadruped : ::acestudio::motion::Body::Biped;
     o.wingLine = m_wingLine->value() / 100.0;
     o.wingMask = m_wingMask;

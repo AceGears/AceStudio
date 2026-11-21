@@ -234,6 +234,9 @@ struct RetargetOptions {
     // Flyer: a humanoid motion on a winged sprite; each wing turns about its
     // shoulder as the motion's arm rises and falls, the hand end trails as
     // the elbow bends, and the body rises and sinks with the hips.
+    // Swimmer: any motion with a spine (a chain from a joint named head to
+    // one named tail, else the skeleton's longest chain) on a fish-like
+    // sprite; the spine's wave bends the body and turns the tail fin.
     motion::Body body = motion::Body::Biped;
     // Flyer only: which pixels are wings, as motion::Options (the part above
     // `wingLine` of the opaque height, or exactly `wingMask` when set).

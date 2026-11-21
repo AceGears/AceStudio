@@ -1205,6 +1205,268 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
     return res;
 }
 
+// A motion's spine on a fish-like sprite (the swim rig of RigSwim.cpp). The
+// spine is the chain from the joint named head to the one named tail (the
+// longest chain of the skeleton when it has no such names). Its sideways
+// (or up-and-down) wave, measured from the head, bends the body column by
+// column; the tail fin turns as the chain's end turns against the stalk.
+Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, const RetargetOptions& opt) {
+    RetargetResult res;
+    res.map.joint.fill(-1);
+    const motion::Subject subj = motion::analyzeSubject(sprite);
+    auto built = motion::detail::buildSwimRig(sprite, subj, motion::SwimStyle::Auto);
+    if (!built) return Error(ErrorCode::InvalidArgument, "the sprite is too small to bend as a swimmer (8 by 4 pixels at least)");
+    motion::detail::SwimRig& sr = *built;
+    const rg::Rig& rig = sr.rig;
+    const IntRect bb = subj.bounds;
+    const double amount = std::clamp(opt.amount, 0.25, 2.0);
+    const int dir = sr.dir;
+
+    // The spine chain, head first.
+    const std::vector<Vec3> rest = restPositions(m);
+    const std::size_t nj = m.joints.size();
+    auto lowerName = [&](std::size_t j) {
+        std::string n = m.joints[j].name;
+        for (char& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return n;
+    };
+    auto pathBetween = [&](int a, int b) {
+        std::vector<int> up, down;
+        std::vector<int> depthOf(nj, 0);
+        for (std::size_t j = 0; j < nj; ++j) depthOf[j] = m.joints[j].parent >= 0 ? depthOf[uz(m.joints[j].parent)] + 1 : 0;
+        while (a != b && a >= 0 && b >= 0) {
+            if (depthOf[uz(a)] >= depthOf[uz(b)]) {
+                up.push_back(a);
+                a = m.joints[uz(a)].parent;
+            } else {
+                down.push_back(b);
+                b = m.joints[uz(b)].parent;
+            }
+        }
+        if (a < 0 || b < 0) return std::vector<int>{};   // two roots
+        up.push_back(a);
+        up.insert(up.end(), down.rbegin(), down.rend());
+        return up;
+    };
+    auto pathLength = [&](const std::vector<int>& path) {
+        double l = 0;
+        for (std::size_t i = 1; i < path.size(); ++i) l += len(rest[uz(path[i])] - rest[uz(path[i - 1])]);
+        return l;
+    };
+    // The farthest joint from `from` along the skeleton (and its distance).
+    auto farthest = [&](int from) {
+        int best = from;
+        double bestLen = 0;
+        for (std::size_t j = 0; j < nj; ++j) {
+            const double l = pathLength(pathBetween(from, static_cast<int>(j)));
+            if (l > bestLen) {
+                bestLen = l;
+                best = static_cast<int>(j);
+            }
+        }
+        return best;
+    };
+    int headJ = -1, tailJ = -1;
+    for (std::size_t j = 0; j < nj; ++j) {
+        const std::string n = lowerName(j);
+        if (headJ < 0 && n.find("head") != std::string::npos && n.find("_end") == std::string::npos) headJ = static_cast<int>(j);
+        if (n.find("tail") != std::string::npos) tailJ = static_cast<int>(j);   // the last (deepest) tail joint
+    }
+    bool byName = headJ >= 0 && tailJ >= 0;
+    std::vector<int> chain;
+    if (byName) {
+        chain = pathBetween(headJ, tailJ);
+    } else {
+        const int a = farthest(0), b = farthest(a);
+        chain = pathBetween(headJ >= 0 ? headJ : a, headJ >= 0 ? farthest(headJ) : b);
+    }
+    const double chainLen = pathLength(chain);
+    if (chain.size() < 3 || chainLen < 1e-6)
+        return Error(ErrorCode::InvalidArgument, "the motion's skeleton has no spine of three joints or more to bend the body with (try preset:swim)");
+
+    const double start = std::clamp(opt.start, 0.0, m.duration());
+    const double span = opt.length > 0 ? std::min(opt.length, m.duration() - start) : m.duration() - start;
+    if (span <= 0) return Error(ErrorCode::InvalidArgument, "the time span is empty");
+    const int fps = std::clamp(opt.fps, 1, 60);
+    const int frames = std::clamp(opt.frames > 0 ? opt.frames : std::max(2, iround(span * fps)), 2, 240);
+    const double step = opt.loop ? span / frames : (frames > 1 ? span / (frames - 1) : 0);
+    std::vector<std::vector<Vec3>> world;
+    double floorY = 1e300;
+    for (int f = 0; f < frames; ++f) {
+        std::vector<Vec3> w = jointPositions(m, start + f * step);
+        for (const Vec3& q : w) floorY = std::min(floorY, q.y);
+        world.push_back(std::move(w));
+    }
+    // Without names the head is the end that moves less across the chain's line.
+    const Vec3 axis0 = norm(rest[uz(chain.back())] - rest[uz(chain.front())]);
+    if (!byName && headJ < 0) {
+        auto wander = [&](int j, int other) {
+            double sum = 0;
+            for (int f = 0; f < frames; ++f) {
+                const Vec3 d = (world[uz(f)][uz(j)] - world[uz(f)][uz(other)]) - (world[0][uz(j)] - world[0][uz(other)]);
+                sum += len(d - axis0 * dot(d, axis0));
+            }
+            return sum;
+        };
+        const std::size_t mid = chain.size() / 2;
+        if (wander(chain.front(), chain[mid]) > wander(chain.back(), chain[mid])) std::reverse(chain.begin(), chain.end());
+    }
+    const Vec3 axis = norm(rest[uz(chain.back())] - rest[uz(chain.front())]);   // head -> tail
+    // The two directions across the spine; the wave is in the one it moves in more.
+    const Vec3 upv = std::abs(axis.y) < 0.9 ? Vec3{0, 1, 0} : Vec3{1, 0, 0};
+    const Vec3 side1 = norm(cross(axis, upv)), side2 = norm(cross(axis, side1));
+    std::vector<double> along(chain.size(), 0.0);   // 0 at the head .. 1 at the tail's end
+    for (std::size_t i = 1; i < chain.size(); ++i)
+        along[i] = along[i - 1] + len(rest[uz(chain[i])] - rest[uz(chain[i - 1])]) / chainLen;
+    auto offsets = [&](Vec3 across) {
+        std::vector<std::vector<double>> o(uz(frames), std::vector<double>(chain.size(), 0.0));
+        for (int f = 0; f < frames; ++f)
+            for (std::size_t i = 0; i < chain.size(); ++i)
+                o[uz(f)][i] = dot(world[uz(f)][uz(chain[i])] - world[uz(f)][uz(chain.front())], across) / chainLen;
+        // From the neutral shape: a loop's mean, a one-shot's first frame.
+        for (std::size_t i = 0; i < chain.size(); ++i) {
+            double neutral = o[0][i];
+            if (opt.loop) {
+                neutral = 0;
+                for (int f = 0; f < frames; ++f) neutral += o[uz(f)][i];
+                neutral /= frames;
+            }
+            for (int f = 0; f < frames; ++f) o[uz(f)][i] -= neutral;
+        }
+        return o;
+    };
+    auto swingOf = [&](const std::vector<std::vector<double>>& o) {
+        double s = 0;
+        for (const auto& row : o)
+            for (double v : row) s = std::max(s, std::abs(v));
+        return s;
+    };
+    std::vector<std::vector<double>> wave = offsets(side1);
+    {
+        std::vector<std::vector<double>> other = offsets(side2);
+        if (swingOf(other) > swingOf(wave)) wave = std::move(other);
+    }
+    if (swingOf(wave) < 0.02) res.notes.push_back("The motion's spine hardly bends; the body barely moves (try preset:swim).");
+    // The wave at `u` along the chain in frame f, as a fraction of the chain's length.
+    auto waveAt = [&](int f, double u) {
+        u = std::clamp(u, 0.0, 1.0);
+        std::size_t i = 1;
+        while (i + 1 < chain.size() && along[i] < u) ++i;
+        const double a = along[i - 1], b = along[i];
+        const double t = b > a ? std::clamp((u - a) / (b - a), 0.0, 1.0) : 0.0;
+        return wave[uz(f)][i - 1] * (1 - t) + wave[uz(f)][i] * t;
+    };
+
+    // A swimmer is drawn from the side; the camera only shows the source.
+    const bool turnKnown = opt.drawnTurn && std::isfinite(*opt.drawnTurn);
+    const double drawnTurn = turnKnown ? *opt.drawnTurn : (dir > 0 ? -90 : 90);
+    res.camera = opt.camera ? *opt.camera : Camera{};
+    if (!opt.camera) res.camera.turn = drawnTurn;
+    const Camera& cam = res.camera;
+    if (std::abs(wrapAngle((cam.turn - drawnTurn) * kDeg)) / kDeg > 30 || std::abs(cam.tilt) > 40) {
+        res.approximateView = true;
+        res.notes.push_back("The sprite is drawn from the side; this camera only changes how the motion is shown, the art bends the same way.");
+    }
+    const Vec3 forward = norm(horizontal(axis * -1.0));
+    const Vec3 head0 = world[0][uz(chain.front())];
+    const Vec3 centre{head0.x, floorY, head0.z};
+    std::vector<Projected> prs;
+    for (int f = 0; f < frames; ++f) {
+        std::vector<Vec3> w = world[uz(f)];
+        if (opt.inPlace) {
+            const Vec3 tr = horizontal(world[uz(f)][uz(chain.front())] - head0);
+            for (Vec3& q : w) q = q - tr;
+        }
+        prs.push_back(project(w, cam, len(forward) > 0.5 ? forward : Vec3{0, 0, 1}, chainLen, centre));
+    }
+
+    // The body: the chain's first part runs to the tail stalk, the rest is the fin.
+    const bool hasFin = sr.tailPart >= 0 && sr.stalk >= 0;
+    const double stalkU = hasFin ? 0.8 : 1.0;
+    const int bodyLen = hasFin ? sr.stalk + 1 : bb.w;
+    const double px = static_cast<double>(bodyLen) / stalkU * amount;   // pixels per chain length
+    const int maxBend = std::max(1, bb.h * 35 / 100);
+    const rg::Part& bodyP = rig.parts[uz(sr.bodyPart)];
+    const IntRect pb{bodyP.hiBox.x + 1, bodyP.hiBox.y + 1, bodyP.hiBox.w - 2, bodyP.hiBox.h - 2};
+    auto alongX = [&](int x) { return (x - sr.headX) * dir; };
+    // The fin's turn: the chain's end against the stalk before it (down is positive).
+    std::vector<double> finTurn(uz(frames), 0.0);
+    double finPeak = 0;
+    for (int f = 0; f < frames; ++f) {
+        const double before = std::atan((waveAt(f, stalkU) - waveAt(f, stalkU - 0.2)) / 0.2);
+        const double after = std::atan((waveAt(f, 1.0) - waveAt(f, stalkU)) / std::max(0.05, 1.0 - stalkU));
+        finTurn[uz(f)] = std::clamp((after - before) * amount, -0.6, 0.6);
+        finPeak = std::max(finPeak, std::abs(finTurn[uz(f)]));
+    }
+    const int margin = maxBend + std::max(4, bb.h / 4) + 2;
+    const IntRect big{bb.x - margin, bb.y - margin, bb.w + 2 * margin, bb.h + 2 * margin};
+    std::vector<Image> imgs;
+    std::vector<std::vector<rg::PartPose>> poses;
+    for (int f = 0; f < frames; ++f) {
+        std::vector<rg::PartPose> pose = rig.rest();
+        // Columns move by whole pixels, neighbours at most one apart.
+        std::vector<int> byK(uz(bb.w), 0);
+        int prev = 0;
+        for (int k = 0; k < bb.w; ++k) {
+            const double u = static_cast<double>(k) / std::max(1, bodyLen - 1) * stalkU;
+            const int want = std::clamp(iround(waveAt(f, u) * px), -maxBend, maxBend);
+            prev = std::clamp(want, prev - 1, prev + 1);
+            byK[uz(k)] = prev;
+        }
+        std::vector<int> colDy(uz(std::max(0, pb.w)), 0);
+        for (int c = 0; c < pb.w; ++c) colDy[uz(c)] = byK[uz(std::clamp(alongX(pb.x + c), 0, bb.w - 1))];
+        auto dyAt = [&](double x) {
+            if (colDy.empty()) return 0;
+            return colDy[uz(std::clamp(static_cast<int>(std::floor(x)) - pb.x, 0, pb.w - 1))];
+        };
+        pose[uz(sr.bodyPart)].colDy = colDy;
+        if (hasFin) {
+            rg::PartPose& tq = pose[uz(sr.tailPart)];
+            tq.dy = dyAt(sr.stalkPt.x - dir * 1.0);
+            tq.angle = dir * finTurn[uz(f)];
+            // As Animate's swim: the fin narrows as it sweeps through the middle.
+            if (finPeak > 0.05) tq.sx = 1.0 - 0.3 * (1.0 - std::abs(finTurn[uz(f)]) / finPeak);
+        }
+        for (const motion::detail::SwimFin& fn : sr.fins) pose[uz(fn.part)].dy = dyAt(fn.root.x);   // the fins ride the body
+        imgs.push_back(rg::renderPose(rig, pose, big));
+        poses.push_back(std::move(pose));
+    }
+
+    int x0 = big.w, y0 = big.h, x1 = -1, y1 = -1;
+    for (const Image& im : imgs) {
+        const IntRect r = im.opaqueBounds();
+        if (r.empty()) continue;
+        x0 = std::min(x0, r.x);
+        y0 = std::min(y0, r.y);
+        x1 = std::max(x1, r.x + r.w);
+        y1 = std::max(y1, r.y + r.h);
+    }
+    if (x1 < 0) return Error(ErrorCode::Internal, "retarget produced empty frames");
+    const int frameMs = std::max(10, iround(1000.0 * step));
+    res.clip.name = "retarget";
+    res.clip.loops = opt.loop;
+    res.clip.body = motion::Body::Swimmer;
+    res.clip.depthPops = static_cast<int>(rg::zPops(rig, poses, big).size());
+    for (const Image& im : imgs) {
+        res.clip.frames.push_back(im.copy({x0, y0, x1 - x0, y1 - y0}));
+        res.clip.durations.push_back(frameMs);
+    }
+    const int side = std::max(x1 - x0, y1 - y0);
+    res.source.name = "source";
+    res.source.loops = opt.loop;
+    for (const Projected& pr : prs) {
+        Image img(side, side);
+        paintSkeleton(img, m, res.map, pr, side * 0.75, side / 2.0, side * 0.6);
+        res.source.frames.push_back(img);
+        res.source.durations.push_back(frameMs);
+    }
+    res.notes.push_back(std::string("Spine: ") + m.joints[uz(chain.front())].name + " to " + m.joints[uz(chain.back())].name + " (" +
+                        std::to_string(chain.size()) + " joints" + (byName ? "" : ", the skeleton's longest chain") + ").");
+    if (!hasFin) res.notes.push_back("No tail fin was found behind a narrow tail stalk; the whole body bends.");
+    if (!sr.fins.empty()) res.notes.push_back("The other fins ride the body; a motion has nothing that paddles them.");
+    return res;
+}
+
 Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, const RetargetOptions& opt) {
     RetargetResult res;
     res.creature = creatureMap(m);
@@ -1495,9 +1757,10 @@ Result<RetargetResult> retarget(const Image& sprite, const Motion& m, const Reta
     if (m.frameCount < 1 || m.joints.empty()) return Error(ErrorCode::InvalidArgument, "the motion is empty");
     if (opt.body == motion::Body::Quadruped) return retargetQuadruped(sprite, m, opt);
     if (opt.body == motion::Body::Flyer) return retargetFlyer(sprite, m, opt);
+    if (opt.body == motion::Body::Swimmer) return retargetSwimmer(sprite, m, opt);
     if (opt.body != motion::Body::Biped)
         return Error(ErrorCode::InvalidArgument,
-                     "motion can be put on two-legged (biped), four-legged (quadruped) and winged (flyer) sprites only, for now");
+                     "motion can be put on two-legged (biped), four-legged (quadruped), winged (flyer) and fish-like (swimmer) sprites only, for now");
     RetargetResult res;
     res.map = autoMap(m, opt.mapOverrides);
     if (!res.map.hasLegs()) {

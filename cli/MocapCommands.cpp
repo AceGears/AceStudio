@@ -177,9 +177,10 @@ int readBody(const Args& a, Output& out, const std::string& cmd, const Image& sp
     if (v == "biped") body = motion::Body::Biped;
     else if (v == "quadruped") body = motion::Body::Quadruped;
     else if (v == "flyer") body = motion::Body::Flyer;
+    else if (v == "swimmer") body = motion::Body::Swimmer;
     else if (v == "auto")
         body = motion::analyzeSubject(sprite).body == motion::Body::Quadruped ? motion::Body::Quadruped : motion::Body::Biped;
-    else return out.fail(kUsage, cmd + ": --body expects auto, biped, quadruped or flyer");
+    else return out.fail(kUsage, cmd + ": --body expects auto, biped, quadruped, flyer or swimmer");
     return kOk;
 }
 

@@ -50,6 +50,7 @@ add_executable(acestudio_core_tests
     test_direction_set.cpp
     test_creature_motion.cpp
     test_wing_motion.cpp
+    test_swim_motion.cpp
     test_world_map.cpp
     test_style_profile.cpp
     test_app_bridge.cpp

@@ -1038,12 +1038,12 @@ void bind(sol::state_view lua, Runtime& rt) {
         for (std::size_t i = 0; i < all.size(); ++i) {
             const auto& p = all[i];
             t[i + 1] = lv.create_table_with("name", p.name, "description", p.description, "seconds", p.seconds, "loops", p.loops,
-                                            "built_in", p.builtIn, "four_legged", p.fourLegged);
+                                            "built_in", p.builtIn, "four_legged", p.fourLegged, "swimmer", p.swimmer);
         }
         return t;
     };
     // ace.retarget(sprite, "preset:walk" | "motion.bvh" | "motion.glb", {view=, turn=, tilt=, roll=,
-    //   perspective=, start=, length=, fps=, frames=, amount=, travel=, loop=, body="auto"|"biped"|"quadruped"|"flyer",
+    //   perspective=, start=, length=, fps=, frames=, amount=, travel=, loop=, body="auto"|"biped"|"quadruped"|"flyer"|"swimmer",
     //   wing_line=})
     ace["retarget"] = [&rt](const LImage& sprite, const std::string& source, sol::optional<sol::table> opts, sol::this_state ts) {
         bool oneShot = false;
@@ -1070,7 +1070,8 @@ void bind(sol::state_view lua, Runtime& rt) {
         else if (body == "biped") o.body = motion::Body::Biped;
         else if (body == "quadruped") o.body = motion::Body::Quadruped;
         else if (body == "flyer") o.body = motion::Body::Flyer;
-        else fail("body is \"auto\", \"biped\", \"quadruped\" or \"flyer\"");
+        else if (body == "swimmer") o.body = motion::Body::Swimmer;
+        else fail("body is \"auto\", \"biped\", \"quadruped\", \"flyer\" or \"swimmer\"");
         mocap::RetargetResult r = unwrap(mocap::retarget(sprite.img, motion, o));
         std::size_t bytes = 0;
         for (const Image& f : r.clip.frames) bytes += f.byteSize();
