@@ -149,6 +149,10 @@ Add, Subtract, Difference), visibility and locks.
   **Wings** in Motion Studio's Body box. Each wing turns as the motion's arm rises and falls. If
   the head turns with a wing, lower the wing line (`--wing-line 0.3`, or Wing line in Motion
   Studio), or select the wings in the document before **Use Current Sprite**.
+- **Fish**: a fish drawn from the side can swim to a motion's spine:
+  `acestudio-cli retarget fish.png preset:swim --body swimmer --out out`, or choose **Fish** in
+  Motion Studio's Body box with the swim preset. The body bends and the tail fin turns; the
+  other fins ride along. (Animate's own **swim** needs no motion and also paddles the fins.)
 - **A motion in every direction** (command line only for now): put the views you drew in a
   folder, named by the way the character faces: `s.png` (towards you), `se.png`, `e.png` (facing
   right), `ne.png`, `n.png` (away from you), and so on, or `front.png`, `right.png`,
@@ -166,7 +170,7 @@ Add, Subtract, Difference), visibility and locks.
   Studio** to show and hide it. Press **Use Current Sprite** to put the same motion and camera on
   another sprite or frame.
 - **Motion presets:** in **Animation › Motion Studio (3D Motion)…**, the **Library** row offers ready motions
-  (idle, walk, run, jump, attack, hurt, flap for wings, quad-walk for four legs) next to **Load Motion…**. Jump, attack and hurt play once;
+  (idle, walk, run, jump, attack, hurt, flap for wings, swim for fish, quad-walk for four legs) next to **Load Motion…**. Jump, attack and hurt play once;
   the others loop. **Save as Preset…** keeps the loaded motion (a BVH or glTF/GLB animation) in your
   library, as a BVH file in the `motions` folder of AceStudio's data folder, and **Remove** deletes a
   saved one. The presets are simple, made-by-code motions: good for blocking out an animation, less

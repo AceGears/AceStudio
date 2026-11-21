@@ -94,6 +94,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Fish swim to a 3D motion**: `retarget fish.png preset:swim --body swimmer` (Lua and MCP
+  `body = "swimmer"`, **Fish** in Motion Studio's Body box) bends a fish-like side view with the
+  motion's spine and turns its tail fin. New built-in preset `swim` (a fish skeleton, a wave down
+  the spine, 0.8 s loop); presets now say `swimmer` in Lua's `ace.motion_presets()`.
 - **Thin legs under a long body are found**: a foot need only be a twelfth of the sprite's
   smaller side, not of its width, so a long tail or neck no longer hides thin legs and the
   animal auto-rigs and animates as four-legged.

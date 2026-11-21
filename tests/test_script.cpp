@@ -415,6 +415,14 @@ TEST_CASE("Lua motion library and retarget", "[script][mocap]") {
         assert(not pcall(ace.retarget, dog, 'preset:quad-walk', {body = 'six-legged'}))
         assert(not pcall(ace.retarget, dog, 'preset:quad-walk', {view = 'sideways'}))
         assert(not pcall(ace.retarget, dog, 'motion.fbx'))
+        -- A fish: the swim preset's spine bends it.
+        assert(names.swim and names.swim.swimmer and not names.walk.swimmer)
+        local fish = ace.image(60, 30)
+        fish:rect(4, 8, 34, 14, '#3c82aa')
+        fish:rect(38, 13, 6, 4, '#3c82aa')
+        fish:rect(44, 5, 8, 20, '#dc9632')
+        local swim = ace.retarget(fish, 'preset:swim', {body = 'swimmer', fps = 10})
+        assert(swim.body == 'swimmer' and #swim.frames == 8 and swim.loops, swim.body)
     )");
     INFO(errorOf(r));
     CHECK(r);

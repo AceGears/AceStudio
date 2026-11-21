@@ -95,8 +95,18 @@ not been run.
   selection as the wings (compiled by CI; no Qt test drives it); the command line, Lua and MCP take
   a wing line only. `--body auto` never picks wings. The wing stroke is up and down only: no
   forward sweep, twist or folding. The tail waves with the stroke as in Animate's flap (a thin tail
-  behind the body only; the golden dragon's thick tail is not found as one). Fins (a swimming
-  motion onto `RigSwim`) are not mapped.
+  behind the body only; the golden dragon's thick tail is not found as one).
+- **Fish from a 3D motion** (`retarget --body swimmer`, since 2026-11-20): the motion's spine (the
+  chain from a joint named head to one named tail, else the skeleton's longest chain) bends the
+  body column by column and turns the tail fin; `preset:swim` is a fish skeleton made for it.
+  Tested locally on a drawn fish and looked at on the goldfish fixture. `--body auto` never picks
+  it. The other fins only ride the body (a motion has nothing that paddles them; Animate's own
+  swim does paddle them). The sprite must be a side view; the camera only changes the source
+  skeleton's picture. A skeleton with no head and tail names is guessed (the stiller end is the
+  head), and a humanoid motion bends a fish by its head-to-foot chain, which rarely looks like
+  swimming. The wave is read in one plane only (the one the spine moves in more). `rig motion`
+  does not drive an auto-rig made with `--as fins`. The Motion Studio choice (Fish) is compiled
+  by CI; no Qt test drives it.
 - **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI and core only (no app page,
   Lua or MCP yet). The art is chosen, never turned or drawn: a direction with no view drawn near it
   shows the nearest view with the motion seen from the new direction, and is flagged. Mirrored

@@ -538,7 +538,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                  }});
     // ---- 3D motion onto sprites (ADR-ANIM-002): the CLI's motion, retarget and directions
     t.push_back({"motion_presets", "List motion presets",
-                 std::string("The motion library: built-in presets (idle, walk, run, jump, attack, hurt; flap for winged sprites, quad-walk for "
+                 std::string("The motion library: built-in presets (idle, walk, run, jump, attack, hurt; flap for winged sprites, swim for fish-like sprites, quad-walk for "
                              "four-legged sprites) and motions the user saved, with length and whether they loop."),
                  obj(json::object()), readOnly(),
                  [envPtr](const json& a, const ToolCall& call) {
@@ -568,8 +568,9 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
         props["frames"] = integer("Exactly this many frames instead of fps", 2, 240);
         props["amount"] = number("Swing of the motion, 0.25-2 (default 1)");
         props["name"] = str("Name for the outputs and tags (default: the motion's)");
-        props["body"] = oneOf("Sprite body (default auto: from the sprite; flyer puts the motion's arms on the sprite's wings)",
-                              {"auto", "biped", "quadruped", "flyer"});
+        props["body"] = oneOf("Sprite body (default auto: from the sprite; flyer puts the motion's arms on the sprite's wings, "
+                              "swimmer its spine on a fish-like sprite: try preset:swim)",
+                              {"auto", "biped", "quadruped", "flyer", "swimmer"});
         props["wing_line"] = number("flyer: the wings are above this fraction of the sprite's height (default 0.45)");
         props["animation"] = str("glTF/GLB: which animation, by index or name");
         props["overwrite"] = kOverwrite;

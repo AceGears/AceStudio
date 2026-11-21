@@ -186,9 +186,11 @@ struct Builtin {
     Pose (*pose)(double);       // humanoid presets
     Motion (*make)() = nullptr; // others (four-legged), made whole
     bool fourLegged = false;
+    bool swimmer = false;
 };
 
 Motion quadWalk();
+Motion swim();
 
 Pose jump(double t) { return keyed(jumpKeys(), t); }
 Pose attack(double t) { return keyed(attackKeys(), t); }
@@ -204,6 +206,8 @@ constexpr Builtin kBuiltins[] = {
     {"flap", "Arms beaten down and raised again like wings, two beats a second (for winged sprites)", 0.5, true, flap},
     {"quad-walk", "A four-legged walk: hind, front, hind, front, one stride in 1.2 s (for four-legged sprites)", 1.2, true, nullptr,
      quadWalk, true},
+    {"swim", "A fish's swim: a wave runs down the spine to the tail, one beat in 0.8 s (for fish-like sprites, --body swimmer)", 0.8,
+     true, nullptr, swim, false, true},
 };
 
 const Builtin* findBuiltin(std::string_view name) {
@@ -413,6 +417,57 @@ Motion quadWalk() {
     return m;
 }
 
+// ---- The swimming preset ----------------------------------------------------------
+
+// A fish, Y up, facing +Z: the head (the root) and a spine of five bones
+// back to the tail fin's end. Each joint yaws with a wave that runs from
+// head to tail and grows towards the tail; the head yaws a little the other
+// way, as a swimming fish's does.
+Motion swim() {
+    Motion m;
+    auto add = [&](std::string name, int parent, Vec3 offset, bool root = false, bool end = false) {
+        Joint j;
+        j.name = end ? m.joints[uz(parent)].name + "_end" : std::move(name);
+        j.parent = parent;
+        j.offset = offset;
+        j.endSite = end;
+        if (root)
+            j.channels = {Channel::Xposition, Channel::Yposition, Channel::Zposition, Channel::Zrotation, Channel::Xrotation, Channel::Yrotation};
+        else if (!end)
+            j.channels = {Channel::Zrotation, Channel::Xrotation, Channel::Yrotation};
+        j.firstChannel = m.channelCount;
+        m.channelCount += static_cast<int>(j.channels.size());
+        m.joints.push_back(std::move(j));
+        return static_cast<int>(m.joints.size()) - 1;
+    };
+    const int head = add("Head", -1, {0, 0, 0}, true);
+    add({}, head, {0, 0, 10}, false, true);   // the snout
+    constexpr int kSpine = 5;
+    constexpr double kBone = 10;
+    constexpr const char* names[kSpine] = {"Spine", "Spine1", "Spine2", "Tail", "TailFin"};
+    int chain[kSpine];
+    for (int i = 0; i < kSpine; ++i) chain[i] = add(names[i], i == 0 ? head : chain[i - 1], {0, 0, i == 0 ? -6.0 : -kBone});
+    add({}, chain[kSpine - 1], {0, 0, -12}, false, true);
+
+    constexpr double period = 0.8;
+    // Yaw (degrees) each joint adds, and its place in the wave (cycles behind the head).
+    constexpr double swing[kSpine] = {3, 6, 10, 16, 22}, behind[kSpine] = {0.1, 0.25, 0.4, 0.55, 0.7};
+    const int steps = static_cast<int>(std::lround(period * kFps));
+    m.frameCount = steps;
+    m.frameTime = 1.0 / kFps;
+    m.values.assign(uz(m.frameCount) * uz(m.channelCount), 0.0);
+    for (int f = 0; f < m.frameCount; ++f) {
+        const double t = static_cast<double>(f) / kFps;
+        double* v = &m.values[uz(f) * uz(m.channelCount)];
+        v[1] = 30;   // it floats
+        const int hc = m.joints[uz(head)].firstChannel;
+        v[hc + 5] = -2 * std::sin(2 * kPi * t / period);
+        for (int i = 0; i < kSpine; ++i)
+            v[m.joints[uz(chain[i])].firstChannel + 2] = swing[i] * std::sin(2 * kPi * (t / period - behind[i]));
+    }
+    return m;
+}
+
 // ---- BVH writing -----------------------------------------------------------------
 
 const char* channelName(Channel c) {
@@ -477,6 +532,7 @@ std::vector<PresetInfo> builtInPresets() {
         i.loops = b.loops;
         i.builtIn = true;
         i.fourLegged = b.fourLegged;
+        i.swimmer = b.swimmer;
         out.push_back(std::move(i));
     }
     return out;
