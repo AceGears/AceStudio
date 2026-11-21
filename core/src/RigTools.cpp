@@ -313,13 +313,37 @@ Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, con
     std::vector<LayerId> partLayer(parts.parts.size(), kNoLayer);
     for (std::size_t i : order) {
         const motion::rig::Part& p = parts.parts[i];
-        const IntRect pb = p.pixels.opaqueBounds();
+        // A flyer's body keeps a copy of each wing's root (the wing's pixels
+        // below the wing line, over the back) under the wing: the animator
+        // turns the root less than the wing, a rig turns the whole part, and
+        // without the copy a lifted wing would leave a hole in the back.
+        Image under;
+        if (flight && static_cast<int>(i) == flight->bodyPart) {
+            under = p.pixels;
+            for (const motion::detail::FlightWing& w : flight->wings) {
+                if (w.part < 0) continue;
+                const motion::rig::Part& wp = parts.parts[static_cast<std::size_t>(w.part)];
+                // Column by column, and only where the root rests on the
+                // body (body or head-end pixels right below it): a fringe hanging over
+                // air belongs to the wing alone.
+                for (int x = 0; x < wp.own.width(); ++x) {
+                    int low = -1;
+                    for (int y = std::max(0, flight->rootRow); y < wp.own.height(); ++y)
+                        if (wp.own.get(x, y)) low = y;
+                    if (low < 0 || !(flight->bodyOnly.get(x, low + 1) || flight->bodyOnly.get(x, low + 2))) continue;
+                    for (int y = std::max(0, flight->rootRow); y <= low; ++y)
+                        if (wp.own.get(x, y) && under.pixel(x, y).a == 0) under.setPixel(x, y, wp.pixels.pixel(x, y));
+                }
+            }
+        }
+        const Image& px = under.isNull() ? p.pixels : under;
+        const IntRect pb = px.opaqueBounds();
         if (pb.empty()) continue;
         std::string name = p.name;
         std::replace(name.begin(), name.end(), '_', ' ');
         auto id = d.addLayer(name, LayerKind::Raster, out.group);
         if (!id) return id.error();
-        if (auto st = d.setCel(id.value(), frame, Cel{p.pixels.copy(pb), pb.x + box.x, pb.y + box.y}); !st) return st.error();
+        if (auto st = d.setCel(id.value(), frame, Cel{px.copy(pb), pb.x + box.x, pb.y + box.y}); !st) return st.error();
         partLayer[i] = id.value();
     }
     d.layer(layer)->visible = false;

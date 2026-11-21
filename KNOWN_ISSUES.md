@@ -53,7 +53,11 @@ not been run.
   folding creases it there (since 2026-11-21): gently, at most 34 degrees, because a wide wing
   pinches when bent further; the rest of the fold is still drawn as shortening. Looked at once on
   the dragon fixture: the wings stay in one piece and curve a little, it is not a sharp wrist.
-  Wing rigs made before have no tip bone and only shorten (auto-rig again). No sweep, and the
+  Wing rigs made before have no tip bone and only shorten (auto-rig again). The body part
+  also keeps a copy of each wing's root (the wing's pixels below the wing line that rest on the
+  body) under the wing, so a wing lifted off the back no longer leaves a hole there (seen on the
+  dragon before, gone after; looked at once). A wing turned far forward can still uncover the
+  copy, which then shows as a patch of wing colour on the back. No sweep, and the
   tail does not wave. Fins and other non-humanoid rigs
   match nothing and are refused. Frames added for the keys are empty until baked.
 - **Motion Studio panel** (ADR-ANIM-002): compiled and opened by the CI UI audit only; it has not
