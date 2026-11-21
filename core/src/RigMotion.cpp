@@ -133,8 +133,12 @@ struct Match {
 // wing bones about their shoulders, as retarget --body flyer does. A wing
 // is as drawn at the top of the stroke (a loop) or in the first frame (a
 // one-shot) and turns down by the fall of the source wing's elevation; with
-// the skeleton's own wing bones it is also drawn shorter as the source wing
-// folds. The body rises and falls a little with the motion's root.
+// the skeleton's own wing bones it also folds as the source wing does: a
+// wing with a tip bone ("near wing tip": the part bends there) creases at
+// the wrist, at most 0.6 rad (a wide wing pinches past that), and is drawn
+// shorter for the rest; one
+// without is only drawn shorter. The body rises and falls a little with the
+// motion's root.
 Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, const MotionKeysOptions& opt, const std::vector<std::size_t>& wingBones) {
     const Rig& rig = *doc.rig();
     const double amount = std::clamp(opt.amount, 0.25, 2.0);
@@ -199,6 +203,7 @@ Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, c
         std::size_t bone;
         int src;
         double sign, scale;
+        std::size_t tip;   // its "... tip" bone, or rig.bones.size()
     };
     std::vector<Wing> wings;
     double wingLen = 0;
@@ -213,14 +218,17 @@ Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, c
         if (b.locked) continue;
         const bool farWing = lower(b.name).find("far") != std::string::npos;
         const int nearSrc = facing > 0 ? 1 : 0;
-        Wing w{i, farWing ? 1 - nearSrc : nearSrc, 1, farWing ? 0.8 : 1.0};
+        Wing w{i, farWing ? 1 - nearSrc : nearSrc, 1, farWing ? 0.8 : 1.0, rig.bones.size()};
+        for (std::size_t t = 0; t < rig.bones.size(); ++t)
+            if (rig.bones[t].parent == b.id && !rig.bones[t].locked && lower(rig.bones[t].name) == lower(b.name) + " tip") w.tip = t;
         // A wing falls toward the tail (as retarget's wings do): anticlockwise
         // on screen for a rig facing right. Only a wing drawn pointing
         // forward more than up or down turns the other way, so it still falls.
-        const double dx = rest[i].tailX - rest[i].headX, dy = rest[i].tailY - rest[i].headY;
+        const std::size_t end = w.tip < rig.bones.size() ? w.tip : i;
+        const double dx = rest[end].tailX - rest[i].headX, dy = rest[end].tailY - rest[i].headY;
         w.sign = dx * facing > 0 && std::abs(dy) < std::abs(dx) ? facing : -facing;
         wings.push_back(w);
-        wingLen += b.length / static_cast<double>(wingBones.size());
+        wingLen += std::hypot(dx, dy) / static_cast<double>(wingBones.size());
         res.matched.emplace_back(b.name, std::string(ws.own ? "wing " : "arm ") + m.joints[uz(ws.shoulder[w.src])].name + " -> " +
                                              m.joints[uz(ws.tip[w.src])].name + " (turns by its rise and fall)");
     }
@@ -237,7 +245,7 @@ Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, c
     }
     Rig keyed = rig;
     std::erase_if(keyed.keys, [&](const RigKey& key) { return key.frame >= first && key.frame <= last; });
-    double least = 1;
+    double least = 1, creaseMost = 0;
     for (int f = 0; f < frames; ++f) {
         RigPose pose;
         pose.dy = std::clamp(-px * (rootY[uz(f)] - rootMean) * amount, -wingLen / 4, wingLen / 4);
@@ -245,28 +253,50 @@ Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, c
             const Bone& b = rig.bones[w.bone];
             const int a = w.src;
             const double down = std::clamp(amount * (elev[a][uz(top[a])] - elev[a][uz(f)]), -0.5, 2.0);
-            const double turn = clampTurn(b, w.sign * down * w.scale);
-            if (turn != 0.0) pose.turn[b.id] = turn;
+            double turn = w.sign * down * w.scale;
             if (ws.own && longest[a] > 1e-9) {
                 const double fold = (reach[a][uz(top[a])] - reach[a][uz(f)]) / longest[a];
-                const double s = std::clamp(1.0 - amount * fold, 0.55, 1.1);
-                if (std::abs(s - 1.0) >= 0.02) {
+                double s = std::clamp(1.0 - amount * fold, 0.55, 1.1);
+                if (w.tip < rig.bones.size() && s < 0.98) {
+                    // Two bones bent by `crease` reach cos(crease / 2) of their
+                    // length: the tip droops the way the wing falls, the
+                    // first bone turns back by half so the wing still points
+                    // where it did. What the crease cannot take is drawn shorter.
+                    const Bone& tb = rig.bones[w.tip];
+                    const double crease = std::abs(clampTurn(tb, w.sign * std::min(0.6, 2 * std::acos(std::clamp(s, 0.0, 1.0)))));
+                    if (crease >= 0.02) {
+                        pose.turn[tb.id] = w.sign * crease;
+                        turn -= w.sign * crease / 2;
+                        creaseMost = std::max(creaseMost, crease);
+                        s = std::clamp(s / std::cos(crease / 2), 0.55, 1.0);
+                    }
+                    if (s < 0.98) {
+                        pose.stretch[b.id] = s;
+                        pose.stretch[tb.id] = s;
+                        least = std::min(least, s);
+                    }
+                } else if (std::abs(s - 1.0) >= 0.02) {
                     pose.stretch[b.id] = s;
                     least = std::min(least, s);
                 }
             }
+            turn = clampTurn(b, turn);
+            if (turn != 0.0) pose.turn[b.id] = turn;
         }
         if (auto st = setKey(keyed, first + f, pose, Curve{}); !st) return st.error();
     }
     res.notes.push_back(std::string("Wings: the rig's ") + (wings.size() == 1 ? "wing follows" : "wings follow") + " the motion's " +
                         (ws.own ? "own wing bones" : "arms") + "; a wing is as drawn at the top of the stroke.");
-    if (least < 0.98)
+    if (creaseMost > 0)
+        res.notes.push_back("The wings fold on the way up: they crease at the wrist by up to " + std::to_string(static_cast<int>(std::lround(creaseMost * 180 / kPi))) +
+                            " degrees" + (least < 0.98 ? " and are drawn up to " + std::to_string(static_cast<int>(std::lround((1 - least) * 100))) + "% shorter." : "."));
+    else if (least < 0.98)
         res.notes.push_back("The wings fold on the way up: they are drawn up to " + std::to_string(static_cast<int>(std::lround((1 - least) * 100))) + "% shorter.");
     if (!ws.own) res.notes.push_back("With a motion's arms the wings only rise and fall: no folding.");
     std::size_t unmatched = 0;
     for (const Bone& b : rig.bones) {
         bool isWing = false;
-        for (const Wing& w : wings) isWing = isWing || rig.bones[w.bone].id == b.id;
+        for (const Wing& w : wings) isWing = isWing || rig.bones[w.bone].id == b.id || (w.tip < rig.bones.size() && rig.bones[w.tip].id == b.id);
         if (!isWing && b.parent != kNoBone) ++unmatched;
     }
     if (unmatched) res.notes.push_back(std::to_string(unmatched) + " bone(s) match nothing in the motion and follow their parents.");

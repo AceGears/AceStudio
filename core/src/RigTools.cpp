@@ -554,10 +554,32 @@ Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, con
         if (!root) return root.error();
         for (int part : {flight->bodyPart, flight->chestPart})
             if (auto st = bind(part, root.value()); !st) return st.error();
-        for (const motion::detail::FlightWing& w : flight->wings)
-            if (auto st = limbBone(flight->wings.size() == 1 ? std::string("wing") : w.nearWing ? "near wing" : "far wing", w.part, root.value()); !st)
-                return st.error();
-        summary = "Body: flyer, " + std::to_string(flight->wings.size()) + (flight->wings.size() == 1 ? " wing" : " wings");
+        // A wing of 16 px or more gets a second bone from its middle to its
+        // tip ("... tip") and its part bends there (a skin), so a motion can
+        // crease it at the wrist as it folds (a wide blend: a wing is as
+        // thick as it is long). A shorter one is one bone.
+        int creased = 0;
+        for (const motion::detail::FlightWing& w : flight->wings) {
+            const std::string name = flight->wings.size() == 1 ? std::string("wing") : w.nearWing ? "near wing" : "far wing";
+            if (w.part < 0) continue;
+            const motion::rig::Part& p = parts.parts[static_cast<std::size_t>(w.part)];
+            const motion::rig::Vec tip = farthest(p.own, p.pivot.x, p.pivot.y);
+            const double wingLen = std::hypot(tip.x - p.pivot.x, tip.y - p.pivot.y);
+            if (wingLen < 16 || partLayer[static_cast<std::size_t>(w.part)] == kNoLayer) {
+                if (auto st = limbBone(name, w.part, root.value()); !st) return st.error();
+                continue;
+            }
+            const motion::rig::Vec wrist{(p.pivot.x + tip.x) / 2, (p.pivot.y + tip.y) / 2};
+            auto arm = addBone(rig, boneFrom(name, root.value(), canvas(p.pivot), canvas(wrist)));
+            if (!arm) return arm.error();
+            auto hand = addBone(rig, boneFrom(name + " tip", arm.value(), canvas(wrist), canvas(tip)));
+            if (!hand) return hand.error();
+            if (auto st = bind(w.part, arm.value()); !st) return st.error();
+            if (auto st = skinLayer(rig, partLayer[static_cast<std::size_t>(w.part)], hand.value(), 0.9 * wingLen / 2); !st) return st.error();
+            ++creased;
+        }
+        summary = "Body: flyer, " + std::to_string(flight->wings.size()) + (flight->wings.size() == 1 ? " wing" : " wings") +
+                  (creased ? std::string(creased == 1 ? " (it bends" : " (they bend") + " at the wrist)" : std::string());
     } else {
         // A spine from the head to the tail stalk: "body" at the head, then
         // "spine 1", "spine 2", ... The body part is bound to the first and

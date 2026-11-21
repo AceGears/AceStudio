@@ -105,6 +105,9 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - **IK with stretched bones no longer stops short**: with a stretched upper bone the solve could
   settle on a straight leg just short of a target a bent leg reaches; it now starts again from
   bent poses and keeps the nearest.
+- **Rigged wings crease**: `rig auto --as wings` gives each wing a tip bone its part bends with,
+  and `rig motion` creases the wing there as the motion's wing folds (gently; the rest is still
+  drawn shorter).
 - **Motion Studio**: two **Wing joints** boxes pick the motion's joints the wings start at
   (what `--wings A,B` does).
 - **Rig panel**: **Bends with** also lists bones further down the chain, and changing it keeps
