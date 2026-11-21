@@ -99,7 +99,7 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   (`preset:flap`: beat only), instead of refusing. Core: `mocap::wingSource`.
 - **Direction sets from scripts**: Lua gains `ace.directions(views, motion, opts)`: a motion in
   eight, four or named directions, each on the nearest drawn view (or its mirror), as the
-  `directions` command makes them.
+  `directions` command makes them, and `ace.turn_clip(views, from, to)` for a turn on the spot.
 - **Arm boxes from scripts and AI tools**: `doc:auto_rig` takes `arms = {{x, y, w, h}, ...}` and
   the MCP `rig_edit` tool takes `arms`, as `rig auto --arms` does.
 - **IK with stretched bones no longer stops short**: with a stretched upper bone the solve could

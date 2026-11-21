@@ -166,7 +166,7 @@ not been run.
   the test fish's baked frames were looked at once. The Motion Studio choice (Fish) is compiled
   by CI; no Qt test drives it.
 - **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI, core, MCP (`motion_directions`) and Lua
-  (`ace.directions`, which returns the clips; the turn clip is CLI only); no app page yet. The art is chosen, never turned or drawn: a direction with no view drawn near it
+  (`ace.directions` and `ace.turn_clip`, which return the clips); no app page yet. The art is chosen, never turned or drawn: a direction with no view drawn near it
   shows the nearest view with the motion seen from the new direction, and is flagged. Mirrored
   views swap the character's left and right (a sword hand, a shield); draw that side or use
   `--no-mirror`. Views are read from file names only (no reference-view slots in a project yet).

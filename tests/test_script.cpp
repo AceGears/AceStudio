@@ -559,6 +559,14 @@ TEST_CASE("Lua makes a motion in every direction from drawn views", "[script][mo
         assert(#ace.directions(views, 'preset:walk', {dirs = 4, fps = 6}) == 4)
         local two = ace.directions(views, 'preset:walk', {dirs = {'e', 'w'}, mirror = false, fps = 6})
         assert(#two == 2 and two[2].direction == 'w' and not two[2].mirrored)
+        -- A turn on the spot from front to right: both drawn views, in order, one size.
+        local turn = ace.turn_clip(views, 's', 'e')
+        assert(#turn.frames >= 2 and #turn.frames == #turn.durations and not turn.loops, #turn.frames)
+        assert(turn.durations[1] == 100)
+        assert(turn.frames[1].width == turn.frames[#turn.frames].width)
+        assert(ace.turn_clip(views, 's', 'e', {ms = 60}).durations[1] == 60)
+        assert(not pcall(ace.turn_clip, views, 's', 'up'))
+        assert(not pcall(ace.turn_clip, {}, 's', 'e'))
         -- Refusals.
         assert(not pcall(ace.directions, {}, 'preset:walk'))
         assert(not pcall(ace.directions, {up = man(false)}, 'preset:walk'))
