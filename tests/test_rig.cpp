@@ -342,7 +342,8 @@ TEST_CASE("Auto-rig cuts flyers into wings and swimmers into fins", "[rig]") {
         // The limb: by name, or for wings any bone whose name has "wing".
         const Bone* limb = nullptr;
         for (const Bone& b : rig.bones)
-            if (b.name == c.limb || (std::string(c.limb) == "wing" && b.name.find("wing") != std::string::npos)) limb = &b;
+            if (b.name == c.limb || (std::string(c.limb) == "wing" && b.name.find("wing") != std::string::npos && b.name.find(" tip") == std::string::npos))
+                limb = &b;
         REQUIRE(limb);
         // On the body, or (a fish) on one of the spine bones below it.
         const Bone* on = rig.bone(limb->parent);

@@ -758,8 +758,17 @@ TEST_CASE("A wing motion beats and folds an auto-rigged flyer's wings", "[rig][m
     const Document doc = ar.value().document;
     std::vector<std::string> wingNames;
     for (const Bone& b : doc.rig()->bones)
-        if (b.name.find("wing") != std::string::npos) wingNames.push_back(b.name);
+        if (b.name.find("wing") != std::string::npos && b.name.find(" tip") == std::string::npos) wingNames.push_back(b.name);
     REQUIRE_FALSE(wingNames.empty());
+    // Each wing has a tip bone its part bends with.
+    for (const std::string& name : wingNames) {
+        const Bone* tip = doc.rig()->bone(name + " tip");
+        REQUIRE(tip);
+        CHECK(tip->parent == doc.rig()->bone(name)->id);
+        bool skinned = false;
+        for (const auto& [layer, skin] : doc.rig()->skins) skinned = skinned || skin.bone == tip->id;
+        CHECK(skinned);
+    }
 
     auto r = rigs::keysFromMotion(doc, preset("wingbeat"), {});
     INFO((r ? std::string() : r.error().message));
@@ -796,6 +805,16 @@ TEST_CASE("A wing motion beats and folds an auto-rigged flyer's wings", "[rig][m
         CHECK(asDrawn >= 1);         // the top of the stroke is the drawing
         CHECK(shortest < 0.95);      // folded on the way up
         CHECK(shortest >= 0.55);
+        // The fold also creases the wing at its wrist, one way only and gently.
+        double clo = 1e9, chi = -1e9;
+        for (const RigKey& k : rig.keys) {
+            const double t = turnOf(rig, k.pose, (name + " tip").c_str());
+            clo = std::min(clo, t);
+            chi = std::max(chi, t);
+        }
+        CHECK(std::max(std::abs(clo), std::abs(chi)) > 0.2);
+        CHECK(std::max(std::abs(clo), std::abs(chi)) <= 0.6 + 1e-9);
+        CHECK(clo * chi >= 0.0);
         // The tip goes down on screen from the drawing, and toward the tail
         const auto rest = rigs::solve(rig, RigPose{});
         std::size_t bi = 0;
@@ -814,6 +833,19 @@ TEST_CASE("A wing motion beats and folds an auto-rigged flyer's wings", "[rig][m
     REQUIRE(res.document.validate());
     auto baked = rigs::bakeKeys(res.document);
     REQUIRE(baked);
+    // Baked, every frame keeps most of the dragon's pixels (no part is lost or torn away).
+    {
+        std::size_t restCount = 0;
+        const Image restImg = baked.value().composite(0);
+        for (const Rgba8& p : restImg.pixels()) restCount += p.a ? 1 : 0;
+        for (int f = res.first; f < res.first + res.count; ++f) {
+            std::size_t count = 0;
+            const Image im = baked.value().composite(f);
+            for (const Rgba8& p : im.pixels()) count += p.a ? 1 : 0;
+            CHECK(count * 10 >= restCount * 6);
+            CHECK(count * 10 <= restCount * 12);
+        }
+    }
 
     // Arms drive the wings too (no folding); half the amount beats less; pairs are refused.
     auto fl = rigs::keysFromMotion(doc, preset("flap"), {});
