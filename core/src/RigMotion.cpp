@@ -245,6 +245,15 @@ Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, c
     }
     Rig keyed = rig;
     std::erase_if(keyed.keys, [&](const RigKey& key) { return key.frame >= first && key.frame <= last; });
+    // Auto-rig's "tail" on the body, with its "tail tip" if it has one.
+    const Bone* tailBone = nullptr;
+    const Bone* tailTip = nullptr;
+    if (const Bone* body = rig.bone("body"))
+        for (const Bone& b : rig.bones)
+            if (b.parent == body->id && !b.locked && lower(b.name) == "tail") tailBone = &b;
+    if (tailBone)
+        for (const Bone& b : rig.bones)
+            if (b.parent == tailBone->id && !b.locked && lower(b.name) == "tail tip") tailTip = &b;
     double least = 1, creaseMost = 0;
     for (int f = 0; f < frames; ++f) {
         RigPose pose;
@@ -283,8 +292,20 @@ Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, c
             turn = clampTurn(b, turn);
             if (turn != 0.0) pose.turn[b.id] = turn;
         }
+        // The tail waves with the beat, as the flight animator's does: the
+        // tip later than the root. (Not read from the motion.)
+        if (tailBone) {
+            const double t = opt.loop ? static_cast<double>(f) / frames : static_cast<double>(f) / (frames - 1);
+            const double a = clampTurn(*tailBone, 0.12 * amount * std::sin(2 * kPi * (t - 0.1)));
+            if (a != 0.0) pose.turn[tailBone->id] = a;
+            if (tailTip) {
+                const double b = clampTurn(*tailTip, 0.15 * amount * std::sin(2 * kPi * (t - 0.3)));
+                if (b != 0.0) pose.turn[tailTip->id] = b;
+            }
+        }
         if (auto st = setKey(keyed, first + f, pose, Curve{}); !st) return st.error();
     }
+    if (tailBone) res.notes.push_back("The tail waves with the beat (it is not read from the motion).");
     res.notes.push_back(std::string("Wings: the rig's ") + (wings.size() == 1 ? "wing follows" : "wings follow") + " the motion's " +
                         (ws.own ? "own wing bones" : "arms") + "; a wing is as drawn at the top of the stroke.");
     if (creaseMost > 0)
@@ -297,7 +318,7 @@ Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, c
     for (const Bone& b : rig.bones) {
         bool isWing = false;
         for (const Wing& w : wings) isWing = isWing || rig.bones[w.bone].id == b.id || (w.tip < rig.bones.size() && rig.bones[w.tip].id == b.id);
-        if (!isWing && b.parent != kNoBone) ++unmatched;
+        if (!isWing && b.parent != kNoBone && &b != tailBone && &b != tailTip) ++unmatched;
     }
     if (unmatched) res.notes.push_back(std::to_string(unmatched) + " bone(s) match nothing in the motion and follow their parents.");
     res.camera = opt.camera ? *opt.camera : mocap::Camera{};
