@@ -94,6 +94,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Fins paddle on motion-driven fish**: with `retarget --body swimmer`, a motion's fin joints
+  (off the spine, named fin, flipper, pectoral, pelvic or dorsal) turn the sprite's other fins
+  about their roots. The `swim` preset gains two pectoral fins that paddle in turn and a dorsal
+  fin. Motions without fin joints leave the fins riding the body, as before.
 - **Sideways tail and head swing on four-legged rigs**: `rig motion` now draws a rig's head,
   neck and tail shorter while the motion swings them toward or away from the viewer, and says by
   how much. Poses gain a per-bone `stretch` (the bone's length as drawn times a factor; its parts

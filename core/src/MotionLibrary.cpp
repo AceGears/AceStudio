@@ -448,6 +448,13 @@ Motion swim() {
     int chain[kSpine];
     for (int i = 0; i < kSpine; ++i) chain[i] = add(names[i], i == 0 ? head : chain[i - 1], {0, 0, i == 0 ? -6.0 : -kBone});
     add({}, chain[kSpine - 1], {0, 0, -12}, false, true);
+    // Fins off the spine: a pair behind the head that paddle in turn, and one on the back.
+    const int finL = add("PectoralFinL", chain[0], {4, -3, -2});
+    add({}, finL, {2, -5, -6}, false, true);
+    const int finR = add("PectoralFinR", chain[0], {-4, -3, -2});
+    add({}, finR, {-2, -5, -6}, false, true);
+    const int finTop = add("DorsalFin", chain[1], {0, 5, 0});
+    add({}, finTop, {0, 6, -5}, false, true);
 
     constexpr double period = 0.8;
     // Yaw (degrees) each joint adds, and its place in the wave (cycles behind the head).
@@ -464,6 +471,10 @@ Motion swim() {
         v[hc + 5] = -2 * std::sin(2 * kPi * t / period);
         for (int i = 0; i < kSpine; ++i)
             v[m.joints[uz(chain[i])].firstChannel + 2] = swing[i] * std::sin(2 * kPi * (t / period - behind[i]));
+        // Pitch (about the side-to-side axis): the fins sweep back and forth.
+        v[m.joints[uz(finL)].firstChannel + 1] = 14 * std::sin(2 * kPi * t / period);
+        v[m.joints[uz(finR)].firstChannel + 1] = -14 * std::sin(2 * kPi * t / period);
+        v[m.joints[uz(finTop)].firstChannel + 1] = 6 * std::sin(2 * kPi * (t / period - 0.3));
     }
     return m;
 }

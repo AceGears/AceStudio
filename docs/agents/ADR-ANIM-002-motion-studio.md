@@ -222,17 +222,36 @@ one-shot's first frame). The body's columns take that wave (0 to 0.8 of the chai
 stalk when there is a tail fin, else the whole chain), in whole pixels, neighbours at most one
 apart, at most 35% of the height. The tail fin rides the stalk and turns by the chain's slope
 after 0.8 against its slope before (at most 0.6 rad), narrowing through the middle of its sweep
-as Animate's swim does; the other fins ride their columns. Built-in preset `swim`
+as Animate's swim does; the other fins ride their columns and paddle (below). Built-in preset `swim`
 (`MotionLibrary.cpp`): Head (root), five spine joints yawing 3 to 22 degrees with a phase lag of
-0.1 to 0.7 cycles, 0.8 s. `PresetInfo::swimmer` marks it. The clip check skips the top-region
+0.1 to 0.7 cycles, 0.8 s; two pectoral fins off the first spine joint pitching 14 degrees in
+opposite phase and a dorsal fin off the second pitching 6 degrees. `PresetInfo::swimmer` marks it. The clip check skips the top-region
 test for these clips (the back moves down with the wave).
 
 Verified: `tests/test_swim_motion.cpp` (the preset's tail end sweeps while the head stays; on a
 drawn fish the tail fin's mean row moves 3 px or more, the eye 1 px or less, pixel count within
 10%, only the sprite's colours, more amount gives more sweep; a one-shot starts as drawn; a
 6 by 3 sprite is refused), a Lua case and the CLI smoke test on `fish57.png`, run locally; the
-goldfish strip was looked at. Not done: paddling fins, a wave in two planes, fins on
-`rig motion`.
+goldfish strip was looked at.
+
+Paddling fins (2026-11-20). A fin joint is a child of a spine joint, not itself on the spine,
+whose name contains fin, flipper, pectoral, pelvic or dorsal. Its direction runs to its farthest
+descendant (from its parent when it has none). Per frame two numbers are taken from the unit
+direction: its part along the spine where it joins (the line between the spine joints either
+side), and its part upward; each is measured from its neutral (a loop's mean, a one-shot's first
+frame), and the one that swings more gives the turn (its arcsine; for upward movement a lower fin
+lifting counts as toward the tail, a top fin lifting as toward the head). A joint that swings
+less than 0.02 is ignored. A fin joint is a top fin when it points up at least as much as
+sideways. Each drawn fin (`SwimFin`, top or lower by its root against the body's middle) takes
+the joint of its kind nearest along the body and turns about its root by the turn times the
+amount, at most 0.35 rad (further and the root, drawn behind the body, shows past its edge).
+Verified: `tests/test_swim_motion.cpp` (a fish with a fin below and one above: the lower fin's
+mean column moves 1 to 6 px and is further toward the tail when the motion's fin is; the top fin
+moves less; pixel counts within a quarter; a one-shot starts as drawn; a walk leaves the fins
+riding and says so), run locally; the goldfish strip was looked at beside one with paddling off.
+
+Not done: left and right fins told apart, fins foreshortened as they flap, a wave in two planes,
+fins on `rig motion`.
 
 ### 3.4 Direction sets (stage 4, first part, 2026-11-18)
 

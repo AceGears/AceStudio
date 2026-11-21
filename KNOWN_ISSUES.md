@@ -113,8 +113,14 @@ not been run.
   chain from a joint named head to one named tail, else the skeleton's longest chain) bends the
   body column by column and turns the tail fin; `preset:swim` is a fish skeleton made for it.
   Tested locally on a drawn fish and looked at on the goldfish fixture. `--body auto` never picks
-  it. The other fins only ride the body (a motion has nothing that paddles them; Animate's own
-  swim does paddle them). The sprite must be a side view; the camera only changes the source
+  it. The other fins paddle with the motion's fin joints (since 2026-11-20): joints off the
+  spine named fin, flipper, pectoral, pelvic or dorsal, as `preset:swim` has; a drawn fin takes
+  the nearest joint of its kind (on the back, or lower), so a left and a right fin drawn apart
+  are not told apart, and with no such joint (or one that does not move) the fins only ride the
+  body. A fin turns about its root by at most 0.35 rad and is never foreshortened. Tested
+  locally on a drawn fish; looked at on the goldfish. On the goldfish a fin under the tail end
+  shows a thin line past the belly while the tail lifts (it did before paddling too): the fins
+  are drawn behind the body and ride it in one piece. The sprite must be a side view; the camera only changes the source
   skeleton's picture. A skeleton with no head and tail names is guessed (the stiller end is the
   head), and a humanoid motion bends a fish by its head-to-foot chain, which rarely looks like
   swimming. The wave is read in one plane only (the one the spine moves in more). `rig motion`

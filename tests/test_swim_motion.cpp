@@ -174,3 +174,101 @@ TEST_CASE("Swimmer retarget: other motions, one-shots and refusals", "[mocap][sw
     tiny.fillRect({0, 0, 6, 3}, kBody);
     CHECK_FALSE(retarget(tiny, preset("swim"), swimmer()));
 }
+
+namespace {
+
+const Rgba8 kLower{200, 90, 60, 255}, kUpper{240, 200, 80, 255};
+
+// The fish with a fin under its belly and one on its back.
+Image finnedFish() {
+    Image img = fish();
+    img.fillRect({18, 30, 5, 7}, kLower);
+    img.fillRect({26, 4, 6, 6}, kUpper);
+    return img;
+}
+
+double meanCol(const Image& f, Rgba8 c) {
+    double sum = 0;
+    int n = 0;
+    for (int y = 0; y < f.height(); ++y)
+        for (int x = 0; x < f.width(); ++x)
+            if (f.pixel(x, y) == c) {
+                sum += x;
+                ++n;
+            }
+    return n ? sum / n : -1;
+}
+
+} // namespace
+
+TEST_CASE("A motion's fin joints paddle a fish's fins", "[mocap][swim]") {
+    const Image s = finnedFish();
+    const Motion swim = preset("swim");
+    auto r = retarget(s, swim, swimmer());
+    REQUIRE(r);
+    const auto& fr = r.value().clip.frames;
+    REQUIRE(fr.size() == 10);
+    bool said = false;
+    for (const std::string& n : r.value().notes) {
+        INFO(n);
+        said = said || (n.rfind("Fins: ", 0) == 0 && n.find("PectoralFinL") != std::string::npos && n.find("DorsalFin") != std::string::npos);
+        CHECK(n.find("only ride the body") == std::string::npos);
+    }
+    CHECK(said);
+
+    // The lower fin sweeps toward the tail (on the right) when the motion's
+    // fin does (its tip further behind its root; the skeleton faces +Z).
+    const int root = swim.find("PectoralFinL"), tip = swim.find("PectoralFinL_end");
+    REQUIRE(root >= 0);
+    REQUIRE(tip >= 0);
+    double lowLo = 1e9, lowHi = -1e9, upLo = 1e9, upHi = -1e9, backMost = 1e9, foreMost = -1e9;
+    double colBack = 0, colFore = 0;
+    const int lower0 = [&] {
+        int n = 0;
+        for (const Rgba8& p : s.pixels()) n += p == kLower ? 1 : 0;
+        return n;
+    }();
+    for (std::size_t f = 0; f < fr.size(); ++f) {
+        const double lo = meanCol(fr[f], kLower), up = meanCol(fr[f], kUpper);
+        REQUIRE(lo >= 0);
+        REQUIRE(up >= 0);
+        lowLo = std::min(lowLo, lo);
+        lowHi = std::max(lowHi, lo);
+        upLo = std::min(upLo, up);
+        upHi = std::max(upHi, up);
+        const std::vector<Vec3> w = jointPositions(swim, 0.08 * static_cast<double>(f));
+        const double dz = w[static_cast<std::size_t>(tip)].z - w[static_cast<std::size_t>(root)].z;
+        if (dz < backMost) {
+            backMost = dz;
+            colBack = lo;
+        }
+        if (dz > foreMost) {
+            foreMost = dz;
+            colFore = lo;
+        }
+        int n = 0;
+        for (const Rgba8& p : fr[f].pixels()) n += p == kLower ? 1 : 0;
+        CHECK(std::abs(n - lower0) * 4 <= lower0);   // it turns; it is not redrawn
+    }
+    CHECK(lowHi - lowLo >= 1.0);   // the lower fin paddles
+    CHECK(lowHi - lowLo <= 6.0);
+    CHECK(colBack > colFore + 0.5);
+    CHECK(upHi - upLo >= 0.2);     // the back fin a little
+    CHECK(upHi - upLo < lowHi - lowLo);
+
+    // A one-shot starts as drawn.
+    RetargetOptions once = swimmer();
+    once.loop = false;
+    auto o = retarget(s, swim, once);
+    REQUIRE(o);
+    const Image& f0 = o.value().clip.frames[0];
+    CHECK(std::abs((meanCol(f0, kLower) - meanCol(f0, kEye)) - (meanCol(s, kLower) - meanCol(s, kEye))) < 0.01);
+    CHECK(std::abs((meanRow(f0, kUpper) - meanRow(f0, kEye)) - (meanRow(s, kUpper) - meanRow(s, kEye))) < 0.01);
+
+    // A motion with no fin joints: the fins ride the body as before, and a note says so.
+    auto w = retarget(s, preset("walk"), swimmer());
+    REQUIRE(w);
+    bool riding = false;
+    for (const std::string& n : w.value().notes) riding = riding || n.find("fin(s) only ride the body") != std::string::npos;
+    CHECK(riding);
+}
