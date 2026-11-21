@@ -328,8 +328,8 @@ TEST_CASE("A camera far from the drawn view is reported as an approximation", "[
     REQUIRE(r);
     CHECK(r.value().approximateView);
     CHECK_FALSE(r.value().notes.empty());
-    // Non-bipeds and skeletons without legs are refused, not guessed.
-    o.body = motion::Body::Swimmer;
+    // Bodies no motion drives (a blob) and skeletons without legs are refused, not guessed.
+    o.body = motion::Body::Blob;
     CHECK_FALSE(retarget(sprite.value(), m.value(), o));
     auto armless = parseBvh("HIERARCHY\nROOT A\n{\n OFFSET 0 0 0\n CHANNELS 1 Xrotation\n}\nMOTION\nFrames: 1\nFrame Time: 0.1\n5\n");
     REQUIRE(armless);
