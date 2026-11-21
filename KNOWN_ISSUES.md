@@ -99,14 +99,22 @@ not been run.
   motion's arms beat a winged side view's wings (each wing turns about its shoulder as its arm
   rises and falls, the hand end bends with the elbow, the body rises and sinks with the hips).
   Tested on a test dragon with its wings selected and checked by eye on the 128 px golden dragon
-  with the built-in `flap` preset only; no captured bird or bat motion has been tried. Wing
-  skeletons (a bird's or bat's own wing bones) are not read: the motion must have humanoid arms,
-  and a four-legged motion is refused. The wings are found as in Animate's flap (the part above
+  with the built-in `flap` and `wingbeat` presets only; no captured bird or bat motion has been
+  tried. A skeleton's own wing bones are read (since 2026-11-21): the two longest chains of joints
+  with "wing" in their names drive the wings, whatever else the skeleton has (four legs
+  included), and then the drawn wings also fold (drawn shorter) and sweep (lean toward the head or
+  tail). Wing bones named otherwise (humerus, radius, finger...) are not found: such a skeleton
+  is read by its arms if it has any, else refused, as is a four-legged motion without wing
+  joints. Folding only shortens the wing along its drawn length (at most to 55%): the wing does
+  not crease at its wrist. Sweep shows only on a wing drawn upright from its shoulder; one drawn
+  out to the side (the golden dragon's) does not lean, and a note says so. Without a joint named
+  head, which way the skeleton faces is a guess (a note says so) and the sweep may be the wrong
+  way round. Twist is not read. The wings are found as in Animate's flap (the part above
   the wing line, 45% of the height unless `--wing-line` or Lua's `wing_line` says otherwise); when
   the head reaches above that line it turns with the wing, so lower the line. Motion Studio takes a
   wing line and, when the wings were selected in the document before Use Current Sprite, uses the
   selection as the wings (compiled by CI; no Qt test drives it); the command line, Lua and MCP take
-  a wing line only. `--body auto` never picks wings. The wing stroke is up and down only: no
+  a wing line only. `--body auto` never picks wings. With a humanoid motion's arms the wing stroke is up and down only: no
   forward sweep, twist or folding. The tail waves with the stroke as in Animate's flap (a thin tail
   behind the body only; the golden dragon's thick tail is not found as one).
 - **Fish from a 3D motion** (`retarget --body swimmer`, since 2026-11-20): the motion's spine (the

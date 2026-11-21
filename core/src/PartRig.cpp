@@ -376,8 +376,16 @@ void drawPart(const Part& p, const PartPose& q, Put&& put) {
                 cc = std::cos(a * m);
                 ss = std::sin(a * m);
                 const double U = cc * qx + ss * qy, V = -ss * qx + cc * qy;
-                u = (U - q.shear * V) * isx;
-                v = V * isy;
+                if (m >= 1.0) {
+                    u = (U - q.shear * V) * isx;
+                    v = V * isy;
+                } else {
+                    // A skinned root is also scaled and leant less, by the same
+                    // weight as it turns less: at m = 0 it is exactly as drawn.
+                    const double sxm = 1 + (q.sx - 1) * m, sym = 1 + (q.sy - 1) * m;
+                    u = (U - q.shear * m * V) / (std::max(1e-3, std::abs(sxm)) * (sxm < 0 ? -1 : 1));
+                    v = V / (std::max(1e-3, std::abs(sym)) * (sym < 0 ? -1 : 1));
+                }
             };
             if (q.skinDepth > 0) {
                 // A skinned root turns less the deeper its source point lies

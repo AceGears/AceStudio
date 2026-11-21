@@ -538,7 +538,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                  }});
     // ---- 3D motion onto sprites (ADR-ANIM-002): the CLI's motion, retarget and directions
     t.push_back({"motion_presets", "List motion presets",
-                 std::string("The motion library: built-in presets (idle, walk, run, jump, attack, hurt; flap for winged sprites, swim for fish-like sprites, quad-walk for "
+                 std::string("The motion library: built-in presets (idle, walk, run, jump, attack, hurt; flap and wingbeat (a bird's own wing bones) for winged sprites, swim for fish-like sprites, quad-walk for "
                              "four-legged sprites) and motions the user saved, with length and whether they loop."),
                  obj(json::object()), readOnly(),
                  [envPtr](const json& a, const ToolCall& call) {

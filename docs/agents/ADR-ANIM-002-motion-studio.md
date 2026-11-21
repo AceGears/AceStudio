@@ -207,7 +207,38 @@ takes a selection made before Use Current Sprite as the wing mask. Verified: the
 tip moves at least a row and at most its reach (`tests/test_wing_motion.cpp`), with the part rig,
 sprite motion and key pose tests still passing; the panel is compiled by CI only.
 
-Not done: wing skeletons (a bird's or bat's own wing bones), wing sweep, twist and folding.
+Then: a skeleton's own wing bones (2026-11-21). `retargetFlyer` first looks for wing chains: a
+chain starts at a joint with "wing" in its name whose parent has not, and runs to its farthest
+descendant; its middle joint is the one on that path nearest half the reach. With two or more
+chains the two longest drive the wings in place of the arms (no humanoid map is needed and four
+legs are not refused); the root above the first chain stands in for the hips; forward is from that
+root to a joint named head, else square to the line between the wing roots (a guess, noted when
+sweep shows); the source picture is scaled by the skeleton's longest rest distance. Elevation and
+elbow are read as for arms (shoulder to middle joint, middle joint to tip). Two more numbers per
+frame: fold, 1 minus the shoulder-to-tip distance over its longest in the span, and sweep, the
+arcsine of the first bone's part along forward. Against the top frame of the stroke, fold times the
+amount shortens the drawn wing along its length (`PartPose::sy` for a wing whose farthest pixel is
+more above or below its shoulder than beside it, else `sx`; 0.55 to 1.1), and sweep leans an
+upright wing (`PartPose::shear` = the tangent of the sweep's change, at most 0.5 rad, toward the
+head for forward). `renderPose` now scales and leans a skinned root by the same weight it turns by
+(the near wing's root is skinned; scaled at full strength it left a streak). Built-in preset
+`wingbeat` (`MotionLibrary.cpp`, `PresetInfo::winged`): hips, chest, neck, head, tail, two wings of
+three bones; 0.6 s; the shoulder from 55 degrees up to 35 down, on the way up swept back 14 degrees
+with elbow and wrist each turned back up to 50.
+
+Verified: `tests/test_wing_motion.cpp` (the preset rises above 0.8 rad, falls below -0.5, its tip
+comes within 85% of its longest reach and its elbow goes behind its shoulder; on the test dragon 7
+frames, the first as drawn, the wing at least 5 rows lower at the bottom, at most 90% of its
+pixels at its most folded and more than that with half the amount, the head untouched, only the
+sprite's colours; a skeleton with no joint named head gets the guess note; with one wing chain
+renamed the skeleton is read by its arms' shape, with no fold), the flight, part rig and sprite
+motion tests still passing, a Lua line and CLI smoke lines on the golden dragon, run locally; the
+dragon's strip was looked at. The test does not separate sweep from the turn (both move the wing
+toward the tail), and the golden dragon's wings are drawn out to the side, so sweep has not been
+looked at on real art.
+
+Not done: wing bones not named wing, a crease at the wrist, sweep on a wing drawn out to the side,
+twist.
 
 ### 3.8 Fins from a motion's spine (2026-11-20)
 
