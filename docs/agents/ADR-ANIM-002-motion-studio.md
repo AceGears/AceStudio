@@ -335,7 +335,17 @@ the fin's root (`PartPose::colDy`). Verified: `tests/test_swim_motion.cpp` ("A f
 bends with the body's columns"), the swim, sprite motion, part rig, pixel rig and key pose tests,
 run locally; the goldfish strip was looked at again and the line is gone.
 
-Not done: left and right fins told apart, fins foreshortened as they flap, a wave in two planes,
+Fin foreshortening (2026-11-21). Per frame a fin drive also keeps how long the fin looks from the
+side: with `out` the part of its direction across the body (the spine where it joins, crossed with
+up), sqrt(1 - out^2), over the longest in a loop or the first frame of a one-shot (skipped when
+that is under 0.25, and when it never changes by 2%). The drawn fin's `PartPose::sy` (a fin taller
+than wide) or `sx` is 1 + (ratio - 1) x amount, within 0.5 to 1.25, left alone under 2%. Verified:
+`tests/test_swim_motion.cpp` ("A fin swung toward the viewer is drawn shorter": the preset with a
+70 degree sideways swing added to its pectoral fins loses 15% to 60% of the lower fin's pixels at
+its shortest, is as drawn at its longest, half the amount shortens less, the back fin and the plain
+preset do not), run locally. Not looked at.
+
+Not done: left and right fins told apart, a wave in two planes,
 fins on `rig motion`.
 
 ### 3.4 Direction sets (stage 4, first part, 2026-11-18)

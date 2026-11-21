@@ -137,7 +137,11 @@ not been run.
   spine named fin, flipper, pectoral, pelvic or dorsal, as `preset:swim` has; a drawn fin takes
   the nearest joint of its kind (on the back, or lower), so a left and a right fin drawn apart
   are not told apart, and with no such joint (or one that does not move) the fins only ride the
-  body. A fin turns about its root by at most 0.35 rad and is never foreshortened. Tested
+  body. A fin turns about its root by at most 0.35 rad. A fin whose joint swings toward or away from
+  the viewer is drawn shorter along its length (since 2026-11-21; down to half, against its
+  longest moment in a loop or a one-shot's first frame, and a note says by how much): tested
+  locally on a drawn fish with a made-up sideways fin swing, not looked at, and `preset:swim`'s
+  fins do not swing that way. Tested
   locally on a drawn fish; looked at on the goldfish. A fin now bends with the body's columns
   under it (since 2026-11-21), in Animate's swim too: it used to ride in one piece, which left a
   thin line past the goldfish's belly while the tail lifted. The sprite must be a side view; the camera only changes the source

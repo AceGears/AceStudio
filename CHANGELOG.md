@@ -94,6 +94,8 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Fins foreshorten**: with `retarget --body swimmer`, a fin whose joint swings toward or away
+  from the viewer is drawn shorter there (down to half its length), and a note says by how much.
 - **Rig panel: Length**: the Pose group has a Length box (10 to 400%) for the selected bone's
   stretch, next to Turn; keys set from the panel carry it.
 - **IK with stretched bones**: an IK chain now reaches its target when its bones, or a bone above
