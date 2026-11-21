@@ -1357,6 +1357,87 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
         return wave[uz(f)][i - 1] * (1 - t) + wave[uz(f)][i] * t;
     };
 
+    // Fin joints: branches off the spine named as fins. Each gives a turn
+    // per frame: how far its direction (to its farthest joint) swings toward
+    // the tail, or up and down when it moves more that way, from its neutral.
+    struct FinDrive {
+        std::string name;
+        bool top = false;          // points up from the spine (a dorsal fin)
+        double u = 0;              // where it joins, 0 head .. 1 tail
+        std::vector<double> turn;  // toward the tail is positive
+    };
+    std::vector<FinDrive> finDrives;
+    {
+        std::vector<int> chainAt(nj, -1);
+        for (std::size_t i = 0; i < chain.size(); ++i) chainAt[uz(chain[i])] = static_cast<int>(i);
+        for (std::size_t j = 0; j < nj; ++j) {
+            const int p = m.joints[j].parent;
+            if (p < 0 || chainAt[uz(p)] < 0 || chainAt[j] >= 0 || m.joints[j].endSite) continue;
+            const std::string n = lowerName(j);
+            bool named = false;
+            for (const char* word : {"fin", "flipper", "pectoral", "pelvic", "dorsal"}) named = named || n.find(word) != std::string::npos;
+            if (!named) continue;
+            // Its farthest joint (parents come before their children).
+            int tip = static_cast<int>(j);
+            double reach = 0;
+            for (std::size_t k = j + 1; k < nj; ++k) {
+                int a = m.joints[k].parent;
+                while (a > static_cast<int>(j)) a = m.joints[uz(a)].parent;
+                if (a != static_cast<int>(j)) continue;
+                const double l = len(rest[k] - rest[j]);
+                if (l > reach) {
+                    reach = l;
+                    tip = static_cast<int>(k);
+                }
+            }
+            const int from = tip == static_cast<int>(j) ? p : static_cast<int>(j), to = tip == static_cast<int>(j) ? static_cast<int>(j) : tip;
+            if (len(rest[uz(to)] - rest[uz(from)]) < 1e-9) continue;
+            const Vec3 d0 = norm(rest[uz(to)] - rest[uz(from)]);
+            const double up0 = dot(d0, upv);
+            const Vec3 lateral = d0 - axis * dot(d0, axis) - upv * up0;
+            const std::size_t ci = uz(chainAt[uz(p)]);
+            const int before = chain[ci > 0 ? ci - 1 : ci], after = chain[ci + 1 < chain.size() ? ci + 1 : ci];
+            std::vector<double> back(uz(frames), 0.0), rise(uz(frames), 0.0);
+            for (int f = 0; f < frames; ++f) {
+                const std::vector<Vec3>& w = world[uz(f)];
+                const Vec3 d = norm(w[uz(to)] - w[uz(from)]);
+                back[uz(f)] = dot(d, norm(w[uz(after)] - w[uz(before)]));   // against the spine where it joins
+                rise[uz(f)] = dot(d, upv);
+            }
+            double backSwing = 0, riseSwing = 0;
+            for (std::vector<double>* v : {&back, &rise}) {
+                double neutral = (*v)[0];
+                if (opt.loop) {
+                    neutral = 0;
+                    for (double x : *v) neutral += x;
+                    neutral /= frames;
+                }
+                double swing = 0;
+                for (double& x : *v) {
+                    x -= neutral;
+                    swing = std::max(swing, std::abs(x));
+                }
+                (v == &back ? backSwing : riseSwing) = swing;
+            }
+            FinDrive fd;
+            fd.name = m.joints[j].name;
+            fd.top = up0 > 0 && up0 >= len(lateral);
+            fd.u = std::min(1.0, along[ci] / (sr.tailPart >= 0 && sr.stalk >= 0 ? 0.8 : 1.0));
+            // A lower fin lifting folds back against the body; a dorsal fin lifting stands up.
+            for (int f = 0; f < frames; ++f)
+                fd.turn.push_back(backSwing >= riseSwing ? std::asin(std::clamp(back[uz(f)], -1.0, 1.0))
+                                                         : std::asin(std::clamp(rise[uz(f)], -1.0, 1.0)) * (fd.top ? -1 : 1));
+            if (std::max(backSwing, riseSwing) >= 0.02) finDrives.push_back(std::move(fd));
+        }
+    }
+    // Each drawn fin takes the nearest fin joint of its kind (top or lower).
+    std::vector<int> driveOf(sr.fins.size(), -1);
+    for (std::size_t i = 0; i < sr.fins.size(); ++i)
+        for (std::size_t k = 0; k < finDrives.size(); ++k)
+            if (finDrives[k].top == sr.fins[i].top &&
+                (driveOf[i] < 0 || std::abs(finDrives[k].u - sr.fins[i].u) < std::abs(finDrives[uz(driveOf[i])].u - sr.fins[i].u)))
+                driveOf[i] = static_cast<int>(k);
+
     // A swimmer is drawn from the side; the camera only shows the source.
     const bool turnKnown = opt.drawnTurn && std::isfinite(*opt.drawnTurn);
     const double drawnTurn = turnKnown ? *opt.drawnTurn : (dir > 0 ? -90 : 90);
@@ -1427,7 +1508,16 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
             // As Animate's swim: the fin narrows as it sweeps through the middle.
             if (finPeak > 0.05) tq.sx = 1.0 - 0.3 * (1.0 - std::abs(finTurn[uz(f)]) / finPeak);
         }
-        for (const motion::detail::SwimFin& fn : sr.fins) pose[uz(fn.part)].dy = dyAt(fn.root.x);   // the fins ride the body
+        for (std::size_t i = 0; i < sr.fins.size(); ++i) {
+            const motion::detail::SwimFin& fn = sr.fins[i];
+            rg::PartPose& fq = pose[uz(fn.part)];
+            fq.dy = dyAt(fn.root.x);   // the fins ride the body
+            // and paddle about their roots (0.35 rad at most: further, and the
+            // root drawn behind the body would show past its edge): toward the tail (at +dir) is
+            // anticlockwise for a fin hanging down, clockwise for one standing up.
+            if (driveOf[i] >= 0)
+                fq.angle = std::clamp(finDrives[uz(driveOf[i])].turn[uz(f)] * amount, -0.35, 0.35) * (fn.top ? dir : -dir);
+        }
         imgs.push_back(rg::renderPose(rig, pose, big));
         poses.push_back(std::move(pose));
     }
@@ -1463,7 +1553,22 @@ Result<RetargetResult> retargetSwimmer(const Image& sprite, const Motion& m, con
     res.notes.push_back(std::string("Spine: ") + m.joints[uz(chain.front())].name + " to " + m.joints[uz(chain.back())].name + " (" +
                         std::to_string(chain.size()) + " joints" + (byName ? "" : ", the skeleton's longest chain") + ").");
     if (!hasFin) res.notes.push_back("No tail fin was found behind a narrow tail stalk; the whole body bends.");
-    if (!sr.fins.empty()) res.notes.push_back("The other fins ride the body; a motion has nothing that paddles them.");
+    {
+        std::string paddling;
+        std::size_t riding = 0;
+        for (std::size_t i = 0; i < sr.fins.size(); ++i) {
+            if (driveOf[i] < 0) {
+                ++riding;
+                continue;
+            }
+            const std::string& n = finDrives[uz(driveOf[i])].name;
+            if (paddling.find(n) == std::string::npos) paddling += (paddling.empty() ? "" : ", ") + n;
+        }
+        if (!paddling.empty()) res.notes.push_back("Fins: " + std::to_string(sr.fins.size() - riding) + " paddle with " + paddling + ".");
+        if (riding)
+            res.notes.push_back(std::to_string(riding) + " fin(s) only ride the body: the motion has no moving fin joint of their kind off its spine "
+                                "(joints named fin, flipper, pectoral, pelvic or dorsal; preset:swim has them).");
+    }
     return res;
 }
 

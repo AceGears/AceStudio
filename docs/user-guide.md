@@ -154,8 +154,9 @@ Add, Subtract, Difference), visibility and locks.
   Studio), or select the wings in the document before **Use Current Sprite**.
 - **Fish**: a fish drawn from the side can swim to a motion's spine:
   `acestudio-cli retarget fish.png preset:swim --body swimmer --out out`, or choose **Fish** in
-  Motion Studio's Body box with the swim preset. The body bends and the tail fin turns; the
-  other fins ride along. (Animate's own **swim** needs no motion and also paddles the fins.)
+  Motion Studio's Body box with the swim preset. The body bends, the tail fin turns and the
+  other fins paddle with the motion's fin joints (the swim preset has them; a motion without any
+  leaves the fins riding along). Animate's own **swim** needs no motion.
 - **A motion in every direction** (command line only for now): put the views you drew in a
   folder, named by the way the character faces: `s.png` (towards you), `se.png`, `e.png` (facing
   right), `ne.png`, `n.png` (away from you), and so on, or `front.png`, `right.png`,
