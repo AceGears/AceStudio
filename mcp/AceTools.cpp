@@ -745,7 +745,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                              "and tail: `facing` says which way the animal faces when it is read wrongly, `legs` pairs the "
                              "rig's numbered legs with the motion's. A wing rig (rig_edit auto, as wings) is keyed from the motion's wing "
                              "bones or arms (preset:wingbeat, preset:flap), a fin rig (as fins) from its spine and fin joints "
-                             "(preset:swim; the body does not bend). Reports the keyed frames and what drives each bone.") +
+                             "(preset:swim; the body bends along its spine bones). Reports the keyed frames and what drives each bone.") +
                      kPathNote,
                  obj({{"path", str("The .acestudio file with a rig")},
                       {"motion", motionArg},

@@ -559,24 +559,41 @@ Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, con
                 return st.error();
         summary = "Body: flyer, " + std::to_string(flight->wings.size()) + (flight->wings.size() == 1 ? " wing" : " wings");
     } else {
-        // The root runs from the tail stalk to the head; the tail fin turns
-        // at the stalk, every other fin at its root.
+        // A spine from the head to the tail stalk: "body" at the head, then
+        // "spine 1", "spine 2", ... The body part is bound to the first and
+        // bends along the rest (a skin through the chain), so a swimming
+        // motion can run a wave down it. The tail fin turns at the stalk on
+        // the last bone; every other fin sits on the bone its root lies over.
         const IntRect bb = subj.bounds;
         const motion::rig::Vec mid = centroid(parts.parts[static_cast<std::size_t>(swim->bodyPart)].own);
         const motion::rig::Vec head{swim->dir > 0 ? static_cast<double>(bb.x) : static_cast<double>(bb.x + bb.w), mid.y};
         const motion::rig::Vec back = swim->tailPart >= 0 ? swim->stalkPt : motion::rig::Vec{swim->dir > 0 ? static_cast<double>(bb.x + bb.w) : static_cast<double>(bb.x), mid.y};
-        auto root = addBone(rig, boneFrom("body", kNoBone, canvas(back), canvas(head)));
-        if (!root) return root.error();
-        if (auto st = bind(swim->bodyPart, root.value()); !st) return st.error();
-        if (auto st = limbBone("tail fin", swim->tailPart, root.value()); !st) return st.error();
+        const double bodyLen = std::hypot(back.x - head.x, back.y - head.y);
+        const int segments = bodyLen < 12 ? 1 : std::clamp(static_cast<int>(std::lround(bodyLen / std::max(8.0, bb.h * 0.5))), 2, 5);
+        auto at = [&](int k) {
+            const double t = static_cast<double>(k) / segments;
+            return motion::rig::Vec{head.x + (back.x - head.x) * t, head.y + (back.y - head.y) * t};
+        };
+        std::vector<BoneId> spine;
+        for (int k = 0; k < segments; ++k) {
+            auto id = addBone(rig, boneFrom(k == 0 ? std::string("body") : "spine " + std::to_string(k), k == 0 ? kNoBone : spine.back(), canvas(at(k)), canvas(at(k + 1))));
+            if (!id) return id.error();
+            spine.push_back(id.value());
+        }
+        if (auto st = bind(swim->bodyPart, spine.front()); !st) return st.error();
+        if (segments > 1 && partLayer[static_cast<std::size_t>(swim->bodyPart)] != kNoLayer)
+            if (auto st = skinLayer(rig, partLayer[static_cast<std::size_t>(swim->bodyPart)], spine.back(), 0.45 * bodyLen / segments); !st) return st.error();
+        if (auto st = limbBone("tail fin", swim->tailPart, spine.back()); !st) return st.error();
         int top = 0, bottom = 0;
         for (const motion::detail::SwimFin& f : swim->fins) {
             const int n = f.top ? ++top : ++bottom;
             const std::string name = std::string(f.top ? "dorsal fin" : "ventral fin") + (n > 1 ? " " + std::to_string(n) : std::string());
-            if (auto st = limbBone(name, f.part, root.value()); !st) return st.error();
+            const double t = bodyLen > 1e-9 ? ((f.root.x - head.x) * (back.x - head.x) + (f.root.y - head.y) * (back.y - head.y)) / (bodyLen * bodyLen) : 0;
+            const int on = std::clamp(static_cast<int>(std::floor(t * segments)), 0, segments - 1);
+            if (auto st = limbBone(name, f.part, spine[static_cast<std::size_t>(on)]); !st) return st.error();
         }
         summary = std::string("Body: swimmer, ") + (swim->tailPart >= 0 ? "a tail fin, " : "no tail fin, ") + std::to_string(swim->fins.size()) +
-                  " other fins (the body is one rigid part)";
+                  " other fins" + (segments > 1 ? ", the body bends along " + std::to_string(segments) + " spine bones" : " (the body is one rigid part)");
     }
     rig.restFrame = frame;
     if (auto st = validate(rig, &d); !st) return st.error();

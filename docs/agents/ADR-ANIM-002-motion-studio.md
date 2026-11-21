@@ -330,8 +330,19 @@ nearest fin joint of its kind by where its bone's head lies along the body bone 
 joint's turn (within 0.35 rad), with the joint's shown length as the bone's stretch. The body bone
 is not keyed. Verified: `tests/test_rig_motion.cpp` ("A swimming motion turns an auto-rigged
 fish's tail fin and paddles its fins"), CLI smoke lines, run locally; the fish57 fixture's baked
-frames were looked at. Not done: bending the body of a rig (it would need the body cut into
-segments or a skin), the root's rise and fall.
+frames were looked at. Not done: the root's rise and fall.
+
+Fish spine (2026-11-21). Auto-rig's fins branch (`RigTools.cpp`) lays `segments` bones from the
+head to the stalk (1 under 12 px, else body length over max(8, half the sprite's height), 2 to
+5): "body", "spine 1", ...; the body part is bound to "body" and skinned to the last bone (blend
+0.45 of a bone), the tail fin hangs on the last bone, each other fin on the bone its root lies
+over. `finKeys` reads the chain, tells an old rig (one bone from the stalk to the head) by where
+the tail fin starts, and keys each bone so its end sits at the wave's offset there
+(`waveAt(u) * length / stalkU * amount`, at most a fifth of the length; tilt by asin, at most 0.7
+of a bone). Verified: `tests/test_rig_motion.cpp` (the skin reaches the last spine bone, it
+swings both ways, the baked frames keep the fish's colours and 80 to 120% of its pixels, at least
+four differ), `tests/test_rig.cpp`, smoke lines, run locally; fish57's baked frames were looked
+at: the body bends, its dithering smears a little. Not done: a pixel-exact column bend on a rig.
 
 `mocap::retarget` with `Body::Swimmer` (`retargetSwimmer`, `core/src/Mocap.cpp`) poses the swim
 rig (`buildSwimRig`, `RigSwim.cpp`: body, tail fin past the stalk, other fins). The spine is the

@@ -49,7 +49,7 @@ The part rig of ADR-ANIM-001 is rebuilt from the sprite every time a clip is mad
   when marked by hand: `AutoRigOptions::arms` / `rig auto --arms` (built 2026-11-17, tested in
   `tests/test_rig_motion.cpp` and the CLI smoke test; no app UI to draw the boxes yet). A rig that
   has both legs and wings is not built (Wings leaves the legs in the body).
-- A swimmer's body bending: auto-rig makes it one rigid part (the swim animator bends it column by column, which a saved rig cannot yet express).
+- A swimmer's body bending column by column as the swim animator does it. (Since 2026-11-21 auto-rig gives a fish a spine the body part is skinned along, ADR-ANIM-002 section 3.8; that bend turns pixels instead of shifting columns.)
 - Skinning across more than two bones, painted weights or a mesh. (Built on 2026-11-18: a part
   bends across the joint with one child of its bone, `Rig::skins`, rig version 3; see below.
   Since 2026-11-21 `Skin::bone` may be any bone below the part's own within 16 joints

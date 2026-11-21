@@ -42,9 +42,12 @@ std::optional<AutoRigBody> autoRigBodyFromString(const std::string& s);
 //  - wings (the flap animator's cut below the wing line): "body" from the
 //    body's middle towards the head, "near wing" and "far wing" (or "wing")
 //    from each shoulder to the wing tip; legs, head and tail stay in the body;
-//  - fins (the swim animator's cut): "body" from the tail stalk to the head,
-//    "tail fin" past the stalk (an eel has none), and "dorsal fin" /
-//    "ventral fin" per other fin. The body is one rigid part.
+//  - fins (the swim animator's cut): a spine from the head to the tail
+//    stalk ("body", then "spine 1", "spine 2", ...: the body part is bound
+//    to "body" and skinned along the rest; a body under 12 px has "body"
+//    alone and is rigid), "tail fin" past the stalk on the last spine bone
+//    (an eel has none), and "dorsal fin" / "ventral fin" per other fin on
+//    the spine bone its root lies over.
 // Fails if the document already has a rig, or the cut finds nothing (no
 // legs, wings or fins): rig those by hand.
 Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, AutoRigBody body = AutoRigBody::Auto);

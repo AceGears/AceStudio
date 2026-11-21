@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <set>
 #include <map>
 #include <string>
 #include <utility>
@@ -898,6 +899,7 @@ TEST_CASE("A swimming motion turns an auto-rigged fish's tail fin and paddles it
             tailMatched = what.rfind("spine", 0) == 0;
             continue;
         }
+        if (bone == "body") continue;   // the wave down the spine, checked below
         ++paddling;
         CHECK(what.rfind("fin ", 0) == 0);
         double a = 1e9, b = -1e9;
@@ -912,11 +914,58 @@ TEST_CASE("A swimming motion turns an auto-rigged fish's tail fin and paddles it
     }
     CHECK(tailMatched);
     CHECK(paddling >= 1);
-    // The body bone is never keyed: the body does not bend.
-    for (const RigKey& k : rig.keys) CHECK(turnOf(rig, k.pose, "body") == 0.0);
-    bool rigid = false;
-    for (const auto& n : res.notes) rigid = rigid || n.find("does not bend") != std::string::npos;
-    CHECK(rigid);
+    // The body bends along its spine: the bones below the head swing both ways.
+    REQUIRE(rig.bone("spine 1"));
+    int spineBones = 1;
+    while (rig.bone("spine " + std::to_string(spineBones + 1))) ++spineBones;
+    CHECK(spineBones >= 1);
+    const LayerId bodyLayer = [&] {
+        for (const auto& [layer, bone] : rig.bindings)
+            if (bone == rig.bone("body")->id) return layer;
+        return kNoLayer;
+    }();
+    REQUIRE(bodyLayer != kNoLayer);
+    REQUIRE(rig.skins.count(bodyLayer) == 1);
+    CHECK(rig.skins.at(bodyLayer).bone == rig.bone("spine " + std::to_string(spineBones))->id);
+    double slo = 1e9, shi = -1e9;
+    for (const RigKey& k : rig.keys) {
+        const double t = turnOf(rig, k.pose, ("spine " + std::to_string(spineBones)).c_str());
+        slo = std::min(slo, t);
+        shi = std::max(shi, t);
+    }
+    CHECK(slo < -0.02);
+    CHECK(shi > 0.02);
+    bool bends = false;
+    for (const auto& n : res.notes) bends = bends || n.find("the body bends along") != std::string::npos;
+    CHECK(bends);
+    // Baked, the fish stays in one piece in every frame and keeps its colours.
+    {
+        auto baked = rigs::bakeKeys(res.document);
+        REQUIRE(baked);
+        const Image restImg = baked.value().composite(0);
+        std::set<std::uint32_t> drawn;
+        std::size_t restCount = 0;
+        for (const Rgba8& p : restImg.pixels())
+            if (p.a) {
+                drawn.insert((std::uint32_t(p.r) << 16) | (std::uint32_t(p.g) << 8) | p.b);
+                ++restCount;
+            }
+        std::set<std::size_t> distinct;
+        for (int f = res.first; f < res.first + res.count; ++f) {
+            const Image im = baked.value().composite(f);
+            std::size_t count = 0, hash = 0;
+            for (const Rgba8& p : im.pixels()) {
+                hash = hash * 31 + p.a + p.r * 7u;
+                if (!p.a) continue;
+                ++count;
+                CHECK(drawn.count((std::uint32_t(p.r) << 16) | (std::uint32_t(p.g) << 8) | p.b) == 1);
+            }
+            distinct.insert(hash);
+            CHECK(count * 10 >= restCount * 8);
+            CHECK(count * 10 <= restCount * 12);
+        }
+        CHECK(distinct.size() >= 4);
+    }
     REQUIRE(res.document.validate());
     REQUIRE(rigs::bakeKeys(res.document));
 
@@ -928,7 +977,7 @@ TEST_CASE("A swimming motion turns an auto-rigged fish's tail fin and paddles it
     bool stay = false;
     for (const auto& n : w.value().notes) stay = stay || n.find("stay as drawn") != std::string::npos;
     CHECK(stay);
-    CHECK(w.value().matched.size() == 1);
+    CHECK(w.value().matched.size() == 2);   // the body's spine and the tail fin
     // Bone pairs do not apply.
     rigs::MotionKeysOptions pairs;
     pairs.bones = {{"tail fin", mocap::Bone::Head}};
