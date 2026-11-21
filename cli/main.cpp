@@ -127,7 +127,7 @@ const char* kUsageText =
     "  rig bake <project> --out <project> [--from F --to L]\n"
     "                                  Draw every keyed frame (default: first key to last) from the rest frame\n"
     "  rig skin <project> --out <project> --layer <name|id> --bone <child|none> [--blend PX]\n"
-    "                                  Bend a part across the joint with a child of its bone (none: rigid\n"
+    "                                  Bend a part across the joint with a child of its bone, or along the chain down to a bone further below (none: rigid\n"
     "                                  again); --blend is the width either side of the joint (0: automatic)\n"
     "  rig motion <project> <motion.bvh|.glb|.gltf|preset:NAME> --out <project> [--first F] [--bake]\n"
     "             [--bones \"rig bone=Joint,...\"] [--absolute-arms] [timing, view and --map options as retarget]\n"

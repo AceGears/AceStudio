@@ -105,13 +105,21 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - **IK with stretched bones no longer stops short**: with a stretched upper bone the solve could
   settle on a straight leg just short of a target a bent leg reaches; it now starts again from
   bent poses and keeps the nearest.
+- **Rigged fish bend**: `rig auto --as fins` now gives the body a spine (`body`, `spine 1`, ...)
+  that the body part bends along, and `rig motion` runs the motion's wave down it as well as
+  moving the fins.
+- **Parts bend along a chain of bones**: `rig skin --bone` (and MCP `rig_edit` skin, Lua
+  `set_rig`) now takes a bone further down than a child: the part bends at every joint on the way
+  (a tail, a spine). Bends across a single joint are drawn exactly as before. Such rigs are saved
+  as rig version 5.
 - **Wing joints by hand**: `retarget` and `rig motion` take `--wings JointA,JointB` (Lua
   `wings = {"JointA", "JointB"}`, MCP `wings`): the two joints a skeleton's wings start at, for
   skeletons whose wing joints are not named wing. The wings then beat, fold and sweep with those
   chains instead of passing for arms. With `retarget` it means `--body flyer` unless a body is given.
 - **Fin rigs take motion**: `rig motion` on a rig made with `rig auto --as fins` now keys the
   tail fin from the end of the motion's spine and the other fins from its fin joints
-  (`preset:swim`), instead of finding nothing to match. The body stays rigid. Core:
+  (`preset:swim`), instead of finding nothing to match. (The body was rigid then; see "Rigged
+  fish bend".) Core:
   `mocap::swimSource`.
 - **Fins foreshorten**: with `retarget --body swimmer`, a fin whose joint swings toward or away
   from the viewer is drawn shorter there (down to half its length), and a note says by how much.

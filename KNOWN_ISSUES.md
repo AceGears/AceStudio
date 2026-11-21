@@ -55,13 +55,19 @@ not been run.
   been used on a PC since it became a dock. The panel does not follow the open document by
   itself: press Use Current Sprite after switching sprites or frames. Its controls no longer have
   Alt-key mnemonics (they would clash with the menu bar when docked), like the other panels.
-- **Parts that bend across a joint** (`rig skin`, ADR-ANIM-004): a part follows at most two bones
-  (its own and one child); there is no painted weight map, the split is a straight line through
-  the joint halfway between the two bones' directions. The bend is a linear blend, so a very sharp
+- **Parts that bend across a joint** (`rig skin`, ADR-ANIM-004): a part follows its own bone and one
+  child, or (since 2026-11-21) every bone on the way down to a bone further below (a tail, a
+  spine; at most 16 joints, saved as rig version 5, which older AceStudio versions refuse to
+  open). There is no painted weight map: each split is a straight line through the joint halfway
+  between the two bones' directions, so the chain should run along the part and its joints should
+  not sit closer together than the part is thick. A chain was tested locally on a striped strip
+  on four bones (curled each way and in an S: one piece, no holes) and those were looked at; it
+  has not been tried on real art. The rig panel's Bends with box still lists children only. The bend is a linear blend, so a very sharp
   bend (past about 120 degrees) pinches the inside of the joint. Command line, the MCP
   `rig_edit` tool, Lua (`doc:rig()` / `set_rig` carry it in the rig's `skins`) and the rig panel's
-  Bends with box (compiled and audited by CI; no Qt test drives it). Auto-rig does
-  not make bent parts; it still cuts a separate part for each bone.
+  Bends with box (compiled and audited by CI; no Qt test drives it). Auto-rig makes
+  one bent part only, a fish's body along its spine; legs, arms and tails are still cut into a
+  separate part for each bone.
 - **Sideways head and tail swing on a rig** (`rig motion`, since 2026-11-20): a four-legged rig's
   "head", "neck" and "tail" bones are drawn shorter while the motion points them toward or away
   from the viewer (a pose's new per-bone `stretch`, rig version 4). Tested locally on a drawn
@@ -160,10 +166,14 @@ not been run.
   skeleton's picture. A skeleton with no head and tail names is guessed (the stiller end is the
   head), and a humanoid motion bends a fish by its head-to-foot chain, which rarely looks like
   swimming. The wave is read in one plane only (the one the spine moves in more). `rig motion`
-  on an auto-rig made with `--as fins` (since 2026-11-21) turns the tail fin and paddles the other
-  fins but does not bend the body, which is one rigid part there: a fish keyed this way swims
-  stiffer than the same fish through `retarget --body swimmer`. Tested locally on a drawn fish;
-  the test fish's baked frames were looked at once. The Motion Studio choice (Fish) is compiled
+  on an auto-rig made with `--as fins` (since 2026-11-21) turns the tail fin, paddles the other
+  fins and bends the body: auto-rig now gives a fish a spine from the head to the tail stalk
+  (`body`, `spine 1`, ...: two to five bones by the body's length against its height) and the
+  body part bends along it. The bend turns pixels where `retarget --body swimmer` only shifts
+  columns, so dithered shading on the body smears a little in the bent frames (seen on the fish57
+  fixture: two spine bones, looked at once); for the cleanest pixels use the retarget, for
+  editable keys the rig. Fish rigs saved before this have one rigid body bone and are keyed as
+  before (auto-rig again for a spine). Tested locally on a drawn fish. The Motion Studio choice (Fish) is compiled
   by CI; no Qt test drives it.
 - **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI, core, MCP (`motion_directions`) and Lua
   (`ace.directions` and `ace.turn_clip`, which return the clips); no app page yet. The art is chosen, never turned or drawn: a direction with no view drawn near it
@@ -210,8 +220,8 @@ not been run.
   been used on a PC, and bone dragging on the canvas has not been tried by hand. While dragging is
   on, a paint stroke that starts within 7 screen pixels of a joint or tip grabs the bone instead
   (turn **Drag bones on the canvas** off to paint there). Auto-rig handles bodies with legs (two or four), wings (cut below the wing line, so legs stay in
-  the body) and fish (the body stays one rigid part); blobs and objects are refused and must be
-  rigged by hand, and arms are only rigged where the silhouette analysis finds them. Every part is rigid on one bone (no bending across a joint). Pose keys with curves are saved
+  the body) and fish (the body bends along a spine; see the fin-rig entry); blobs and objects are refused and must be
+  rigged by hand, and arms are only rigged where the silhouette analysis finds them. Every other auto-rigged part is rigid on one bone (bend one across a joint with `rig skin`). Pose keys with curves are saved
   in the rig, but an unkeyed working pose lives in the panel until it is keyed or baked, and moving
   to another frame of a keyed rig replaces it with that frame's keyed pose. There is no curve editor
   (custom Bezier points only through `rig key --curve bezier:…`), and keys are not drawn on the

@@ -173,8 +173,12 @@ TEST_CASE("Skins are checked, kept in step with edits and saved", "[rig][skin]")
 
     CHECK_FALSE(rigs::skinLayer(rig, 3, shin));   // not bound yet
     REQUIRE(rigs::bindLayer(rig, 3, thigh));
-    CHECK_FALSE(rigs::skinLayer(rig, 3, foot));   // a grandchild
     CHECK_FALSE(rigs::skinLayer(rig, 3, hip));    // the parent
+    CHECK_FALSE(rigs::skinLayer(rig, 3, thigh));  // its own bone
+    CHECK(rigs::skinChain(rig, thigh, foot) == std::vector<BoneId>{shin, foot});
+    CHECK(rigs::skinChain(rig, thigh, shin) == std::vector<BoneId>{shin});
+    CHECK(rigs::skinChain(rig, thigh, hip).empty());
+    CHECK(rigs::skinChain(rig, thigh, thigh).empty());
     CHECK_FALSE(rigs::skinLayer(rig, 3, shin, -1));
     CHECK(rigs::toJson(rig)["version"] == 1);
     REQUIRE(rigs::skinLayer(rig, 3, shin, 2.5));
@@ -188,8 +192,20 @@ TEST_CASE("Skins are checked, kept in step with edits and saved", "[rig][skin]")
         REQUIRE(back);
         CHECK(back.value() == rig);
         auto broken = j;
-        broken["skins"][0]["bone"] = foot;
+        broken["skins"][0]["bone"] = hip;
         CHECK(rigs::fromJson(broken).error().code == ErrorCode::CorruptData);
+        // Through two joints (to a grandchild): version 5, read back the same.
+        Rig deep = rig;
+        REQUIRE(rigs::skinLayer(deep, 3, foot));
+        const auto jd = rigs::toJson(deep);
+        CHECK(jd["version"] == 5);
+        auto deepBack = rigs::fromJson(jd);
+        REQUIRE(deepBack);
+        CHECK(deepBack.value() == deep);
+        // Removing the bone in the middle of the chain takes the skin with it
+        // or leaves a valid rig either way.
+        REQUIRE(rigs::removeBone(deep, shin));
+        CHECK(rigs::validate(deep));
         broken = j;
         broken["skins"].push_back(j["skins"][0]);
         CHECK(rigs::fromJson(broken).error().code == ErrorCode::CorruptData);
@@ -221,4 +237,79 @@ TEST_CASE("Skins are checked, kept in step with edits and saved", "[rig][skin]")
         CHECK(a.doc.rig()->skins.empty());
         CHECK(rigs::validate(*a.doc.rig(), &a.doc));
     }
+}
+
+TEST_CASE("A part bends along a chain of bones", "[rig][skin]") {
+    // A tail: a strip 4 pixels wide and 40 long, striped, on four bones of 10
+    // pixels end to end, bound to the first and skinned to the last.
+    Document doc = Document::create(96, 96).value();
+    const LayerId layer = doc.addLayer("Tail").value();
+    Image strip(40, 4);
+    for (int x = 0; x < 40; ++x)
+        for (int y = 0; y < 4; ++y) strip.setPixel(x, y, (x / 4) % 2 ? kBlue : kRed);
+    REQUIRE(doc.setCel(layer, 0, Cel{strip, 28, 46}));
+    REQUIRE(doc.insertFrame(1));
+    Rig rig;
+    BoneId ids[4];
+    for (int i = 0; i < 4; ++i)
+        ids[i] = rigs::addBone(rig, makeBone(("t" + std::to_string(i)).c_str(), i ? ids[i - 1] : kNoBone, 28 + 10 * i, 48, 10, 0)).value();
+    REQUIRE(rigs::bindLayer(rig, layer, ids[0]));
+    REQUIRE(rigs::skinLayer(rig, layer, ids[3]));
+    doc.setRig(rig);
+    const Image rest = doc.composite(0);
+    const auto src = opaque(rest);
+
+    // At rest, and with only the first bone turned, it is a rigid part.
+    auto still = rigs::bakePose(doc, 0, 1, RigPose{});
+    REQUIRE(still);
+    CHECK(still.value().composite(1) == rest);
+
+    for (double each : {0.35, -0.5, 0.8}) {
+        INFO("each joint turns " << each);
+        RigPose pose;
+        for (int i = 1; i < 4; ++i) pose.turn[ids[i]] = each;
+        auto baked = rigs::bakePose(doc, 0, 1, pose);
+        REQUIRE(baked);
+        const Image out = baked.value().composite(1);
+        const auto px = opaque(out);
+        CHECK(pieces(px) == 1);
+        CHECK(holes(out) == 0);
+        CHECK(px.size() >= src.size() * 8 / 10);
+        CHECK(px.size() <= src.size() * 13 / 10);
+        for (const auto& [x, y] : px) {
+            const Rgba8 c = out.pixel(x, y);
+            CHECK((c == kRed || c == kBlue));
+        }
+        // The root end, away from the first joint, has not moved.
+        for (int x = 28; x < 34; ++x)
+            for (int y = 46; y < 50; ++y) CHECK(out.pixel(x, y) == rest.pixel(x, y));
+        // The tip follows the last bone: pixels lie near its tail, which
+        // curls round (each bone turned `each` more than the one before).
+        double tx = 38, ty = 48, ang = 0;
+        for (int i = 1; i < 4; ++i) {
+            ang += each;
+            tx += 10 * std::cos(ang);
+            ty += 10 * std::sin(ang);
+        }
+        double nearest = 1e9;
+        for (const auto& [x, y] : px) nearest = std::min(nearest, std::hypot(x + 0.5 - tx, y + 0.5 - ty));
+        CHECK(nearest < 2.5);
+        // It curls: the tip is well off the rest line, on the side it turned to.
+        CHECK((ty - 48) * each > 0);
+        int off = 0;
+        for (const auto& [x, y] : px) off += std::abs(y + 0.5 - 48) > 6 ? 1 : 0;
+        CHECK(off > 10);
+    }
+
+    // Two joints bent opposite ways (an S) still hold together.
+    RigPose wave;
+    wave.turn[ids[1]] = 0.5;
+    wave.turn[ids[2]] = -0.9;
+    wave.turn[ids[3]] = 0.5;
+    auto s = rigs::bakePose(doc, 0, 1, wave);
+    REQUIRE(s);
+    const auto spx = opaque(s.value().composite(1));
+    CHECK(pieces(spx) == 1);
+    CHECK(holes(s.value().composite(1)) == 0);
+    CHECK(spx.size() >= src.size() * 8 / 10);
 }

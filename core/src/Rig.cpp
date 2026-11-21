@@ -105,13 +105,12 @@ std::vector<LayerId> Rig::parts(BoneId id) const {
 }
 
 namespace {
-// Skins whose part lost its binding or whose bone is no longer a child of
-// the part's bone (after a bone is removed, reparented or the part rebound).
+// Skins whose part lost its binding or whose bone is no longer below the
+// part's bone (after a bone is removed, reparented or the part rebound).
 void dropBrokenSkins(Rig& r) {
     std::erase_if(r.skins, [&](const auto& kv) {
         const auto bound = r.bindings.find(kv.first);
-        const Bone* c = r.bone(kv.second.bone);
-        return bound == r.bindings.end() || !c || c->parent != bound->second;
+        return bound == r.bindings.end() || rigs::skinChain(r, bound->second, kv.second.bone).empty();
     });
 }
 } // namespace
@@ -150,8 +149,7 @@ Status validate(const Rig& rig, const Document* doc) {
     for (const auto& [layer, sk] : rig.skins) {
         const auto bound = rig.bindings.find(layer);
         if (bound == rig.bindings.end()) return bad("A bent part is not bound to a bone");
-        const Bone* child = rig.bone(sk.bone);
-        if (!child || child->parent != bound->second) return bad("A bent part must bend with a child of its own bone");
+        if (skinChain(rig, bound->second, sk.bone).empty()) return bad("A bent part must bend with a bone below its own bone");
         if (!finite(sk.blend) || sk.blend < 0 || sk.blend > kMaxCoord) return bad("A bent part's blend width is out of range");
     }
     if (rig.restFrame < 0 || rig.restFrame >= Document::kMaxFrames || (doc && rig.restFrame >= doc->frameCount()))
@@ -314,6 +312,17 @@ Status bindLayer(Rig& rig, LayerId layer, BoneId bone) {
     return {};
 }
 
+std::vector<BoneId> skinChain(const Rig& rig, BoneId from, BoneId to) {
+    std::vector<BoneId> up;
+    for (const Bone* b = rig.bone(to); b && b->id != from; b = rig.bone(b->parent)) {
+        if (static_cast<int>(up.size()) >= Rig::kMaxSkinChain || b->parent == kNoBone) return {};
+        up.push_back(b->id);
+    }
+    if (up.empty() || !rig.bone(to) || !rig.bone(from)) return {};
+    std::reverse(up.begin(), up.end());
+    return up;
+}
+
 Status skinLayer(Rig& rig, LayerId layer, BoneId child, double blend) {
     const auto bound = rig.bindings.find(layer);
     if (bound == rig.bindings.end()) return bad("Bind the part to a bone before bending it across a joint");
@@ -323,7 +332,8 @@ Status skinLayer(Rig& rig, LayerId layer, BoneId child, double blend) {
     }
     const Bone* c = rig.bone(child);
     if (!c) return bad("No such bone");
-    if (c->parent != bound->second) return bad("A part bends with a child of its own bone ('" + c->name + "' is not one)");
+    if (skinChain(rig, bound->second, child).empty())
+        return bad("A part bends with a bone below its own bone, at most " + std::to_string(Rig::kMaxSkinChain) + " joints down ('" + c->name + "' is not one)");
     if (!finite(blend) || blend < 0 || blend > kMaxCoord) return bad("The blend width must be 0 (automatic) or more pixels");
     rig.skins[layer] = Skin{child, blend};
     return {};
@@ -695,15 +705,22 @@ json toJson(const Rig& rig) {
         }
         j["keys"] = keys;
     }
+    bool deepSkin = false;
     if (!rig.skins.empty()) {
         j["version"] = 3;
         if (!j.contains("restFrame")) j["restFrame"] = rig.restFrame;
         json skins = json::array();
-        for (const auto& [layer, sk] : rig.skins) skins.push_back({{"layer", layer}, {"bone", sk.bone}, {"blend", sk.blend}});
+        for (const auto& [layer, sk] : rig.skins) {
+            skins.push_back({{"layer", layer}, {"bone", sk.bone}, {"blend", sk.blend}});
+            // Through more than one joint: older readers would refuse the bone.
+            if (const auto bound = rig.bindings.find(layer); bound != rig.bindings.end() && skinChain(rig, bound->second, sk.bone).size() > 1)
+                deepSkin = true;
+        }
         j["skins"] = skins;
     }
     for (const RigKey& k : rig.keys)
         if (!k.pose.stretch.empty()) j["version"] = 4;
+    if (deepSkin) j["version"] = 5;
     return j;
 }
 

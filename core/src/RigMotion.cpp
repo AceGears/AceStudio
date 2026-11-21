@@ -279,8 +279,10 @@ Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, c
 
 // A swimmer rig (auto-rig's "tail fin", "dorsal fin" and "ventral fin" on
 // a "body"): the motion's spine turns the tail fin at the stalk and its fin
-// joints paddle the other fins, as retarget --body swimmer does. The body
-// is one rigid part and does not bend.
+// joints paddle the other fins, as retarget --body swimmer does. When the
+// body has spine bones below it ("spine 1", "spine 2", ...: the body part
+// bends along them) the motion's wave runs down them from the head;
+// otherwise the body is one rigid part and does not bend.
 Result<MotionKeysResult> finKeys(const Document& doc, const mocap::Motion& m, const MotionKeysOptions& opt, const std::vector<std::size_t>& finBones) {
     const Rig& rig = *doc.rig();
     const double amount = std::clamp(opt.amount, 0.25, 2.0);
@@ -302,17 +304,46 @@ Result<MotionKeysResult> finKeys(const Document& doc, const mocap::Motion& m, co
     if (rig.restFrame >= first && rig.restFrame <= last)
         return bad("The keys would cover the rest frame " + std::to_string(rig.restFrame) + "; start after it (--first)");
 
-    // The rig: the body bone runs from the tail stalk to the head.
+    // The rig: the body bone starts at the head, with any spine bones in a
+    // chain below it to the tail stalk. (Rigs made before the spine have one
+    // body bone from the stalk to the head: told by the tail fin's end.)
     const std::vector<BoneWorld> rest = solve(rig, RigPose{});
     const Bone* body = rig.bone("body");
     std::size_t bodyAt = 0;
     for (std::size_t i = 0; i < rig.bones.size(); ++i)
         if (body && rig.bones[i].id == body->id) bodyAt = i;
+    std::vector<std::size_t> spine;   // body, spine 1, spine 2, ...
+    if (body) {
+        spine.push_back(bodyAt);
+        for (int k = 1; k <= Rig::kMaxSkinChain; ++k) {
+            std::size_t next = rig.bones.size();
+            for (std::size_t i = 0; i < rig.bones.size(); ++i)
+                if (rig.bones[i].parent == rig.bones[spine.back()].id && lower(rig.bones[i].name) == "spine " + std::to_string(k)) next = i;
+            if (next == rig.bones.size()) break;
+            spine.push_back(next);
+        }
+    }
+    bool hasTail = false, headFirst = true;
+    for (std::size_t i : finBones) {
+        if (lower(rig.bones[i].name) != "tail fin") continue;
+        hasTail = true;
+        if (body)
+            headFirst = std::hypot(rest[i].headX - rest[spine.back()].tailX, rest[i].headY - rest[spine.back()].tailY) <=
+                        std::hypot(rest[i].headX - rest[bodyAt].headX, rest[i].headY - rest[bodyAt].headY);
+    }
+    // The body's line, from the head to the stalk.
+    double hx0 = 0, hy0 = 0, ex0 = 1, ey0 = 0;
+    if (body) {
+        hx0 = headFirst ? rest[bodyAt].headX : rest[bodyAt].tailX;
+        hy0 = headFirst ? rest[bodyAt].headY : rest[bodyAt].tailY;
+        ex0 = headFirst ? rest[spine.back()].tailX : rest[bodyAt].headX;
+        ey0 = headFirst ? rest[spine.back()].tailY : rest[bodyAt].headY;
+    }
+    const double lineLen = std::hypot(ex0 - hx0, ey0 - hy0);
     double dir = 1;   // +1: the head is at screen left
     if (opt.facing != 0) dir = opt.facing > 0 ? -1 : 1;
-    else if (body) dir = (rest[bodyAt].tailX - rest[bodyAt].headX) < 0 ? 1 : -1;
-    bool hasTail = false;
-    for (std::size_t i : finBones) hasTail = hasTail || lower(rig.bones[i].name) == "tail fin";
+    else if (body) dir = ex0 - hx0 > 0 ? 1 : -1;
+    const bool bends = headFirst && spine.size() >= 2 && lineLen > 1e-9;
 
     struct {
         int framesAdded = 0;
@@ -338,11 +369,8 @@ Result<MotionKeysResult> finKeys(const Document& doc, const mocap::Motion& m, co
         } else {
             // Where it joins, from the head along the body.
             double u = 0.5;
-            const double bx = rest[bodyAt].tailX - rest[bodyAt].headX, by = rest[bodyAt].tailY - rest[bodyAt].headY;
-            if (body && bx * bx + by * by > 1e-9) {
-                const double t = ((rest[i].headX - rest[bodyAt].headX) * bx + (rest[i].headY - rest[bodyAt].headY) * by) / (bx * bx + by * by);
-                u = std::clamp(1.0 - t, 0.0, 1.0);
-            }
+            if (body && lineLen > 1e-9)
+                u = std::clamp(((rest[i].headX - hx0) * (ex0 - hx0) + (rest[i].headY - hy0) * (ey0 - hy0)) / (lineLen * lineLen), 0.0, 1.0);
             auto at = [&](std::size_t q) { return std::min(1.0, sw.fins[q].u / (hasTail ? 0.8 : 1.0)); };
             for (std::size_t k = 0; k < sw.fins.size(); ++k) {
                 if (sw.fins[k].top != f.top) continue;
@@ -356,7 +384,10 @@ Result<MotionKeysResult> finKeys(const Document& doc, const mocap::Motion& m, co
         }
         fins.push_back(f);
     }
-    if (fins.empty())
+    if (bends)
+        res.matched.emplace_back(rig.bones[bodyAt].name, "spine " + m.joints[uz(sw.chain.front())].name + " -> " + m.joints[uz(sw.chain.back())].name +
+                                                             " (its wave runs down " + std::to_string(spine.size()) + " bones)");
+    if (fins.empty() && !bends)
         return bad("The motion has nothing to drive the rig's fins: the rig has no tail fin, and the motion no moving fin joint off its spine "
                    "(joints named fin, flipper, pectoral, pelvic or dorsal; try preset:swim)");
 
@@ -369,9 +400,27 @@ Result<MotionKeysResult> finKeys(const Document& doc, const mocap::Motion& m, co
     }
     Rig keyed = rig;
     std::erase_if(keyed.keys, [&](const RigKey& key) { return key.frame >= first && key.frame <= last; });
-    double least = 1, peak = 0;
+    double least = 1, peak = 0, bendPeak = 0;
+    const double stalkU = hasTail ? 0.8 : 1.0;
     for (int f = 0; f < frames; ++f) {
         RigPose pose;
+        if (bends) {
+            // Each joint's offset across the body, as the retarget moves the
+            // columns: the wave there, in pixels, at most a fifth of the body's length.
+            const double px = lineLen / stalkU * amount, most = 0.2 * lineLen;
+            double along = 0, before = 0, tiltBefore = 0;
+            for (std::size_t k = 0; k < spine.size(); ++k) {
+                const Bone& b = rig.bones[spine[k]];
+                along += b.length;
+                const double here = std::clamp(sw.waveAt(f, std::min(1.0, along / lineLen) * stalkU) * px, -most, most);
+                const double tilt = b.length > 1e-9 ? dir * std::asin(std::clamp((here - before) / b.length, -0.7, 0.7)) : 0.0;
+                const double turn = b.locked ? 0.0 : clampTurn(b, tilt - tiltBefore);
+                if (turn != 0.0) pose.turn[b.id] = turn;
+                bendPeak = std::max(bendPeak, std::abs(turn));
+                tiltBefore += turn;
+                before = here;
+            }
+        }
         for (const Fin& fn : fins) {
             const Bone& b = rig.bones[fn.bone];
             double turn = 0;
@@ -396,9 +445,10 @@ Result<MotionKeysResult> finKeys(const Document& doc, const mocap::Motion& m, co
         }
         if (auto st = setKey(keyed, first + f, pose, Curve{}); !st) return st.error();
     }
-    res.notes.push_back("Fins: the tail fin turns with the end of the motion's spine and the other fins paddle with its fin joints; "
-                        "the body is one rigid part and does not bend (retarget --body swimmer bends it).");
-    if (peak < 0.02) res.notes.push_back("The motion hardly moves the fins (try preset:swim).");
+    res.notes.push_back(std::string("Fins: the tail fin turns with the end of the motion's spine and the other fins paddle with its fin joints; ") +
+                        (bends ? "the body bends along its " + std::to_string(spine.size()) + " spine bones with the motion's wave."
+                               : "the body is one rigid part and does not bend (retarget --body swimmer bends it; auto-rig it again for a spine)."));
+    if (peak < 0.02 && bendPeak < 0.02) res.notes.push_back("The motion hardly moves the fish (try preset:swim).");
     if (least < 0.98)
         res.notes.push_back("A fin swings toward or away from the viewer: it is drawn up to " + std::to_string(static_cast<int>(std::lround((1 - least) * 100))) + "% shorter there.");
     if (riding)
