@@ -1049,7 +1049,7 @@ void bind(sol::state_view lua, Runtime& rt) {
         for (std::size_t i = 0; i < all.size(); ++i) {
             const auto& p = all[i];
             t[i + 1] = lv.create_table_with("name", p.name, "description", p.description, "seconds", p.seconds, "loops", p.loops,
-                                            "built_in", p.builtIn, "four_legged", p.fourLegged, "swimmer", p.swimmer);
+                                            "built_in", p.builtIn, "four_legged", p.fourLegged, "swimmer", p.swimmer, "winged", p.winged);
         }
         return t;
     };

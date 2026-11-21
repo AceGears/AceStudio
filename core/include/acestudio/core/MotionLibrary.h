@@ -30,6 +30,7 @@ struct PresetInfo {
     bool builtIn = false;
     bool fourLegged = false;     // a four-legged skeleton (for four-legged sprites)
     bool swimmer = false;        // a spine only (for fish-like sprites, Body::Swimmer)
+    bool winged = false;         // a bird's skeleton with wing bones, no arms (for winged sprites, Body::Flyer)
     std::filesystem::path file;  // saved presets: the BVH file
     std::string error;           // saved presets that could not be read
 };

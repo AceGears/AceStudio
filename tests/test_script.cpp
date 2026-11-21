@@ -420,6 +420,7 @@ TEST_CASE("Lua motion library and retarget", "[script][mocap]") {
         assert(not pcall(ace.retarget, dog, 'motion.fbx'))
         -- A fish: the swim preset's spine bends it.
         assert(names.swim and names.swim.swimmer and not names.walk.swimmer)
+        assert(names.wingbeat and names.wingbeat.winged and not names.flap.winged)
         local fish = ace.image(60, 30)
         fish:rect(4, 8, 34, 14, '#3c82aa')
         fish:rect(38, 13, 6, 4, '#3c82aa')

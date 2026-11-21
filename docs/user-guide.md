@@ -149,7 +149,9 @@ Add, Subtract, Difference), visibility and locks.
   nods the head and swings the tail; a long neck or tail gets a joint in its middle and bends there.
 - **Winged creatures**: a dragon, bird or bat drawn from the side can beat its wings to a motion's
   arms: `acestudio-cli retarget dragon.png preset:flap --body flyer --out out`, or choose
-  **Wings** in Motion Studio's Body box. Each wing turns as the motion's arm rises and falls. If
+  **Wings** in Motion Studio's Body box. Each wing turns as the motion's arm rises and falls. A motion
+  with wing bones of its own (joints named wing; try `preset:wingbeat`) drives the wings with
+  those, and they also fold on the way up and sweep. If
   the head turns with a wing, lower the wing line (`--wing-line 0.3`, or Wing line in Motion
   Studio), or select the wings in the document before **Use Current Sprite**.
 - **Fish**: a fish drawn from the side can swim to a motion's spine:
@@ -174,7 +176,7 @@ Add, Subtract, Difference), visibility and locks.
   Studio** to show and hide it. Press **Use Current Sprite** to put the same motion and camera on
   another sprite or frame.
 - **Motion presets:** in **Animation › Motion Studio (3D Motion)…**, the **Library** row offers ready motions
-  (idle, walk, run, jump, attack, hurt, flap for wings, swim for fish, quad-walk for four legs) next to **Load Motion…**. Jump, attack and hurt play once;
+  (idle, walk, run, jump, attack, hurt, flap and wingbeat for wings, swim for fish, quad-walk for four legs) next to **Load Motion…**. Jump, attack and hurt play once;
   the others loop. **Save as Preset…** keeps the loaded motion (a BVH or glTF/GLB animation) in your
   library, as a BVH file in the `motions` folder of AceStudio's data folder, and **Remove** deletes a
   saved one. The presets are simple, made-by-code motions: good for blocking out an animation, less

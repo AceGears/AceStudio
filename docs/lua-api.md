@@ -197,7 +197,7 @@ print(k.keys .. " keys from frame " .. k.first, k.matched["leg0 thigh"])
 
 | Function | |
 |---|---|
-| `ace.motion_presets()` | list of `{name, description, seconds, loops, built_in, four_legged, swimmer}`: the built-in presets and the motions saved in the user's motion library |
+| `ace.motion_presets()` | list of `{name, description, seconds, loops, built_in, four_legged, swimmer, winged}`: the built-in presets and the motions saved in the user's motion library |
 | `ace.retarget(sprite, motion[, opts])` | `{frames = {images}, durations = {ms}, notes = {text}, loops, body, approximate_view, turn}` |
 
 `motion` is `"preset:NAME"` or a `.bvh`, `.glb` or `.gltf` file (inside the script's folders).

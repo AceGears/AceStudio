@@ -187,10 +187,12 @@ struct Builtin {
     Motion (*make)() = nullptr; // others (four-legged), made whole
     bool fourLegged = false;
     bool swimmer = false;
+    bool winged = false;
 };
 
 Motion quadWalk();
 Motion swim();
+Motion wingbeat();
 
 Pose jump(double t) { return keyed(jumpKeys(), t); }
 Pose attack(double t) { return keyed(attackKeys(), t); }
@@ -208,6 +210,8 @@ constexpr Builtin kBuiltins[] = {
      quadWalk, true},
     {"swim", "A fish's swim: a wave runs down the spine to the tail, one beat in 0.8 s (for fish-like sprites, --body swimmer)", 0.8,
      true, nullptr, swim, false, true},
+    {"wingbeat", "A bird's wingbeat on its own wing bones: down spread, up folded and swept back, 0.6 s (for winged sprites, --body flyer)",
+     0.6, true, nullptr, wingbeat, false, false, true},
 };
 
 const Builtin* findBuiltin(std::string_view name) {
@@ -479,6 +483,71 @@ Motion swim() {
     return m;
 }
 
+// ---- The wingbeat preset ----------------------------------------------------------
+
+// A bird facing +Z: a level body, and two wings of three bones each. The
+// wings beat down spread and come up folded (elbow and wrist turned back)
+// and swept back, as a flying bird's do.
+Motion wingbeat() {
+    Motion m;
+    auto add = [&](std::string name, int parent, Vec3 offset, bool root = false, bool end = false) {
+        Joint j;
+        j.name = end ? m.joints[uz(parent)].name + "_end" : std::move(name);
+        j.parent = parent;
+        j.offset = offset;
+        j.endSite = end;
+        if (root)
+            j.channels = {Channel::Xposition, Channel::Yposition, Channel::Zposition, Channel::Zrotation, Channel::Xrotation, Channel::Yrotation};
+        else if (!end)
+            j.channels = {Channel::Zrotation, Channel::Xrotation, Channel::Yrotation};
+        j.firstChannel = m.channelCount;
+        m.channelCount += static_cast<int>(j.channels.size());
+        m.joints.push_back(std::move(j));
+        return static_cast<int>(m.joints.size()) - 1;
+    };
+    const int hips = add("Hips", -1, {0, 0, 0}, true);
+    const int chest = add("Chest", hips, {0, 2, 10});
+    const int neck = add("Neck", chest, {0, 4, 6});
+    const int head = add("Head", neck, {0, 2, 5});
+    add({}, head, {0, 0, 5}, false, true);
+    const int tail = add("Tail", hips, {0, 0, -8});
+    add({}, tail, {0, -1, -8}, false, true);
+    int shoulder[2], elbowJ[2], wrist[2];
+    for (int s = 0; s < 2; ++s) {
+        const double sx = s == 0 ? 1 : -1;   // left is +X when facing +Z
+        const std::string side = s == 0 ? "Left" : "Right";
+        shoulder[s] = add(side + "Wing", chest, {3 * sx, 2, 0});
+        elbowJ[s] = add(side + "Wing1", shoulder[s], {12 * sx, 0, 0});
+        wrist[s] = add(side + "Wing2", elbowJ[s], {12 * sx, 0, -2});
+        add({}, wrist[s], {10 * sx, 0, -4}, false, true);
+    }
+    constexpr double period = 0.6;
+    const int steps = static_cast<int>(std::lround(period * kFps));
+    m.frameCount = steps;
+    m.frameTime = 1.0 / kFps;
+    m.values.assign(uz(m.frameCount) * uz(m.channelCount), 0.0);
+    for (int f = 0; f < m.frameCount; ++f) {
+        const double ph = 2 * kPi * static_cast<double>(f) / steps;
+        double* v = &m.values[uz(f) * uz(m.channelCount)];
+        // The top of the stroke first; down in the first half, up in the second.
+        const double raise = 10 + 45 * std::cos(ph);
+        const double up = std::max(0.0, -std::sin(ph));   // 0 on the downstroke, 1 mid-upstroke
+        v[1] = 30 - 1.5 * std::cos(ph - 0.6);             // lifted by the downstroke
+        v[m.joints[uz(tail)].firstChannel + 1] = 6 * std::sin(ph);
+        for (int s = 0; s < 2; ++s) {
+            const double sx = s == 0 ? 1 : -1;
+            const int sc = m.joints[uz(shoulder[s])].firstChannel, ec = m.joints[uz(elbowJ[s])].firstChannel,
+                      wc = m.joints[uz(wrist[s])].firstChannel;
+            v[sc] = raise * sx;            // about the body's length: the beat
+            v[sc + 2] = 14 * up * sx;      // about the vertical: swept back
+            v[ec] = -8 * std::sin(ph) * sx;   // the outer wing trails the beat
+            v[ec + 2] = 50 * up * sx;      // folded: elbow and wrist turn back
+            v[wc + 2] = 50 * up * sx;
+        }
+    }
+    return m;
+}
+
 // ---- BVH writing -----------------------------------------------------------------
 
 const char* channelName(Channel c) {
@@ -544,6 +613,7 @@ std::vector<PresetInfo> builtInPresets() {
         i.builtIn = true;
         i.fourLegged = b.fourLegged;
         i.swimmer = b.swimmer;
+        i.winged = b.winged;
         out.push_back(std::move(i));
     }
     return out;

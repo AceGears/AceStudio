@@ -38,12 +38,12 @@ Motion presetOrFail(const char* name) {
 
 TEST_CASE("Built-in humanoid presets map to a full humanoid and keep their timing", "[mocap][library]") {
     const auto list = builtInPresets();
-    REQUIRE(list.size() == 9);
+    REQUIRE(list.size() == 10);
     for (const PresetInfo& p : list) {
         CAPTURE(p.name);
         CHECK(p.builtIn);
         CHECK_FALSE(p.description.empty());
-        if (p.fourLegged || p.swimmer) continue;   // test_creature_motion.cpp, test_swim_motion.cpp
+        if (p.fourLegged || p.swimmer || p.winged) continue;   // test_creature_motion.cpp, test_swim_motion.cpp
         const Motion m = presetOrFail(p.name.c_str());
         const BoneMap map = autoMap(m);
         CHECK(map.hasLegs());
@@ -97,7 +97,7 @@ TEST_CASE("Every built-in humanoid preset retargets onto a sprite", "[mocap][lib
     REQUIRE(sprite);
     for (const PresetInfo& p : builtInPresets()) {
         CAPTURE(p.name);
-        if (p.fourLegged || p.swimmer) continue;   // test_creature_motion.cpp, test_swim_motion.cpp
+        if (p.fourLegged || p.swimmer || p.winged) continue;   // test_creature_motion.cpp, test_swim_motion.cpp
         const Motion m = presetOrFail(p.name.c_str());
         RetargetOptions o;
         o.fps = 12;

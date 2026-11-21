@@ -1005,14 +1005,75 @@ std::vector<int> backColumns(const rg::Part& body, const motion::detail::GaitRig
 // with the hips. Arms are matched near to near under the camera.
 Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const RetargetOptions& opt) {
     RetargetResult res;
-    if (creatureMap(m).hasFourLegs())
-        return Error(ErrorCode::InvalidArgument, "a four-legged motion has no arms to drive the wings; use a humanoid motion such as preset:flap");
     res.map = autoMap(m, opt.mapOverrides);
     const BoneMap& map = res.map;
-    for (Bone b : {Bone::Hips, Bone::LUpperArm, Bone::LHand, Bone::RUpperArm, Bone::RHand})
-        if (map[b] < 0)
-            return Error(ErrorCode::InvalidArgument,
-                         "the motion's skeleton has no recognisable hips and two arms to drive the wings (map them with Bone=joint overrides)");
+    const std::vector<Vec3> rest = restPositions(m);
+    // The skeleton's own wings: the two longest chains of joints named
+    // "wing" (shoulder, the joint nearest half-way, tip). They win over arms.
+    struct WingChain {
+        int shoulder = -1, mid = -1, tip = -1;
+        double reach = 0;
+    };
+    std::vector<WingChain> wingChains;
+    {
+        const std::size_t nj = m.joints.size();
+        std::vector<char> named(nj, 0);
+        for (std::size_t j = 0; j < nj; ++j) {
+            std::string n = m.joints[j].name;
+            for (char& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            named[j] = !m.joints[j].endSite && n.find("wing") != std::string::npos;
+        }
+        for (std::size_t j = 0; j < nj; ++j) {
+            const int p = m.joints[j].parent;
+            if (!named[j] || (p >= 0 && named[uz(p)])) continue;
+            WingChain wc;
+            wc.shoulder = static_cast<int>(j);
+            for (std::size_t k = j + 1; k < nj; ++k) {
+                int a = m.joints[k].parent;
+                while (a > wc.shoulder) a = m.joints[uz(a)].parent;
+                if (a != wc.shoulder) continue;
+                const double l = len(rest[k] - rest[j]);
+                if (l > wc.reach) {
+                    wc.reach = l;
+                    wc.tip = static_cast<int>(k);
+                }
+            }
+            if (wc.tip < 0 || wc.reach < 1e-9) continue;
+            double best = 1e300;
+            for (int a = m.joints[uz(wc.tip)].parent; a > wc.shoulder; a = m.joints[uz(a)].parent) {
+                const double d = std::abs(len(rest[uz(a)] - rest[j]) - wc.reach / 2);
+                if (d < best) {
+                    best = d;
+                    wc.mid = a;
+                }
+            }
+            wingChains.push_back(wc);
+        }
+        std::stable_sort(wingChains.begin(), wingChains.end(), [](const WingChain& a, const WingChain& b) { return a.reach > b.reach; });
+        if (wingChains.size() > 2) wingChains.resize(2);
+    }
+    const bool ownWings = wingChains.size() == 2;
+    if (!ownWings) {
+        if (creatureMap(m).hasFourLegs())
+            return Error(ErrorCode::InvalidArgument, "a four-legged motion has no arms to drive the wings; use a humanoid motion such as preset:flap, "
+                                                     "or a skeleton with two chains of joints named wing");
+        for (Bone b : {Bone::Hips, Bone::LUpperArm, Bone::LHand, Bone::RUpperArm, Bone::RHand})
+            if (map[b] < 0)
+                return Error(ErrorCode::InvalidArgument,
+                             "the motion's skeleton has no recognisable hips and two arms to drive the wings (map them with Bone=joint overrides), "
+                             "and no two chains of joints named wing");
+    }
+    // The joints that drive: [0], [1] are the two wings (or the left and right arm).
+    int shJ[2], elJ[2], handJ[2], hipsJ = map[Bone::Hips];
+    for (int a = 0; a < 2; ++a) {
+        shJ[a] = ownWings ? wingChains[uz(a)].shoulder : map[a == 0 ? Bone::LUpperArm : Bone::RUpperArm];
+        elJ[a] = ownWings ? wingChains[uz(a)].mid : map[a == 0 ? Bone::LForearm : Bone::RForearm];
+        handJ[a] = ownWings ? wingChains[uz(a)].tip : map[a == 0 ? Bone::LHand : Bone::RHand];
+    }
+    if (hipsJ < 0) {
+        hipsJ = 0;   // the root the wings hang from
+        for (int a = shJ[0]; a >= 0; a = m.joints[uz(a)].parent) hipsJ = a;
+    }
     const motion::Subject subj = motion::analyzeSubject(sprite);
     const motion::detail::WingSpec spec{std::clamp(opt.wingLine, 0.05, 0.95), 0.0, 1.0, opt.wingMask.isNull() ? nullptr : &opt.wingMask};
     auto built = motion::detail::buildFlightRig(sprite, subj, spec, false);
@@ -1045,14 +1106,15 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
     const int frames = std::clamp(opt.frames > 0 ? opt.frames : std::max(2, iround(span * fps)), 2, 240);
     const double step = opt.loop ? span / frames : (frames > 1 ? span / (frames - 1) : 0);
 
-    const std::vector<Vec3> rest = restPositions(m);
-    double restMinY = 1e300, restMaxY = -1e300;
+    double restMinY = 1e300, restMaxY = -1e300, restSpan = 0;
     for (const Vec3& q : rest) {
         restMinY = std::min(restMinY, q.y);
         restMaxY = std::max(restMaxY, q.y);
+        for (const Vec3& o : rest) restSpan = std::max(restSpan, len(q - o));
     }
-    const double height = std::max(1e-6, restMaxY - restMinY);
-    auto at = [&](const std::vector<Vec3>& q, Bone b) { return q[uz(map[b])]; };
+    // A bird's skeleton is longer and wider than it is tall.
+    const double height = std::max(1e-6, ownWings ? restSpan : restMaxY - restMinY);
+    auto hipsOf = [&](const std::vector<Vec3>& q) { return q[uz(hipsJ)]; };
     std::vector<std::vector<Vec3>> world;
     double floorY = 1e300;
     for (int f = 0; f < frames; ++f) {
@@ -1060,39 +1122,64 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
         for (const Vec3& q : w) floorY = std::min(floorY, q.y);
         world.push_back(std::move(w));
     }
-    const Vec3 hips0 = at(world[0], Bone::Hips);
+    const Vec3 hips0 = hipsOf(world[0]);
     const Vec3 centre{hips0.x, floorY, hips0.z};
-    const Vec3 forward = forwardAt(m, map, world[0]);
+    // With its own wings: forward is from the root to a joint named head,
+    // else square to the line between the wings (which way round is a guess).
+    Vec3 forward{0, 0, 1};
+    bool forwardGuessed = false;
+    if (ownWings) {
+        Vec3 f{0, 0, 0};
+        for (std::size_t j = 0; j < m.joints.size() && len(f) < 1e-6; ++j) {
+            std::string n = m.joints[j].name;
+            for (char& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (n.find("head") != std::string::npos) f = horizontal(rest[j] - rest[uz(hipsJ)]);
+        }
+        if (len(f) < 1e-6) {
+            f = cross(horizontal(rest[uz(shJ[0])] - rest[uz(shJ[1])]), Vec3{0, 1, 0});
+            forwardGuessed = true;
+        }
+        if (len(f) > 1e-6) forward = norm(f);
+    } else {
+        forward = forwardAt(m, map, world[0]);
+    }
     std::vector<Projected> prs;
     for (int f = 0; f < frames; ++f) {
         std::vector<Vec3> w = world[uz(f)];
-        const Vec3 tr = horizontal(at(world[uz(f)], Bone::Hips) - hips0);
+        const Vec3 tr = horizontal(hipsOf(world[uz(f)]) - hips0);
         for (Vec3& q : w) q = q - tr;   // wings flap in place
         prs.push_back(project(w, cam, forward, height, centre));
     }
 
     // Each arm's elevation (radians above horizontal) and its elbow's bend
     // (the forearm's elevation over the upper arm's), per frame.
-    const Bone upperB[2] = {Bone::LUpperArm, Bone::RUpperArm}, foreB[2] = {Bone::LForearm, Bone::RForearm},
-               handB[2] = {Bone::LHand, Bone::RHand};
+    // A wing of its own also folds (its tip nearer its shoulder than at its
+    // longest in the span: 0 = spread) and sweeps (its first bone's lean
+    // forward, radians).
     auto elevation = [](Vec3 v) { return std::atan2(v.y, std::hypot(v.x, v.z)); };
-    std::array<std::vector<double>, 2> elev, elbow;
-    for (int a = 0; a < 2; ++a)
+    std::array<std::vector<double>, 2> elev, elbow, fold, sweep;
+    for (int a = 0; a < 2; ++a) {
+        double longest = 1e-9;
         for (int f = 0; f < frames; ++f) {
             const auto& w = world[uz(f)];
-            const Vec3 sh = at(w, upperB[a]), hand = at(w, handB[a]);
-            if (map[foreB[a]] >= 0) {
-                const Vec3 el = at(w, foreB[a]);
-                const double up = elevation(el - sh);
+            const Vec3 sh = w[uz(shJ[a])], hand = w[uz(handJ[a])];
+            const Vec3 first = elJ[a] >= 0 ? w[uz(elJ[a])] - sh : hand - sh;
+            if (elJ[a] >= 0) {
+                const double up = elevation(first);
                 elev[uz(a)].push_back(up);
-                elbow[uz(a)].push_back(elevation(hand - el) - up);
+                elbow[uz(a)].push_back(elevation(hand - w[uz(elJ[a])]) - up);
             } else {
                 elev[uz(a)].push_back(elevation(hand - sh));
                 elbow[uz(a)].push_back(0.0);
             }
+            fold[uz(a)].push_back(len(hand - sh));
+            longest = std::max(longest, len(hand - sh));
+            sweep[uz(a)].push_back(len(first) > 1e-9 ? std::asin(std::clamp(dot(norm(first), forward), -1.0, 1.0)) : 0.0);
         }
+        for (double& v : fold[uz(a)]) v = 1.0 - v / longest;
+    }
     // Near arm: the one nearer the camera at the first frame.
-    const int nearArm = prs[0].depth[uz(map[Bone::LUpperArm])] >= prs[0].depth[uz(map[Bone::RUpperArm])] ? 0 : 1;
+    const int nearArm = prs[0].depth[uz(shJ[0])] >= prs[0].depth[uz(shJ[1])] ? 0 : 1;
     std::array<int, 2> topFrame{};
     double range = 0;
     for (int a = 0; a < 2; ++a) {
@@ -1106,10 +1193,10 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
     // a one-shot's first frame), in pixels of the sprite's height.
     double neutral = 0;
     if (opt.loop) {
-        for (int f = 0; f < frames; ++f) neutral += at(world[uz(f)], Bone::Hips).y;
+        for (int f = 0; f < frames; ++f) neutral += hipsOf(world[uz(f)]).y;
         neutral /= frames;
     } else {
-        neutral = at(world[0], Bone::Hips).y;
+        neutral = hipsOf(world[0]).y;
     }
     const double k = bb.h / height;
     const int maxLift = std::max(1, bb.h / 8);
@@ -1133,6 +1220,26 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
         // A loop swings either side of mid-stroke, a one-shot from its start.
         return opt.loop ? 2 * (stroke[uz(i)] - 0.5) : stroke[uz(i)] - stroke[0];
     };
+    // Which way each drawn wing runs from its shoulder (to its farthest pixel).
+    std::vector<char> wingUpright(fr.wings.size(), 1), wingUp(fr.wings.size(), 1);
+    for (std::size_t i = 0; i < fr.wings.size(); ++i) {
+        const auto& c = fr.wings[i].cut;
+        const IntRect mb = c.mask.bounds();
+        double best = -1, bx = 0, by = -1;
+        for (int y = mb.y; y < mb.y + mb.h; ++y)
+            for (int x = mb.x; x < mb.x + mb.w; ++x) {
+                if (!c.mask.get(x, y)) continue;
+                const double d = std::hypot(x + 0.5 - c.shoulder.x, y + 0.5 - c.shoulder.y);
+                if (d > best) {
+                    best = d;
+                    bx = x + 0.5 - c.shoulder.x;
+                    by = y + 0.5 - c.shoulder.y;
+                }
+            }
+        wingUpright[i] = std::abs(by) >= std::abs(bx);
+        wingUp[i] = by < 0;
+    }
+    bool sweepShown = false;
     double reach = 0;
     for (const auto& c : fr.cuts) reach = std::max(reach, c.reach);
     const int margin = static_cast<int>(std::ceil(reach)) + maxLift + tailAmp + 4;
@@ -1141,14 +1248,15 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
     std::vector<std::vector<rg::PartPose>> poses;
     for (int f = 0; f < frames; ++f) {
         std::vector<rg::PartPose> pose = rig.rest();
-        const int dy = std::clamp(-iround(k * (at(world[uz(f)], Bone::Hips).y - neutral) * amount), -maxLift, maxLift);
+        const int dy = std::clamp(-iround(k * (hipsOf(world[uz(f)]).y - neutral) * amount), -maxLift, maxLift);
         pose[uz(fr.bodyPart)].dy = dy;
         if (fr.chestPart >= 0) pose[uz(fr.chestPart)].dy = dy;
         if (!tail.empty())
             pose[uz(fr.bodyPart)].colDy = motion::detail::tailColumnDy(fr, tail, [&](double u) {
                 return iround(-tailAmp * u * strokeAt(f - 0.3 * u * frames));
             });
-        for (const auto& w : fr.wings) {
+        for (std::size_t wi = 0; wi < fr.wings.size(); ++wi) {
+            const auto& w = fr.wings[wi];
             const int a = w.nearWing ? nearArm : 1 - nearArm;
             const double scale = w.nearWing ? 1.0 : 0.8;
             const double down = std::clamp(amount * (elev[uz(a)][uz(topFrame[uz(a)])] - elev[uz(a)][uz(f)]), -0.5, 2.0);
@@ -1167,6 +1275,18 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
                                                                         : fr.skinDepth / 2.0));
             }
             if (!w.nearWing) q.sx = 1.0 - 0.15 * std::clamp(down / 1.6, 0.0, 1.0);
+            if (ownWings) {
+                // Folded: shorter along its drawn length. Swept: an upright
+                // wing leans toward the head (forward) or the tail.
+                const int top = topFrame[uz(a)];
+                const double shorter = std::clamp(1.0 - amount * (fold[uz(a)][uz(f)] - fold[uz(a)][uz(top)]), 0.55, 1.1);
+                (wingUpright[wi] ? q.sy : q.sx) *= shorter;
+                const double lean = std::tan(std::clamp(amount * (sweep[uz(a)][uz(f)] - sweep[uz(a)][uz(top)]), -0.5, 0.5));
+                if (wingUpright[wi]) {
+                    q.shear = (wingUp[wi] ? -1 : 1) * (fr.headSide < 0 ? -1 : 1) * lean * scale;
+                    sweepShown = sweepShown || std::abs(lean) > 0.05;
+                }
+            }
         }
         imgs.push_back(rg::renderPose(rig, pose, big));
         poses.push_back(std::move(pose));
@@ -1201,7 +1321,16 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
         res.source.frames.push_back(img);
         res.source.durations.push_back(frameMs);
     }
-    if (fr.wings.size() < 2) res.notes.push_back("Only one wing was found; it follows the nearer arm.");
+    if (fr.wings.size() < 2) res.notes.push_back(ownWings ? "Only one wing was found; it follows the nearer wing." : "Only one wing was found; it follows the nearer arm.");
+    if (ownWings) {
+        res.notes.push_back("Wings: " + m.joints[uz(shJ[0])].name + " and " + m.joints[uz(shJ[1])].name +
+                            " (the skeleton's own wing bones: the drawn wings beat, fold and sweep with them).");
+        bool sideways = false;
+        for (char u : wingUpright) sideways = sideways || !u;
+        if (sideways) res.notes.push_back("A wing drawn out to the side cannot lean: its sweep is not shown.");
+        if (forwardGuessed && sweepShown)
+            res.notes.push_back("The skeleton has no joint named head: which way it faces is a guess, so the wings may sweep the wrong way round.");
+    }
     return res;
 }
 

@@ -94,6 +94,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Wing bones**: `retarget --body flyer` now reads a skeleton's own wings (two chains of joints
+  named wing) instead of needing humanoid arms; the drawn wings then also fold on the way up and
+  sweep. A winged four-legged skeleton is no longer refused. New built-in preset `wingbeat` (a
+  bird's skeleton, 0.6 s loop); presets say `winged` in Lua's `ace.motion_presets()`.
 - **Fins paddle on motion-driven fish**: with `retarget --body swimmer`, a motion's fin joints
   (off the spine, named fin, flipper, pectoral, pelvic or dorsal) turn the sprite's other fins
   about their roots. The `swim` preset gains two pectoral fins that paddle in turn and a dorsal
