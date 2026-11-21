@@ -198,6 +198,7 @@ print(k.keys .. " keys from frame " .. k.first, k.matched["leg0 thigh"])
 | Function | |
 |---|---|
 | `ace.motion_presets()` | list of `{name, description, seconds, loops, built_in, four_legged, swimmer, winged}`: the built-in presets and the motions saved in the user's motion library (`four_legged` is also true for the six-legged `hex-walk`) |
+| `ace.directions(views, motion[, opts])` | the motion in every direction, each on the nearest drawn view: `views` is `{s = image, e = image, ...}` (names as the `directions` command: `s`, `se`, `e`, `ne`, `n`, `nw`, `w`, `sw` or `front`, `right`, `back-left`, ...); `opts` takes `dirs` (8, 4 or a list of names; default 8), `mirror` (default true) and the timing, `tilt`, `roll`, `perspective` and `body` options of `ace.retarget` (not `view` or `turn`). Returns a list of `{direction, turn, view, mirrored, off_by, approximate_view, frames, durations, notes, loops}` |
 | `ace.retarget(sprite, motion[, opts])` | `{frames = {images}, durations = {ms}, notes = {text}, loops, body, approximate_view, turn}` |
 
 `motion` is `"preset:NAME"` or a `.bvh`, `.glb` or `.gltf` file (inside the script's folders).

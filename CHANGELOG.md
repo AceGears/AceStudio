@@ -97,6 +97,14 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - **Wing rigs take motion**: `rig motion` on a rig made with `rig auto --as wings` now keys the
   wing bones from the motion's own wing bones (`preset:wingbeat`: beat and fold) or its arms
   (`preset:flap`: beat only), instead of refusing. Core: `mocap::wingSource`.
+- **Direction sets from scripts**: Lua gains `ace.directions(views, motion, opts)`: a motion in
+  eight, four or named directions, each on the nearest drawn view (or its mirror), as the
+  `directions` command makes them.
+- **Arm boxes from scripts and AI tools**: `doc:auto_rig` takes `arms = {{x, y, w, h}, ...}` and
+  the MCP `rig_edit` tool takes `arms`, as `rig auto --arms` does.
+- **IK with stretched bones no longer stops short**: with a stretched upper bone the solve could
+  settle on a straight leg just short of a target a bent leg reaches; it now starts again from
+  bent poses and keeps the nearest.
 - **Fin rigs take motion**: `rig motion` on a rig made with `rig auto --as fins` now keys the
   tail fin from the end of the motion's spine and the other fins from its fin joints
   (`preset:swim`), instead of finding nothing to match. The body stays rigid. Core:

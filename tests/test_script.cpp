@@ -526,3 +526,48 @@ TEST_CASE("Lua auto-rig takes arm boxes", "[script][rig]") {
     INFO(errorOf(r));
     CHECK(r);
 }
+
+TEST_CASE("Lua makes a motion in every direction from drawn views", "[script][mocap][directions]") {
+    auto r = run(R"(
+        -- A figure from the front and from its right side (the side view has a nose).
+        local function man(side)
+            local m = ace.image(32, 48)
+            m:rect(11, 14, 10, 16, '#3c5a96')
+            m:rect(11, 4, 10, 10, '#e6b48c')
+            m:rect(11, 30, 4, 16, '#28283c')
+            m:rect(17, 30, 4, 16, '#28283c')
+            if side then m:rect(21, 8, 2, 2, '#c8966e') else
+                m:rect(7, 14, 4, 14, '#e6b48c')
+                m:rect(21, 14, 4, 14, '#e6b48c')
+            end
+            return m
+        end
+        local views = {s = man(false), e = man(true)}
+        local all = ace.directions(views, 'preset:walk', {fps = 8})
+        assert(#all == 8, #all)
+        local by = {}
+        for _, d in ipairs(all) do
+            by[d.direction] = d
+            assert(#d.frames >= 4 and #d.frames == #d.durations and d.loops, d.direction)
+            assert(type(d.notes) == 'table')
+        end
+        assert(by.s.view == 's' and not by.s.mirrored and by.s.off_by == 0, by.s.view)
+        assert(by.e.view == 'e' and not by.e.mirrored)
+        assert(by.w.mirrored and by.w.view:find('mirrored'), by.w.view)   -- the east view, flipped
+        assert(by.n.off_by >= 90 and by.n.approximate_view)             -- no back view drawn
+        -- Four directions, named ones, and no mirrors.
+        assert(#ace.directions(views, 'preset:walk', {dirs = 4, fps = 6}) == 4)
+        local two = ace.directions(views, 'preset:walk', {dirs = {'e', 'w'}, mirror = false, fps = 6})
+        assert(#two == 2 and two[2].direction == 'w' and not two[2].mirrored)
+        -- Refusals.
+        assert(not pcall(ace.directions, {}, 'preset:walk'))
+        assert(not pcall(ace.directions, {up = man(false)}, 'preset:walk'))
+        assert(not pcall(ace.directions, {s = 'front.png'}, 'preset:walk'))
+        assert(not pcall(ace.directions, views, 'preset:walk', {dirs = 6}))
+        assert(not pcall(ace.directions, views, 'preset:walk', {dirs = {'up'}}))
+        assert(not pcall(ace.directions, views, 'preset:walk', {turn = 30}))
+        assert(not pcall(ace.directions, views, 'preset:moonwalk'))
+    )");
+    INFO(errorOf(r));
+    CHECK(r);
+}
