@@ -57,8 +57,12 @@ not been run.
   also keeps a copy of each wing's root (the wing's pixels below the wing line that rest on the
   body) under the wing, so a wing lifted off the back no longer leaves a hole there (seen on the
   dragon before, gone after; looked at once). A wing turned far forward can still uncover the
-  copy, which then shows as a patch of wing colour on the back. No sweep, and the
-  tail does not wave. Fins and other non-humanoid rigs
+  copy, which then shows as a patch of wing colour on the back. The thin end of the body away from the head is cut into a `tail` part on its own
+  bone (a long one bends at a `tail tip` bone), and `rig motion` waves it a little with the beat
+  (since 2026-11-21): the wave is made up, as the flight animator's is, not read from the motion's
+  tail joints, and the tail turns as one or two stiff pieces where the animator moves it column
+  by column. Looked at once on the dragon fixture. A flyer whose head side is not found gets no
+  tail. No sweep. Fins and other non-humanoid rigs
   match nothing and are refused. Frames added for the keys are empty until baked.
 - **Motion Studio panel** (ADR-ANIM-002): compiled and opened by the CI UI audit only; it has not
   been used on a PC since it became a dock. The panel does not follow the open document by

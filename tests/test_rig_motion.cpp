@@ -846,6 +846,25 @@ TEST_CASE("A wing motion beats and folds an auto-rigged flyer's wings", "[rig][m
         CHECK(lowest > (rest[bi].tailY - rest[bi].headY) + 0.25 * b->length);
         CHECK(leftMost < (rest[bi].tailX - rest[bi].headX) - 0.25 * b->length);   // toward the tail
     }
+    // The dragon's tail is a part of its own on a "tail" bone, and it waves both ways.
+    {
+        const Bone* tail = rig.bone("tail");
+        REQUIRE(tail);
+        CHECK(tail->parent == rig.bone("body")->id);
+        CHECK(rig.parts(tail->id).size() == 1);
+        double lo = 1e9, hi = -1e9;
+        for (const RigKey& k : rig.keys) {
+            const double t = turnOf(rig, k.pose, "tail");
+            lo = std::min(lo, t);
+            hi = std::max(hi, t);
+        }
+        CHECK(lo < -0.05);
+        CHECK(hi > 0.05);
+        CHECK(hi - lo < 0.4);
+        bool waves = false;
+        for (const auto& n : res.notes) waves = waves || n.find("tail waves") != std::string::npos;
+        CHECK(waves);
+    }
     REQUIRE(res.document.validate());
     auto baked = rigs::bakeKeys(res.document);
     REQUIRE(baked);

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <numeric>
 
 namespace acestudio::rigs {
@@ -602,8 +603,140 @@ Result<AutoRigResult> autoRig(const Document& doc, LayerId layer, int frame, con
             if (auto st = skinLayer(rig, partLayer[static_cast<std::size_t>(w.part)], hand.value(), 0.9 * wingLen / 2); !st) return st.error();
             ++creased;
         }
+        // The tail: the thin end of the body away from the head (the columns
+        // the flight animator waves), cut into a part of its own on a "tail"
+        // bone from where it leaves the body; a long one gets a "tail tip"
+        // bone from its middle and bends there. The body's copies of the
+        // wing roots stay with the body.
+        bool tailCut = false, tailBends = false;
+        const std::vector<int> tailCols = motion::detail::flightTailColumns(*flight, subj.bounds);
+        const LayerId bodyLayer = flight->bodyPart >= 0 ? partLayer[static_cast<std::size_t>(flight->bodyPart)] : kNoLayer;
+        if (!tailCols.empty() && bodyLayer != kNoLayer) {
+            const Mask& own = parts.parts[static_cast<std::size_t>(flight->bodyPart)].own;
+            int rootCol = tailCols.front();   // listed root first
+            Cel* bc = d.cel(bodyLayer, frame);
+            IntRect r{1 << 30, 1 << 30, 0, 0};
+            int x1 = -(1 << 30), y1 = -(1 << 30), n = 0, rowCount = 0, total = 0;
+            double rowSum = 0;
+            // In each column the tail is one run of rows: the one that carries
+            // on from the column before it, starting at the tip. (A heel or a
+            // wing fringe in the same columns is not tail.)
+            std::map<int, std::pair<int, int>> run;   // column -> first and last row
+            for (auto it = tailCols.rbegin(); it != tailCols.rend(); ++it) {
+                const int x = *it;
+                const bool first = it == tailCols.rbegin();
+                const std::pair<int, int> before = first ? std::pair<int, int>{0, own.height() - 1} : run[*(it - 1)];
+                std::pair<int, int> best{0, -1};
+                int bestOverlap = 0;
+                for (int y = 0; y < own.height();) {
+                    if (!own.get(x, y)) {
+                        ++y;
+                        continue;
+                    }
+                    int e = y;
+                    while (e + 1 < own.height() && own.get(x, e + 1)) ++e;
+                    const int overlap = std::min(e, before.second + 1) - std::max(y, before.first - 1) + 1;
+                    if (overlap > bestOverlap) bestOverlap = overlap, best = {y, e};
+                    y = e + 1;
+                }
+                if (bestOverlap <= 0) break;   // the tail ends here
+                run[x] = best;
+            }
+            auto inTail = [&](int sx, int sy) {   // sprite coordinates
+                const auto it = run.find(sx);
+                return it != run.end() && sy >= it->second.first && sy <= it->second.second && own.get(sx, sy);
+            };
+            for (int x : tailCols)
+                if (run.count(x)) {
+                    rootCol = x;   // the run nearest the body
+                    break;
+                }
+            if (bc)
+                for (int y = 0; y < bc->image.height(); ++y)
+                    for (int x = 0; x < bc->image.width(); ++x) {
+                        if (bc->image.pixel(x, y).a == 0) continue;
+                        ++total;
+                        const int gx = bc->x + x, gy = bc->y + y;
+                        const int sx = gx - static_cast<int>(ox), sy = gy - static_cast<int>(oy);
+                        if (!inTail(sx, sy)) continue;
+                        ++n;
+                        r.x = std::min(r.x, gx);
+                        r.y = std::min(r.y, gy);
+                        x1 = std::max(x1, gx + 1);
+                        y1 = std::max(y1, gy + 1);
+                        if (sx == rootCol) {
+                            rowSum += gy + 0.5;
+                            ++rowCount;
+                        }
+                    }
+            if (bc && n >= 6 && n * 50 >= total && rowCount > 0) {
+                r.w = x1 - r.x;
+                r.h = y1 - r.y;
+                Image piece(r.w, r.h);
+                for (int y = 0; y < r.h; ++y)
+                    for (int x = 0; x < r.w; ++x) {
+                        const int gx = r.x + x, gy = r.y + y;
+                        if (!inTail(gx - static_cast<int>(ox), gy - static_cast<int>(oy))) continue;
+                        const Rgba8 px = bc->image.pixel(gx - bc->x, gy - bc->y);
+                        if (px.a == 0) continue;
+                        piece.setPixel(x, y, px);
+                        bc->image.setPixel(gx - bc->x, gy - bc->y, Rgba8::transparent());
+                    }
+                // The body's cel shrinks to what is left of it.
+                if (const IntRect left = bc->image.opaqueBounds(); !left.empty()) {
+                    const Cel trimmed{bc->image.copy(left), bc->x + left.x, bc->y + left.y};
+                    if (auto st = d.setCel(bodyLayer, frame, trimmed); !st) return st.error();
+                }
+                auto id = d.addLayer("tail", LayerKind::Raster, out.group);
+                if (!id) return id.error();
+                if (auto st = d.moveLayer(id.value(), *d.layerIndex(bodyLayer) + 1); !st) return st.error();
+                if (auto st = d.setCel(id.value(), frame, Cel{piece, r.x, r.y}); !st) return st.error();
+                // The pivot: the body's side of the root column, at the middle of its rows.
+                const motion::rig::Vec pivot{flight->headSide > 0 ? rootCol + ox + 1.0 : rootCol + ox, rowSum / rowCount};
+                motion::rig::Vec tip = pivot;
+                double best = -1;
+                for (int y = 0; y < r.h; ++y)
+                    for (int x = 0; x < r.w; ++x)
+                        if (piece.pixel(x, y).a) {
+                            const double dx = r.x + x + 0.5 - pivot.x, dy = r.y + y + 0.5 - pivot.y;
+                            if (dx * dx + dy * dy > best) {
+                                best = dx * dx + dy * dy;
+                                tip = {r.x + x + 0.5, r.y + y + 0.5};
+                            }
+                        }
+                const double reachLen = std::sqrt(std::max(best, 0.0));
+                tailBends = reachLen >= 8 && reachLen * reachLen >= 2.5 * n;
+                motion::rig::Vec joint{(pivot.x + tip.x) / 2, (pivot.y + tip.y) / 2};
+                if (tailBends) {
+                    // The joint: the middle of the art half-way along (a tail curves).
+                    const double ux = (tip.x - pivot.x) / reachLen, uy = (tip.y - pivot.y) / reachLen;
+                    double sx = 0, sy = 0;
+                    int cnt = 0;
+                    for (int y = 0; y < r.h; ++y)
+                        for (int x = 0; x < r.w; ++x)
+                            if (piece.pixel(x, y).a) {
+                                const double px = r.x + x + 0.5, py = r.y + y + 0.5;
+                                if (std::abs((px - pivot.x) * ux + (py - pivot.y) * uy - reachLen / 2) > 1.0) continue;
+                                sx += px;
+                                sy += py;
+                                ++cnt;
+                            }
+                    if (cnt) joint = {sx / cnt, sy / cnt};
+                }
+                auto bone = addBone(rig, boneFrom("tail", root.value(), pivot, tailBends ? joint : tip));
+                if (!bone) return bone.error();
+                if (auto st = bindLayer(rig, id.value(), bone.value()); !st) return st.error();
+                if (tailBends) {
+                    auto tipBone = addBone(rig, boneFrom("tail tip", bone.value(), joint, tip));
+                    if (!tipBone) return tipBone.error();
+                    if (auto st = skinLayer(rig, id.value(), tipBone.value(), reachLen / 4); !st) return st.error();
+                }
+                tailCut = true;
+            }
+        }
         summary = "Body: flyer, " + std::to_string(flight->wings.size()) + (flight->wings.size() == 1 ? " wing" : " wings") +
-                  (creased ? std::string(creased == 1 ? " (it bends" : " (they bend") + " at the wrist)" : std::string());
+                  (creased ? std::string(creased == 1 ? " (it bends" : " (they bend") + " at the wrist)" : std::string()) +
+                  (tailCut ? std::string(tailBends ? ", a tail (bending in the middle)" : ", a tail") : std::string());
     } else {
         // A spine from the head to the tail stalk: "body" at the head, then
         // "spine 1", "spine 2", ... The body part is bound to the first and

@@ -41,8 +41,9 @@ std::optional<AutoRigBody> autoRigBodyFromString(const std::string& s);
 //    legs drawn as thigh and boot: the foot, so the toe does);
 //  - wings (the flap animator's cut below the wing line): "body" from the
 //    body's middle towards the head, "near wing" and "far wing" (or "wing"; one of 16 px or more also has a
-//    "... tip" bone from its middle that its part bends with)
-//    from each shoulder to the wing tip; legs, head and tail stay in the body;
+//    "... tip" bone from its middle that its part bends with), and a
+//    "tail" (with a "tail tip" when long) for the thin end away from the head
+//    from each shoulder to the wing tip; legs and head stay in the body;
 //  - fins (the swim animator's cut): a spine from the head to the tail
 //    stalk ("body", then "spine 1", "spine 2", ...: the body part is bound
 //    to "body" and skinned along the rest; a body under 12 px has "body"
