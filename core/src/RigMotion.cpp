@@ -121,6 +121,11 @@ struct Match {
     bool relative = false;   // turns by the stretch's change (armsFromDrawing)
     double ref = 0;          // the stretch's reference direction on screen
     std::string label;       // four-legged motions: what drives it, by joint name
+    // A head, neck or tail: drawn shorter as its stretch turns toward or
+    // away from the viewer. `shownRef` is how much of the stretch shows when
+    // the part is as drawn.
+    bool foreshorten = false;
+    double shownRef = 0, least = 1;
 };
 
 } // namespace
@@ -388,6 +393,7 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
                 mt.from = cm.legs[head ? 2 : 0].joints.front();
                 mt.to = head ? cm.head : cm.tail;
                 mt.relative = true;
+                mt.foreshorten = true;
                 mt.label = n + " " + m.joints[uz(mt.from)].name + " -> " + m.joints[uz(mt.to)].name + " (turns by its change)";
             } else if ((n == "body" || n == "torso" || n == "spine") && cm.legs[0].joints.size() && cm.legs[2].joints.size()) {
                 mt.from = cm.legs[0].joints.front();
@@ -543,6 +549,21 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
         mt.ref = std::hypot(sx, sy) > 1e-9 ? std::atan2(sy, sx) : 0;
     }
 
+    // How much of a stretch shows on screen (1 = side-on to the viewer).
+    auto shown = [&](const Match& mt, int f) {
+        const mocap::Projected& pr = projected[uz(f)];
+        const double full = len(sub(seen[uz(f)][uz(mt.to)], seen[uz(f)][uz(mt.from)])) / height;
+        return full > 1e-9 ? std::hypot(pr.x[uz(mt.to)] - pr.x[uz(mt.from)], pr.y[uz(mt.to)] - pr.y[uz(mt.from)]) / full : 1.0;
+    };
+    // As drawn: a loop's most side-on moment, a one-shot's first frame.
+    for (Match& mt : matches) {
+        if (!mt.foreshorten) continue;
+        mt.shownRef = shown(mt, 0);
+        if (opt.loop)
+            for (int f = 1; f < frames; ++f) mt.shownRef = std::max(mt.shownRef, shown(mt, f));
+        if (mt.shownRef < 0.15) mt.foreshorten = false;   // seen end-on: nothing to compare with
+    }
+
     std::vector<double> prevWorld(rig.bones.size(), 0), prevTurn(rig.bones.size(), 0);
     std::vector<bool> haveWorld(rig.bones.size(), false);
     for (std::size_t i = 0; i < rig.bones.size(); ++i) prevWorld[i] = rig.bones[i].angle;
@@ -632,6 +653,16 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
             pose.turn[rig.bones[fo.bone].id] = own;
         }
 
+        // Sideways swing: a head, neck or tail turned toward or away from
+        // the viewer shows shorter (its far bone, a child, with it).
+        for (Match& mt : matches) {
+            if (!mt.foreshorten) continue;
+            const double s = 1 + (std::clamp(shown(mt, f) / mt.shownRef, 0.4, 1.25) - 1) * amount;
+            if (std::abs(s - 1) < 0.02) continue;
+            pose.stretch[rig.bones[mt.bone].id] = std::clamp(s, 0.25, 1.5);
+            mt.least = std::min(mt.least, s);
+        }
+
         // Keep turns continuous from key to key (no spins through 180 degrees).
         for (auto& [id, t] : pose.turn) {
             const std::size_t i = at[id];
@@ -648,6 +679,10 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
         if (diff > 30 || std::abs(cam.tilt) > 40)
             res.notes.push_back("The camera is far from the view the rig is drawn in; the parts are not redrawn for it.");
     }
+    for (const Match& mt : matches)
+        if (mt.foreshorten && mt.least < 0.98)
+            res.notes.push_back("The " + lower(rig.bones[mt.bone].name) + " swings toward or away from the viewer: it is drawn up to " +
+                                std::to_string(static_cast<int>(std::lround((1 - std::max(mt.least, 0.25)) * 100))) + "% shorter there.");
     std::size_t unmatched = 0;
     for (std::size_t i = 0; i < rig.bones.size(); ++i)
         if (matchOf[i] < 0) ++unmatched;

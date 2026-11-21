@@ -159,8 +159,22 @@ four bones and two skins and loses no pixel; the head's turn is -0.5 of the neck
 the tip swings, and not in step with the tail; the keys bake; the test dog's short ends stay one
 bone each), run locally; the baked walk was looked at.
 
-Not done: sideways head and tail swing, a curve through more than one joint (a skin follows one
-child bone), six legs. Wings: section 3.7. Fins: section 3.8.
+Then: sideways swing (2026-11-20). A pose holds a per-bone `stretch` (`RigPose::stretch`, 0.1 to
+4, absent = 1): the bone's parts and children are scaled along its rest direction about its head,
+then turned (`rigs::solve` gives each bone the 2 by 2 map `BoneWorld::xx..yy`; `bakePose` draws it
+as a part pose with width, height and lean, or passes it to the skinned renderer). For each
+matched "head", "neck" and "tail" of a four-legged motion, `keysFromMotion` takes how much of the
+stretch from the leg tops to the end shows on screen (projected length over true length) against
+its reference (a loop's largest value, a one-shot's first frame), held to 0.4..1.25, scaled by the
+amount; a change under 2% writes nothing. A note says how much shorter each part gets. Verified:
+`tests/test_rig.cpp` (a half-length bone, its children, a turn, version 4 only when used, JSON
+round trip and refusals, interpolation, a baked part shorter in the sprite's own colours and an
+unstretched bake unchanged), `tests/test_rig_motion.cpp` (a 60 degree wag shortens the tail by
+more than 10%, is as drawn at some key, bakes at least 2 px narrower, half the amount gives half
+the shortening), a Lua case and CLI smoke lines, run locally; a baked wag was looked at.
+
+Not done: which way a swung part points (toward and away look the same), a head turning to look,
+a curve through more than one joint (a skin follows one child bone), six legs. Wings: section 3.7. Fins: section 3.8.
 
 ### 3.7 Wings from a humanoid motion (stage 3c, second part, 2026-11-18)
 

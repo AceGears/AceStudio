@@ -221,6 +221,15 @@ file(SHA256 "${WORKDIR}/rigs/posed.png" h_posed)
 if(NOT h_rigged STREQUAL h_rest OR h_rigged STREQUAL h_posed)
     message(FATAL_ERROR "rig pose: the rest pose must render as rigged, a turned pose differently")
 endif()
+# A stretched bone (a part pointing toward the viewer) is drawn shorter
+run(1 rig pose "${RR}" --stretch "leg0 thigh=9" --out "${WORKDIR}/rigs/bad.acestudio")
+run(1 rig pose "${RR}" --stretch "nobone=0.5" --out "${WORKDIR}/rigs/bad.acestudio")
+run(0 rig pose "${RR}" --stretch "leg0 thigh=0.5" --out "${WORKDIR}/rigs/stretched.acestudio")
+run(0 render "${WORKDIR}/rigs/stretched.acestudio" --out "${WORKDIR}/rigs/stretched.png")
+file(SHA256 "${WORKDIR}/rigs/stretched.png" h_stretched)
+if(h_stretched STREQUAL h_rest OR h_stretched STREQUAL h_posed)
+    message(FATAL_ERROR "rig pose --stretch: a stretched pose must render differently")
+endif()
 # Keys (rig version 2): key frames 0 and 2, bake, frame 2 matches a plain pose
 set(RK "${WORKDIR}/rigs/keys")
 run(1 rig bake "${RR}" --out "${RK}_none.acestudio")                        # no keys yet

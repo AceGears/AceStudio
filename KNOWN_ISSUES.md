@@ -56,11 +56,24 @@ not been run.
   `rig_edit` tool, Lua (`doc:rig()` / `set_rig` carry it in the rig's `skins`) and the rig panel's
   Bends with box (compiled and audited by CI; no Qt test drives it). Auto-rig does
   not make bent parts; it still cuts a separate part for each bone.
+- **Sideways head and tail swing on a rig** (`rig motion`, since 2026-11-20): a four-legged rig's
+  "head", "neck" and "tail" bones are drawn shorter while the motion points them toward or away
+  from the viewer (a pose's new per-bone `stretch`, rig version 4). Tested locally on a drawn
+  animal with a wide tail wag, and a baked wag was looked at. It only shortens: nothing shows
+  which way the part points (toward or away look the same), no far side of a head is drawn, and
+  the part does not pass in front of or behind the body. Changes under 2% are left out, so the
+  `quad-walk` preset's head does not change and its tail shortens by 8% at most on the test
+  animal. A loop's most side-on moment counts as the drawn length, a one-shot's first frame. IK
+  ignores stretch (stretch a leg bone and its chain no longer reaches its target). The rig
+  panel has no stretch control (keys made by `rig motion`, the command line, Lua or MCP keep
+  their stretch when edited there; that panel code is compiled by CI, no Qt test drives it).
+  `retarget --body quadruped` (no rig) does not do this.
 - **Four-legged motion** (`retarget --body quadruped`, ADR-ANIM-002 section 3.5): tested on a
   drawn test dog and the `quad-walk` preset only, not on captured animal motion. The legs, the body's
   height, the back's pitch and the head's and tail's rise and fall follow the motion (since
-  2026-11-18); sideways swings of the head and tail, and a head turning to look, are not shown
-  (a side view cannot show them without art drawn for it), and the head and tail bend only up and
+  2026-11-18); with `retarget`, sideways swings of the head and tail, and a head turning to look, are not shown
+  (a side view cannot show them without art drawn for it; `rig motion` shows a sideways swing as
+  shortening, see below), and the head and tail bend only up and
   down by moving columns, so a long neck or tail held at a steep angle shears rather than turns. Exactly four legs reaching the floor are needed (six-legged and winged skeletons are
   refused); legs cannot be paired by hand yet, and Motion Studio's bone table lists humanoid bones
   only. Sprites must be drawn from the side with their legs apart. `rig motion` takes four-legged

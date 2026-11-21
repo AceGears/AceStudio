@@ -94,6 +94,12 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Sideways tail and head swing on four-legged rigs**: `rig motion` now draws a rig's head,
+  neck and tail shorter while the motion swings them toward or away from the viewer, and says by
+  how much. Poses gain a per-bone `stretch` (the bone's length as drawn times a factor; its parts
+  and children follow): `rig pose|key --stretch "tail=0.7"`, Lua
+  `{stretch = {tail = 0.7}}`, MCP `stretch`. Rigs whose keys use it are saved as rig version 4
+  (others keep their lower version).
 - **Fish swim to a 3D motion**: `retarget fish.png preset:swim --body swimmer` (Lua and MCP
   `body = "swimmer"`, **Fish** in Motion Studio's Body box) bends a fish-like side view with the
   motion's spine and turns its tail fin. New built-in preset `swim` (a fish skeleton, a wave down

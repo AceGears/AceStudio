@@ -139,6 +139,19 @@ lower version):
 - `blend`: pixels either side of the joint over which the two bones are mixed, 0 or more; 0 means
   a fifth of the shorter of the two bones, at least 1.5.
 
+### Rig version 4: stretched bones
+
+A rig with a key that stretches a bone is written as `"version": 4`; that key's pose has one more
+field (rigs without one keep their lower version):
+
+```json
+"pose": { "turn": [], "stretch": [ { "bone": 5, "factor": 0.7 } ], "dx": 0, "dy": 0 }
+```
+
+- `factor`: the bone's length as drawn times this, 0.1 to 4 (a missing bone means 1). The bone's
+  parts and its children are scaled along its rest direction about its head, before its turn.
+  Between keys it is interpolated like a turn.
+
 ## vectors (schema 5)
 
 Present only in documents that have vector shapes (ADR-ANIM-005). The cel's pixels are stored as

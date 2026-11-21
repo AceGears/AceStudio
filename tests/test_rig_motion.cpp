@@ -592,3 +592,77 @@ TEST_CASE("A long neck and a long tail get a second bone and curve with a four-l
     CHECK(rigged("dog72.png").rig()->bone("neck") == nullptr);
     CHECK(rigged("dog72.png").rig()->bone("tail tip") == nullptr);
 }
+
+TEST_CASE("A tail swung sideways is drawn shorter while it points at the viewer", "[rig][mocap][creature]") {
+    const Image sprite = longEnds();
+    auto base = Document::create(sprite.width() + 40, sprite.height() + 20).value();
+    const LayerId hero = base.addLayer("Hero").value();
+    REQUIRE(base.setCel(hero, 0, Cel{sprite, 20, 10}));
+    auto rigRes = rigs::autoRig(base, hero, 0, rigs::AutoRigBody::Legs);
+    REQUIRE(rigRes);
+    const Document doc = rigRes.value().document;
+    const Rig& rig = *doc.rig();
+    const Bone* tail = rig.bone("tail");
+    REQUIRE(tail);
+    LayerId tailLayer = kNoLayer;
+    for (const auto& [layer, bone] : rig.bindings)
+        if (bone == tail->id) tailLayer = layer;
+    REQUIRE(tailLayer != kNoLayer);
+
+    // The walk with a wide wag: the tail's own sideways turn, once a stride.
+    mocap::Motion wag = preset("quad-walk");
+    const int tj = wag.find("Tail");
+    REQUIRE(tj >= 0);
+    REQUIRE(wag.joints[static_cast<std::size_t>(tj)].channels.size() == 3);
+    REQUIRE(wag.joints[static_cast<std::size_t>(tj)].channels[2] == mocap::Channel::Yrotation);
+    for (int f = 0; f < wag.frameCount; ++f)
+        wag.values[static_cast<std::size_t>(f * wag.channelCount + wag.joints[static_cast<std::size_t>(tj)].firstChannel + 2)] =
+            60 * std::sin(2 * 3.14159265358979323846 * f / wag.frameCount);
+
+    rigs::MotionKeysOptions o;
+    o.fps = 10;
+    auto r = rigs::keysFromMotion(doc, wag, o);
+    REQUIRE(r);
+    const Rig& keyed = *r.value().document.rig();
+    double lo = 1e9, hi = -1e9;
+    int shortest = -1;
+    for (const RigKey& k : keyed.keys) {
+        const auto s = k.pose.stretch.find(tail->id);
+        const double v = s == k.pose.stretch.end() ? 1.0 : s->second;
+        if (v < lo) {
+            lo = v;
+            shortest = k.frame;
+        }
+        hi = std::max(hi, v);
+        CHECK(k.pose.stretch.count(rig.bone("tail tip")->id) == 0);   // the tip follows its tail
+        for (const auto& [id, t] : k.pose.stretch) CHECK((id == tail->id || id == rig.bone("neck")->id));
+    }
+    CHECK(lo < 0.9);     // pointing well toward or away from the viewer
+    CHECK(lo >= 0.25);
+    CHECK(hi > 0.97);    // side-on at some moment: as drawn
+    CHECK(hi <= 1.0);
+    bool said = false;
+    for (const std::string& n : r.value().notes) said = said || n.find("tail swings toward or away") != std::string::npos;
+    CHECK(said);
+    CHECK(rigs::toJson(keyed)["version"] == 4);
+
+    // Baked: the tail (drawn level, 18 px) is narrower on its shortest frame.
+    auto baked = rigs::bakeKeys(r.value().document);
+    REQUIRE(baked);
+    const Cel* rest = doc.cel(tailLayer, 0);
+    const Cel* drawn = baked.value().cel(tailLayer, shortest);
+    REQUIRE(rest);
+    REQUIRE(drawn);
+    CHECK(drawn->image.opaqueBounds().w + 2 <= rest->image.opaqueBounds().w);
+
+    // Half the amount, half the shortening; none of it with the plain walk's small swing held under the 2% floor.
+    o.amount = 0.5;
+    auto h = rigs::keysFromMotion(doc, wag, o);
+    REQUIRE(h);
+    double lo2 = 1;
+    for (const RigKey& k : h.value().document.rig()->keys)
+        if (auto s = k.pose.stretch.find(tail->id); s != k.pose.stretch.end()) lo2 = std::min(lo2, s->second);
+    CHECK(lo2 > lo);
+    CHECK(lo2 < 1);
+    CHECK(std::abs((1 - lo2) - 0.5 * (1 - lo)) < 0.02);
+}

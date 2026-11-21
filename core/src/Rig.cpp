@@ -167,6 +167,9 @@ Status validate(const Rig& rig, const Document* doc) {
         for (const auto& [b, t] : k.pose.turn)
             if (!seen.count(b) || !finite(t) || std::abs(t) > 64 * kPi)
                 return bad("The key on frame " + std::to_string(k.frame) + " turns a missing bone or by an invalid angle");
+        for (const auto& [b, s] : k.pose.stretch)
+            if (!seen.count(b) || !finite(s) || s < Rig::kMinStretch || s > Rig::kMaxStretch)
+                return bad("The key on frame " + std::to_string(k.frame) + " stretches a missing bone or by an invalid factor");
         const Curve& c = k.curve;
         for (double v : {c.x1, c.y1, c.x2, c.y2})
             if (!finite(v)) return bad("A key's curve is not a number");
@@ -272,7 +275,10 @@ Status removeBone(Rig& rig, BoneId id) {
             const Bone* t = r.bone(c.tip);
             return c.tip == id || !t || t->parent == kNoBone;
         });
-        for (RigKey& k : r.keys) k.pose.turn.erase(id);
+        for (RigKey& k : r.keys) {
+            k.pose.turn.erase(id);
+            k.pose.stretch.erase(id);
+        }
         dropBrokenSkins(r);
         return sortBones(r.bones);
     });
@@ -342,6 +348,11 @@ double clampTurn(const Bone& bone, double turn) {
     return turn;
 }
 
+double clampStretch(double stretch) {
+    if (!std::isfinite(stretch)) return 1;
+    return std::clamp(stretch, Rig::kMinStretch, Rig::kMaxStretch);
+}
+
 std::vector<BoneWorld> solve(const Rig& rig, const RigPose& pose) {
     std::vector<BoneWorld> out(rig.bones.size());
     std::map<BoneId, std::size_t> at;
@@ -350,22 +361,54 @@ std::vector<BoneWorld> solve(const Rig& rig, const RigPose& pose) {
         at[b.id] = i;
         const auto t = pose.turn.find(b.id);
         const double own = clampTurn(b, t == pose.turn.end() ? 0.0 : t->second);
+        const auto st = pose.stretch.find(b.id);
+        const double s = st == pose.stretch.end() ? 1.0 : clampStretch(st->second);
         BoneWorld& w = out[i];
+        const BoneWorld* pw = nullptr;
         if (b.parent == kNoBone || !at.count(b.parent)) {
             w.headX = b.x + pose.dx;
             w.headY = b.y + pose.dy;
             w.turn = own;
         } else {
             const Bone& p = rig.bones[at[b.parent]];
-            const BoneWorld& pw = out[at[b.parent]];
-            double hx = b.x, hy = b.y;
-            turnAbout(p.x, p.y, pw.turn, hx, hy);
-            w.headX = hx + (pw.headX - p.x);
-            w.headY = hy + (pw.headY - p.y);
-            w.turn = pw.turn + own;
+            pw = &out[at[b.parent]];
+            if (pw->stretched) {
+                const double qx = b.x - p.x, qy = b.y - p.y;
+                w.headX = pw->headX + pw->xx * qx + pw->xy * qy;
+                w.headY = pw->headY + pw->yx * qx + pw->yy * qy;
+            } else {
+                double hx = b.x, hy = b.y;
+                turnAbout(p.x, p.y, pw->turn, hx, hy);
+                w.headX = hx + (pw->headX - p.x);
+                w.headY = hy + (pw->headY - p.y);
+            }
+            w.turn = pw->turn + own;
         }
-        w.tailX = w.headX + b.length * std::cos(b.angle + w.turn);
-        w.tailY = w.headY + b.length * std::sin(b.angle + w.turn);
+        w.stretched = s != 1.0 || (pw && pw->stretched);
+        if (!w.stretched) {
+            w.xx = std::cos(w.turn);
+            w.yx = std::sin(w.turn);
+            w.xy = -w.yx;
+            w.yy = w.xx;
+            w.tailX = w.headX + b.length * std::cos(b.angle + w.turn);
+            w.tailY = w.headY + b.length * std::sin(b.angle + w.turn);
+            continue;
+        }
+        // Its own map: longer along its rest direction, then its own turn;
+        // after that, whatever its parent does.
+        const double ca = std::cos(b.angle), sa = std::sin(b.angle);
+        const double a00 = ca * ca * s + sa * sa, a01 = ca * sa * (s - 1), a11 = sa * sa * s + ca * ca;
+        const double co = std::cos(own), so = std::sin(own);
+        const double t00 = co * a00 - so * a01, t01 = co * a01 - so * a11;
+        const double t10 = so * a00 + co * a01, t11 = so * a01 + co * a11;
+        const double p00 = pw ? pw->xx : 1, p01 = pw ? pw->xy : 0, p10 = pw ? pw->yx : 0, p11 = pw ? pw->yy : 1;
+        w.xx = p00 * t00 + p01 * t10;
+        w.xy = p00 * t01 + p01 * t11;
+        w.yx = p10 * t00 + p11 * t10;
+        w.yy = p10 * t01 + p11 * t11;
+        const double lx = b.length * ca, ly = b.length * sa;
+        w.tailX = w.headX + w.xx * lx + w.xy * ly;
+        w.tailY = w.headY + w.yx * lx + w.yy * ly;
     }
     return out;
 }
@@ -482,6 +525,17 @@ RigPose poseAt(const Rig& rig, int frame) {
         const double ta = turnOf(a.pose, id), tb = turnOf(b.pose, id);
         out.turn[id] = ta + (tb - ta) * e;
     }
+    ids.clear();
+    for (const auto& kv : a.pose.stretch) ids.insert(kv.first);
+    for (const auto& kv : b.pose.stretch) ids.insert(kv.first);
+    auto stretchOf = [](const RigPose& p, BoneId id) {
+        const auto it = p.stretch.find(id);
+        return it == p.stretch.end() ? 1.0 : it->second;
+    };
+    for (BoneId id : ids) {
+        const double sa = stretchOf(a.pose, id), sb = stretchOf(b.pose, id);
+        out.stretch[id] = sa + (sb - sa) * e;
+    }
     out.dx = a.pose.dx + (b.pose.dx - a.pose.dx) * e;
     out.dy = a.pose.dy + (b.pose.dy - a.pose.dy) * e;
     return out;
@@ -509,7 +563,13 @@ namespace {
 json poseJson(const RigPose& p) {
     json turns = json::array();
     for (const auto& [b, t] : p.turn) turns.push_back({{"bone", b}, {"angle", t}});
-    return {{"turn", turns}, {"dx", p.dx}, {"dy", p.dy}};
+    json j = {{"turn", turns}, {"dx", p.dx}, {"dy", p.dy}};
+    if (!p.stretch.empty()) {
+        json stretches = json::array();
+        for (const auto& [b, s] : p.stretch) stretches.push_back({{"bone", b}, {"factor", s}});
+        j["stretch"] = stretches;
+    }
+    return j;
 }
 } // namespace
 
@@ -544,6 +604,8 @@ json toJson(const Rig& rig) {
         for (const auto& [layer, sk] : rig.skins) skins.push_back({{"layer", layer}, {"bone", sk.bone}, {"blend", sk.blend}});
         j["skins"] = skins;
     }
+    for (const RigKey& k : rig.keys)
+        if (!k.pose.stretch.empty()) j["version"] = 4;
     return j;
 }
 
@@ -626,6 +688,16 @@ Result<Rig> fromJson(const json& j) {
                     double a = 0;
                     if (!getId(jt, "bone", b) || !getNumber(jt, "angle", a)) return corrupt("a key's turn is incomplete");
                     k.pose.turn[b] = a;
+                }
+                if (jp.contains("stretch")) {
+                    if (!jp["stretch"].is_array() || jp["stretch"].size() > static_cast<std::size_t>(Rig::kMaxBones))
+                        return corrupt("a key's stretch list is not a list");
+                    for (const json& js : jp["stretch"]) {
+                        BoneId b = 0;
+                        double s = 1;
+                        if (!getId(js, "bone", b) || !getNumber(js, "factor", s)) return corrupt("a key's stretch is incomplete");
+                        k.pose.stretch[b] = s;
+                    }
                 }
                 if (jk.contains("curve")) {
                     const json& jc = jk["curve"];

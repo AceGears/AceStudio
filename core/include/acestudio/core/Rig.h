@@ -66,6 +66,11 @@ struct IkChain {
 // children follow), plus a move of every root.
 struct RigPose {
     std::map<BoneId, double> turn;
+    // Per bone, how long it is drawn: its length at rest times this (absent
+    // = 1). A part seen foreshortened, as a tail swung toward the viewer.
+    // The bone's parts and its children are scaled along its rest direction
+    // about its head, before its turn.
+    std::map<BoneId, double> stretch;
     double dx = 0, dy = 0;
     bool operator==(const RigPose&) const = default;
 };
@@ -105,7 +110,8 @@ struct Rig {
     // 1: bones, bindings, chains. 2: adds the rest frame and keys. 3: adds
     // skins. Each is written only when used, so older readers open rigs
     // that do not need the newer parts.
-    static constexpr int kVersion = 3;
+    static constexpr int kVersion = 4;
+    static constexpr double kMinStretch = 0.1, kMaxStretch = 4.0;
 
     std::vector<Bone> bones;              // parents before children
     std::map<LayerId, BoneId> bindings;   // part layer -> the bone that moves it
@@ -131,6 +137,10 @@ struct Rig {
 struct BoneWorld {
     double headX = 0, headY = 0, tailX = 0, tailY = 0;
     double turn = 0;   // total turn from rest (its own plus its parents')
+    // A rest point q of the bone's parts goes to head + M (q - rest head),
+    // M = [xx xy; yx yy]: the turn alone unless it or a parent is stretched.
+    double xx = 1, xy = 0, yx = 0, yy = 1;
+    bool stretched = false;
 };
 
 namespace rigs {
@@ -165,6 +175,8 @@ Status removeChain(Rig& rig, std::size_t index);
 // ---- Posing ---------------------------------------------------------------------
 // The turn a bone may take: 0 when locked, clamped to its limits.
 double clampTurn(const Bone& bone, double turn);
+// A stretch as it is applied: within Rig::kMinStretch..kMaxStretch, 1 when not a number.
+double clampStretch(double stretch);
 // Forward kinematics, in rig.bones order.
 std::vector<BoneWorld> solve(const Rig& rig, const RigPose& pose);
 // Turns the chain's two bones so the tip's tail gets as close to the target
