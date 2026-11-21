@@ -760,6 +760,22 @@ TEST_CASE("A wing motion beats and folds an auto-rigged flyer's wings", "[rig][m
     for (const Bone& b : doc.rig()->bones)
         if (b.name.find("wing") != std::string::npos && b.name.find(" tip") == std::string::npos) wingNames.push_back(b.name);
     REQUIRE_FALSE(wingNames.empty());
+    // The rigged dragon draws as the sprite did, and the body keeps a copy of
+    // the wing roots under the wings (more part pixels than the sprite has),
+    // so a lifted wing leaves no hole in the back.
+    {
+        const Image before = doc0.composite(0);
+        CHECK(doc.composite(0) == before);
+        std::size_t spritePixels = 0, partPixels = 0;
+        for (const Rgba8& p : before.pixels()) spritePixels += p.a ? 1 : 0;
+        for (const auto& [layer, bone] : doc.rig()->bindings) {
+            const Cel* cel = doc.cel(layer, 0);
+            REQUIRE(cel);
+            for (const Rgba8& p : cel->image.pixels()) partPixels += p.a ? 1 : 0;
+        }
+        CHECK(partPixels > spritePixels);
+        CHECK(partPixels < spritePixels * 12 / 10);
+    }
     // Each wing has a tip bone its part bends with.
     for (const std::string& name : wingNames) {
         const Bone* tip = doc.rig()->bone(name + " tip");
