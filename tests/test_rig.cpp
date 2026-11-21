@@ -719,6 +719,8 @@ TEST_CASE("IK reaches its target with stretched bones", "[rig][keys]") {
         return w[indexOf(l.rig, l.shin)];
     };
     // Each of the chain's bones, both, and the bone above them, stretched.
+    // (The second case starts on a straight leg just short of the target:
+    // the search has to start again from a bent one.)
     struct Case {
         double hip, thigh, shin, x, y;
     };

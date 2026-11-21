@@ -488,3 +488,41 @@ TEST_CASE("Lua keys a motion onto a rig", "[script][rig][mocap]") {
     INFO(errorOf(r));
     CHECK(r);
 }
+
+TEST_CASE("Lua auto-rig takes arm boxes", "[script][rig]") {
+    auto r = run(R"(
+        -- A figure with both arms held up beside the head: the analysis finds no arms.
+        local man = ace.image(40, 48)
+        man:rect(14, 14, 12, 16, '#3c5a96')   -- torso
+        man:rect(15, 4, 10, 10, '#e6b48c')    -- head
+        man:rect(14, 30, 5, 16, '#28283c')    -- legs
+        man:rect(21, 30, 5, 16, '#28283c')
+        man:rect(8, 4, 4, 14, '#e6b48c')      -- arms, raised
+        man:rect(12, 14, 2, 4, '#e6b48c')
+        man:rect(28, 4, 4, 14, '#e6b48c')
+        man:rect(26, 14, 2, 4, '#e6b48c')
+        local function fresh()
+            local d = ace.new_document(40, 48, 1)
+            d:set_cel(0, 0, man)
+            return d
+        end
+        local function has(d, name)
+            for _, b in ipairs(d:rig().bones) do if b.name == name then return true end end
+            return false
+        end
+        local d = fresh()
+        d:auto_rig(0)
+        local plain = has(d, 'arm0')
+        d = fresh()
+        local notes = d:auto_rig(0, {arms = {{8, 4, 6, 14}, {26, 4, 6, 14}}})
+        assert(has(d, 'arm0') and has(d, 'arm1'), 'no arm bones')
+        assert(type(notes) == 'table')
+        print('plain arms: ' .. tostring(plain))
+        -- Not boxes, or boxes that overlap, are refused.
+        assert(not pcall(function() fresh():auto_rig(0, {arms = {{1, 2, 3}}}) end))
+        assert(not pcall(function() fresh():auto_rig(0, {arms = {'8,4,6,14'}}) end))
+        assert(not pcall(function() fresh():auto_rig(0, {arms = {{8, 4, 6, 14}, {10, 6, 6, 14}}}) end))
+    )");
+    INFO(errorOf(r));
+    CHECK(r);
+}

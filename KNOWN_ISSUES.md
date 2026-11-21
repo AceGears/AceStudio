@@ -71,7 +71,12 @@ not been run.
   `quad-walk` preset's head does not change and its tail shortens by 8% at most on the test
   animal. A loop's most side-on moment counts as the drawn length, a one-shot's first frame. IK
   reaches its target with stretched bones (since 2026-11-21; it ignored stretch before): tested
-  locally on a two-bone leg with either bone, both, or the bone above stretched. The rig
+  locally on a two-bone leg with either bone, both, or the bone above stretched. A stretched
+  upper bone bends the reach out of round, so the search can settle on a straight leg just short
+  of a target a more bent leg reaches; it then starts again with the lower bone turned either way
+  and keeps the nearest result (found when the Linux build failed that test). Very near the edge
+  of reach the knee can end on the other side from the chain's bend (42 of 13,884 reached targets
+  in a local scan). The rig
   panel's **Length** box sets a bone's stretch (since 2026-11-21): that panel code is compiled by
   CI only; no Qt test drives it and it has not been tried by hand.
   `retarget --body quadruped` (no rig) does not do this.
@@ -142,7 +147,8 @@ not been run.
   (by the sprite's legs only). The other fins paddle with the motion's fin joints (since 2026-11-20): joints off the
   spine named fin, flipper, pectoral, pelvic or dorsal, as `preset:swim` has; a drawn fin takes
   the nearest joint of its kind (on the back, or lower), so a left and a right fin drawn apart
-  are not told apart, and with no such joint (or one that does not move) the fins only ride the
+  are not told apart (pairing them by side was tried on 2026-11-21 and dropped: the fin finder
+  also returns stray pieces, so the pairs came out arbitrary), and with no such joint (or one that does not move) the fins only ride the
   body. A fin turns about its root by at most 0.35 rad. A fin whose joint swings toward or away from
   the viewer is drawn shorter along its length (since 2026-11-21; down to half, against its
   longest moment in a loop or a one-shot's first frame, and a note says by how much): tested
@@ -156,15 +162,15 @@ not been run.
   swimming. The wave is read in one plane only (the one the spine moves in more). `rig motion`
   does not drive an auto-rig made with `--as fins`. The Motion Studio choice (Fish) is compiled
   by CI; no Qt test drives it.
-- **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI and core only (no app page,
-  Lua or MCP yet). The art is chosen, never turned or drawn: a direction with no view drawn near it
+- **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI, core and MCP (`motion_directions`); no app page
+  or Lua yet. The art is chosen, never turned or drawn: a direction with no view drawn near it
   shows the nearest view with the motion seen from the new direction, and is flagged. Mirrored
   views swap the character's left and right (a sword hand, a shield); draw that side or use
   `--no-mirror`. Views are read from file names only (no reference-view slots in a project yet).
   The turn clip cuts between drawn views; nothing in between is drawn. Retarget reads each view's
   legs as front or side, so three-quarter art moves like the nearer of the two.
-- **Arm boxes for auto-rig** (`rig auto --arms`): CLI and core only (no way to draw the boxes in the
-  app yet; not in Lua or MCP). A box takes every pixel inside it, so torso or cape pixels in the box
+- **Arm boxes for auto-rig** (`rig auto --arms`): CLI, core, Lua (`auto_rig`'s `arms`) and MCP
+  (`rig_edit`'s `arms`); no way to draw the boxes in the app yet. The MCP option is not covered by a test. A box takes every pixel inside it, so torso or cape pixels in the box
   move with the arm; keep boxes tight. The arm turns about where its pixels touch the body outside
   the box, which is the shoulder only when the box is cut at the shoulder.
 - **The UI audit sometimes crashes at exit (Windows CI only).** After every command has run and

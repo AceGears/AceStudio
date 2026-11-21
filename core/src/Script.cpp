@@ -719,17 +719,31 @@ void bind(sol::state_view lua, Runtime& rt) {
     docType["auto_rig"] = [&rt](LDoc& d, int layer, sol::optional<sol::table> opts, sol::this_state ts) {
         Editor& ed = editorOf(d);
         int frame = 0;
-        rigs::AutoRigBody body = rigs::AutoRigBody::Auto;
+        rigs::AutoRigOptions ao;
         if (opts) {
             frame = (*opts)["frame"].get_or(0);
             if (auto as = (*opts)["as"].get<sol::optional<std::string>>()) {
                 const auto b = rigs::autoRigBodyFromString(*as);
                 if (!b) fail("as must be auto, legs, wings or fins");
-                body = *b;
+                ao.body = *b;
+            }
+            // arms = {{x, y, w, h}, ...}: arms the analysis missed, in canvas pixels.
+            if (auto arms = (*opts)["arms"].get<sol::optional<sol::table>>()) {
+                for (std::size_t i = 1; i <= arms->size(); ++i) {
+                    const auto box = (*arms)[i].get<sol::optional<sol::table>>();
+                    if (!box || box->size() != 4) fail("arms is a list of {x, y, w, h} boxes");
+                    int v[4];
+                    for (int k = 0; k < 4; ++k) {
+                        const auto n = (*box)[k + 1].get<sol::optional<int>>();
+                        if (!n) fail("arms is a list of {x, y, w, h} boxes");
+                        v[k] = *n;
+                    }
+                    ao.arms.push_back({v[0], v[1], v[2], v[3]});
+                }
             }
         }
         frameArg(ed, frame);
-        auto r = unwrap(rigs::autoRig(ed.document(), layerArg(ed, layer), frame, body));
+        auto r = unwrap(rigs::autoRig(ed.document(), layerArg(ed, layer), frame, ao));
         check(ed.replaceDocument(std::move(r.document), "Script: Auto-Rig"));
         touched(rt, d);
         sol::state_view lv(ts);

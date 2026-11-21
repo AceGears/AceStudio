@@ -473,39 +473,77 @@ Status reach(const Rig& rig, RigPose& pose, std::size_t chain, double targetX, d
         ey = w[ti].tailY - targetY;
         return ex * ex + ey * ey;
     };
+    // Refines (tu, tt) in place and returns the squared miss.
+    auto refine = [&](double& tu, double& tt) {
+        double ex = 0, ey = 0;
+        double err = miss(tu, tt, ex, ey);
+        double damp = 1e-6;
+        for (int it = 0; it < 200 && err > 1e-16; ++it) {
+            // Central differences: the miss is smooth in both turns.
+            constexpr double h = 1e-6;
+            double ax = 0, ay = 0, bx = 0, by = 0, cx = 0, cy = 0, dx = 0, dy = 0;
+            miss(tu + h, tt, ax, ay);
+            miss(tu - h, tt, cx, cy);
+            miss(tu, tt + h, bx, by);
+            miss(tu, tt - h, dx, dy);
+            const double j00 = (ax - cx) / (2 * h), j10 = (ay - cy) / (2 * h), j01 = (bx - dx) / (2 * h), j11 = (by - dy) / (2 * h);
+            // (JtJ + damp) d = -Jt e
+            const double m00 = j00 * j00 + j10 * j10 + damp, m01 = j00 * j01 + j10 * j11, m11 = j01 * j01 + j11 * j11 + damp;
+            const double g0 = -(j00 * ex + j10 * ey), g1 = -(j01 * ex + j11 * ey);
+            const double det = m00 * m11 - m01 * m01;
+            if (!(std::abs(det) > 1e-18)) break;
+            const double nu = clampTurn(*upper, tu + (g0 * m11 - g1 * m01) / det), nt = clampTurn(*tip, tt + (g1 * m00 - g0 * m01) / det);
+            double nx = 0, ny = 0;
+            const double nerr = miss(nu, nt, nx, ny);
+            if (std::isfinite(nerr) && nerr < err) {
+                tu = nu;
+                tt = nt;
+                ex = nx;
+                ey = ny;
+                err = nerr;
+                damp = std::max(1e-12, damp * 0.2);
+            } else {
+                // No nearer: a shorter step next time. Out of reach or against a
+                // limit this ends the search with the nearest pose found.
+                damp = std::max(damp, 1e-9) * 10;
+                if (damp > 1e8) break;
+            }
+        }
+        return err;
+    };
+    // The knee's side of the line from the chain's head to the target, as the chain's bend asks.
+    auto rightSide = [&](double tu, double tt) {
+        RigPose p = pose;
+        p.turn[upper->id] = tu;
+        p.turn[tip->id] = tt;
+        const std::vector<BoneWorld> w = solve(rig, p);
+        const double cross = tx * (w[ti].headY - hy) - ty * (w[ti].headX - hx);
+        return (cross > 0) == (c.bend > 0);
+    };
     double tu = pose.turn[upper->id], tt = pose.turn[tip->id];
-    double ex = 0, ey = 0;
-    double err = miss(tu, tt, ex, ey);
-    double damp = 1e-6;
-    for (int it = 0; it < 200 && err > 1e-16; ++it) {
-        // Central differences: the miss is smooth in both turns.
-        constexpr double h = 1e-6;
-        double ax = 0, ay = 0, bx = 0, by = 0, cx = 0, cy = 0, dx = 0, dy = 0;
-        miss(tu + h, tt, ax, ay);
-        miss(tu - h, tt, cx, cy);
-        miss(tu, tt + h, bx, by);
-        miss(tu, tt - h, dx, dy);
-        const double j00 = (ax - cx) / (2 * h), j10 = (ay - cy) / (2 * h), j01 = (bx - dx) / (2 * h), j11 = (by - dy) / (2 * h);
-        // (JtJ + damp) d = -Jt e
-        const double m00 = j00 * j00 + j10 * j10 + damp, m01 = j00 * j01 + j10 * j11, m11 = j01 * j01 + j11 * j11 + damp;
-        const double g0 = -(j00 * ex + j10 * ey), g1 = -(j01 * ex + j11 * ey);
-        const double det = m00 * m11 - m01 * m01;
-        if (!(std::abs(det) > 1e-18)) break;
-        const double nu = clampTurn(*upper, tu + (g0 * m11 - g1 * m01) / det), nt = clampTurn(*tip, tt + (g1 * m00 - g0 * m01) / det);
-        double nx = 0, ny = 0;
-        const double nerr = miss(nu, nt, nx, ny);
-        if (std::isfinite(nerr) && nerr < err) {
-            tu = nu;
-            tt = nt;
-            ex = nx;
-            ey = ny;
-            err = nerr;
-            damp = std::max(1e-12, damp * 0.2);
-        } else {
-            // No nearer: a shorter step next time. Out of reach or against a
-            // limit this ends the search with the nearest pose found.
-            damp = std::max(damp, 1e-9) * 10;
-            if (damp > 1e8) break;
+    double err = refine(tu, tt);
+    // A stretched parent bends the tip's reach out of round, so the search
+    // can settle short of a target that is within reach (a straight leg
+    // whose nearest pose is a more bent one). From there it starts again
+    // with the tip turned either way, and the nearest result is kept; of
+    // two that arrive, the one bent to the chain's side.
+    constexpr double arrived = 1e-10;
+    if (err > arrived || !rightSide(tu, tt)) {
+        bool side = rightSide(tu, tt);
+        const double tu0 = tu, tt0 = tt;
+        for (double kick : {0.5, -0.5, 1.1, -1.1, 1.8, -1.8, 2.6, -2.6}) {
+            if (err <= arrived && side) break;
+            double u = tu0, t = clampTurn(*tip, tt0 + kick);
+            const double e = refine(u, t);
+            if (!std::isfinite(e)) continue;
+            const bool s2 = rightSide(u, t);
+            const bool better = e <= arrived ? (err > arrived || (s2 && !side)) : (err > arrived && e < err - 1e-12);
+            if (better) {
+                tu = u;
+                tt = t;
+                err = e;
+                side = s2;
+            }
         }
     }
     pose.turn[upper->id] = wrap(tu);
