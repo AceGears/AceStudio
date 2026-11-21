@@ -732,8 +732,8 @@ TEST_CASE("IK reaches its target with stretched bones", "[rig][keys]") {
         pose.turn[l.hip] = 0.2;
         REQUIRE(rigs::reach(l.rig, pose, 0, c.x, c.y));
         const auto a = ankle(pose);
-        CHECK(a.tailX == Approx(c.x).margin(1e-3));
-        CHECK(a.tailY == Approx(c.y).margin(1e-3));
+        CHECK(a.tailX == Approx(c.x).margin(1e-4));
+        CHECK(a.tailY == Approx(c.y).margin(1e-4));
         CHECK(pose.turn[l.hip] == 0.2);
         // The stretches are kept as given.
         CHECK(pose.stretch.count(l.shin) == (c.shin != 1 ? 1u : 0u));

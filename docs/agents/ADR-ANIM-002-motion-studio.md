@@ -175,10 +175,12 @@ the shortening), a Lua case and CLI smoke lines, run locally; a baked wag was lo
 
 IK and stretch (2026-11-21). `rigs::reach` used the bones' rest lengths. When the chain's tip is
 stretched (its own factor or any ancestor's), it now starts from the lengths as posed and refines
-the two turns by damped least squares against the solved tip (numeric Jacobian, at most 40 steps,
-a step kept only if it comes nearer; limits and locks clamp every step). Unstretched poses return
+the two turns by damped least squares against the solved tip (central-difference Jacobian, at most
+200 steps, a step kept only if it comes nearer, the damping raised tenfold when one does not;
+limits and locks clamp every step). The first version (forward differences, 40 steps, stopping on
+a small gain) stopped 0.02 px short under GCC in CI; this one reaches 1e-7 px locally. Unstretched poses return
 before that, unchanged. Verified: `tests/test_rig.cpp` ("IK reaches its target with stretched
-bones": five stretch mixes within 0.001 px, the knee's side kept, out of reach straight at the
+bones": five stretch mixes within 0.0001 px, the knee's side kept, out of reach straight at the
 stretched length, a limited knee), with the rig, rig motion, skin and key pose tests, run locally.
 
 Not done: which way a swung part points (toward and away look the same), a head turning to look,

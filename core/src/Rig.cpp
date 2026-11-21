@@ -476,13 +476,16 @@ Status reach(const Rig& rig, RigPose& pose, std::size_t chain, double targetX, d
     double tu = pose.turn[upper->id], tt = pose.turn[tip->id];
     double ex = 0, ey = 0;
     double err = miss(tu, tt, ex, ey);
-    double damp = 1e-3;
-    for (int it = 0; it < 40 && err > 1e-10; ++it) {
-        constexpr double h = 1e-5;
-        double ax = 0, ay = 0, bx = 0, by = 0;
+    double damp = 1e-6;
+    for (int it = 0; it < 200 && err > 1e-16; ++it) {
+        // Central differences: the miss is smooth in both turns.
+        constexpr double h = 1e-6;
+        double ax = 0, ay = 0, bx = 0, by = 0, cx = 0, cy = 0, dx = 0, dy = 0;
         miss(tu + h, tt, ax, ay);
+        miss(tu - h, tt, cx, cy);
         miss(tu, tt + h, bx, by);
-        const double j00 = (ax - ex) / h, j10 = (ay - ey) / h, j01 = (bx - ex) / h, j11 = (by - ey) / h;
+        miss(tu, tt - h, dx, dy);
+        const double j00 = (ax - cx) / (2 * h), j10 = (ay - cy) / (2 * h), j01 = (bx - dx) / (2 * h), j11 = (by - dy) / (2 * h);
         // (JtJ + damp) d = -Jt e
         const double m00 = j00 * j00 + j10 * j10 + damp, m01 = j00 * j01 + j10 * j11, m11 = j01 * j01 + j11 * j11 + damp;
         const double g0 = -(j00 * ex + j10 * ey), g1 = -(j01 * ex + j11 * ey);
@@ -492,17 +495,17 @@ Status reach(const Rig& rig, RigPose& pose, std::size_t chain, double targetX, d
         double nx = 0, ny = 0;
         const double nerr = miss(nu, nt, nx, ny);
         if (std::isfinite(nerr) && nerr < err) {
-            const bool small = err - nerr < 1e-12;
             tu = nu;
             tt = nt;
             ex = nx;
             ey = ny;
             err = nerr;
-            damp = std::max(1e-9, damp * 0.3);
-            if (small) break;
+            damp = std::max(1e-12, damp * 0.2);
         } else {
-            damp *= 8;
-            if (damp > 1e6) break;
+            // No nearer: a shorter step next time. Out of reach or against a
+            // limit this ends the search with the nearest pose found.
+            damp = std::max(damp, 1e-9) * 10;
+            if (damp > 1e8) break;
         }
     }
     pose.turn[upper->id] = wrap(tu);
