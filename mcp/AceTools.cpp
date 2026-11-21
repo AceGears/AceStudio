@@ -702,6 +702,8 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                       {"rest", integer("pose: the frame whose parts are drawn (default: the rig's rest frame)", 0)},
                       {"turn", str("pose/key: bone turns, \"bone=degrees,...\"")},
                       {"move", str("pose/key: whole-rig move, \"dx,dy\"")},
+                      {"stretch", str("pose/key: bone lengths as drawn times a factor, \"bone=factor,...\" (0.1 to 4; under 1 "
+                                      "draws the bone's parts shorter, as when it points toward the viewer)")},
                       {"reach", str("pose/key: IK targets, \"chain=x,y;...\"")},
                       {"curve", str("key: linear, ease-in, ease-out, ease-in-out, stepped or bezier:x1,y1,x2,y2")},
                       {"from", integer("bake: first frame", 0)},
@@ -720,6 +722,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                      b.opt("rest", "--rest");
                      b.opt("turn", "--turn");
                      b.opt("move", "--move");
+                     b.opt("stretch", "--stretch");
                      b.opt("reach", "--reach");
                      b.opt("curve", "--curve");
                      b.opt("from", "--from");

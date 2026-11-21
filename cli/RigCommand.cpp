@@ -100,7 +100,7 @@ int rigAuto(const Args& a, Output& out) {
 }
 
 
-// Reads --turn "bone=deg,bone=deg" --move dx,dy --reach "chain=x,y;chain=x,y"
+// Reads --turn "bone=deg,bone=deg" --stretch "bone=factor" --move dx,dy --reach "chain=x,y;chain=x,y"
 // into `pose`. Returns kOk, or the exit code of the reported failure.
 int readPose(const Args& a, Output& out, const std::string& cmd, const Rig& rig, RigPose& pose) {
     if (auto t = a.opt("turn"))
@@ -110,6 +110,15 @@ int readPose(const Args& a, Output& out, const std::string& cmd, const Rig& rig,
             const auto deg = eq == std::string::npos ? std::nullopt : parseDouble(item.substr(eq + 1));
             if (!b || !deg) return out.fail(kUsage, cmd + ": --turn wants bone=degrees, got '" + item + "'");
             pose.turn[b->id] = *deg * kPi / 180;
+        }
+    if (auto t = a.opt("stretch"))
+        for (const std::string& item : splitOn(*t, ',')) {
+            const auto eq = item.rfind('=');
+            const Bone* b = eq == std::string::npos ? nullptr : rig.bone(item.substr(0, eq));
+            const auto s = eq == std::string::npos ? std::nullopt : parseDouble(item.substr(eq + 1));
+            if (!b || !s || !(*s >= Rig::kMinStretch && *s <= Rig::kMaxStretch))
+                return out.fail(kUsage, cmd + ": --stretch wants bone=factor (0.1 to 4, 1 = as drawn), got '" + item + "'");
+            pose.stretch[b->id] = *s;
         }
     if (auto m = a.opt("move")) {
         const auto xy = splitOn(*m, ',');

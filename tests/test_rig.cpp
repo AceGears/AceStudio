@@ -617,3 +617,96 @@ TEST_CASE("Baking keys poses every frame between them from the rest frame", "[ri
     CHECK_FALSE(out.composite(2) == out.composite(4));
     CHECK_FALSE(rigs::bakeKeys(d, 2, 9));
 }
+
+TEST_CASE("A stretched bone is drawn shorter and its children follow", "[rig][keys]") {
+    Leg l = makeLeg();
+    RigPose pose;
+    pose.stretch[l.thigh] = 0.5;
+    auto w = rigs::solve(l.rig, pose);
+    const auto& thigh = w[indexOf(l.rig, l.thigh)];
+    CHECK(thigh.stretched);
+    CHECK(thigh.tailY == Approx(15));   // half as long, from the same hip
+    const auto& shin = w[indexOf(l.rig, l.shin)];
+    CHECK(shin.headX == Approx(10));
+    CHECK(shin.headY == Approx(15));    // the knee comes with it
+    CHECK(shin.tailY == Approx(20));    // and the shin, along the same line, is as short
+    const auto& foot = w[indexOf(l.rig, l.foot)];
+    CHECK(foot.headY == Approx(20));
+    CHECK(foot.tailX == Approx(15));    // across the stretch: as long as drawn
+    CHECK_FALSE(w[indexOf(l.rig, l.hip)].stretched);
+    // With a turn: stretched along its rest direction first, then turned.
+    pose.turn[l.thigh] = kPi / 2;
+    w = rigs::solve(l.rig, pose);
+    CHECK(w[indexOf(l.rig, l.shin)].headX == Approx(5));
+    CHECK(w[indexOf(l.rig, l.shin)].headY == Approx(10));
+    CHECK(w[indexOf(l.rig, l.shin)].turn == Approx(kPi / 2));
+    // Out of range is held to the range; not a number is no stretch.
+    CHECK(rigs::clampStretch(0) == Approx(Rig::kMinStretch));
+    CHECK(rigs::clampStretch(std::nan("")) == Approx(1));
+
+    // Keys: saved as rig version 4 only when a key stretches, and interpolated from 1.
+    RigPose half;
+    half.stretch[l.thigh] = 0.5;
+    REQUIRE(rigs::setKey(l.rig, 0, RigPose{}, Curve{CurveType::Linear}));
+    CHECK(rigs::toJson(l.rig)["version"] == 2);
+    REQUIRE(rigs::setKey(l.rig, 4, half, Curve{CurveType::Linear}));
+    const auto j = rigs::toJson(l.rig);
+    CHECK(j["version"] == 4);
+    auto back = rigs::fromJson(j);
+    REQUIRE(back);
+    CHECK(back.value() == l.rig);
+    CHECK(rigs::poseAt(l.rig, 2).stretch.at(l.thigh) == Approx(0.75));
+    auto broken = j;
+    broken["keys"][1]["pose"]["stretch"][0]["factor"] = 0.0;
+    CHECK_FALSE(rigs::fromJson(broken));
+    broken = j;
+    broken["keys"][1]["pose"]["stretch"][0]["bone"] = 99;
+    CHECK_FALSE(rigs::fromJson(broken));
+    broken = j;
+    broken["keys"][1]["pose"]["stretch"] = 3;
+    CHECK_FALSE(rigs::fromJson(broken));
+    // A removed bone takes its stretch with it.
+    REQUIRE(rigs::removeBone(l.rig, l.thigh));
+    CHECK(l.rig.keys[1].pose.stretch.empty());
+}
+
+TEST_CASE("Baking a stretched bone draws its part shorter, in the sprite's colours", "[rig][keys]") {
+    auto sprite = readPng(fixture("rogue64.png"));
+    REQUIRE(sprite);
+    auto doc = Document::create(sprite.value().width() + 20, sprite.value().height() + 10).value();
+    const LayerId hero = doc.addLayer("Hero").value();
+    REQUIRE(doc.setCel(hero, 0, Cel{sprite.value(), 10, 5}));
+    REQUIRE(doc.insertFrame(1));
+    auto rigged = rigs::autoRig(doc, hero, 0);
+    REQUIRE(rigged);
+    const Document d = std::move(rigged.value().document);
+    const Rig& rig = *d.rig();
+    const Bone* thigh = rig.bone("leg0 thigh");
+    REQUIRE(thigh);
+    LayerId part = kNoLayer;
+    for (const auto& [layer, bone] : rig.bindings)
+        if (bone == thigh->id) part = layer;
+    REQUIRE(part != kNoLayer);
+    RigPose pose;
+    pose.stretch[thigh->id] = 0.5;
+    auto baked = rigs::bakePose(d, 0, 1, pose);
+    REQUIRE(baked);
+    const Cel* rest = d.cel(part, 0);
+    const Cel* drawn = baked.value().cel(part, 1);
+    REQUIRE(rest);
+    REQUIRE(drawn);
+    const IntRect rb = rest->image.opaqueBounds(), db = drawn->image.opaqueBounds();
+    CHECK(db.h < rb.h);                    // the leg points down: shorter
+    CHECK(db.h * 3 > rb.h);
+    CHECK(std::abs(db.w - rb.w) <= 1);     // and as wide
+    CHECK(drawn->y + db.y <= rest->y + rb.y + 1);   // from the same hip
+    std::set<std::uint32_t> colours;
+    auto key = [](Rgba8 c) { return (std::uint32_t{c.r} << 24) | (std::uint32_t{c.g} << 16) | (std::uint32_t{c.b} << 8) | c.a; };
+    for (const Rgba8& c : rest->image.pixels()) colours.insert(key(c));
+    for (const Rgba8& c : drawn->image.pixels())
+        if (c.a) CHECK(colours.count(key(c)) == 1);
+    // No stretch: exactly the rest frame's parts.
+    auto plain = rigs::bakePose(d, 0, 1, RigPose{});
+    REQUIRE(plain);
+    CHECK(plain.value().composite(1) == d.composite(0));
+}

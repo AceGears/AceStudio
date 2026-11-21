@@ -429,7 +429,10 @@ void RigPanel::rebuild() {
     // Forget pose turns of bones that are gone.
     if (!rig) m_pose = {};
     else
+    {
         for (auto it = m_pose.turn.begin(); it != m_pose.turn.end();) it = rig->bone(it->first) ? std::next(it) : m_pose.turn.erase(it);
+        for (auto it = m_pose.stretch.begin(); it != m_pose.stretch.end();) it = rig->bone(it->first) ? std::next(it) : m_pose.stretch.erase(it);
+    }
 
     const BoneId keep = selectedBone();
     const int keepChain = m_chains->currentRow();
@@ -702,6 +705,7 @@ void RigPanel::boneGrabbed(int index, bool tail, QPointF at, Qt::KeyboardModifie
     if (m_dragRest) {
         bool atRest = m_pose.dx == 0 && m_pose.dy == 0;
         for (const auto& kv : m_pose.turn) atRest = atRest && kv.second == 0;
+        for (const auto& kv : m_pose.stretch) atRest = atRest && kv.second == 1;
         if (!atRest) {
             report(tr("Edit Bone"), Error{ErrorCode::InvalidArgument, tr("press Rest Pose before Ctrl+dragging the rest bones").toStdString()});
             return;

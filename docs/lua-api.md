@@ -138,8 +138,10 @@ whole numbers are integers, and a list is a table with keys 1..n. Every change i
 | `doc:off_palette()` | how many pixels are not palette colours |
 | `doc:conform_palette()` | snaps every cel to the palette; returns the pixels changed |
 
-A pose is `{turn = {["bone name"] = degrees, ...}, dx = 0, dy = 0}`: turns are relative to the bone's
-rest turn, and `dx`, `dy` move the whole rig in pixels.
+A pose is `{turn = {["bone name"] = degrees, ...}, stretch = {["bone name"] = factor, ...}, dx = 0, dy = 0}`:
+turns are relative to the bone's rest turn, `stretch` draws a bone (its parts and children)
+shorter or longer along its length (0.1 to 4, 1 = as drawn; a key with one saves the rig as
+version 4), and `dx`, `dy` move the whole rig in pixels.
 
 ```lua
 local d = ace.document()

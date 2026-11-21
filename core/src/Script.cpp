@@ -394,7 +394,7 @@ sol::object jsonToLua(sol::state_view lv, const nlohmann::json& j) {
     }
 }
 
-// {turn = {["bone name"] = degrees, ...}, dx = 0, dy = 0} as a RigPose.
+// {turn = {["bone name"] = degrees, ...}, stretch = {["bone name"] = factor, ...}, dx = 0, dy = 0} as a RigPose.
 RigPose poseArg(const Rig& rig, const sol::optional<sol::table>& t) {
     RigPose p;
     if (!t) return p;
@@ -405,6 +405,17 @@ RigPose poseArg(const Rig& rig, const sol::optional<sol::table>& t) {
             const Bone* b = rig.bone(key.as<std::string>());
             if (!b) fail("the rig has no bone \"" + key.as<std::string>() + "\"");
             p.turn[b->id] = value.as<double>() * 3.14159265358979323846 / 180.0;
+        }
+    }
+    if (auto stretch = (*t)["stretch"].get<sol::optional<sol::table>>()) {
+        for (const auto& [key, value] : tableEntries(*stretch)) {
+            if (key.get_type() != sol::type::string || value.get_type() != sol::type::number)
+                fail("pose stretch is {[\"bone name\"] = factor, ...}");
+            const Bone* b = rig.bone(key.as<std::string>());
+            if (!b) fail("the rig has no bone \"" + key.as<std::string>() + "\"");
+            const double s = value.as<double>();
+            if (!(s >= Rig::kMinStretch && s <= Rig::kMaxStretch)) fail("a pose stretch is 0.1 to 4 (1 = as drawn)");
+            p.stretch[b->id] = s;
         }
     }
     p.dx = (*t)["dx"].get_or(0.0);

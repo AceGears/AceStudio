@@ -19,18 +19,20 @@ Error bad(std::string m) { return Error{ErrorCode::InvalidArgument, std::move(m)
 // A bone's move from rest: turn about its rest head, then put the head at
 // `hx, hy`. Clockwise on screen (y down), as the rest of the rig.
 struct BoneMove {
-    double c = 1, s = 0, px = 0, py = 0, hx = 0, hy = 0;
-    BoneMove(double turn, double restX, double restY, double headX, double headY)
-        : c(std::cos(turn)), s(std::sin(turn)), px(restX), py(restY), hx(headX), hy(headY) {}
+    // [xx xy; yx yy]: the turn, with any stretch (Rig.h BoneWorld).
+    double xx = 1, xy = 0, yx = 0, yy = 1, px = 0, py = 0, hx = 0, hy = 0;
+    BoneMove(const BoneWorld& w, double restX, double restY, double headX, double headY)
+        : xx(w.xx), xy(w.xy), yx(w.yx), yy(w.yy), px(restX), py(restY), hx(headX), hy(headY) {}
     motion::rig::Vec apply(double x, double y) const {
         x -= px;
         y -= py;
-        return {c * x - s * y + hx, s * x + c * y + hy};
+        return {xx * x + xy * y + hx, yx * x + yy * y + hy};
     }
     motion::rig::Vec invert(double x, double y) const {
         x -= hx;
         y -= hy;
-        return {c * x + s * y + px, -s * x + c * y + py};
+        const double det = xx * yy - xy * yx;   // 1 for a turn; a stretch is never 0
+        return {(yy * x - xy * y) / det + px, (-yx * x + xx * y) / det + py};
     }
 };
 
@@ -96,8 +98,8 @@ Image renderSkinned(const motion::rig::Part& p, const BoneMove& ma, const BoneMo
                     // Jacobian of the blend: the mixed rotations plus the
                     // change of weight carrying the point between the bones.
                     const double ex = b.x - a.x, ey = b.y - a.y;
-                    const double j00 = (1 - wq) * ma.c + wq * mb.c + ex * dw * nx, j01 = -(1 - wq) * ma.s - wq * mb.s + ex * dw * ny;
-                    const double j10 = (1 - wq) * ma.s + wq * mb.s + ey * dw * nx, j11 = (1 - wq) * ma.c + wq * mb.c + ey * dw * ny;
+                    const double j00 = (1 - wq) * ma.xx + wq * mb.xx + ex * dw * nx, j01 = (1 - wq) * ma.xy + wq * mb.xy + ex * dw * ny;
+                    const double j10 = (1 - wq) * ma.yx + wq * mb.yx + ey * dw * nx, j11 = (1 - wq) * ma.yy + wq * mb.yy + ey * dw * ny;
                     const double det = j00 * j11 - j01 * j10;
                     if (std::abs(det) < 1e-9) break;
                     double sx = (j11 * gx - j01 * gy) / det, sy = (-j10 * gx + j00 * gy) / det;
@@ -604,12 +606,24 @@ Result<Document> bakePose(const Document& doc, int restFrame, int frame, const R
         pp.dx = bw.headX - b.x;
         pp.dy = bw.headY - b.y;
         pp.angle = bw.turn;
+        if (bw.stretched) {
+            // The bone's map as a part pose: wider and taller with a lean, then a turn.
+            pp.angle = std::atan2(bw.yx, bw.xx);
+            const double ca = std::cos(pp.angle), sa = std::sin(pp.angle);
+            pp.sx = std::hypot(bw.xx, bw.yx);
+            pp.sy = -sa * bw.xy + ca * bw.yy;
+            pp.shear = std::abs(pp.sy) > 1e-9 ? (ca * bw.xy + sa * bw.yy) / pp.sy : 0;
+        }
         // A part bent across a joint, unless its two bones turn together
         // (then it is rigid, drawn exactly as other parts).
         std::size_t ci = rig.bones.size();
         if (const auto sk = rig.skins.find(layerId); sk != rig.skins.end())
             for (ci = 0; ci < rig.bones.size() && rig.bones[ci].id != sk->second.bone; ++ci) {}
-        const bool bent = ci < rig.bones.size() && std::abs(std::remainder(world[ci].turn - bw.turn, 2 * kPi)) > 1e-9;
+        bool bent = ci < rig.bones.size() && std::abs(std::remainder(world[ci].turn - bw.turn, 2 * kPi)) > 1e-9;
+        if (ci < rig.bones.size() && (bw.stretched || world[ci].stretched)) {
+            const BoneWorld& cw = world[ci];
+            bent = std::max({std::abs(cw.xx - bw.xx), std::abs(cw.xy - bw.xy), std::abs(cw.yx - bw.yx), std::abs(cw.yy - bw.yy)}) > 1e-9;
+        }
         Image out;
         if (bent) {
             const Bone& kid = rig.bones[ci];
@@ -617,8 +631,8 @@ Result<Document> bakePose(const Document& doc, int restFrame, int frame, const R
             // Whole-pixel moves as rigid parts make, the child keeping its
             // exact place relative to the parent.
             const double rx = std::round(pp.dx) - pp.dx, ry = std::round(pp.dy) - pp.dy;
-            const BoneMove ma(bw.turn, b.x - box.x, b.y - box.y, bw.headX + rx - box.x, bw.headY + ry - box.y);
-            const BoneMove mb(cw.turn, kid.x - box.x, kid.y - box.y, cw.headX + rx - box.x, cw.headY + ry - box.y);
+            const BoneMove ma(bw, b.x - box.x, b.y - box.y, bw.headX + rx - box.x, bw.headY + ry - box.y);
+            const BoneMove mb(cw, kid.x - box.x, kid.y - box.y, cw.headX + rx - box.x, cw.headY + ry - box.y);
             double nx = std::cos(b.angle) + std::cos(kid.angle), ny = std::sin(b.angle) + std::sin(kid.angle);
             if (std::hypot(nx, ny) < 1e-6) {
                 nx = std::cos(b.angle);

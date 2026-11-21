@@ -115,7 +115,7 @@ const char* kUsageText =
     "                                  or fins; auto picks from the analysis) (schema 4). --arms marks arms\n"
     "                                  the analysis missed (canvas boxes; every pixel inside goes to the arm)\n"
     "  rig pose <project> --out <project> [--frame N] [--rest R] [--turn bone=deg,...] [--move dx,dy]\n"
-    "           [--reach chain=x,y;...]\n"
+    "           [--reach chain=x,y;...] [--stretch bone=factor,...]\n"
     "                                  Draw the parts of rest frame R (default: the rig's rest frame), posed,\n"
     "                                  into frame N (pixel-art safe: whole-pixel moves, RotSprite turns)\n"
     "  rig key <project> --out <project> --frame N [pose options as rig pose]\n"
