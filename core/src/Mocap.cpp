@@ -2030,6 +2030,37 @@ Result<RetargetResult> retargetQuadruped(const Image& sprite, const Motion& m, c
 
 } // namespace
 
+motion::Body autoBody(const Image& sprite, const Motion& m, std::string* why) {
+    const bool spriteQuad = !sprite.isNull() && !sprite.isFullyTransparent() && motion::analyzeSubject(sprite).body == motion::Body::Quadruped;
+    if (m.joints.empty()) return spriteQuad ? motion::Body::Quadruped : motion::Body::Biped;
+    // Wing chains, as retargetFlyer finds them: a joint named wing whose
+    // parent is not, with something below it.
+    const std::size_t nj = m.joints.size();
+    std::vector<char> named(nj, 0), hasChild(nj, 0);
+    for (std::size_t j = 0; j < nj; ++j) {
+        std::string n = m.joints[j].name;
+        for (char& ch : n) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        named[j] = !m.joints[j].endSite && n.find("wing") != std::string::npos;
+        const int p = m.joints[j].parent;
+        if (p >= 0 && uz(p) < nj) hasChild[uz(p)] = 1;
+    }
+    int wings = 0;
+    for (std::size_t j = 0; j < nj; ++j) {
+        const int p = m.joints[j].parent;
+        if (named[j] && hasChild[j] && !(p >= 0 && uz(p) < nj && named[uz(p)])) ++wings;
+    }
+    const bool fourLegs = creatureMap(m).hasFourLegs();
+    if (wings >= 2 && !(spriteQuad && fourLegs)) {
+        if (why) *why = "The motion's skeleton has wing bones: the sprite is animated as a flyer (--body flyer).";
+        return motion::Body::Flyer;
+    }
+    if (!fourLegs && wings < 2 && !autoMap(m).hasLegs()) {
+        if (why) *why = "The motion's skeleton has no legs: the sprite is animated as a swimmer (--body swimmer).";
+        return motion::Body::Swimmer;
+    }
+    return spriteQuad ? motion::Body::Quadruped : motion::Body::Biped;
+}
+
 Result<RetargetResult> retarget(const Image& sprite, const Motion& m, const RetargetOptions& opt) {
     if (sprite.isNull() || sprite.isFullyTransparent()) return Error(ErrorCode::InvalidArgument, "the sprite has no visible pixels");
     if (m.frameCount < 1 || m.joints.empty()) return Error(ErrorCode::InvalidArgument, "the motion is empty");

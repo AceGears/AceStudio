@@ -94,6 +94,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Automatic body from the motion**: `retarget` without `--body` (also Lua's `ace.retarget` and
+  Motion Studio's Automatic) now animates the sprite as a flyer when the motion's skeleton has wing
+  bones and as a swimmer when it has no legs, and says so in a note; before, both needed `--body`.
+  Humanoid and legged motions choose as before. Core: `mocap::autoBody`.
 - **Six legs**: motions whose skeleton stands on six (or eight) legs are read: `retarget --body
   quadruped` and `rig motion` pair a six-legged sprite's or auto-rig's legs with the motion's hind,
   middle and front pairs from the back forward. On four drawn legs the middle pairs are left out;

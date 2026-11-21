@@ -200,6 +200,17 @@ baked rig frames were looked at.
 Not done: eight legs tried, captured insect motion, a middle leg's own knee direction, legs
 splayed sideways, `--body auto` telling six legs from four.
 
+Automatic body (2026-11-21). `mocap::autoBody(sprite, motion, why)`: Flyer when the skeleton has
+two or more wing chain roots (a joint named wing, with a child, whose parent is not named wing),
+unless both the skeleton and the sprite stand on four legs; Swimmer when the skeleton has no four
+legs by shape and `autoMap` finds no humanoid legs; else Quadruped for a sprite `analyzeSubject`
+calls four-legged, Biped otherwise. Used by the CLI's `retarget`, Lua's `ace.retarget` and Motion
+Studio's Automatic; `directions` keeps the sprite-only rule. The reason is the first note.
+Verified: `tests/test_creature_motion.cpp` (every humanoid preset and flap by the sprite, wingbeat
+a flyer, swim a swimmer, a winged four-legged skeleton walks a four-legged sprite and flies
+another), CLI smoke lines on the dragon and goldfish, run locally. Motion Studio's part is
+compiled by CI only. Not done: asking the sprite's shape (wings or fins drawn) as well.
+
 ### 3.7 Wings from a humanoid motion (stage 3c, second part, 2026-11-18)
 
 `RetargetOptions::body = Flyer` (`retargetFlyer` in `Mocap.cpp`) poses the flight rig that

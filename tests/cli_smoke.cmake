@@ -501,6 +501,18 @@ if(NOT body STREQUAL "swimmer" OR NOT n_frames EQUAL 8 OR NOT n_issues EQUAL 0 O
     message(FATAL_ERROR "retarget preset:swim --body swimmer: expected 8 clean frames (0.8 s at 10 fps): ${LAST_OUT}")
 endif()
 run(1 retarget "${WORKDIR}/rigs/fish57.png" preset:swim --body eel --out "${WORKDIR}/presets")
+# Without --body the motion's skeleton decides: no legs is a swimmer, wing bones a flyer.
+run(0 --json retarget "${WORKDIR}/rigs/fish57.png" preset:swim --fps 10 --out "${WORKDIR}/presets/auto")
+string(JSON body GET "${LAST_OUT}" body)
+if(NOT body STREQUAL "swimmer" OR NOT LAST_OUT MATCHES "has no legs")
+    message(FATAL_ERROR "retarget preset:swim (auto): expected a swimmer and a note saying why: ${LAST_OUT}")
+endif()
+run(0 --json retarget "${WORKDIR}/rigs/dragon128.png" preset:wingbeat --out "${WORKDIR}/presets/auto")
+string(JSON body GET "${LAST_OUT}" body)
+if(NOT body STREQUAL "flyer" OR NOT LAST_OUT MATCHES "has wing bones")
+    message(FATAL_ERROR "retarget preset:wingbeat (auto): expected a flyer and a note saying why: ${LAST_OUT}")
+endif()
+run(1 retarget "${WORKDIR}/rigs/fish57.png" preset:walk --out "${WORKDIR}/presets/auto")   # a humanoid motion: two legs, as before
 run(1 motion remove walk --library "${MD}")                                      # built in
 run(0 motion remove "my walk" --library "${MD}")
 run(2 motion remove "my walk" --library "${MD}")

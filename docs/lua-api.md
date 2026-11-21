@@ -204,8 +204,8 @@ print(k.keys .. " keys from frame " .. k.first, k.matched["leg0 thigh"])
 `opts`: `view` (`auto`, `front`, `back`, `right`, `left`, `front-right`, … as the CLI's `--view`),
 `turn`, `tilt`, `roll` (degrees), `perspective`, `start` and `length` (seconds), `fps` (default 12)
 or `frames`, `amount` (0.25 to 2), `travel` (keep the motion's travel), `loop` (one-shot presets
-default to false), `body` (`auto`, `biped`, `quadruped`, `flyer` or `swimmer`; auto reads the sprite and never
-picks `flyer` or `swimmer`; `swimmer` bends a fish-like side view with the motion's spine, try
+default to false), `body` (`auto`, `biped`, `quadruped`, `flyer` or `swimmer`; auto picks flyer for a motion with wing bones, swimmer for one with no legs, else reads
+the sprite's legs; `swimmer` bends a fish-like side view with the motion's spine, try
 `"preset:swim"`), `wing_line` (flyer: the wings are above this fraction of the height, default 0.45).
 A humanoid motion on a four-legged sprite, a four-legged motion on wings, an unknown preset, view
 or body, and other file types are errors.

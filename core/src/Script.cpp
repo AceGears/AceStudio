@@ -1076,14 +1076,15 @@ void bind(sol::state_view lua, Runtime& rt) {
             body = t["body"].get_or(std::string("auto"));
             o.wingLine = std::clamp(t["wing_line"].get_or(0.45), 0.05, 0.95);
         }
-        if (body == "auto")
-            o.body = motion::analyzeSubject(sprite.img).body == motion::Body::Quadruped ? motion::Body::Quadruped : motion::Body::Biped;
+        std::string whyBody;
+        if (body == "auto") o.body = mocap::autoBody(sprite.img, motion, &whyBody);
         else if (body == "biped") o.body = motion::Body::Biped;
         else if (body == "quadruped") o.body = motion::Body::Quadruped;
         else if (body == "flyer") o.body = motion::Body::Flyer;
         else if (body == "swimmer") o.body = motion::Body::Swimmer;
         else fail("body is \"auto\", \"biped\", \"quadruped\", \"flyer\" or \"swimmer\"");
         mocap::RetargetResult r = unwrap(mocap::retarget(sprite.img, motion, o));
+        if (!whyBody.empty()) r.notes.insert(r.notes.begin(), whyBody);
         std::size_t bytes = 0;
         for (const Image& f : r.clip.frames) bytes += f.byteSize();
         ensureRoom(bytes);

@@ -265,6 +265,15 @@ struct RetargetResult {
 
 Result<RetargetResult> retarget(const Image& sprite, const Motion& m, const RetargetOptions& opt = {});
 
+// The body kind "auto" stands for, from the motion first and the sprite
+// second: Flyer when the skeleton has two chains of joints named wing
+// (unless both it and the sprite stand on four legs), Swimmer when the
+// skeleton has no legs at all (no four legs by shape, no humanoid legs),
+// else Quadruped for a four-legged sprite and Biped for the rest. A
+// humanoid motion never picks Flyer or Swimmer: ask for those by name.
+// `why`, when given, gets a sentence for the user if the motion decided.
+motion::Body autoBody(const Image& sprite, const Motion& m, std::string* why = nullptr);
+
 // The projected skeleton as a picture: left side blue, right side red, spine
 // yellow, on transparent, `size` pixels square, for a side-by-side preview.
 Image drawSkeleton(const Motion& m, const BoneMap& map, const Camera& cam, double seconds, int size, bool inPlace = true);

@@ -122,14 +122,16 @@ not been run.
   the head reaches above that line it turns with the wing, so lower the line. Motion Studio takes a
   wing line and, when the wings were selected in the document before Use Current Sprite, uses the
   selection as the wings (compiled by CI; no Qt test drives it); the command line, Lua and MCP take
-  a wing line only. `--body auto` never picks wings. With a humanoid motion's arms the wing stroke is up and down only: no
+  a wing line only. `--body auto` (and Motion Studio's Automatic) picks wings only when the motion's skeleton has two chains of joints named wing (since 2026-11-21): a humanoid motion such as `flap` still needs `--body flyer`. With a humanoid motion's arms the wing stroke is up and down only: no
   forward sweep, twist or folding. The tail waves with the stroke as in Animate's flap (a thin tail
   behind the body only; the golden dragon's thick tail is not found as one).
 - **Fish from a 3D motion** (`retarget --body swimmer`, since 2026-11-20): the motion's spine (the
   chain from a joint named head to one named tail, else the skeleton's longest chain) bends the
   body column by column and turns the tail fin; `preset:swim` is a fish skeleton made for it.
-  Tested locally on a drawn fish and looked at on the goldfish fixture. `--body auto` never picks
-  it. The other fins paddle with the motion's fin joints (since 2026-11-20): joints off the
+  Tested locally on a drawn fish and looked at on the goldfish fixture. `--body auto` picks it only when the motion's skeleton has no legs at all (since 2026-11-21;
+  the sprite's shape is not asked, so a legless motion on a sprite that is no fish is still tried
+  as one): a humanoid motion on a fish needs `--body swimmer`. `directions` keeps the old rule
+  (by the sprite's legs only). The other fins paddle with the motion's fin joints (since 2026-11-20): joints off the
   spine named fin, flipper, pectoral, pelvic or dorsal, as `preset:swim` has; a drawn fin takes
   the nearest joint of its kind (on the back, or lower), so a left and a right fin drawn apart
   are not told apart, and with no such joint (or one that does not move) the fins only ride the

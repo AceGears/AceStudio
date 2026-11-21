@@ -324,3 +324,41 @@ TEST_CASE("A six-legged walk retargets onto six-legged and four-legged sprites",
     INFO((r6 ? std::string() : r6.error().message));
     REQUIRE(r6);
 }
+
+TEST_CASE("The automatic body is read from the motion's skeleton, then the sprite", "[mocap][creature]") {
+    const Image dog = dogSprite(), plain(8, 8);
+    auto of = [&](const char* name, const Image& sprite, std::string* why = nullptr) {
+        auto m = builtInPreset(name);
+        REQUIRE(m);
+        return autoBody(sprite, m.value(), why);
+    };
+    // Humanoid presets (flap included: its wings are arms) and legged
+    // animals go by the sprite's legs, as before.
+    for (const char* name : {"idle", "walk", "run", "jump", "attack", "hurt", "flap"}) {
+        CAPTURE(name);
+        std::string why;
+        CHECK(of(name, plain, &why) == motion::Body::Biped);
+        CHECK(why.empty());
+        CHECK(of(name, dog) == motion::Body::Quadruped);
+    }
+    CHECK(of("quad-walk", dog) == motion::Body::Quadruped);
+    CHECK(of("hex-walk", dog) == motion::Body::Quadruped);
+    CHECK(of("quad-walk", plain) == motion::Body::Biped);
+    // Wing bones pick the flyer, a legless skeleton the swimmer; a note says why.
+    std::string why;
+    CHECK(of("wingbeat", plain, &why) == motion::Body::Flyer);
+    CHECK(why.find("wing bones") != std::string::npos);
+    CHECK(of("wingbeat", dog) == motion::Body::Flyer);   // the bird has no four legs
+    why.clear();
+    CHECK(of("swim", plain, &why) == motion::Body::Swimmer);
+    CHECK(why.find("no legs") != std::string::npos);
+    CHECK(of("swim", dog) == motion::Body::Swimmer);
+    // A four-legged skeleton with wings on a four-legged sprite walks.
+    Motion winged = quad();
+    for (Joint& j : winged.joints)
+        if (j.name == "Tail") j.name = "LeftWing";
+        else if (j.name == "Neck") j.name = "RightWing";
+    CHECK(autoBody(dog, winged) == motion::Body::Quadruped);
+    CHECK(autoBody(plain, winged) == motion::Body::Flyer);
+    CHECK(autoBody(dog, Motion{}) == motion::Body::Quadruped);
+}
