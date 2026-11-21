@@ -302,7 +302,19 @@ toward the tail than drawn, keys bake; flap drives without stretch; half the amo
 bone pairs refused), a CLI smoke line, run locally; the dragon's baked frames were looked at.
 Not done on a rig: sweep, the tail's wave, fins.
 
-Not done: wing bones not named wing, a crease at the wrist, sweep on a wing drawn out to the side,
+Wing joints by hand (2026-11-21). `RetargetOptions::wingRoots` and `MotionKeysOptions::wingRoots`
+(two joint names, case-insensitive) replace the search for joints named wing in `retargetFlyer`
+and `wingSource` (`wingRootJoints`, `Mocap.cpp`): the chains start at those joints. Refused: not
+two names, an unknown joint, the same joint twice, a joint with nothing below it. CLI `--wings
+A,B` on `retarget`, `directions` and `rig motion`; Lua `wings`; MCP `wings`. Wings are not found
+by shape: a wing chain and an arm look alike in a skeleton (a renamed wing chain already passes
+for an arm in `autoMap`), so the joints are named by the user. Verified:
+`tests/test_wing_motion.cpp` (the wingbeat skeleton with its wings renamed gives, with the joints
+given, the frames of the named skeleton; four refusals), `tests/test_rig_motion.cpp` (the same
+keys on the dragon's wing rig), Lua refusals, CLI smoke lines, run locally. Not done: a field in
+Motion Studio; the MCP option has no test.
+
+Not done: wings found without names or help, a crease at the wrist, sweep on a wing drawn out to the side,
 twist.
 
 ### 3.8 Fins from a motion's spine (2026-11-20)

@@ -140,7 +140,9 @@ Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, c
     const double amount = std::clamp(opt.amount, 0.25, 2.0);
     if (!opt.bones.empty() || !opt.legs.empty()) return bad("Bone and leg pairs (--bones, --legs) do not apply to a wing rig: its wings follow the motion's wings or arms");
     const mocap::BoneMap map = mocap::autoMap(m, opt.mapOverrides);
-    const mocap::WingSource ws = mocap::wingSource(m, map);
+    const mocap::WingSource ws = mocap::wingSource(m, map, opt.wingRoots);
+    if (!ws.found() && !opt.wingRoots.empty())
+        return bad("The wing joints given are not two joints of the motion with joints below them");
     if (!ws.found())
         return bad("The motion has nothing to drive the rig's wings: no two chains of joints named wing and no two arms "
                    "(try preset:wingbeat or preset:flap)");

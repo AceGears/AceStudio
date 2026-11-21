@@ -78,6 +78,9 @@ struct MotionKeysOptions {
     std::vector<std::pair<std::string, mocap::Bone>> bones;
     // Skeleton joint -> joint name in the motion (as retarget's --map).
     std::vector<std::pair<mocap::Bone, std::string>> mapOverrides;
+    // A wing rig: the motion's two wing roots by joint name (see
+    // mocap::RetargetOptions::wingRoots).
+    std::vector<std::string> wingRoots;
     // Four-legged motions only. `facing`: +1 the rig faces screen right, -1
     // left, 0 read from its art (the head end rises highest). `legs`: rig leg
     // number (auto-rig "legN") -> the motion's leg it follows, winning over

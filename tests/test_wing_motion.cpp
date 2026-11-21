@@ -312,3 +312,45 @@ TEST_CASE("Wing bones are found by name on any skeleton, and arms still work wit
     REQUIRE(plain);
     for (const std::string& n : plain.value().notes) CHECK(n.rfind("Wings: ", 0) != 0);
 }
+
+TEST_CASE("Wing joints with other names are given by hand", "[mocap][wings]") {
+    // The wingbeat skeleton with its wings renamed: nothing is named wing.
+    Motion m = preset("wingbeat");
+    for (Joint& j : m.joints)
+        if (const auto at = j.name.find("Wing"); at != std::string::npos) j.name.replace(at, 4, "Limb");
+    const Image d = dragon();
+    auto named = retarget(d, preset("wingbeat"), flyer());
+    REQUIRE(named);
+    // Unaided, the renamed wings pass for arms: no fold, no sweep.
+    auto unaided = retarget(d, m, flyer());
+    REQUIRE(unaided);
+    for (const std::string& n : unaided.value().notes) CHECK(n.rfind("Wings: ", 0) != 0);
+
+    // Given the two joints the wings start at (case does not matter), the
+    // frames are those of the skeleton with its wings named.
+    RetargetOptions o = flyer();
+    o.wingRoots = {"leftlimb", "RightLimb"};
+    auto r = retarget(d, m, o);
+    INFO((r ? std::string() : r.error().message));
+    REQUIRE(r);
+    bool said = false;
+    for (const std::string& n : r.value().notes) said = said || n.rfind("Wings: LeftLimb and RightLimb", 0) == 0 || n.rfind("Wings: RightLimb and LeftLimb", 0) == 0;
+    CHECK(said);
+    REQUIRE(r.value().clip.frames.size() == named.value().clip.frames.size());
+    for (std::size_t i = 0; i < r.value().clip.frames.size(); ++i) CHECK(r.value().clip.frames[i] == named.value().clip.frames[i]);
+    // wingSource reads the same chains.
+    const WingSource ws = wingSource(m, autoMap(m), o.wingRoots);
+    REQUIRE(ws.found());
+    CHECK(ws.own);
+    CHECK(m.joints[static_cast<std::size_t>(ws.shoulder[0])].name == "LeftLimb");
+    CHECK(m.joints[static_cast<std::size_t>(ws.tip[1])].name.rfind("RightLimb2", 0) == 0);
+
+    // Refusals: not two names, an unknown joint, the same joint twice, a joint with nothing below it.
+    for (const std::vector<std::string>& bad : {std::vector<std::string>{"LeftLimb"}, {"LeftLimb", "Feather"}, {"LeftLimb", "leftlimb"},
+                                                {"LeftLimb", "RightLimb2_end"}}) {
+        RetargetOptions b = flyer();
+        b.wingRoots = bad;
+        CHECK_FALSE(retarget(d, m, b));
+        CHECK_FALSE(wingSource(m, autoMap(m), bad).found());
+    }
+}

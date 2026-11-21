@@ -194,6 +194,22 @@ mocap::Motion scriptMotion(Runtime& rt, const std::string& source, bool& oneShot
 
 // The camera options view, turn, tilt, roll and perspective; nullopt when
 // none is given. turnGiven: a view or a turn was given.
+// wings = {"JointA", "JointB"}: the joints a skeleton's wings start at.
+std::vector<std::string> wingRootsOpt(const sol::table& t) {
+    std::vector<std::string> roots;
+    const sol::object w = t.get<sol::object>(std::string("wings"));
+    if (w.get_type() == sol::type::lua_nil) return roots;
+    if (w.get_type() != sol::type::table) fail("wings is {\"JointA\", \"JointB\"}: the joints the skeleton's wings start at");
+    const sol::table list = w.as<sol::table>();
+    for (std::size_t i = 1; i <= list.size(); ++i) {
+        const auto n = list[i].get<sol::optional<std::string>>();
+        if (!n) fail("wings is {\"JointA\", \"JointB\"}: the joints the skeleton's wings start at");
+        roots.push_back(*n);
+    }
+    if (roots.size() != 2) fail("wings is {\"JointA\", \"JointB\"}: the joints the skeleton's wings start at");
+    return roots;
+}
+
 std::optional<mocap::Camera> cameraOpts(const sol::table& t, bool& turnGiven) {
     std::optional<mocap::Camera> cam;
     turnGiven = false;
@@ -836,6 +852,7 @@ void bind(sol::state_view lua, Runtime& rt) {
             o.inPlace = !t["travel"].get_or(false);
             o.loop = t["loop"].get_or(o.loop);
             o.armsFromDrawing = !t["absolute_arms"].get_or(false);
+            o.wingRoots = wingRootsOpt(t);
             bake = t["bake"].get_or(false);
             if (sol::optional<int> f = t["first"]) {
                 if (*f < 0) fail("first must be a frame number");
@@ -1108,9 +1125,11 @@ void bind(sol::state_view lua, Runtime& rt) {
             o.loop = t["loop"].get_or(o.loop);
             body = t["body"].get_or(std::string("auto"));
             o.wingLine = std::clamp(t["wing_line"].get_or(0.45), 0.05, 0.95);
+            o.wingRoots = wingRootsOpt(t);
         }
         std::string whyBody;
-        if (body == "auto") o.body = mocap::autoBody(sprite.img, motion, &whyBody);
+        if (body == "auto" && !o.wingRoots.empty()) o.body = motion::Body::Flyer;   // wing joints given by hand
+        else if (body == "auto") o.body = mocap::autoBody(sprite.img, motion, &whyBody);
         else if (body == "biped") o.body = motion::Body::Biped;
         else if (body == "quadruped") o.body = motion::Body::Quadruped;
         else if (body == "flyer") o.body = motion::Body::Flyer;
@@ -1157,8 +1176,9 @@ void bind(sol::state_view lua, Runtime& rt) {
             o.retarget.inPlace = !t["travel"].get_or(false);
             o.retarget.loop = t["loop"].get_or(o.retarget.loop);
             o.allowMirror = t["mirror"].get_or(true);
+            o.retarget.wingRoots = wingRootsOpt(t);
             body = t["body"].get_or(std::string("auto"));
-            const sol::object dirs = t["dirs"];
+            const sol::object dirs = t.get<sol::object>(std::string("dirs"));
             if (dirs.get_type() == sol::type::number) {
                 const int n = dirs.as<int>();
                 if (n != 4 && n != 8) fail("dirs is 8, 4 or a list of direction names");

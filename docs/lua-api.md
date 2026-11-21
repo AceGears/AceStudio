@@ -208,7 +208,9 @@ print(k.keys .. " keys from frame " .. k.first, k.matched["leg0 thigh"])
 or `frames`, `amount` (0.25 to 2), `travel` (keep the motion's travel), `loop` (one-shot presets
 default to false), `body` (`auto`, `biped`, `quadruped`, `flyer` or `swimmer`; auto picks flyer for a motion with wing bones, swimmer for one with no legs, else reads
 the sprite's legs; `swimmer` bends a fish-like side view with the motion's spine, try
-`"preset:swim"`), `wing_line` (flyer: the wings are above this fraction of the height, default 0.45).
+`"preset:swim"`), `wing_line` (flyer: the wings are above this fraction of the height, default 0.45), `wings`
+(`{"JointA", "JointB"}`: the two joints the skeleton's wings start at, when they are not named
+wing; it means a flyer unless `body` is given; `doc:rig_motion` and `ace.directions` take it too).
 A humanoid motion on a four-legged sprite, a four-legged motion on wings, an unknown preset, view
 or body, and other file types are errors.
 The frames count against the script's memory limit.

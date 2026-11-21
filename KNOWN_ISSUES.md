@@ -135,7 +135,7 @@ not been run.
   the head reaches above that line it turns with the wing, so lower the line. Motion Studio takes a
   wing line and, when the wings were selected in the document before Use Current Sprite, uses the
   selection as the wings (compiled by CI; no Qt test drives it); the command line, Lua and MCP take
-  a wing line only. `--body auto` (and Motion Studio's Automatic) picks wings only when the motion's skeleton has two chains of joints named wing (since 2026-11-21): a humanoid motion such as `flap` still needs `--body flyer`. With a humanoid motion's arms the wing stroke is up and down only: no
+  a wing line only. `--body auto` (and Motion Studio's Automatic) picks wings only when the motion's skeleton has two chains of joints named wing (since 2026-11-21): a humanoid motion such as `flap` still needs `--body flyer`. A skeleton whose wing joints have other names passes for one with arms (no folding or sweep) unless the two joints its wings start at are given (`--wings JointA,JointB`, since 2026-11-21; Lua and MCP `wings`; no field in Motion Studio); wings are not found by shape. With a humanoid motion's arms the wing stroke is up and down only: no
   forward sweep, twist or folding. The tail waves with the stroke as in Animate's flap (a thin tail
   behind the body only; the golden dragon's thick tail is not found as one).
 - **Fish from a 3D motion** (`retarget --body swimmer`, since 2026-11-20): the motion's spine (the

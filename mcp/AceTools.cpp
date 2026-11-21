@@ -550,7 +550,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
         for (const auto& [k, f] : std::vector<std::pair<std::string, const char*>>{
                  {"view", "--view"}, {"turn", "--turn"}, {"tilt", "--tilt"}, {"roll", "--roll"}, {"start", "--start"}, {"length", "--length"},
                  {"fps", "--fps"}, {"frames", "--frames"}, {"amount", "--amount"}, {"name", "--name"}, {"body", "--body"},
-                 {"wing_line", "--wing-line"},
+                 {"wing_line", "--wing-line"}, {"wings", "--wings"},
                  {"animation", "--animation"}})
             b.opt(k, f);
         b.flag("perspective", "--perspective");
@@ -572,6 +572,8 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                               "swimmer its spine on a fish-like sprite: try preset:swim)",
                               {"auto", "biped", "quadruped", "flyer", "swimmer"});
         props["wing_line"] = number("flyer: the wings are above this fraction of the sprite's height (default 0.45)");
+        props["wings"] = str("flyer: the two joints the skeleton's wings start at, \"JointA,JointB\", when they are not named wing "
+                             "(the wings then beat, fold and sweep with those chains instead of the arms)");
         props["animation"] = str("glTF/GLB: which animation, by index or name");
         props["overwrite"] = kOverwrite;
         return props;
@@ -765,6 +767,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                       {"first", integer("The first keyed frame (default: the one after the rest frame)", 0)},
                       {"bake", boolean("Also draw the keyed frames")},
                       {"absolute_arms", boolean("Point the arms where the motion's arms point instead of turning the drawn arms")},
+                      {"wings", str("A wing rig: the two joints the motion's wings start at, \"JointA,JointB\", when they are not named wing")},
                       {"bones", str("Rig bone to motion joint pairs, \"rig bone=Joint,...\" (Joint: Hips, LThigh, RShin, LUpperArm, ...)")},
                       {"facing", oneOf("Four-legged motion: the way the animal faces (default: read from the head bone or the art)",
                                        {"left", "right"})},
@@ -784,7 +787,7 @@ std::vector<Tool> aceStudioTools(const ToolEnv& envIn) {
                               {"view", "--view"}, {"turn", "--turn"}, {"tilt", "--tilt"}, {"roll", "--roll"}, {"start", "--start"},
                               {"length", "--length"}, {"fps", "--fps"}, {"frames", "--frames"}, {"amount", "--amount"},
                               {"animation", "--animation"}, {"first", "--first"}, {"bones", "--bones"}, {"facing", "--facing"},
-                              {"legs", "--legs"}})
+                              {"legs", "--legs"}, {"wings", "--wings"}})
                          b.opt(k, f);
                      b.flag("perspective", "--perspective");
                      b.flag("travel", "--travel");

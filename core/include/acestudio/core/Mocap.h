@@ -251,6 +251,10 @@ struct RetargetOptions {
     double wingLine = 0.45;
     Mask wingMask;
     std::vector<std::pair<Bone, std::string>> mapOverrides;
+    // Flyer: the skeleton's two wing roots by joint name (case does not
+    // matter; each needs a joint below it), for wings whose joints are not
+    // named "wing". Empty: joints named wing, else the arms.
+    std::vector<std::string> wingRoots;
 };
 
 struct RetargetResult {
@@ -312,7 +316,9 @@ struct WingSource {
     bool own = false;
     bool found() const { return shoulder[0] >= 0 && shoulder[1] >= 0 && tip[0] >= 0 && tip[1] >= 0; }
 };
-WingSource wingSource(const Motion& m, const BoneMap& map);
+// With `roots` (RetargetOptions::wingRoots) the wings start at those joints,
+// and nothing is found when they are not two joints with joints below them.
+WingSource wingSource(const Motion& m, const BoneMap& map, const std::vector<std::string>& roots = {});
 
 // The body kind "auto" stands for, from the motion first and the sprite
 // second: Flyer when the skeleton has two chains of joints named wing

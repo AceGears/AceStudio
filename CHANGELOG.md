@@ -105,6 +105,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - **IK with stretched bones no longer stops short**: with a stretched upper bone the solve could
   settle on a straight leg just short of a target a bent leg reaches; it now starts again from
   bent poses and keeps the nearest.
+- **Wing joints by hand**: `retarget` and `rig motion` take `--wings JointA,JointB` (Lua
+  `wings = {"JointA", "JointB"}`, MCP `wings`): the two joints a skeleton's wings start at, for
+  skeletons whose wing joints are not named wing. The wings then beat, fold and sweep with those
+  chains instead of passing for arms. With `retarget` it means `--body flyer` unless a body is given.
 - **Fin rigs take motion**: `rig motion` on a rig made with `rig auto --as fins` now keys the
   tail fin from the end of the motion's spine and the other fins from its fin joints
   (`preset:swim`), instead of finding nothing to match. The body stays rigid. Core:

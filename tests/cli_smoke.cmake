@@ -515,6 +515,16 @@ string(JSON n_issues LENGTH "${LAST_OUT}" issues)
 if(NOT body STREQUAL "swimmer" OR NOT n_frames EQUAL 8 OR NOT n_issues EQUAL 0 OR NOT EXISTS "${WORKDIR}/presets/fish57_swim.gif")
     message(FATAL_ERROR "retarget preset:swim --body swimmer: expected 8 clean frames (0.8 s at 10 fps): ${LAST_OUT}")
 endif()
+# Wing joints given by hand (--wings): here the wings start one joint further out
+run(0 --json retarget "${WORKDIR}/rigs/dragon128.png" preset:wingbeat --wings leftwing1,RightWing1 --out "${WORKDIR}/presets/wings")
+string(JSON body GET "${LAST_OUT}" body)
+if(NOT body STREQUAL "flyer" OR NOT LAST_OUT MATCHES "Wings: (LeftWing1 and RightWing1|RightWing1 and LeftWing1)")
+    message(FATAL_ERROR "retarget --wings: expected a flyer on the given wing joints: ${LAST_OUT}")
+endif()
+run(1 retarget "${WORKDIR}/rigs/dragon128.png" preset:wingbeat --wings LeftWing --out "${WORKDIR}/presets/wings")
+run(1 retarget "${WORKDIR}/rigs/dragon128.png" preset:wingbeat --wings LeftWing,Feather --out "${WORKDIR}/presets/wings")
+run(0 rig motion "${WORKDIR}/rigs/dragon_rig.acestudio" preset:wingbeat --wings LeftWing1,RightWing1 --out "${WORKDIR}/rigs/dragon_beat2.acestudio")
+run(1 rig motion "${WORKDIR}/rigs/dragon_rig.acestudio" preset:wingbeat --wings LeftWing1,Feather --out "${WORKDIR}/rigs/dragon_beat3.acestudio")
 # A fin rig takes the motion's spine and fin joints as keys
 file(WRITE "${WORKDIR}/rigs/fish.lua" [=[
 local s = ace.load_png("fish57.png")

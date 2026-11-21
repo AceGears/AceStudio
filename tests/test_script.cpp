@@ -417,6 +417,13 @@ TEST_CASE("Lua motion library and retarget", "[script][mocap]") {
         assert(not pcall(ace.retarget, dog, 'preset:walk'))
         assert(not pcall(ace.retarget, dog, 'preset:moonwalk'))
         assert(not pcall(ace.retarget, dog, 'preset:quad-walk', {body = 'six-legged'}))
+        -- Wing joints by hand: two joint names of the motion; they mean a flyer.
+        assert(not pcall(ace.retarget, dog, 'preset:wingbeat', {wings = {'LeftWing'}}))
+        assert(not pcall(ace.retarget, dog, 'preset:wingbeat', {wings = 'LeftWing,RightWing'}))
+        assert(not pcall(ace.retarget, dog, 'preset:wingbeat', {wings = {'LeftWing', 'Feather'}}))
+        -- Two good joints make it a flyer unless a body is asked for by name.
+        assert(ace.retarget(dog, 'preset:wingbeat', {wings = {'leftwing', 'RightWing'}, fps = 5}).body == 'flyer')
+        assert(ace.retarget(dog, 'preset:quad-walk', {wings = {'Hips', 'Chest'}, body = 'quadruped', fps = 4}).body == 'quadruped')
         assert(not pcall(ace.retarget, dog, 'preset:quad-walk', {view = 'sideways'}))
         assert(not pcall(ace.retarget, dog, 'motion.fbx'))
         -- A fish: the swim preset's spine bends it.

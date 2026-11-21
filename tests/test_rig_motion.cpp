@@ -934,3 +934,37 @@ TEST_CASE("A swimming motion turns an auto-rigged fish's tail fin and paddles it
     pairs.bones = {{"tail fin", mocap::Bone::Head}};
     CHECK_FALSE(rigs::keysFromMotion(doc, preset("swim"), pairs));
 }
+
+TEST_CASE("A wing rig takes wing joints given by hand", "[rig][mocap][wings]") {
+    auto sprite = readPng(fixture("dragon128.png"));
+    REQUIRE(sprite);
+    auto doc0 = Document::create(sprite.value().width() + 40, sprite.value().height() + 40).value();
+    const LayerId hero = doc0.addLayer("Dragon").value();
+    REQUIRE(doc0.setCel(hero, 0, Cel{sprite.value(), 20, 20}));
+    auto ar = rigs::autoRig(doc0, hero, 0, rigs::AutoRigBody::Wings);
+    REQUIRE(ar);
+    const Document doc = ar.value().document;
+    mocap::Motion m = preset("wingbeat");
+    for (mocap::Joint& j : m.joints)
+        if (const auto at = j.name.find("Wing"); at != std::string::npos) j.name.replace(at, 4, "Limb");
+    auto named = rigs::keysFromMotion(doc, preset("wingbeat"), {});
+    REQUIRE(named);
+    rigs::MotionKeysOptions o;
+    o.wingRoots = {"LeftLimb", "RightLimb"};
+    auto r = rigs::keysFromMotion(doc, m, o);
+    INFO((r ? std::string() : r.error().message));
+    REQUIRE(r);
+    bool own = false;
+    for (const auto& n : r.value().notes) own = own || n.find("own wing bones") != std::string::npos;
+    CHECK(own);
+    // The same keys as with the wings named.
+    const Rig& a = *r.value().document.rig();
+    const Rig& b = *named.value().document.rig();
+    REQUIRE(a.keys.size() == b.keys.size());
+    for (std::size_t i = 0; i < a.keys.size(); ++i) {
+        CHECK(a.keys[i].pose.turn == b.keys[i].pose.turn);
+        CHECK(a.keys[i].pose.stretch == b.keys[i].pose.stretch);
+    }
+    o.wingRoots = {"LeftLimb", "Feather"};
+    CHECK_FALSE(rigs::keysFromMotion(doc, m, o));
+}

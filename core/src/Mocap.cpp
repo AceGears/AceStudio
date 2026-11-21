@@ -1006,9 +1006,36 @@ std::vector<int> backColumns(const rg::Part& body, const motion::detail::GaitRig
     return out;
 }
 
-// A four-legged motion on a four-legged sprite's gait rig: each drawn leg
-// follows the source leg on its end (hind or front) and side (near or far);
-// the body rises and sinks with the root.
+// The joints a wing starts at: the two named in `given` (joint names, case
+// does not matter), else every joint named "wing" whose parent is not.
+Result<std::vector<int>> wingRootJoints(const Motion& m, const std::vector<std::string>& given) {
+    auto lowered = [](std::string n) {
+        for (char& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return n;
+    };
+    const std::size_t nj = m.joints.size();
+    std::vector<int> roots;
+    if (!given.empty()) {
+        if (given.size() != 2) return Error(ErrorCode::InvalidArgument, "the wings are given as two joint names, one for each wing");
+        for (const std::string& g : given) {
+            int found = -1;
+            for (std::size_t j = 0; j < nj && found < 0; ++j)
+                if (!m.joints[j].endSite && lowered(m.joints[j].name) == lowered(g)) found = static_cast<int>(j);
+            if (found < 0) return Error(ErrorCode::InvalidArgument, "the motion has no joint named '" + g + "' to start a wing at");
+            if (!roots.empty() && roots.front() == found) return Error(ErrorCode::InvalidArgument, "the two wings are given the same joint '" + g + "'");
+            roots.push_back(found);
+        }
+        return roots;
+    }
+    std::vector<char> named(nj, 0);
+    for (std::size_t j = 0; j < nj; ++j) named[j] = !m.joints[j].endSite && lowered(m.joints[j].name).find("wing") != std::string::npos;
+    for (std::size_t j = 0; j < nj; ++j) {
+        const int p = m.joints[j].parent;
+        if (named[j] && !(p >= 0 && uz(p) < nj && named[uz(p)])) roots.push_back(static_cast<int>(j));
+    }
+    return roots;
+}
+
 // A humanoid motion on a winged sprite: the drawn wing is the top of the
 // stroke (the arm's highest point in the span); it turns down as the arm
 // falls from there, by the same angle (times amount), the far wing a little
@@ -1028,15 +1055,10 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
     std::vector<WingChain> wingChains;
     {
         const std::size_t nj = m.joints.size();
-        std::vector<char> named(nj, 0);
-        for (std::size_t j = 0; j < nj; ++j) {
-            std::string n = m.joints[j].name;
-            for (char& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            named[j] = !m.joints[j].endSite && n.find("wing") != std::string::npos;
-        }
-        for (std::size_t j = 0; j < nj; ++j) {
-            const int p = m.joints[j].parent;
-            if (!named[j] || (p >= 0 && named[uz(p)])) continue;
+        auto roots = wingRootJoints(m, opt.wingRoots);
+        if (!roots) return roots.error();
+        for (int rootJoint : roots.value()) {
+            const std::size_t j = uz(rootJoint);
             WingChain wc;
             wc.shoulder = static_cast<int>(j);
             for (std::size_t k = j + 1; k < nj; ++k) {
@@ -1062,6 +1084,8 @@ Result<RetargetResult> retargetFlyer(const Image& sprite, const Motion& m, const
         }
         std::stable_sort(wingChains.begin(), wingChains.end(), [](const WingChain& a, const WingChain& b) { return a.reach > b.reach; });
         if (wingChains.size() > 2) wingChains.resize(2);
+        if (!opt.wingRoots.empty() && wingChains.size() != 2)
+            return Error(ErrorCode::InvalidArgument, "a joint given as a wing has no joint below it: name the joint the wing starts at");
     }
     const bool ownWings = wingChains.size() == 2;
     if (!ownWings) {
@@ -2094,25 +2118,20 @@ double SwimSource::tailTurn(int f, double stalkU) const {
 
 Result<SwimSource> swimSource(const Motion& m, const RetargetOptions& opt) { return readSwim(m, opt); }
 
-WingSource wingSource(const Motion& m, const BoneMap& map) {
+WingSource wingSource(const Motion& m, const BoneMap& map, const std::vector<std::string>& given) {
     WingSource ws;
     const std::size_t nj = m.joints.size();
     const std::vector<Vec3> rest = restPositions(m);
-    std::vector<char> named(nj, 0);
-    for (std::size_t j = 0; j < nj; ++j) {
-        std::string n = m.joints[j].name;
-        for (char& ch : n) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-        named[j] = !m.joints[j].endSite && n.find("wing") != std::string::npos;
-    }
+    const auto roots = wingRootJoints(m, given);
+    if (!roots) return ws;
     struct Found {
         int shoulder, tip;
         double reach;
     };
     std::vector<Found> chains;
-    for (std::size_t j = 0; j < nj; ++j) {
-        const int p = m.joints[j].parent;
-        if (!named[j] || (p >= 0 && uz(p) < nj && named[uz(p)])) continue;
-        Found fd{static_cast<int>(j), -1, 0};
+    for (int rootJoint : roots.value()) {
+        const std::size_t j = uz(rootJoint);
+        Found fd{rootJoint, -1, 0};
         for (std::size_t k = j + 1; k < nj; ++k) {
             int a = m.joints[k].parent;
             while (a > fd.shoulder) a = m.joints[uz(a)].parent;
@@ -2136,6 +2155,7 @@ WingSource wingSource(const Motion& m, const BoneMap& map) {
         ws.own = true;
         return ws;
     }
+    if (!given.empty()) return ws;   // a given joint has nothing below it
     ws.shoulder[0] = map[Bone::LUpperArm];
     ws.tip[0] = map[Bone::LHand];
     ws.shoulder[1] = map[Bone::RUpperArm];
