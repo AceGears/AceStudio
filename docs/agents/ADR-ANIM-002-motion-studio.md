@@ -197,7 +197,11 @@ matched hind, hind, middle, middle, front, front from the back, each swinging, k
 notes for four-on-six and six-on-four), Lua and CLI smoke lines, run locally; the ant's strip and
 baked rig frames were looked at.
 
-Not done: eight legs tried, captured insect motion, a middle leg's own knee direction, legs
+Eight legs: a test copies the preset's middle pair half-way to the front pair and checks the two
+middle pairs in order, 7 moving frames on a drawn eight-legged sprite and on the ant (three groups);
+not looked at, not on a rig.
+
+Not done: captured insect motion, a middle leg's own knee direction, legs
 splayed sideways, `--body auto` telling six legs from four.
 
 Automatic body (2026-11-21). `mocap::autoBody(sprite, motion, why)`: Flyer when the skeleton has

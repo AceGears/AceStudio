@@ -8,8 +8,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <set>
 #include <string>
+#include <utility>
+#include <vector>
 
 using namespace acestudio;
 using namespace acestudio::mocap;
@@ -361,4 +364,76 @@ TEST_CASE("The automatic body is read from the motion's skeleton, then the sprit
     CHECK(autoBody(dog, winged) == motion::Body::Quadruped);
     CHECK(autoBody(plain, winged) == motion::Body::Flyer);
     CHECK(autoBody(dog, Motion{}) == motion::Body::Quadruped);
+}
+
+TEST_CASE("Eight legs: two middle pairs, paired with eight drawn legs from the back forward", "[mocap][creature][anim]") {
+    // The six-legged walker with its middle pair copied half-way to the front pair.
+    auto hm = builtInPreset("hex-walk");
+    REQUIRE(hm);
+    const Motion six = std::move(hm).value();
+    Motion m = six;
+    std::map<int, int> copyOf;
+    std::vector<std::pair<int, int>> from;   // first channel, count
+    for (std::size_t j = 0; j < six.joints.size(); ++j) {
+        const Joint& src = six.joints[j];
+        const std::size_t at = src.name.find("Middle");
+        if (at == std::string::npos) continue;
+        Joint c = src;
+        c.name.replace(at, 6, "Second");
+        if (copyOf.count(src.parent)) c.parent = copyOf[src.parent];
+        else c.offset.z += 6;
+        c.firstChannel = m.channelCount;
+        m.channelCount += static_cast<int>(c.channels.size());
+        from.emplace_back(src.firstChannel, static_cast<int>(c.channels.size()));
+        copyOf[static_cast<int>(j)] = static_cast<int>(m.joints.size());
+        m.joints.push_back(std::move(c));
+    }
+    m.values.assign(uz(m.frameCount) * uz(m.channelCount), 0.0);
+    for (int f = 0; f < m.frameCount; ++f) {
+        const double* in = &six.values[uz(f) * uz(six.channelCount)];
+        double* out = &m.values[uz(f) * uz(m.channelCount)];
+        std::copy(in, in + six.channelCount, out);
+        int c = six.channelCount;
+        for (const auto& [first, count] : from)
+            for (int k = 0; k < count; ++k) out[c++] = in[first + k];
+    }
+    const CreatureMap cm = creatureMap(m);
+    for (const std::string& n : cm.notes) UNSCOPED_INFO(n);
+    REQUIRE(cm.hasFourLegs());
+    REQUIRE(cm.middle.size() == 4);
+    auto top = [&](std::size_t i) { return m.joints[uz(cm.leg(i).joints.front())].name; };
+    const char* rows[8] = {"Hind", "Hind", "Front", "Front", "Middle", "Middle", "Second", "Second"};
+    for (std::size_t i = 0; i < 8; ++i) {
+        CAPTURE(i, top(i));
+        CHECK(top(i).find(rows[i]) != std::string::npos);
+    }
+
+    // A spider-like side view facing right with eight legs drawn apart.
+    const Rgba8 shell{60, 42, 30, 255}, face{122, 74, 42, 255}, leg{34, 22, 14, 255};
+    Image img(110, 44);
+    img.fillRect({20, 10, 64, 10}, shell);
+    img.fillRect({84, 6, 12, 10}, face);
+    img.fillRect({6, 8, 16, 8}, shell);
+    for (int x : {24, 31, 40, 47, 56, 63, 72, 79}) img.fillRect({x, 20, 3, 18}, leg);
+    RetargetOptions o;
+    o.body = motion::Body::Quadruped;
+    auto r = retarget(img, m, o);
+    INFO((r ? std::string() : r.error().message));
+    REQUIRE(r);
+    for (const std::string& n : r.value().notes) UNSCOPED_INFO(n);
+    bool paired = false;
+    for (const std::string& n : r.value().notes) paired = paired || n.find("8 legs and the sprite 8") != std::string::npos;
+    CHECK(paired);
+    CHECK(r.value().clip.frames.size() == 7);
+    std::set<std::size_t> distinct;
+    for (const Image& f : r.value().clip.frames) {
+        std::size_t h = 0;
+        for (const Rgba8& p : f.pixels()) h = h * 31 + p.a + p.r * 7u;
+        distinct.insert(h);
+    }
+    CHECK(distinct.size() >= 4);
+    // The six-legged ant takes the eight-legged walk too (three groups of two).
+    auto r6 = retarget(antSprite(), m, o);
+    INFO((r6 ? std::string() : r6.error().message));
+    REQUIRE(r6);
 }

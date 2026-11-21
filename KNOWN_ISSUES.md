@@ -80,8 +80,9 @@ not been run.
   legs drawn (sprite or auto-rig) the drawn legs are paired from the back forward by where they
   stand; on four drawn legs the middle pairs are left out, and a four-legged motion on six drawn
   legs drives them by halves (a note says which). Six legs are tested with the built-in `hex-walk`
-  preset on a blocky drawn ant only (looked at too): no captured insect or spider motion, and
-  eight legs have not been tried at all. A middle leg's knee bends the way the nearer end's does,
+  preset on a blocky drawn ant only (looked at too): no captured insect or spider motion. Eight
+  legs are tested only with a made-up skeleton (the six-legged one with a pair added) on a blocky
+  eight-legged sprite, by a test: not looked at, and not on a rig. A middle leg's knee bends the way the nearer end's does,
   and legs splayed out to the sides (a spider seen from above) are not shown: the view is a side
   view. `--body auto` and Motion Studio treat a six-legged sprite as four-legged; legs cannot be paired by hand yet, and Motion Studio's bone table lists humanoid bones
   only. Sprites must be drawn from the side with their legs apart. `rig motion` takes four-legged
