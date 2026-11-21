@@ -307,6 +307,20 @@ twist.
 
 ### 3.8 Fins from a motion's spine (2026-11-20)
 
+Fin rigs (2026-11-21). The reading of a swimming motion moved out of `retargetSwimmer` into
+`mocap::swimSource` (`SwimSource`: the spine chain, its wave per frame, the fin joints' turns and
+shown lengths, `waveAt`, `tailTurn`); the retarget's frames are unchanged (the same hash over 144
+frames and their notes before and after, on the two test fish with three presets, looped and
+not). `keysFromMotion` hands a rig with bones named "tail fin", "dorsal fin..." or "ventral
+fin..." and no wings or numbered limbs to `finKeys` (`RigMotion.cpp`): the tail fin turns by
+`tailTurn` at 0.8 of the spine (times the amount, within 0.6 rad), every other fin takes the
+nearest fin joint of its kind by where its bone's head lies along the body bone and turns by that
+joint's turn (within 0.35 rad), with the joint's shown length as the bone's stretch. The body bone
+is not keyed. Verified: `tests/test_rig_motion.cpp` ("A swimming motion turns an auto-rigged
+fish's tail fin and paddles its fins"), CLI smoke lines, run locally; the fish57 fixture's baked
+frames were looked at. Not done: bending the body of a rig (it would need the body cut into
+segments or a skin), the root's rise and fall.
+
 `mocap::retarget` with `Body::Swimmer` (`retargetSwimmer`, `core/src/Mocap.cpp`) poses the swim
 rig (`buildSwimRig`, `RigSwim.cpp`: body, tail fin past the stalk, other fins). The spine is the
 joint path from the first joint whose name contains "head" to the last whose name contains

@@ -275,6 +275,140 @@ Result<MotionKeysResult> wingKeys(const Document& doc, const mocap::Motion& m, c
     return MotionKeysResult{std::move(out), first, frames, res.framesAdded, res.camera, std::move(res.matched), std::move(res.notes)};
 }
 
+// A swimmer rig (auto-rig's "tail fin", "dorsal fin" and "ventral fin" on
+// a "body"): the motion's spine turns the tail fin at the stalk and its fin
+// joints paddle the other fins, as retarget --body swimmer does. The body
+// is one rigid part and does not bend.
+Result<MotionKeysResult> finKeys(const Document& doc, const mocap::Motion& m, const MotionKeysOptions& opt, const std::vector<std::size_t>& finBones) {
+    const Rig& rig = *doc.rig();
+    const double amount = std::clamp(opt.amount, 0.25, 2.0);
+    if (!opt.bones.empty() || !opt.legs.empty()) return bad("Bone and leg pairs (--bones, --legs) do not apply to a fin rig: its fins follow the motion's spine and fin joints");
+    mocap::RetargetOptions ro;
+    ro.start = opt.start;
+    ro.length = opt.length;
+    ro.fps = opt.fps;
+    ro.frames = opt.frames;
+    ro.loop = opt.loop;
+    auto read = mocap::swimSource(m, ro);
+    if (!read) return bad("The motion cannot drive the rig's fins: " + read.error().message);
+    const mocap::SwimSource& sw = read.value();
+    const int frames = sw.frames;
+    const int fps = std::clamp(opt.fps, 1, 60);
+    const int first = opt.first >= 0 ? opt.first : rig.restFrame + 1;
+    if (first > 100000) return bad("The first frame is out of range");
+    const int last = first + frames - 1;
+    if (rig.restFrame >= first && rig.restFrame <= last)
+        return bad("The keys would cover the rest frame " + std::to_string(rig.restFrame) + "; start after it (--first)");
+
+    // The rig: the body bone runs from the tail stalk to the head.
+    const std::vector<BoneWorld> rest = solve(rig, RigPose{});
+    const Bone* body = rig.bone("body");
+    std::size_t bodyAt = 0;
+    for (std::size_t i = 0; i < rig.bones.size(); ++i)
+        if (body && rig.bones[i].id == body->id) bodyAt = i;
+    double dir = 1;   // +1: the head is at screen left
+    if (opt.facing != 0) dir = opt.facing > 0 ? -1 : 1;
+    else if (body) dir = (rest[bodyAt].tailX - rest[bodyAt].headX) < 0 ? 1 : -1;
+    bool hasTail = false;
+    for (std::size_t i : finBones) hasTail = hasTail || lower(rig.bones[i].name) == "tail fin";
+
+    struct {
+        int framesAdded = 0;
+        mocap::Camera camera;
+        std::vector<std::pair<std::string, std::string>> matched;
+        std::vector<std::string> notes;
+    } res;
+    res.notes = sw.notes;
+    struct Fin {
+        std::size_t bone;
+        bool tail, top;
+        int drive;
+    };
+    std::vector<Fin> fins;
+    std::size_t riding = 0;
+    for (std::size_t i : finBones) {
+        const Bone& b = rig.bones[i];
+        if (b.locked) continue;
+        const std::string n = lower(b.name);
+        Fin f{i, n == "tail fin", n.rfind("dorsal", 0) == 0, -1};
+        if (f.tail) {
+            res.matched.emplace_back(b.name, "spine " + m.joints[uz(sw.chain.front())].name + " -> " + m.joints[uz(sw.chain.back())].name + " (turns as its end turns)");
+        } else {
+            // Where it joins, from the head along the body.
+            double u = 0.5;
+            const double bx = rest[bodyAt].tailX - rest[bodyAt].headX, by = rest[bodyAt].tailY - rest[bodyAt].headY;
+            if (body && bx * bx + by * by > 1e-9) {
+                const double t = ((rest[i].headX - rest[bodyAt].headX) * bx + (rest[i].headY - rest[bodyAt].headY) * by) / (bx * bx + by * by);
+                u = std::clamp(1.0 - t, 0.0, 1.0);
+            }
+            auto at = [&](std::size_t q) { return std::min(1.0, sw.fins[q].u / (hasTail ? 0.8 : 1.0)); };
+            for (std::size_t k = 0; k < sw.fins.size(); ++k) {
+                if (sw.fins[k].top != f.top) continue;
+                if (f.drive < 0 || std::abs(at(k) - u) < std::abs(at(uz(f.drive)) - u)) f.drive = static_cast<int>(k);
+            }
+            if (f.drive < 0) {
+                ++riding;
+                continue;
+            }
+            res.matched.emplace_back(b.name, "fin " + sw.fins[uz(f.drive)].name + " (paddles with it)");
+        }
+        fins.push_back(f);
+    }
+    if (fins.empty())
+        return bad("The motion has nothing to drive the rig's fins: the rig has no tail fin, and the motion no moving fin joint off its spine "
+                   "(joints named fin, flipper, pectoral, pelvic or dorsal; try preset:swim)");
+
+    Document out = doc;
+    const int ms = std::clamp(static_cast<int>(std::lround(1000.0 / fps)), 10, 65535);
+    while (out.frameCount() <= last) {
+        auto f = out.insertFrame(out.frameCount(), ms);
+        if (!f) return f.error();
+        ++res.framesAdded;
+    }
+    Rig keyed = rig;
+    std::erase_if(keyed.keys, [&](const RigKey& key) { return key.frame >= first && key.frame <= last; });
+    double least = 1, peak = 0;
+    for (int f = 0; f < frames; ++f) {
+        RigPose pose;
+        for (const Fin& fn : fins) {
+            const Bone& b = rig.bones[fn.bone];
+            double turn = 0;
+            if (fn.tail) {
+                turn = dir * std::clamp(sw.tailTurn(f, 0.8) * amount, -0.6, 0.6);
+            } else {
+                const mocap::SwimFinSource& fd = sw.fins[uz(fn.drive)];
+                // Toward the tail: anticlockwise for a fin hanging down on a
+                // fish facing left, clockwise for one standing up.
+                turn = std::clamp(fd.turn[uz(f)] * amount, -0.35, 0.35) * (fn.top ? dir : -dir);
+                if (!fd.shown.empty()) {
+                    const double sc = std::clamp(1.0 + (fd.shown[uz(f)] - 1.0) * amount, 0.5, 1.25);
+                    if (std::abs(sc - 1.0) >= 0.02) {
+                        pose.stretch[b.id] = sc;
+                        least = std::min(least, sc);
+                    }
+                }
+            }
+            turn = clampTurn(b, turn);
+            peak = std::max(peak, std::abs(turn));
+            if (turn != 0.0) pose.turn[b.id] = turn;
+        }
+        if (auto st = setKey(keyed, first + f, pose, Curve{}); !st) return st.error();
+    }
+    res.notes.push_back("Fins: the tail fin turns with the end of the motion's spine and the other fins paddle with its fin joints; "
+                        "the body is one rigid part and does not bend (retarget --body swimmer bends it).");
+    if (peak < 0.02) res.notes.push_back("The motion hardly moves the fins (try preset:swim).");
+    if (least < 0.98)
+        res.notes.push_back("A fin swings toward or away from the viewer: it is drawn up to " + std::to_string(static_cast<int>(std::lround((1 - least) * 100))) + "% shorter there.");
+    if (riding)
+        res.notes.push_back(std::to_string(riding) + " fin(s) stay as drawn: the motion has no moving fin joint of their kind off its spine "
+                            "(joints named fin, flipper, pectoral, pelvic or dorsal; preset:swim has them).");
+    res.camera = opt.camera ? *opt.camera : mocap::Camera{};
+    if (!opt.camera) res.camera.turn = dir > 0 ? -90 : 90;
+    out.setRig(std::move(keyed));
+    if (auto st = out.validate(); !st) return st.error();
+    return MotionKeysResult{std::move(out), first, frames, res.framesAdded, res.camera, std::move(res.matched), std::move(res.notes)};
+}
+
 } // namespace
 
 mocap::Camera drawnCamera(const Rig& rig) {
@@ -319,6 +453,13 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
             limbs = limbs || autoName(rig.bones[i].name).has_value();
         }
         if (!wingBones.empty() && !limbs) return wingKeys(doc, m, opt, wingBones);
+        // A fin rig (auto-rig's fins) likewise.
+        std::vector<std::size_t> finBones;
+        for (std::size_t i = 0; i < rig.bones.size(); ++i) {
+            const std::string n = lower(rig.bones[i].name);
+            if (n == "tail fin" || n.rfind("dorsal fin", 0) == 0 || n.rfind("ventral fin", 0) == 0) finBones.push_back(i);
+        }
+        if (!finBones.empty() && wingBones.empty() && !limbs) return finKeys(doc, m, opt, finBones);
     }
 
     struct {

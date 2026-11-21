@@ -160,7 +160,10 @@ not been run.
   skeleton's picture. A skeleton with no head and tail names is guessed (the stiller end is the
   head), and a humanoid motion bends a fish by its head-to-foot chain, which rarely looks like
   swimming. The wave is read in one plane only (the one the spine moves in more). `rig motion`
-  does not drive an auto-rig made with `--as fins`. The Motion Studio choice (Fish) is compiled
+  on an auto-rig made with `--as fins` (since 2026-11-21) turns the tail fin and paddles the other
+  fins but does not bend the body, which is one rigid part there: a fish keyed this way swims
+  stiffer than the same fish through `retarget --body swimmer`. Tested locally on a drawn fish;
+  the test fish's baked frames were looked at once. The Motion Studio choice (Fish) is compiled
   by CI; no Qt test drives it.
 - **Direction sets** (`directions`, ADR-ANIM-002 section 3.4): CLI, core and MCP (`motion_directions`); no app page
   or Lua yet. The art is chosen, never turned or drawn: a direction with no view drawn near it

@@ -97,6 +97,10 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
 - **Wing rigs take motion**: `rig motion` on a rig made with `rig auto --as wings` now keys the
   wing bones from the motion's own wing bones (`preset:wingbeat`: beat and fold) or its arms
   (`preset:flap`: beat only), instead of refusing. Core: `mocap::wingSource`.
+- **Fin rigs take motion**: `rig motion` on a rig made with `rig auto --as fins` now keys the
+  tail fin from the end of the motion's spine and the other fins from its fin joints
+  (`preset:swim`), instead of finding nothing to match. The body stays rigid. Core:
+  `mocap::swimSource`.
 - **Fins foreshorten**: with `retarget --body swimmer`, a fin whose joint swings toward or away
   from the viewer is drawn shorter there (down to half its length), and a note says by how much.
 - **Rig panel: Length**: the Pose group has a Length box (10 to 400%) for the selected bone's

@@ -840,3 +840,97 @@ TEST_CASE("A wing motion beats and folds an auto-rigged flyer's wings", "[rig][m
     pairs.bones = {{wingNames.front(), mocap::Bone::LUpperArm}};
     CHECK_FALSE(rigs::keysFromMotion(doc, preset("wingbeat"), pairs));
 }
+
+TEST_CASE("A swimming motion turns an auto-rigged fish's tail fin and paddles its fins", "[rig][mocap][swim]") {
+    // A fish seen from the side, head on the left: a tapering body, a narrow
+    // stalk, a tall tail fin, a fin under the belly and one on the back.
+    const Rgba8 bodyCol{60, 130, 170, 255}, eye{20, 20, 30, 255}, finCol{220, 150, 50, 255}, lowerCol{200, 90, 60, 255}, upperCol{90, 200, 120, 255};
+    Image img(72, 40);
+    for (int x = 6; x < 44; ++x) {
+        const double u = (x - 6) / 37.0;
+        const int half = static_cast<int>(std::lround(2 + 8 * std::sin(3.14159265 * std::min(1.0, u * 0.9 + 0.08))));
+        img.fillRect({x, 20 - half, 1, 2 * half}, bodyCol);
+    }
+    img.fillRect({44, 18, 6, 4}, bodyCol);
+    img.fillRect({50, 10, 9, 20}, finCol);
+    img.fillRect({11, 17, 2, 2}, eye);
+    img.fillRect({18, 30, 5, 7}, lowerCol);
+    img.fillRect({26, 4, 6, 6}, upperCol);
+    auto doc0 = Document::create(112, 80).value();
+    const LayerId hero = doc0.addLayer("Fish").value();
+    REQUIRE(doc0.setCel(hero, 0, Cel{img, 20, 20}));
+    auto ar = rigs::autoRig(doc0, hero, 0, rigs::AutoRigBody::Fins);
+    INFO((ar ? std::string() : ar.error().message));
+    REQUIRE(ar);
+    const Document doc = ar.value().document;
+    std::vector<std::string> finNames;
+    for (const Bone& b : doc.rig()->bones) {
+        UNSCOPED_INFO(b.name);
+        if (b.name.find("fin") != std::string::npos) finNames.push_back(b.name);
+    }
+    REQUIRE(doc.rig()->bone("tail fin"));
+    REQUIRE(finNames.size() >= 2);
+
+    auto r = rigs::keysFromMotion(doc, preset("swim"), {});
+    INFO((r ? std::string() : r.error().message));
+    REQUIRE(r);
+    const rigs::MotionKeysResult& res = r.value();
+    for (const auto& n : res.notes) UNSCOPED_INFO(n);
+    for (const auto& [bone, what] : res.matched) UNSCOPED_INFO(bone + ": " + what);
+    CHECK(res.count >= 6);
+    CHECK(res.camera.turn == -90);   // the head is at screen left
+    const Rig& rig = *res.document.rig();
+    REQUIRE(rig.keys.size() == static_cast<std::size_t>(res.count));
+    // The tail fin swings both ways about the stalk; every matched fin moves.
+    double lo = 1e9, hi = -1e9;
+    for (const RigKey& k : rig.keys) {
+        const double t = turnOf(rig, k.pose, "tail fin");
+        lo = std::min(lo, t);
+        hi = std::max(hi, t);
+    }
+    CHECK(lo < -0.05);
+    CHECK(hi > 0.05);
+    CHECK(hi - lo <= 1.2 + 1e-9);
+    bool tailMatched = false;
+    int paddling = 0;
+    for (const auto& [bone, what] : res.matched) {
+        if (bone == "tail fin") {
+            tailMatched = what.rfind("spine", 0) == 0;
+            continue;
+        }
+        ++paddling;
+        CHECK(what.rfind("fin ", 0) == 0);
+        double a = 1e9, b = -1e9;
+        for (const RigKey& k : rig.keys) {
+            const double t = turnOf(rig, k.pose, bone.c_str());
+            a = std::min(a, t);
+            b = std::max(b, t);
+        }
+        INFO(bone);
+        CHECK(b - a > 0.02);
+        CHECK(std::max(std::abs(a), std::abs(b)) <= 0.35 + 1e-9);
+    }
+    CHECK(tailMatched);
+    CHECK(paddling >= 1);
+    // The body bone is never keyed: the body does not bend.
+    for (const RigKey& k : rig.keys) CHECK(turnOf(rig, k.pose, "body") == 0.0);
+    bool rigid = false;
+    for (const auto& n : res.notes) rigid = rigid || n.find("does not bend") != std::string::npos;
+    CHECK(rigid);
+    REQUIRE(res.document.validate());
+    REQUIRE(rigs::bakeKeys(res.document));
+
+    // A walk has a spine too (its longest chain) but no fin joints: the tail
+    // fin is still matched, the other fins stay as drawn and a note says so.
+    auto w = rigs::keysFromMotion(doc, preset("walk"), {});
+    INFO((w ? std::string() : w.error().message));
+    REQUIRE(w);
+    bool stay = false;
+    for (const auto& n : w.value().notes) stay = stay || n.find("stay as drawn") != std::string::npos;
+    CHECK(stay);
+    CHECK(w.value().matched.size() == 1);
+    // Bone pairs do not apply.
+    rigs::MotionKeysOptions pairs;
+    pairs.bones = {{"tail fin", mocap::Bone::Head}};
+    CHECK_FALSE(rigs::keysFromMotion(doc, preset("swim"), pairs));
+}
