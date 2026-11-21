@@ -94,6 +94,9 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Thin legs under a long body are found**: a foot need only be a twelfth of the sprite's
+  smaller side, not of its width, so a long tail or neck no longer hides thin legs and the
+  animal auto-rigs and animates as four-legged.
 - **Long necks and tails bend**: auto-rig gives a long neck or tail of a four-legged side view a
   second bone from its middle on (`neck` and `head`, `tail` and `tail tip`) and bends the part
   across the joint; `rig motion` makes the tail's tip trail the tail and keeps the head half
