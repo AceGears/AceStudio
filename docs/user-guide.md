@@ -159,7 +159,8 @@ Add, Subtract, Difference), visibility and locks.
   arms: `acestudio-cli retarget dragon.png preset:flap --body flyer --out out`, or choose
   **Wings** in Motion Studio's Body box. Each wing turns as the motion's arm rises and falls. A motion
   with wing bones of its own (joints named wing; try `preset:wingbeat`) drives the wings with
-  those, and they also fold on the way up and sweep. If
+  those, and they also fold on the way up and sweep. If the wing joints have other names, name the
+  two the wings start at (`--wings JointA,JointB`, or the two **Wing joints** boxes in Motion Studio). If
   the head turns with a wing, lower the wing line (`--wing-line 0.3`, or Wing line in Motion
   Studio), or select the wings in the document before **Use Current Sprite**.
 - **Fish**: a fish drawn from the side can swim to a motion's spine:
