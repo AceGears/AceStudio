@@ -516,7 +516,7 @@ Image longEnds() {
     Image s(96, 56);
     const Rgba8 coat{150, 110, 60, 255}, dark{70, 45, 25, 255};
     s.fillRect({24, 22, 40, 12}, coat);                              // body
-    for (int x : {24, 33, 48, 57}) s.fillRect({x, 34, 7, 20}, coat);  // legs (a foot is at least a twelfth of the width)
+    for (int x : {26, 33, 52, 59}) s.fillRect({x, 34, 4, 20}, coat);  // thin legs (a twelfth of the height, not of the width)
     s.fillRect({6, 22, 18, 3}, dark);                                // tail
     for (int i = 0; i < 12; ++i) s.fillRect({64 + i, 22 - i, 1, 6}, coat);   // neck, rising
     s.fillRect({74, 6, 10, 7}, coat);                                // head

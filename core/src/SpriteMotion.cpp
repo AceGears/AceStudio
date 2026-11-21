@@ -667,13 +667,15 @@ Subject analyzeSubject(const Image& sprite) {
         if (span(y) * 4 >= span(y - 1) * 5 + 4) { s.groundTop = y; break; }
     s.footRow = s.groundTop >= 0 ? s.groundTop - 1 : bottom;
     // Feet: column runs in the lowest tenth above the ground. Thin runs (a
-    // sword tip, a staff) are not feet.
+    // sword tip, a staff) are not feet: under a twelfth of the figure's
+    // smaller side. (Of its width alone, a long tail or neck widening a
+    // four-legged side view dropped its thin legs.)
     const int band = std::max(1, bb.h / 10);
     std::vector<char> cols(static_cast<std::size_t>(bb.w), 0);
     for (int y = s.footRow - band + 1; y <= s.footRow; ++y)
         for (int x = 0; x < bb.w; ++x)
             if (sprite.pixel(bb.x + x, y).a > 0) cols[static_cast<std::size_t>(x)] = 1;
-    for (auto [x0, x1] : columnRuns(cols, std::max(2, bb.w / 12))) s.feet.push_back({bb.x + x0, bb.x + x1});
+    for (auto [x0, x1] : columnRuns(cols, std::max(2, std::min(bb.w, bb.h) / 12))) s.feet.push_back({bb.x + x0, bb.x + x1});
     int splitTop = -1;
     if (s.feet.size() >= 2) {
         // Legs go up as long as the rows stay split. Fins (a fish's belly and

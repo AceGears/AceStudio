@@ -73,9 +73,9 @@ not been run.
   across that joint (since 2026-11-18): the tail's tip repeats the tail's swing 0.15 of the cycle
   later, the head turns half-way back against the neck. That is one bend, not a curve through
   several joints, and it is tested on a drawn test animal only (rectangles; no generated sprite).
-  A long neck with a big head can fail the thickness test and stay rigid. A long tail also widens
-  the sprite, and feet narrower than a twelfth of its width are not read as legs, so thin-legged
-  long-tailed animals may not auto-rig as four-legged at all. The cut follows the
+  A long neck with a big head can fail the thickness test and stay rigid. Feet must be at least a twelfth
+  of the sprite's smaller side (since 2026-11-20; before, of its width, so a long tail made thin
+  legs vanish); legs thinner than that are still not found. The cut follows the
   body's outline (where the belly line ends, and what rises above the back next to it), tested on
   the test dog only; an end smaller than 2% of the body stays on the body. Feet keep their drawn
   angle to the ground. Legs are paired by position (behind or ahead of the middle of the legs, then the first
