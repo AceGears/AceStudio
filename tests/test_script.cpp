@@ -394,6 +394,7 @@ TEST_CASE("Lua motion library and retarget", "[script][mocap]") {
         for _, p in ipairs(ace.motion_presets()) do names[p.name] = p end
         assert(names.walk and names.walk.built_in and names.walk.loops)
         assert(names['quad-walk'] and names['quad-walk'].four_legged)
+        assert(names['hex-walk'] and names['hex-walk'].four_legged)
         assert(names.jump and not names.jump.loops)
 
         -- A dog drawn from the side, facing right (as tests/test_creature_motion.cpp).

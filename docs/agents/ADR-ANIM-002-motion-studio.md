@@ -174,7 +174,31 @@ more than 10%, is as drawn at some key, bakes at least 2 px narrower, half the a
 the shortening), a Lua case and CLI smoke lines, run locally; a baked wag was looked at.
 
 Not done: which way a swung part points (toward and away look the same), a head turning to look,
-a curve through more than one joint (a skin follows one child bone), six legs. Wings: section 3.7. Fins: section 3.8.
+a curve through more than one joint (a skin follows one child bone). Wings: section 3.7. Fins: section 3.8.
+
+Six legs (2026-11-21). `creatureMap` takes four, six or eight floor-reaching legs: sorted along the
+body, the two furthest back are the hind pair and the two furthest forward the front pair
+(`CreatureMap::legs`, as before, so every four-legged reader keeps working); those between go to
+`CreatureMap::middle`, back to front, and `leg(i)` indexes all of them (0-3 `legs`, then `middle`).
+`retargetQuadruped` and `keysFromMotion` group the drawn legs when the motion has middle pairs and
+more than four legs are drawn: sorted from the back by hip (sprite) or bone head (rig) x, split
+into min(source pairs, drawn legs / 2) equal groups, the first taking the hind pair, the last the
+front pair, the others the middle pairs in order; within a group near and far alternate as before.
+Otherwise the old hind/front split by the middle stands, with a note when middle pairs go unused
+or a four-legged motion drives more than four legs. Built-in preset `hex-walk`
+(`MotionLibrary.cpp`): hips, thorax, neck, head, abdomen, three pairs of three-bone legs along the
+thorax; 0.6 s; the alternating tripod (left hind, right middle, left front against the others).
+
+Verified: `tests/test_creature_motion.cpp` (the preset's legs found as hind, front and middle
+pairs with head and abdomen ends, at least three feet down in every frame, five legs refused; 7
+frames on a drawn ant in its own colours with nothing floating; the middle pair left out on the
+test dog; quad-walk on the ant), `tests/test_rig_motion.cpp` (an auto-rigged ant's six thighs
+matched hind, hind, middle, middle, front, front from the back, each swinging, keys bake; the
+notes for four-on-six and six-on-four), Lua and CLI smoke lines, run locally; the ant's strip and
+baked rig frames were looked at.
+
+Not done: eight legs tried, captured insect motion, a middle leg's own knee direction, legs
+splayed sideways, `--body auto` telling six legs from four.
 
 ### 3.7 Wings from a humanoid motion (stage 3c, second part, 2026-11-18)
 

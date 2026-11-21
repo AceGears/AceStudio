@@ -259,7 +259,7 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
     auto H = [&](const std::vector<Vec3>& p) { return p[uz(hipsJ)]; };
     std::vector<int> footJs;
     if (quad) {
-        for (const auto& leg : cm.legs) footJs.push_back(leg.joints.back());
+        for (std::size_t i = 0; i < cm.legCount(); ++i) footJs.push_back(cm.leg(i).joints.back());
     } else if (map[MB::LFoot] >= 0 && map[MB::RFoot] >= 0) {
         footJs = {map[MB::LFoot], map[MB::RFoot]};
     }
@@ -329,10 +329,40 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
             hind.assign(all.begin(), all.begin() + static_cast<long>(std::min<std::size_t>(2, all.size() / 2 + (all.size() == 1))));
             front.assign(all.begin() + static_cast<long>(hind.size()), all.end());
         }
-        for (int pair = 0; pair < 2; ++pair) {
-            const std::vector<int>& drawn = pair == 0 ? hind : front;
-            const int a = pair == 0 ? 0 : 2;   // creatureMap: hind legs first, then front
-            const bool aNear = restPr.depth[uz(cm.legs[uz(a)].joints.front())] >= restPr.depth[uz(cm.legs[uz(a + 1)].joints.front())];
+        // A motion with middle pairs on a rig with more than four legs: the
+        // rig's legs are grouped from the back forward instead, the groups
+        // between the first and last taking the middle pairs.
+        const std::size_t srcPairs = cm.legCount() / 2;
+        std::vector<std::pair<int, std::vector<int>>> groups;   // the source pair's first leg, the rig's leg numbers
+        if (srcPairs > 2 && legNums.size() > 4) {
+            std::vector<int> all;
+            for (const auto& [n, i] : legNums) all.push_back(n);
+            std::stable_sort(all.begin(), all.end(), [&](int la, int lb) { return rest[legNums[la]].headX * facing < rest[legNums[lb]].headX * facing; });
+            const std::size_t count = std::min(srcPairs, all.size() / 2);
+            groups.resize(count);
+            for (std::size_t gi = 0; gi < count; ++gi) {
+                int first = 0;
+                if (gi + 1 == count) first = 2;
+                else if (gi > 0)
+                    first = 4 + 2 * static_cast<int>(std::clamp<long>(std::lround(static_cast<double>(gi * (srcPairs - 1)) / static_cast<double>(count - 1)) - 1, 0,
+                                                                      static_cast<long>(srcPairs) - 3));
+                groups[gi].first = first;
+            }
+            for (std::size_t r = 0; r < all.size(); ++r) groups[r * count / all.size()].second.push_back(all[r]);
+            for (auto& grp : groups) std::sort(grp.second.begin(), grp.second.end());
+            res.notes.push_back("The motion has " + std::to_string(cm.legCount()) + " legs and the rig " + std::to_string(all.size()) +
+                                ": they are paired from the back forward.");
+        } else {
+            groups = {{0, hind}, {2, front}};   // creatureMap: hind legs first, then front
+            if (srcPairs > 2)
+                res.notes.push_back("The motion has " + std::to_string(cm.legCount()) + " legs; the rig's " + std::to_string(legNums.size()) +
+                                    " take its hind and front pairs (the middle legs are not used).");
+            else if (legNums.size() > 4)
+                res.notes.push_back("The rig has " + std::to_string(legNums.size()) +
+                                    " legs and the motion four: the legs behind the middle follow its hind pair, the others its front pair.");
+        }
+        for (const auto& [a, drawn] : groups) {
+            const bool aNear = restPr.depth[uz(cm.leg(uz(a)).joints.front())] >= restPr.depth[uz(cm.leg(uz(a + 1)).joints.front())];
             for (std::size_t k = 0; k < drawn.size(); ++k) quadLeg[drawn[k]] = (k % 2 == 0) == aNear ? a : a + 1;
         }
     }
@@ -378,13 +408,14 @@ Result<MotionKeysResult> keysFromMotion(const Document& doc, const mocap::Motion
                 continue;
             }
             if (auto an = autoName(b.name); an && an->leg && an->part < 2 && quadLeg.count(an->n)) {
-                const mocap::CreatureLeg& leg = cm.legs[uz(quadLeg[an->n])];
+                const int which = quadLeg[an->n];
+                const mocap::CreatureLeg& leg = cm.leg(uz(which));
                 if (leg.joints.size() < 2 || (an->part == 1 && leg.joints.size() < 3)) continue;
                 mt.from = leg.joints[an->part == 0 ? 0 : 1];
                 mt.to = an->part == 0 ? leg.joints[1] : leg.joints.back();
                 mt.fromBone = an->part == 0 ? MB::LThigh : MB::LShin;
                 mt.toBone = an->part == 0 ? MB::LShin : MB::LFoot;
-                mt.label = std::string(leg.hind ? "hind" : "front") + " leg " + m.joints[uz(mt.from)].name + " -> " + m.joints[uz(mt.to)].name;
+                mt.label = std::string(which >= 4 ? "middle" : leg.hind ? "hind" : "front") + " leg " + m.joints[uz(mt.from)].name + " -> " + m.joints[uz(mt.to)].name;
             } else if (((n == "head" || n == "neck") && cm.head >= 0) || (n == "tail" && cm.tail >= 0)) {
                 // The head (or the neck that carries it) turns by the change
                 // of the line from the front legs' top to the head's end (a

@@ -216,7 +216,7 @@ MotionStudioPanel::MotionStudioPanel(OpenFn open, QWidget* parent) : QWidget(par
     auto* libRow = new QHBoxLayout;
     m_presets = new QComboBox(motionBox);
     m_presets->setAccessibleName(tr("Motion presets"));
-    m_presets->setToolTip(tr("Ready motions (idle, walk, run, jump, attack, hurt; flap and wingbeat for wings; swim for fish; quad-walk for four legs) and the motions you saved"));
+    m_presets->setToolTip(tr("Ready motions (idle, walk, run, jump, attack, hurt; flap and wingbeat for wings; swim for fish; quad-walk for four legs; hex-walk for six) and the motions you saved"));
     m_savePreset = new QPushButton(tr("Save as Preset…"), motionBox);
     m_savePreset->setAutoDefault(false);
     m_savePreset->setToolTip(tr("Keep the loaded motion in your motion library (saved as BVH)"));

@@ -10,6 +10,8 @@
 #include <filesystem>
 #include <map>
 #include <string>
+#include <utility>
+#include <vector>
 
 using namespace acestudio;
 
@@ -665,4 +667,81 @@ TEST_CASE("A tail swung sideways is drawn shorter while it points at the viewer"
     CHECK(lo2 > lo);
     CHECK(lo2 < 1);
     CHECK(std::abs((1 - lo2) - 0.5 * (1 - lo)) < 0.02);
+}
+
+TEST_CASE("A six-legged motion walks an auto-rigged six-legged sprite", "[rig][mocap][creature]") {
+    // An ant-like side view facing right: abdomen, body, head and six legs.
+    const Rgba8 shell{60, 42, 30, 255}, face{122, 74, 42, 255}, legCol{34, 22, 14, 255};
+    Image img(96, 44);
+    img.fillRect({20, 10, 50, 10}, shell);
+    img.fillRect({70, 6, 12, 10}, face);
+    img.fillRect({6, 8, 16, 8}, shell);
+    for (int x : {24, 31, 40, 47, 56, 63}) img.fillRect({x, 20, 3, 18}, legCol);
+    auto doc0 = Document::create(136, 64).value();
+    const LayerId hero = doc0.addLayer("Hero").value();
+    REQUIRE(doc0.setCel(hero, 0, Cel{img, 20, 10}));
+    auto ar = rigs::autoRig(doc0, hero, 0, rigs::AutoRigBody::Legs);
+    REQUIRE(ar);
+    const Document doc = ar.value().document;
+    int thighs = 0;
+    for (const Bone& b : doc.rig()->bones) thighs += b.name.find("thigh") != std::string::npos ? 1 : 0;
+    REQUIRE(thighs == 6);
+
+    auto r = rigs::keysFromMotion(doc, preset("hex-walk"), {});
+    INFO((r ? std::string() : r.error().message));
+    REQUIRE(r);
+    const rigs::MotionKeysResult& res = r.value();
+    for (const auto& n : res.notes) UNSCOPED_INFO(n);
+    CHECK(res.count == 7);   // 0.6 s at 12 fps
+    const Rig& rig = *res.document.rig();
+    const auto rest = rigs::solve(rig, RigPose{});
+    // Each pair of the motion drives the two drawn legs standing at its
+    // place: sorted from the back, hind, hind, middle, middle, front, front.
+    std::vector<std::pair<double, std::string>> byX;
+    for (const auto& [bone, what] : res.matched) {
+        CAPTURE(bone, what);
+        if (bone.find("thigh") == std::string::npos) continue;
+        for (std::size_t i = 0; i < rig.bones.size(); ++i)
+            if (rig.bones[i].name == bone) byX.emplace_back(rest[i].headX, what.substr(0, what.find(' ')));
+    }
+    std::sort(byX.begin(), byX.end());
+    REQUIRE(byX.size() == 6);
+    const char* want[6] = {"hind", "hind", "middle", "middle", "front", "front"};
+    for (std::size_t i = 0; i < 6; ++i) CHECK(byX[i].second == want[i]);
+    bool paired = false;
+    for (const auto& n : res.notes) paired = paired || n.find("6 legs and the rig 6") != std::string::npos;
+    CHECK(paired);
+    // Every thigh swings, and the keys bake.
+    for (const Bone& b : rig.bones) {
+        if (b.name.find("thigh") == std::string::npos) continue;
+        INFO(b.name);
+        double lo = 1e9, hi = -1e9;
+        for (const RigKey& k : rig.keys) {
+            const double t = turnOf(rig, k.pose, b.name.c_str());
+            lo = std::min(lo, t);
+            hi = std::max(hi, t);
+        }
+        CHECK(hi - lo > 0.2);
+    }
+    REQUIRE(res.document.validate());
+    REQUIRE(rigs::bakeKeys(res.document));
+
+    // A four-legged walk on the six-legged rig: every leg is driven by the
+    // hind or front pair, and a note says so. A six-legged walk on a
+    // four-legged rig leaves the middle pair out.
+    auto q = rigs::keysFromMotion(doc, preset("quad-walk"), {});
+    REQUIRE(q);
+    bool halves = false;
+    int driven = 0;
+    for (const auto& n : q.value().notes) halves = halves || n.find("6 legs and the motion four") != std::string::npos;
+    for (const auto& [bone, what] : q.value().matched) driven += bone.find("thigh") != std::string::npos ? 1 : 0;
+    CHECK(halves);
+    CHECK(driven == 6);
+    auto d4 = rigs::keysFromMotion(rigged("dog72.png"), preset("hex-walk"), {});
+    INFO((d4 ? std::string() : d4.error().message));
+    REQUIRE(d4);
+    bool unused = false;
+    for (const auto& n : d4.value().notes) unused = unused || n.find("middle legs are not used") != std::string::npos;
+    CHECK(unused);
+    for (const auto& [bone, what] : d4.value().matched) CHECK(what.rfind("middle", 0) != 0);
 }

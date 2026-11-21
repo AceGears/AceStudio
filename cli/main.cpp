@@ -96,7 +96,7 @@ const char* kUsageText =
     "                                  the motion's spine onto a fish-like side view: strip PNG + GIF,\n"
     "                                  and the projected source skeleton beside it (<name>_source.png/.gif);\n"
     "                                  preset:NAME uses the motion library (built in: idle, walk, run, jump, attack, hurt,\n"
-    "                                  flap, quad-walk, swim, wingbeat)\n"
+    "                                  flap, quad-walk, swim, wingbeat, hex-walk)\n"
     "  directions <views folder> <motion|preset:NAME> --out <project.acestudio> [--dirs 8|4|s,e,n,...] [--name walk]\n"
     "             [--no-mirror] [--turn-clip s,n [--turn-step 45] [--turn-ms 100]] [--body ...]\n"
     "             [--tilt/--roll/--perspective, timing, --map]\n"

@@ -94,6 +94,11 @@ All notable changes are documented here. Format follows Keep a Changelog; versio
   ground. Same timing, view and `--map` options as `retarget`. Arms keep their drawn pose and turn
   by how much the motion's arms turn (a sprite drawn with raised daggers keeps them raised);
   `--absolute-arms` points them where the motion's arms point instead.
+- **Six legs**: motions whose skeleton stands on six (or eight) legs are read: `retarget --body
+  quadruped` and `rig motion` pair a six-legged sprite's or auto-rig's legs with the motion's hind,
+  middle and front pairs from the back forward. On four drawn legs the middle pairs are left out;
+  a four-legged motion still drives six drawn legs. New built-in preset `hex-walk` (an insect's
+  alternating tripod, 0.6 s loop).
 - **Wing bones**: `retarget --body flyer` now reads a skeleton's own wings (two chains of joints
   named wing) instead of needing humanoid arms; the drawn wings then also fold on the way up and
   sweep. A winged four-legged skeleton is no longer refused. New built-in preset `wingbeat` (a

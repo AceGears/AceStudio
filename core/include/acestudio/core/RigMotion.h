@@ -24,6 +24,11 @@
 // "RForearm", ... case ignored), or explicit `bones` pairs. Wings and fins
 // match nothing; they are refused.
 //
+// A six- or eight-legged motion on a rig with more than four legs pairs
+// them from the back forward instead (hind, middle..., front); on four legs
+// its middle pairs are left out, and a four-legged motion on more legs
+// drives them by halves. Notes say which.
+//
 // A four-legged motion (mocap::creatureMap finds four legs) drives a rig
 // drawn from the side with auto-rig leg names: the legs behind the middle of
 // the rig's legs (the head end, its highest art, is the front) take the

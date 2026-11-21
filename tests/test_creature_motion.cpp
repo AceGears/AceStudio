@@ -204,3 +204,123 @@ TEST_CASE("The back, head and tail of a four-legged sprite follow the motion", "
     CHECK(bobbing > still);
     CHECK(bobbing <= 12);   // a quarter of the sprite's height at most
 }
+
+namespace {
+
+// An ant-like side view facing right: abdomen, body, head and six legs.
+Image antSprite() {
+    const Rgba8 shell{60, 42, 30, 255}, face{122, 74, 42, 255}, leg{34, 22, 14, 255};
+    Image img(96, 44);
+    img.fillRect({20, 10, 50, 10}, shell);   // body
+    img.fillRect({70, 6, 12, 10}, face);     // head
+    img.fillRect({6, 8, 16, 8}, shell);      // abdomen
+    for (int x : {24, 31, 40, 47, 56, 63}) img.fillRect({x, 20, 3, 18}, leg);
+    return img;
+}
+
+} // namespace
+
+TEST_CASE("Six legs are found by shape: a hind, a middle and a front pair", "[mocap][creature]") {
+    bool listed = false;
+    for (const PresetInfo& p : builtInPresets())
+        if (p.name == "hex-walk") listed = p.fourLegged && p.loops && p.builtIn;
+    CHECK(listed);
+    auto hm = builtInPreset("hex-walk");
+    REQUIRE(hm);
+    const Motion m = std::move(hm).value();
+    const CreatureMap cm = creatureMap(m);
+    for (const std::string& n : cm.notes) UNSCOPED_INFO(n);
+    REQUIRE(cm.hasFourLegs());
+    REQUIRE(cm.middle.size() == 2);
+    CHECK(cm.legCount() == 6);
+    CHECK(cm.forward.z > 0.9);
+    auto top = [&](std::size_t i) { return m.joints[uz(cm.leg(i).joints.front())].name; };
+    for (std::size_t i = 0; i < 6; ++i) {
+        CAPTURE(i, top(i));
+        const char* row = i < 2 ? "Hind" : i < 4 ? "Front" : "Middle";
+        CHECK(top(i).find(row) != std::string::npos);
+        CHECK(cm.leg(i).joints.size() >= 3);
+        CHECK(cm.leg(i).hind == (i < 2));
+    }
+    CHECK(top(0) != top(1));
+    CHECK(top(4) != top(5));
+    REQUIRE(cm.head >= 0);
+    CHECK(m.joints[uz(cm.head)].name.rfind("Head", 0) == 0);
+    REQUIRE(cm.tail >= 0);
+    CHECK(m.joints[uz(cm.tail)].name.rfind("Abdomen", 0) == 0);
+    bool said = false;
+    for (const std::string& n : cm.notes) said = said || n.find("6 legs") != std::string::npos;
+    CHECK(said);
+
+    // The tripod: in every frame at least three feet are near the floor, and
+    // each foot is lifted at some time.
+    for (std::size_t i = 0; i < 6; ++i) {
+        double hi = 0;
+        for (int f = 0; f < m.frameCount; ++f) hi = std::max(hi, jointPositions(m, f * m.frameTime)[uz(cm.leg(i).joints.back())].y);
+        CHECK(hi > 1.0);
+    }
+    for (int f = 0; f < m.frameCount; ++f) {
+        const auto w = jointPositions(m, f * m.frameTime);
+        int down = 0;
+        for (std::size_t i = 0; i < 6; ++i) down += w[uz(cm.leg(i).joints.back())].y < 1.0 ? 1 : 0;
+        CHECK(down >= 3);
+    }
+
+    // Five legs are not read: one leg cut short of the floor.
+    Motion five = m;
+    for (Joint& j : five.joints)
+        if (j.name.rfind("LeftMiddle", 0) == 0 && j.name != "LeftMiddleThigh") j.offset = {0, -0.5, 0};
+    const CreatureMap bad = creatureMap(five);
+    CHECK_FALSE(bad.hasFourLegs());
+    REQUIRE_FALSE(bad.notes.empty());
+    CHECK(bad.notes.front().find("found 5 leg(s)") != std::string::npos);
+}
+
+TEST_CASE("A six-legged walk retargets onto six-legged and four-legged sprites", "[mocap][creature][anim]") {
+    auto hm = builtInPreset("hex-walk");
+    REQUIRE(hm);
+    const Motion m = std::move(hm).value();
+    const Image ant = antSprite();
+    RetargetOptions o;
+    o.body = motion::Body::Quadruped;
+    auto r = retarget(ant, m, o);
+    INFO((r ? std::string() : r.error().message));
+    REQUIRE(r);
+    const RetargetResult& res = r.value();
+    for (const std::string& n : res.notes) UNSCOPED_INFO(n);
+    CHECK(res.clip.frames.size() == 7);   // 0.6 s at 12 fps
+    CHECK(res.creature.middle.size() == 2);
+    CHECK(res.camera.turn == 90);
+    bool paired = false;
+    for (const std::string& n : res.notes) paired = paired || n.find("6 legs and the sprite 6") != std::string::npos;
+    CHECK(paired);
+    std::set<std::size_t> distinct;
+    std::set<std::uint32_t> drawn;
+    for (const Rgba8& p : ant.pixels())
+        if (p.a) drawn.insert((std::uint32_t(p.r) << 16) | (std::uint32_t(p.g) << 8) | p.b);
+    for (const Image& f : res.clip.frames) {
+        std::size_t h = 0;
+        for (const Rgba8& p : f.pixels()) {
+            h = h * 31 + p.a + p.r * 7u;
+            if (p.a) CHECK(drawn.count((std::uint32_t(p.r) << 16) | (std::uint32_t(p.g) << 8) | p.b) == 1);
+        }
+        distinct.insert(h);
+    }
+    CHECK(distinct.size() >= 4);   // the legs move
+    const motion::ClipCheck chk = motion::checkClip(res.clip);
+    CAPTURE(chk.issues);
+    CHECK(chk.floatingFrames == 0);
+
+    // On four drawn legs the hind and front pairs are used, and a note says so.
+    auto r4 = retarget(dogSprite(), m, o);
+    INFO((r4 ? std::string() : r4.error().message));
+    REQUIRE(r4);
+    bool unused = false;
+    for (const std::string& n : r4.value().notes) unused = unused || n.find("middle legs are not used") != std::string::npos;
+    CHECK(unused);
+    CHECK(r4.value().clip.frames.size() == 7);
+    // A four-legged walk still drives the six drawn legs (hind and front halves).
+    auto r6 = retarget(ant, quad(), o);
+    INFO((r6 ? std::string() : r6.error().message));
+    REQUIRE(r6);
+}
